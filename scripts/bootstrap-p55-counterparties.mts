@@ -41,7 +41,6 @@ import {
 import { computeAgentReputation, createReputationSnapshot } from "../lib/reputation/engine.ts";
 import { deriveReputationScoreFromEvaluation, deriveSettledErc8183ValueUsdc } from "../lib/reputation/erc8183-adapter.ts";
 import { ingestErc8004IdentityEvidence, ingestErc8183JobOutcomeEvidence } from "../lib/reputation/ingest.ts";
-import { publishReputationSnapshotProofToArc } from "../lib/reputation/snapshot.ts";
 import type { CanonicalAgentIdentity, ReputationEvidence } from "../lib/reputation/types.ts";
 
 const RPC = process.env.ARC_TESTNET_RPC_URL || "https://rpc.testnet.arc.network";
@@ -50,6 +49,12 @@ const EVALUATOR = (process.env.NEXT_PUBLIC_VEYRA_ERC8183_EVALUATOR_ADDRESS || "0
 const USDC = "0x3600000000000000000000000000000000000000" as const;
 const DELIVERABLE_URI = "https://raw.githubusercontent.com/mioku50/Agent-Commerce/main/public/canary-deliverable.json";
 const AMOUNT_USDC = 0.001;
+const BASE_URL = (
+  process.env.VEYRA_PRODUCTION_URL
+  || process.env.VEYRA_BASE_URL
+  || process.env.NEXT_PUBLIC_APP_URL
+  || "https://agent-commerce-one.vercel.app"
+).replace(/\/$/, "");
 
 function key(name: string) {
   const value = process.env[name];
@@ -75,13 +80,7 @@ async function ensureNativeGas(recipient: `0x${string}`) {
 }
 
 async function registerIdentity(role: (typeof roles)[number]) {
-  const base = (
-    process.env.VEYRA_PRODUCTION_URL
-    || process.env.VEYRA_BASE_URL
-    || process.env.NEXT_PUBLIC_APP_URL
-    || "https://agent-commerce-one.vercel.app"
-  ).replace(/\/$/, "");
-  const metadataUri = `${base}/.well-known/${role.metadata}`;
+  const metadataUri = `${BASE_URL}/.well-known/${role.metadata}`;
   const metadataResponse = await fetch(metadataUri, { signal: AbortSignal.timeout(20_000) });
   assert.equal(metadataResponse.ok, true, `Public metadata is unavailable for ${role.role}`);
   const account = privateKeyToAccount(key(role.keyName));
@@ -139,6 +138,25 @@ async function realProviderExecution(input: Awaited<ReturnType<typeof registerId
   await Promise.all([ensureNativeGas(provider.address), ensureNativeGas(client.address), ensureNativeGas(relayer.address)]);
   assert.notEqual(client.address.toLowerCase(), provider.address.toLowerCase(), "Self-dealing evidence is forbidden");
   const publicClient = getArcPublicClient(RPC);
+  const existingEvidence = (await fetchReputationEvidenceForAgent(input.identity.agent_id))
+    .filter((item) => item.type === "erc8183_job_completed" && item.positive && item.verifiedOnchain && item.arcProofVerified && /^\d+$/.test(item.sourceId))
+    .sort((left, right) => Date.parse(right.observedAt) - Date.parse(left.observedAt));
+  for (const item of existingEvidence) {
+    const query = await getByoaClient().from("erc8183_evaluations").select("agentic_commerce,job_id,client_wallet,provider_wallet,settlement_tx_hash,status,decision").eq("chain_id", 5_042_002).eq("job_id", item.sourceId).eq("status", "completed").eq("decision", "complete").maybeSingle();
+    if (query.error || !query.data || !query.data.settlement_tx_hash) continue;
+    try {
+      const [job, settlementReceipt] = await Promise.all([
+        fetchOnchainJob(query.data.agentic_commerce, BigInt(item.sourceId), publicClient),
+        publicClient.getTransactionReceipt({ hash: query.data.settlement_tx_hash as Hex }),
+      ]);
+      if (settlementReceipt.status !== "success" || job.status !== "Completed"
+        || job.provider.toLowerCase() !== provider.address.toLowerCase()
+        || job.client.toLowerCase() === provider.address.toLowerCase()) continue;
+      const settledValueUsdc = deriveSettledErc8183ValueUsdc({ job, receipt: settlementReceipt, commerceAddress: query.data.agentic_commerce });
+      if (!(settledValueUsdc > 0)) continue;
+      return { jobId: item.sourceId, settlementTx: query.data.settlement_tx_hash as Hex, client: job.client, provider: job.provider, settledValueUsdc };
+    } catch { /* try another verified execution */ }
+  }
   const clientWallet = createWalletClient({ account: client, chain: arcTestnet, transport: http(RPC) });
   const providerWallet = createWalletClient({ account: provider, chain: arcTestnet, transport: http(RPC) });
   const amount = parseUnits(AMOUNT_USDC.toFixed(6), 6);
@@ -175,6 +193,27 @@ async function realProviderExecution(input: Awaited<ReturnType<typeof registerId
   return { jobId: jobId.toString(), createTx, settlementTx: result.settlementTxHash, client: client.address, provider: provider.address, settledValueUsdc };
 }
 
+async function ownerSession(privateKey: Hex) {
+  const account = privateKeyToAccount(privateKey);
+  const challengeResponse = await fetch(`${BASE_URL}/api/byoa/management/challenges`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Origin: BASE_URL },
+    body: JSON.stringify({ wallet: account.address }),
+  });
+  assert.equal(challengeResponse.status, 201, "Owner challenge failed");
+  const challenge = (await challengeResponse.json()).challenge as { id: string; message: string };
+  const signature = await account.signMessage({ message: challenge.message });
+  const response = await fetch(`${BASE_URL}/api/byoa/management/session`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Origin: BASE_URL },
+    body: JSON.stringify({ challengeId: challenge.id, message: challenge.message, signature }),
+  });
+  assert.equal(response.status, 200, "Owner session verification failed");
+  const cookie = response.headers.get("set-cookie")?.split(";")[0];
+  assert.ok(cookie?.startsWith("byoa_owner_session="), "Owner session cookie is missing");
+  return cookie;
+}
+
 async function addRealSellerHealthEvidence(agentId: string, sellerWallet: string) {
   const service = await getByoaClient().from("store_services").select("id,public_id").ilike("seller_wallet", sellerWallet).eq("status", "active").limit(1).maybeSingle();
   if (service.error || !service.data) return null;
@@ -208,10 +247,15 @@ async function snapshotWithProof(input: Awaited<ReturnType<typeof registerIdenti
   const explanation = computeAgentReputation(identity, evidence);
   const snapshot = createReputationSnapshot(identity, evidence, explanation);
   await saveReputationSnapshot(snapshot);
-  const proof = await publishReputationSnapshotProofToArc(snapshot, identity.owner, undefined, economic.settledValueUsdc, { buyer: economic.client, seller: economic.provider, source: "erc8183_job", sourceId: economic.jobId });
-  assert.equal(proof.verifiedOnchain, true);
-  assert.ok(proof.transactionHash && /^0x[0-9a-f]{64}$/i.test(proof.transactionHash));
-  return { snapshot, proofTx: proof.transactionHash, sellerHealth };
+  const cookie = await ownerSession(input.privateKey);
+  const proofResponse = await fetch(`${BASE_URL}/api/reputation/v1/agents/${identity.agentId}/proof`, {
+    method: "POST",
+    headers: { Cookie: cookie, Origin: BASE_URL },
+  });
+  const proof = await proofResponse.json().catch(() => ({})) as { arcProofTx?: string; error?: { code?: string } };
+  assert.equal(proofResponse.status, 200, `Server proof publication failed (${proof.error?.code || proofResponse.status})`);
+  assert.ok(proof.arcProofTx && /^0x[0-9a-f]{64}$/i.test(proof.arcProofTx));
+  return { snapshot: { ...snapshot, arcProofTx: proof.arcProofTx }, proofTx: proof.arcProofTx, sellerHealth };
 }
 
 async function main() {

@@ -8,8 +8,9 @@ const files = await Promise.all([
   "sdk/typescript/src/index.ts",
   "app/trust/select/trust-selection-client.tsx",
   "app/trust/selections/[publicId]/page.tsx",
+  "app/api/reputation/v1/agents/[agentId]/proof/route.ts",
 ].map((file) => readFile(new URL(`../${file}`, import.meta.url), "utf8")));
-const [service, proof, manifest, sdk, ui, receipt] = files;
+const [service, proof, manifest, sdk, ui, receipt, reputationProofRoute] = files;
 
 for (const endpoint of ["discoverCounterparties", "selectCounterparty", "getSelection", "getSelectionEvidence", "issueSelectionClearance", "publishSelectionProof"]) {
   assert.match(sdk, new RegExp(`\\b${endpoint}\\b`), `SDK method ${endpoint} is missing`);
@@ -27,4 +28,9 @@ assert.match(ui, /all off by default/i);
 assert.match(ui, /does not execute or pay the winner/i);
 assert.match(receipt, /not a payment, execution, endorsement, or guarantee/i);
 assert.doesNotMatch(receipt, /machineCredentialId|tenantKey|requesterWallet/);
+assert.match(reputationProofRoute, /requireOwnerSession/);
+assert.match(reputationProofRoute, /getCanonicalAgentIdentity/);
+assert.match(reputationProofRoute, /job\.provider\.toLowerCase\(\) === identity\.owner_address\.toLowerCase\(\)/);
+assert.match(reputationProofRoute, /fetchJobSubmittedLogs/);
+assert.doesNotMatch(reputationProofRoute, /request\.json\(\)/, "The proof route must not accept client-derived proof fields");
 console.log("Counterparty selection product contract tests passed.");
