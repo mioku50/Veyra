@@ -336,7 +336,7 @@ async function verifyCanonicalSnapshotProof(
     args: [snapshot.canonicalHash as Hex],
   });
   assert.equal(
-    proof.responseHash.toLowerCase(),
+    proof[5].toLowerCase(),
     snapshot.canonicalHash.toLowerCase(),
     "Snapshot canonical hash differs from Arc proof responseHash",
   );

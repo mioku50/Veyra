@@ -11,7 +11,7 @@ import {
   getArcPublicClient,
   getCanonicalVeyraAgentIdentity,
 } from "../lib/erc8004/client.ts";
-import { fetchOnchainJob } from "../lib/erc8183/client.ts";
+import { fetchJobSubmittedLogs, fetchOnchainJob } from "../lib/erc8183/client.ts";
 import type { Erc8183EvaluationRecord } from "../lib/erc8183/types.ts";
 import { getByoaClient } from "../lib/byoa/service.ts";
 import { proofRegistryAbi } from "../lib/commerce/onchain-proof.ts";
@@ -95,7 +95,17 @@ async function main() {
   assert.equal(job.client.toLowerCase(), evaluation.client_wallet.toLowerCase(), "Evaluation client differs from job client");
   assert.equal(job.provider.toLowerCase(), evaluation.provider_wallet.toLowerCase(), "Evaluation provider differs from job provider");
   assert.equal(job.evaluator.toLowerCase(), EVALUATOR_ADDRESS.toLowerCase(), "Job uses another evaluator");
-  assert.equal(job.deliverableHash?.toLowerCase(), evaluation.deliverable_hash.toLowerCase());
+  const submittedLogs = await fetchJobSubmittedLogs(
+    COMMERCE_ADDRESS,
+    BigInt(evaluation.job_id),
+    publicClient,
+  );
+  assert.equal(submittedLogs.length, 1, "Exactly one canonical JobSubmitted log is required");
+  assert.equal(
+    submittedLogs[0].deliverableHash.toLowerCase(),
+    evaluation.deliverable_hash.toLowerCase(),
+    "Evaluation deliverable differs from the canonical JobSubmitted event",
+  );
 
   const actualSettledValueUsdc = deriveSettledErc8183ValueUsdc({
     job,
