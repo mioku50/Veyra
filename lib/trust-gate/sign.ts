@@ -35,6 +35,9 @@ export function buildClearanceMessage(decision: TrustDecision) {
   if (!decision.request.executor || !isAddress(decision.request.executor)) {
     throw new Error("A valid executor wallet is required for an executable clearance");
   }
+  const actionBinding = decision.request.workflowType?.startsWith("counterparty_selection:")
+    ? `${decision.request.action}|${decision.request.workflowType}`
+    : decision.request.action;
   return {
     decisionId: keccak256(toBytes(decision.decisionId)),
     subject: decision.subject.wallet as `0x${string}`,
@@ -43,7 +46,7 @@ export function buildClearanceMessage(decision: TrustDecision) {
       decision.request.counterparty && isAddress(decision.request.counterparty)
         ? (decision.request.counterparty as `0x${string}`)
         : zeroAddress,
-    actionHash: keccak256(toBytes(decision.request.action)),
+    actionHash: keccak256(toBytes(actionBinding)),
     requestedAmount: BigInt(Math.round(decision.request.requestedValueUsdc * 1_000_000)),
     maxAmount: BigInt(Math.round(decision.policy.maxValueUsdc * 1_000_000)),
     snapshotHash: (decision.trust.snapshotHash as Hex) || keccak256(toBytes("")),

@@ -1,0 +1,8 @@
+{
+  "name": "Veyra Reference Seller Counterparty",
+  "description": "Arc Testnet provider identity used for real ERC-8183 delivery and seller-service acceptance.",
+  "network": "eip155:5042002",
+  "identityStandard": "ERC-8004",
+  "capabilities": ["erc8183_delivery", "project_update_intelligence"],
+  "selectionPolicy": "Evidence and TrustGate eligibility are evaluated by Veyra; this metadata is not a trust score or endorsement."
+}

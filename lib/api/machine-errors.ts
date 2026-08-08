@@ -91,7 +91,14 @@ export type MachineErrorCode =
   | "project_quote_sponsorship_lookup_unavailable"
   | "project_quote_quote_persistence_unavailable"
   | "project_quote_integrity_failed"
-  | "project_selection_integrity_failed";
+  | "project_selection_integrity_failed"
+  | "counterparty_selection_not_found"
+  | "counterparty_selection_expired"
+  | "counterparty_candidate_invalid"
+  | "counterparty_no_eligible_candidate"
+  | "counterparty_registry_unavailable"
+  | "counterparty_clearance_unavailable"
+  | "counterparty_proof_unavailable";
 
 export interface MachineErrorResponseBody {
   error: {

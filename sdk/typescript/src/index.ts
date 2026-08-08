@@ -641,6 +641,82 @@ export type AgentCommerceClientOptions = {
   timeoutMs?: number;
 };
 
+export type CounterpartyCandidateInput = {
+  agentId?: string;
+  wallet?: string;
+  serviceId?: string;
+};
+
+export type CounterpartyDiscovery = {
+  capability: string;
+  network: "eip155:5042002";
+  readOnly: true;
+  paymentCreated: false;
+  jobCreated: false;
+  candidates: Array<{
+    agentId: string;
+    ownerAddress: string;
+    registryAddress: string;
+    metadataUri: string;
+    verifiedOnchain: true;
+    source: string;
+    services: Array<{
+      serviceId: string;
+      workflowType: string;
+      category: string;
+      advertisedPriceUsdc: number;
+      priceKind: "advertised";
+      capabilityMatch: "exact" | "related" | "generic" | "none";
+    }>;
+  }>;
+};
+
+export type CounterpartySelection = {
+  selectionId: string;
+  publicId: string;
+  capability: string;
+  taskHash: string;
+  requestedBudgetUsdc: number;
+  network: "eip155:5042002";
+  policyVersion: string;
+  rankingVersion: "veyra-counterparty-selection-v1";
+  recommendedAgentId: string;
+  recommendedWallet: string;
+  recommendedServiceId?: string;
+  decision: "ALLOW" | "ALLOW_WITH_LIMITS" | "REQUIRE_EVALUATOR";
+  recommendedMaxExposureUsdc: number;
+  trustScore: number;
+  rankingScore: number;
+  confidence: number;
+  winnerExplanation: string;
+  candidates: Array<Record<string, unknown>>;
+  canonicalHash: string;
+  createdAt: string;
+  expiresAt: string;
+  visibility: "private" | "public";
+  publicUrl?: string;
+  proof?: {
+    proofTx: string;
+    blockNumber: number;
+    proofStatus: "verified";
+    evidenceSource: "erc8183_job";
+    evidenceSourceId: string;
+    evidenceAmountUsdc: number;
+    evidenceTx: string;
+  };
+};
+
+export type CounterpartyClearance = {
+  clearanceId: string;
+  decisionId: string;
+  clearanceDigest: string;
+  selectionHash: string;
+  clearance: Record<string, string>;
+  signature: string;
+  issuedAt: string;
+  expiresAt: string;
+};
+
 export type WaitForRunOptions = {
   timeoutMs?: number;
   signal?: AbortSignal;
@@ -786,6 +862,101 @@ export class AgentCommerceClient {
       options,
     );
     return response.workflows;
+  }
+
+  /** Read-only discovery. This method never creates a payment, job, or proof. */
+  async discoverCandidates(
+    input: { capability: string; network?: "eip155:5042002"; maxPriceUsdc?: number; limit?: number },
+    options: { signal?: AbortSignal } = {},
+  ) {
+    return this.request<CounterpartyDiscovery>(
+      "/api/trust/v1/counterparties/discover",
+      { method: "POST", body: JSON.stringify(input) },
+      options,
+    );
+  }
+
+  async discoverCounterparties(
+    input: { capability: string; network?: "eip155:5042002"; maxPriceUsdc?: number; limit?: number },
+    options: { signal?: AbortSignal } = {},
+  ) {
+    return this.discoverCandidates(input, options);
+  }
+
+  /** Produces an immutable decision receipt. It does not execute or charge the winner. */
+  async selectCounterparty(
+    input: {
+      capability: string;
+      task?: string;
+      budgetUsdc: number;
+      candidates: CounterpartyCandidateInput[];
+      network?: "eip155:5042002";
+      requireExactCapability?: boolean;
+      visibility?: "private" | "public";
+    },
+    options: { idempotencyKey?: string; signal?: AbortSignal } = {},
+  ) {
+    return this.request<{
+      selection: CounterpartySelection;
+      replayed: boolean;
+      paymentCreated: false;
+      jobCreated: false;
+      proofPublished: boolean;
+    }>(
+      "/api/trust/v1/counterparties/select",
+      { method: "POST", body: JSON.stringify(input) },
+      {
+        idempotencyKey: options.idempotencyKey ?? createIdempotencyKey("counterparty-selection"),
+        signal: options.signal,
+      },
+    );
+  }
+
+  async getSelection(selectionId: string, options: { signal?: AbortSignal } = {}) {
+    return this.request<{ selection: CounterpartySelection }>(
+      `/api/trust/v1/selections/${encodeURIComponent(selectionId)}`,
+      { method: "GET" },
+      options,
+    );
+  }
+
+  async getEvidence(selectionId: string, options: { signal?: AbortSignal } = {}) {
+    return this.request<Record<string, unknown>>(
+      `/api/trust/v1/selections/${encodeURIComponent(selectionId)}/evidence`,
+      { method: "GET" },
+      options,
+    );
+  }
+
+  async getSelectionEvidence(selectionId: string, options: { signal?: AbortSignal } = {}) {
+    return this.getEvidence(selectionId, options);
+  }
+
+  async issueClearance(selectionId: string, options: { signal?: AbortSignal } = {}) {
+    return this.request<{ clearance: CounterpartyClearance; replayed: boolean; onchainVerified: true }>(
+      `/api/trust/v1/selections/${encodeURIComponent(selectionId)}/clearance`,
+      { method: "POST" },
+      options,
+    );
+  }
+
+  async issueSelectionClearance(selectionId: string, options: { signal?: AbortSignal } = {}) {
+    return this.issueClearance(selectionId, options);
+  }
+
+  /** Explicit opt-in Arc publication; no workflow payment or provider execution is created. */
+  async publishSelectionProof(selectionId: string, options: { signal?: AbortSignal } = {}) {
+    return this.request<{
+      proof: NonNullable<CounterpartySelection["proof"]>;
+      replayed: boolean;
+      chargedUsdc: 0;
+      jobCreated: false;
+      evidenceReused: true;
+    }>(
+      `/api/trust/v1/selections/${encodeURIComponent(selectionId)}/proof`,
+      { method: "POST" },
+      options,
+    );
   }
 
   /**
@@ -1368,4 +1539,11 @@ export class AgentCommerceClient {
       options,
     );
   }
+}
+
+/** Named facade used by agent examples and integrations. */
+export class VeyraTrustSdk extends AgentCommerceClient {}
+
+export function veyraTrustSdk(options: AgentCommerceClientOptions) {
+  return new VeyraTrustSdk(options);
 }

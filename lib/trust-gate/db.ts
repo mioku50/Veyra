@@ -1,7 +1,7 @@
 import { getByoaClient } from "../byoa/service.ts";
 import type { TrustDecision } from "./types.ts";
 
-type TrustDecisionRow = {
+export type TrustDecisionRow = {
   decision_id: string;
   subject_agent_id: string;
   subject_wallet: string | null;
@@ -29,7 +29,7 @@ type TrustDecisionRow = {
   expires_at: string;
 };
 
-function toRow(decision: TrustDecision): TrustDecisionRow {
+export function trustDecisionToRow(decision: TrustDecision): TrustDecisionRow {
   const counterparty = decision.request.counterparty;
   const counterpartyIsWallet = Boolean(counterparty && /^0x[0-9a-f]{40}$/i.test(counterparty));
   return {
@@ -102,7 +102,7 @@ export async function saveTrustDecision(decision: TrustDecision) {
   const supabase = getByoaClient();
   const { data, error } = await supabase
     .from("trust_decisions")
-    .insert(toRow(decision))
+    .insert(trustDecisionToRow(decision))
     .select("*")
     .single();
   if (error || !data) {

@@ -1083,6 +1083,12 @@ export function byoaManifest(
       execute: `${baseUrl}/api/byoa/v1/quotes/{quoteId}/execute`,
       results: `${baseUrl}/api/byoa/v1/results/{jobId}`,
       passport: `${baseUrl}/api/byoa/agents/{publicId}/passport`,
+      discoverCounterparties: `${baseUrl}/api/trust/v1/counterparties/discover`,
+      selectCounterparty: `${baseUrl}/api/trust/v1/counterparties/select`,
+      getCounterpartySelection: `${baseUrl}/api/trust/v1/selections/{selectionId}`,
+      getCounterpartyEvidence: `${baseUrl}/api/trust/v1/selections/{selectionId}/evidence`,
+      issueCounterpartyClearance: `${baseUrl}/api/trust/v1/selections/{selectionId}/clearance`,
+      publishCounterpartySelectionProof: `${baseUrl}/api/trust/v1/selections/{selectionId}/proof`,
     },
     sellerWorkflows,
     standards: {
@@ -1106,6 +1112,28 @@ export function byoaManifest(
         get: `${baseUrl}/api/trust/v1/decisions/{decisionId}`,
         verify: `${baseUrl}/api/trust/v1/verify`,
         limits: `${baseUrl}/api/trust/v1/agents/{agentId}/limits`
+      },
+      counterparty_selection: {
+        supported: true,
+        engine: "veyra-counterparty-selection-v1",
+        network: "eip155:5042002",
+        chainId: 5042002,
+        identityStandard: "ERC-8004",
+        erc8183EvidenceSupported: true,
+        x402EvidenceSupported: true,
+        trustGateAddress: process.env.VEYRA_TRUST_GATE_ADDRESS || null,
+        selectionCreatesPayment: false,
+        selectionCreatesJob: false,
+        proofPublication: "explicit_only",
+        clearance: "winner_bound_eip712",
+        endpoints: {
+          discover: `${baseUrl}/api/trust/v1/counterparties/discover`,
+          select: `${baseUrl}/api/trust/v1/counterparties/select`,
+          getSelection: `${baseUrl}/api/trust/v1/selections/{selectionId}`,
+          getEvidence: `${baseUrl}/api/trust/v1/selections/{selectionId}/evidence`,
+          issueClearance: `${baseUrl}/api/trust/v1/selections/{selectionId}/clearance`,
+          publishProof: `${baseUrl}/api/trust/v1/selections/{selectionId}/proof`,
+        },
       }
     },
     erc8004Identity: {
@@ -1151,6 +1179,21 @@ export function byoaManifest(
         getEvidence: `${baseUrl}/api/reputation/v1/agents/{agentId}/evidence`,
       },
     },
-    scopes: ["manifest:read", "quotes:create", "workflows:execute", "results:read"],
+    counterpartySelection: {
+      capabilities: ["counterparty_discovery", "counterparty_selection", "trust_clearance"],
+      rankingVersion: "veyra-counterparty-selection-v1",
+      network: "Arc Testnet",
+      chainId: 5042002,
+      erc8004: true,
+      erc8183Evidence: true,
+      x402Evidence: true,
+      trustGateAddress: process.env.VEYRA_TRUST_GATE_ADDRESS || null,
+      paymentOnSelection: false,
+      jobOnSelection: false,
+    },
+    scopes: [
+      "manifest:read", "workflows:read", "quotes:create", "workflows:execute",
+      "runs:create", "results:read",
+    ],
   };
 }

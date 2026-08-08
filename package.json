@@ -121,7 +121,16 @@
     "trust-gate:real-data-regression": "node --experimental-transform-types --no-warnings --env-file-if-exists=.env.local scripts/trust-gate-real-data-regression.mts",
     "trust-gate:live-acceptance": "node --experimental-transform-types --no-warnings --env-file-if-exists=.env.local scripts/trust-gate-live-acceptance.mts",
     "p544:production-migrate": "node --experimental-transform-types --no-warnings --env-file-if-exists=.env.local scripts/apply-p544-production-migration.mts",
-    "p544:production-verify": "node --experimental-transform-types --no-warnings --env-file-if-exists=.env.local scripts/verify-production-p544-schema.mts"
+    "p544:production-verify": "node --experimental-transform-types --no-warnings --env-file-if-exists=.env.local scripts/verify-production-p544-schema.mts",
+    "counterparty:test": "node --experimental-transform-types --no-warnings scripts/counterparty-tests.mts",
+    "counterparty:product-test": "node --experimental-transform-types --no-warnings scripts/counterparty-product-tests.mts",
+    "counterparty:negative-test": "node --experimental-transform-types --no-warnings scripts/counterparty-negative-tests.mts",
+    "counterparty:live": "node --experimental-transform-types --no-warnings --env-file-if-exists=.env.local scripts/counterparty-live-acceptance.mts",
+    "counterparty:live-acceptance": "node --experimental-transform-types --no-warnings --env-file-if-exists=.env.local scripts/counterparty-live-acceptance.mts",
+    "counterparty:example": "node --experimental-transform-types --no-warnings --env-file-if-exists=.env.local examples/agent-to-agent-selection.ts",
+    "counterparty:production-migrate": "node --experimental-transform-types --no-warnings --env-file-if-exists=.env.local scripts/apply-p55-production-migration.mts",
+    "counterparty:production-verify": "node --experimental-transform-types --no-warnings --env-file-if-exists=.env.local scripts/verify-production-p55-schema.mts",
+    "counterparty:bootstrap": "node --experimental-transform-types --no-warnings --env-file-if-exists=.env.local scripts/bootstrap-p55-counterparties.mts"
   },
   "dependencies": {
     "@circle-fin/adapter-viem-v2": "^1.14.0",
