@@ -86,7 +86,9 @@ const highRawDenied = fixture({
 const eligible = fixture({ identity: { ...fixture().identity, agentId: "100", ownerAddress: "0x0000000000000000000000000000000000000100" } });
 const ranked = rankCounterparties([highRawDenied, eligible]);
 assert.equal(ranked.winner?.identity.agentId, "100", "A policy-ineligible candidate must never win");
+assert.equal(ranked.winner?.rank, 1, "Eligibility must be applied before assigning final rank");
 assert.equal(ranked.ranked.find((item) => item.identity.agentId === "999")?.eligibility, "INELIGIBLE");
+assert.equal(ranked.ranked.find((item) => item.identity.agentId === "999")?.rank, 2);
 
 const missing = fixture();
 missing.evidence = { ...missing.evidence, evidenceCounts: { total: 0, execution: 0, evaluator: 0, economic: 0, serviceQuality: 0, independentCounterparties: 0 } };

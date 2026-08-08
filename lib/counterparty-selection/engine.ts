@@ -192,6 +192,9 @@ export function rankCounterpartyCandidate(input: CandidateRankingInput): RankedC
 
 export function rankCounterparties(inputs: CandidateRankingInput[]) {
   const ranked = inputs.map(rankCounterpartyCandidate).sort((left, right) => {
+    const leftExecutable = ["ELIGIBLE", "ELIGIBLE_WITH_LIMITS", "REQUIRES_EVALUATOR"].includes(left.eligibility);
+    const rightExecutable = ["ELIGIBLE", "ELIGIBLE_WITH_LIMITS", "REQUIRES_EVALUATOR"].includes(right.eligibility);
+    if (leftExecutable !== rightExecutable) return rightExecutable ? 1 : -1;
     if (right.rankingScore !== left.rankingScore) return right.rankingScore - left.rankingScore;
     if (right.trustScore !== left.trustScore) return right.trustScore - left.trustScore;
     if (right.confidence !== left.confidence) return right.confidence - left.confidence;

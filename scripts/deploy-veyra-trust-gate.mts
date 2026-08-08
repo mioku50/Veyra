@@ -33,7 +33,7 @@ async function main() {
   assert.ok(bytecode && bytecode !== "0x", "Compiled VeyraTrustGate bytecode is missing; run forge build first");
   assert.ok(Array.isArray(artifact.abi), "Compiled VeyraTrustGate ABI is missing");
 
-  const rpcUrl = process.env.ARC_TESTNET_RPC_URL || "https://rpc.testnet.arc.network";
+  const rpcUrl = process.env.ARC_TESTNET_RPC_URL || "https://rpc.testnet.arc.io";
   const publicClient = getArcPublicClient(rpcUrl);
   assert.equal(await publicClient.getChainId(), arcTestnet.id, "Deployment RPC is not Arc Testnet");
   assert.ok((await publicClient.getBalance({ address: deployer.address })) > 0n, "Trust Gate deployer has no Arc Testnet gas balance");
@@ -42,6 +42,10 @@ async function main() {
     abi: artifact.abi,
     bytecode,
     args: [deployer.address, attester.address],
+    // Arc's public estimator currently caps this constructor below its real
+    // requirement. The explicit ceiling avoids a false preflight failure; the
+    // transaction still pays only the gas actually consumed.
+    gas: 2_000_000n,
   });
   const receipt = await publicClient.waitForTransactionReceipt({ hash: txHash, timeout: 60_000 });
   assert.equal(receipt.status, "success", "VeyraTrustGate deployment reverted");

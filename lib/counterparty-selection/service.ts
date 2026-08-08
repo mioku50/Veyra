@@ -747,10 +747,14 @@ export async function selectCounterparty(input: {
 
   const rankedResult = rankCounterparties(rankingInputs);
   const combined: SelectionCandidate[] = [...rankedResult.ranked, ...rejected];
-  combined.sort((left, right) =>
-    right.rankingScore - left.rankingScore
-    || right.trustScore - left.trustScore
-    || (left.identity?.agentId || left.evidenceHash).localeCompare(right.identity?.agentId || right.evidenceHash));
+  combined.sort((left, right) => {
+    const leftExecutable = ["ELIGIBLE", "ELIGIBLE_WITH_LIMITS", "REQUIRES_EVALUATOR"].includes(left.eligibility);
+    const rightExecutable = ["ELIGIBLE", "ELIGIBLE_WITH_LIMITS", "REQUIRES_EVALUATOR"].includes(right.eligibility);
+    if (leftExecutable !== rightExecutable) return rightExecutable ? 1 : -1;
+    return right.rankingScore - left.rankingScore
+      || right.trustScore - left.trustScore
+      || (left.identity?.agentId || left.evidenceHash).localeCompare(right.identity?.agentId || right.evidenceHash);
+  });
   combined.forEach((candidate, index) => { candidate.rank = index + 1; });
   const winner = combined.find((candidate) =>
     candidate.identity
