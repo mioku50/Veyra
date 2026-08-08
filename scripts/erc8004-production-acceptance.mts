@@ -5,6 +5,8 @@
 
 import assert from "node:assert/strict";
 import {
+  BaseError,
+  ContractFunctionRevertedError,
   createWalletClient,
   http,
   isHex,
@@ -118,6 +120,23 @@ async function submitValidationRequest(args: {
   return txHash;
 }
 
+async function fetchValidationStatusIfExists(
+  requestHash: Hex,
+  publicClient: ReturnType<typeof getArcPublicClient>,
+) {
+  try {
+    return await fetchValidationStatusOnchain(requestHash, undefined, publicClient);
+  } catch (error) {
+    if (
+      error instanceof BaseError
+      && error.walk((cause) => cause instanceof ContractFunctionRevertedError)
+    ) {
+      return null;
+    }
+    throw error;
+  }
+}
+
 async function main() {
   assert.notEqual(
     process.env.REPUTATION_ALLOW_MEMORY_STORE,
@@ -178,8 +197,8 @@ async function main() {
   });
 
   let requestTx: Hex | null = null;
-  let status = await fetchValidationStatusOnchain(candidate.requestHash, undefined, publicClient);
-  if (status.validatorAddress === zeroAddress) {
+  let status = await fetchValidationStatusIfExists(candidate.requestHash, publicClient);
+  if (!status || status.validatorAddress === zeroAddress) {
     requestTx = await submitValidationRequest({
       ownerKey,
       validator: relayer.address,
