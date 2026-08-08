@@ -135,25 +135,28 @@ export async function saveReputationSnapshot(snapshot: ReputationSnapshot): Prom
 
   try {
     const supabase = getByoaClient();
-    const { error } = await supabase.from("agent_reputation_snapshots").upsert({
-      snapshot_id: snapshot.snapshotId,
-      agent_id: snapshot.agentId,
-      trust_score: snapshot.trustScore,
-      identity_score: snapshot.dimensions.identity,
-      execution_score: snapshot.dimensions.execution,
-      validation_score: snapshot.dimensions.validation,
-      economic_reliability_score: snapshot.dimensions.economicReliability,
-      service_quality_score: snapshot.dimensions.serviceQuality,
-      reputation_score: snapshot.dimensions.reputation,
-      coverage: snapshot.coverage,
-      confidence: snapshot.confidence,
-      status_label: snapshot.statusLabel,
-      evidence_count: snapshot.evidenceCount,
-      economic_evidence_count: snapshot.economicEvidenceCount,
-      canonical_hash: snapshot.canonicalHash,
-      arc_proof_tx: snapshot.arcProofTx || null,
-      snapshot_payload: snapshot as unknown as Record<string, unknown>,
-    });
+    const { error } = await supabase.from("agent_reputation_snapshots").upsert(
+      {
+        snapshot_id: snapshot.snapshotId,
+        agent_id: snapshot.agentId,
+        trust_score: snapshot.trustScore,
+        identity_score: snapshot.dimensions.identity,
+        execution_score: snapshot.dimensions.execution,
+        validation_score: snapshot.dimensions.validation,
+        economic_reliability_score: snapshot.dimensions.economicReliability,
+        service_quality_score: snapshot.dimensions.serviceQuality,
+        reputation_score: snapshot.dimensions.reputation,
+        coverage: snapshot.coverage,
+        confidence: snapshot.confidence,
+        status_label: snapshot.statusLabel,
+        evidence_count: snapshot.evidenceCount,
+        economic_evidence_count: snapshot.economicEvidenceCount,
+        canonical_hash: snapshot.canonicalHash,
+        arc_proof_tx: snapshot.arcProofTx || null,
+        snapshot_payload: snapshot as unknown as Record<string, unknown>,
+      },
+      { onConflict: "snapshot_id" },
+    );
     if (error) {
       if (!allowMemory) {
         throw new Error(`DB Save Snapshot Failed: ${error.message}`);
