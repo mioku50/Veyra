@@ -67,6 +67,65 @@ const DELIVERABLE_URI =
 const BLOCKED_X402_ENDPOINT =
   process.env.TRUST_GATE_LIVE_X402_ENDPOINT
   || "/api/reference-seller/project-update-intelligence";
+const BASE_URL = (
+  process.env.NEXT_PUBLIC_APP_URL || "https://agent-commerce-six.vercel.app"
+).replace(/\/$/, "");
+
+async function publishCanonicalSnapshotProof(
+  snapshot: ReputationSnapshot,
+  identityOwner: `0x${string}`,
+  settledValueUsdc: number,
+  buyer: `0x${string}`,
+  seller: `0x${string}`,
+  sourceId: string,
+) {
+  const serverSecret = process.env.REPUTATION_PROOF_PUBLISH_SECRET;
+  if (!serverSecret) {
+    return publishReputationSnapshotProofToArc(
+      snapshot,
+      identityOwner,
+      undefined,
+      settledValueUsdc,
+      { buyer, seller, source: "erc8183_job", sourceId },
+    );
+  }
+
+  const response = await fetch(`${BASE_URL}/api/internal/reputation/proofs`, {
+    method: "POST",
+    headers: {
+      authorization: `Bearer ${serverSecret}`,
+      "content-type": "application/json",
+    },
+    body: "{}",
+    signal: AbortSignal.timeout(300_000),
+  });
+  const payload = await response.json() as {
+    snapshotId?: string;
+    canonicalHash?: Hex;
+    arcProofTx?: Hex;
+    blockNumber?: string | number;
+    proofAlreadyRegistered?: boolean;
+    error?: { code?: string; message?: string };
+  };
+  assert.equal(
+    response.status,
+    200,
+    `Server proof publication failed: ${payload.error?.code || "unknown_error"}`,
+  );
+  assert.equal(payload.snapshotId, snapshot.snapshotId, "Server published a different snapshot");
+  assert.equal(
+    payload.canonicalHash?.toLowerCase(),
+    snapshot.canonicalHash.toLowerCase(),
+    "Server published a different canonical hash",
+  );
+  assert.ok(payload.arcProofTx, "Server proof response has no transaction hash");
+  return {
+    verifiedOnchain: true as const,
+    transactionHash: payload.arcProofTx,
+    blockNumber: payload.blockNumber === undefined ? undefined : BigInt(payload.blockNumber),
+    proofAlreadyRegistered: Boolean(payload.proofAlreadyRegistered),
+  };
+}
 
 const trustGateAbi = [
   {
@@ -649,17 +708,13 @@ async function runExecutedPath(input: {
   const explanation = computeAgentReputation(input.identity, updatedEvidence);
   const newSnapshot = createReputationSnapshot(input.identity, updatedEvidence, explanation);
   await saveReputationSnapshot(newSnapshot);
-  const proofResult = await publishReputationSnapshotProofToArc(
+  const proofResult = await publishCanonicalSnapshotProof(
     newSnapshot,
     input.identity.owner,
-    undefined,
     actualSettledValueUsdc,
-    {
-      buyer: buyer.address,
-      seller: provider.address,
-      source: "erc8183_job",
-      sourceId: jobId.toString(),
-    },
+    buyer.address,
+    provider.address,
+    jobId.toString(),
   );
   assert.equal(proofResult.verifiedOnchain, true, "New reputation Arc proof was not verified");
   assert.ok(proofResult.transactionHash, "New reputation Arc proof has no transaction hash");
