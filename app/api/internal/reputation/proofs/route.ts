@@ -7,7 +7,7 @@ import { createHash, timingSafeEqual } from "node:crypto";
 import { NextResponse } from "next/server";
 import { getByoaClient } from "@/lib/byoa/service";
 import { getCanonicalVeyraAgentIdentity, getArcPublicClient } from "@/lib/erc8004/client";
-import { fetchOnchainJob } from "@/lib/erc8183/client";
+import { fetchJobSubmittedLogs, fetchOnchainJob } from "@/lib/erc8183/client";
 import type { Erc8183EvaluationRecord } from "@/lib/erc8183/types";
 import {
   fetchLatestReputationSnapshot,
@@ -109,6 +109,11 @@ export async function POST(request: Request) {
     const receipt = await publicClient.getTransactionReceipt({
       hash: evaluation.settlement_tx_hash as Hex,
     });
+    const submittedLogs = await fetchJobSubmittedLogs(
+      commerce,
+      BigInt(evaluation.job_id),
+      publicClient,
+    );
     const settledValueUsdc = deriveSettledErc8183ValueUsdc({
       job,
       receipt,
@@ -118,7 +123,8 @@ export async function POST(request: Request) {
       job.client.toLowerCase() === evaluation.client_wallet.toLowerCase() &&
       job.provider.toLowerCase() === evaluation.provider_wallet.toLowerCase() &&
       job.evaluator.toLowerCase() === evaluation.evaluator_contract.toLowerCase() &&
-      job.deliverableHash?.toLowerCase() === evaluation.deliverable_hash.toLowerCase() &&
+      submittedLogs.length === 1 &&
+      submittedLogs[0].deliverableHash.toLowerCase() === evaluation.deliverable_hash.toLowerCase() &&
       Math.abs(settledValueUsdc - Number(economicEvidence.economicValueUsdc)) < 0.000001;
     if (!exactBinding) {
       return publicError("economic_evidence_mismatch", "Economic evidence could not be verified.", 409);
