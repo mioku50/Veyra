@@ -260,7 +260,7 @@ async function verifyProof(snapshot: { canonicalHash: string; arcProofTx?: strin
   assert.equal((await publicClient.getTransactionReceipt({ hash: snapshot.arcProofTx as Hex })).status, "success");
   assert.equal(await publicClient.readContract({ address: PROOF_REGISTRY, abi: proofRegistryAbi, functionName: "isRegistered", args: [snapshot.canonicalHash as Hex] }), true);
   const proof = await publicClient.readContract({ address: PROOF_REGISTRY, abi: proofRegistryAbi, functionName: "getProof", args: [snapshot.canonicalHash as Hex] });
-  assert.equal(proof.responseHash.toLowerCase(), snapshot.canonicalHash.toLowerCase());
+  assert.equal(proof[5].toLowerCase(), snapshot.canonicalHash.toLowerCase());
 }
 
 async function main() {
