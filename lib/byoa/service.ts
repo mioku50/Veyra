@@ -1048,7 +1048,11 @@ export async function isByoaHostedJob(jobId: string) {
   return Boolean((data as { byoa_agent_id?: string | null } | null)?.byoa_agent_id);
 }
 
-export function byoaManifest(baseUrl: string, sellerWorkflows: unknown[] = []) {
+export function byoaManifest(
+  baseUrl: string,
+  sellerWorkflows: unknown[] = [],
+  verifiedErc8004AgentId: string | null = null,
+) {
   const config = getByoaConfig();
   return {
     name: `${BRAND.name} Bring Your Own Agent`,
@@ -1084,7 +1088,8 @@ export function byoaManifest(baseUrl: string, sellerWorkflows: unknown[] = []) {
     standards: {
       erc8004: {
         supported: true,
-        agentId: process.env.ERC8004_VEYRA_AGENT_ID || process.env.NEXT_PUBLIC_ERC8004_VEYRA_AGENT_ID || null,
+        agentId: verifiedErc8004AgentId,
+        verifiedOnchain: Boolean(verifiedErc8004AgentId),
         identityRegistry: "0x8004A818BFB912233c491871b3d84c89A494BD9e",
         reputationRegistry: "0x8004B663056A597Dffe9eCcC1965A193B7388713",
         validationRegistry: "0x8004Cb1BF31DAf7788923b405b754f57acEB4272",
@@ -1108,7 +1113,8 @@ export function byoaManifest(baseUrl: string, sellerWorkflows: unknown[] = []) {
       standard: "ERC-8004",
       network: "Arc Testnet",
       chainId: 5042002,
-      agentId: process.env.ERC8004_VEYRA_AGENT_ID || process.env.NEXT_PUBLIC_ERC8004_VEYRA_AGENT_ID || null,
+      agentId: verifiedErc8004AgentId,
+      verifiedOnchain: Boolean(verifiedErc8004AgentId),
       identityRegistry: "0x8004A818BFB912233c491871b3d84c89A494BD9e",
       reputationRegistry: "0x8004B663056A597Dffe9eCcC1965A193B7388713",
       validationRegistry: "0x8004Cb1BF31DAf7788923b405b754f57acEB4272",

@@ -5,6 +5,7 @@
 
 import React from "react";
 import Link from "next/link";
+import { notFound } from "next/navigation";
 import {
   ShieldCheck,
   CheckCircle2,
@@ -22,22 +23,23 @@ import {
 import { getArcPublicClient, getCanonicalVeyraAgentIdentity } from "@/lib/erc8004/client.ts";
 import { fetchLatestReputationSnapshot, fetchReputationEvidenceForAgent, fetchReputationSnapshotHistory } from "@/lib/reputation/db.ts";
 import { computeAgentReputation, createReputationSnapshot, sanitizeEvidenceForPublic } from "@/lib/reputation/engine.ts";
-import { ARC_ERC8004_IDENTITY_REGISTRY, ARC_ERC8004_VALIDATION_REGISTRY } from "@/lib/erc8004/types.ts";
 
+export const dynamic = "force-dynamic";
 export const revalidate = 30;
 
-export default async function PublicAgentReputationPage(context: { params: Promise<{ agentId: string }> }) {
-  const { agentId } = await context.params;
+export default async function PublicAgentReputationPage() {
   const publicClient = getArcPublicClient();
   const canonicalIdentity = await getCanonicalVeyraAgentIdentity(publicClient);
+  if (!canonicalIdentity) notFound();
+  const agentId = canonicalIdentity.agent_id;
 
   const identity = {
     agentId,
     chainId: 5042002 as const,
-    identityRegistry: canonicalIdentity?.registry_address || ARC_ERC8004_IDENTITY_REGISTRY,
-    owner: canonicalIdentity?.owner_address || process.env.VEYRA_EVALUATOR_ATTESTER_ADDRESS || "0x0d2c04580e081e222bbe5bf9818af337e2633eb7",
-    metadataUri: canonicalIdentity?.metadata_uri || "https://agent-commerce-six.vercel.app/.well-known/veyra-agent.json",
-    verifiedOnchain: Boolean(canonicalIdentity?.agent_id),
+    identityRegistry: canonicalIdentity.registry_address,
+    owner: canonicalIdentity.owner_address,
+    metadataUri: canonicalIdentity.metadata_uri,
+    verifiedOnchain: true,
   };
 
   const evidenceList = await fetchReputationEvidenceForAgent(agentId);

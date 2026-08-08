@@ -4,7 +4,9 @@
  */
 
 import { NextResponse } from "next/server";
+import { getCanonicalVeyraAgentIdentity } from "@/lib/erc8004/client";
 
+export const dynamic = "force-dynamic";
 export const revalidate = 3600;
 
 export async function GET() {
@@ -13,6 +15,13 @@ export async function GET() {
     process.env.NEXT_PUBLIC_VEYRA_ERC8183_EVALUATOR_ADDRESS || "0x0d2c04580e081e222bbe5bf9818af337e2633eb7";
   const commerceAddress =
     process.env.NEXT_PUBLIC_ARC_ERC8183_COMMERCE_ADDRESS || "0x0747EEf0706327138c69792bF28Cd525089e4583";
+  const identity = await getCanonicalVeyraAgentIdentity();
+  if (!identity) {
+    return NextResponse.json(
+      { error: { code: "identity_not_found", message: "Canonical Veyra identity was not found." } },
+      { status: 503 }
+    );
+  }
 
   const metadata = {
     name: "Veyra Trust Evaluator",
@@ -22,7 +31,9 @@ export async function GET() {
     chainId: 5042002,
     identity: {
       standard: "ERC-8004",
-      registry: "0x8004A818BFB912233c491871b3d84c89A494BD9e",
+      agentId: identity.agent_id,
+      ownerAddress: identity.owner_address,
+      registry: identity.registry_address,
       reputationRegistry: "0x8004B663056A597Dffe9eCcC1965A193B7388713",
       validationRegistry: "0x8004Cb1BF31DAf7788923b405b754f57acEB4272",
     },

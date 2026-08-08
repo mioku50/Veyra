@@ -1,4 +1,4 @@
-import { hashTypedData, toBytes, keccak256, type Hex, zeroAddress } from "viem";
+import { hashTypedData, isAddress, toBytes, keccak256, type Hex, zeroAddress } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import type { TrustDecision } from "./types.ts";
 
@@ -6,6 +6,7 @@ export const EIP712_CLEARANCE_TYPES = {
   TrustClearance: [
     { name: "decisionId", type: "bytes32" },
     { name: "subject", type: "address" },
+    { name: "executor", type: "address" },
     { name: "counterparty", type: "address" },
     { name: "actionHash", type: "bytes32" },
     { name: "requestedAmount", type: "uint256" },
@@ -28,10 +29,20 @@ export function getTrustGateEip712Domain(chainId: number, verifyingContract: `0x
 }
 
 export function buildClearanceMessage(decision: TrustDecision) {
+  if (!decision.subject.wallet || !isAddress(decision.subject.wallet)) {
+    throw new Error("Canonical subject wallet is required for an executable clearance");
+  }
+  if (!decision.request.executor || !isAddress(decision.request.executor)) {
+    throw new Error("A valid executor wallet is required for an executable clearance");
+  }
   return {
     decisionId: keccak256(toBytes(decision.decisionId)),
-    subject: (decision.subject.wallet as `0x${string}`) || zeroAddress,
-    counterparty: (decision.request.counterparty as `0x${string}`) || zeroAddress,
+    subject: decision.subject.wallet as `0x${string}`,
+    executor: decision.request.executor as `0x${string}`,
+    counterparty:
+      decision.request.counterparty && isAddress(decision.request.counterparty)
+        ? (decision.request.counterparty as `0x${string}`)
+        : zeroAddress,
     actionHash: keccak256(toBytes(decision.request.action)),
     requestedAmount: BigInt(Math.round(decision.request.requestedValueUsdc * 1_000_000)),
     maxAmount: BigInt(Math.round(decision.policy.maxValueUsdc * 1_000_000)),

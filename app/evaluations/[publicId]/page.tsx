@@ -24,11 +24,16 @@ export default async function PublicEvaluationReportPage({
   }
 
   const supabase = getByoaClient();
-  const { data: record } = await supabase
+  const { data: record, error } = await supabase
     .from("erc8183_evaluations")
-    .select("*")
+    .select("public_id,chain_id,agentic_commerce,job_id,evaluator_contract,deliverable_hash,policy_id,decision,status,canonical_report,report_hash,settlement_tx_hash,created_at,evaluated_at,settled_at")
     .eq("public_id", publicId.trim())
+    .in("status", ["completed", "rejected"])
     .maybeSingle();
+
+  if (error) {
+    throw new Error("Public evaluation report is unavailable");
+  }
 
   if (!record) {
     notFound();

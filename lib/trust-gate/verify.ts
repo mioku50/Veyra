@@ -54,6 +54,7 @@ export async function verifyTrustClearanceOnchain(
               components: [
                 { name: "decisionId", type: "bytes32" },
                 { name: "subject", type: "address" },
+                { name: "executor", type: "address" },
                 { name: "counterparty", type: "address" },
                 { name: "actionHash", type: "bytes32" },
                 { name: "requestedAmount", type: "uint256" },

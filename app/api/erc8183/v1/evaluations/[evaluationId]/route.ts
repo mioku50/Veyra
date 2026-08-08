@@ -53,7 +53,6 @@ export async function GET(
     evaluatorContract: evaluation.evaluator_contract,
     status: evaluation.status,
     decision: evaluation.decision,
-    failureCategory: evaluation.failure_category,
     deliverableHash: evaluation.deliverable_hash,
     contentHash: evaluation.content_hash,
     contentUri: evaluation.content_uri,

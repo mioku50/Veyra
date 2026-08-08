@@ -10,6 +10,12 @@ import {
   ARC_ERC8004_REPUTATION_REGISTRY,
   ARC_ERC8004_VALIDATION_REGISTRY,
 } from "../lib/erc8004/types.ts";
+import { recoverAgentIdFromLogs } from "../lib/erc8004/client.ts";
+import {
+  buildCanonicalValidationResponse,
+  deriveValidationRequestHash,
+} from "../lib/erc8004/validation.ts";
+import type { Erc8183EvaluationRecord } from "../lib/erc8183/types.ts";
 
 async function main() {
   console.log("⚡ Running ERC-8004 Identity & Validation Bridge Tests...\n");
@@ -55,6 +61,92 @@ async function main() {
   assert.ok(typeof veyraErc8004Sdk.getValidation === "function", "SDK must export getValidation");
   assert.ok(typeof veyraErc8004Sdk.prepareValidation === "function", "SDK must export prepareValidation");
   console.log("✅ 4. ERC-8004 TypeScript SDK bindings verified");
+
+  // 5. Only a true Transfer(address(0), expectedOwner, tokenId) is a registration.
+  const owner = "0x1111111111111111111111111111111111111111" as const;
+  const mintTx = "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef" as const;
+  const mockClient = {
+    readContract: async (input: { functionName: string }) =>
+      input.functionName === "balanceOf" ? 1n : owner,
+    getBlockNumber: async () => 100n,
+    getLogs: async () => [{
+      address: ARC_ERC8004_IDENTITY_REGISTRY,
+      args: { from: "0x0000000000000000000000000000000000000000", to: owner, tokenId: 42n },
+      transactionHash: mintTx,
+      blockNumber: 100n,
+    }],
+  };
+  const recovered = await recoverAgentIdFromLogs(
+    owner,
+    ARC_ERC8004_IDENTITY_REGISTRY,
+    mockClient as any,
+    { fromBlock: 100n, toBlock: 100n },
+  );
+  assert.deepEqual(recovered, { agentId: "42", transactionHash: mintTx, blockNumber: 100n });
+  const transferOnlyClient = {
+    ...mockClient,
+    getLogs: async () => [{
+      address: ARC_ERC8004_IDENTITY_REGISTRY,
+      args: {
+        from: "0x2222222222222222222222222222222222222222",
+        to: owner,
+        tokenId: 42n,
+      },
+      transactionHash: mintTx,
+      blockNumber: 100n,
+    }],
+  };
+  assert.equal(
+    await recoverAgentIdFromLogs(
+      owner,
+      ARC_ERC8004_IDENTITY_REGISTRY,
+      transferOnlyClient as any,
+      { fromBlock: 100n, toBlock: 100n },
+    ),
+    null,
+    "An arbitrary NFT transfer must not be accepted as identity registration",
+  );
+  console.log("✅ 5. ERC-8004 mint recovery rejects arbitrary inbound transfers");
+
+  // 6. Validation output is derived from one terminal evaluation and its canonical request hash.
+  const evaluation = {
+    public_id: "vev_terminal_1",
+    job_id: "77",
+    deliverable_hash: "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    report_hash: "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    status: "completed",
+    decision: "complete",
+  } as Erc8183EvaluationRecord;
+  const requestHash = deriveValidationRequestHash(evaluation);
+  const canonical = buildCanonicalValidationResponse({
+    evaluation,
+    requestHash,
+    agentId: "42",
+    baseUrl: "https://veyra.example",
+  });
+  assert.equal(canonical.response, 100);
+  assert.equal(canonical.agentId, "42");
+  assert.equal(canonical.evaluationPublicId, evaluation.public_id);
+  assert.equal(canonical.canonicalReportHash, evaluation.report_hash);
+  assert.throws(
+    () => buildCanonicalValidationResponse({
+      evaluation,
+      requestHash: "0xcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      agentId: "42",
+      baseUrl: "https://veyra.example",
+    }),
+    /request_evaluation_hash_mismatch/,
+  );
+  assert.throws(
+    () => buildCanonicalValidationResponse({
+      evaluation: { ...evaluation, status: "completed", decision: "reject" },
+      requestHash,
+      agentId: "42",
+      baseUrl: "https://veyra.example",
+    }),
+    /evaluation_not_terminal_or_inconsistent/,
+  );
+  console.log("✅ 6. Validation verdict/hash/tag are server-derived from exact terminal evidence");
 
   console.log("\n🎉 All ERC-8004 Identity & Validation Bridge tests passed successfully!");
 }

@@ -5,6 +5,7 @@
 
 import React from "react";
 import Link from "next/link";
+import { notFound } from "next/navigation";
 import {
   ShieldCheck,
   CheckCircle2,
@@ -21,38 +22,41 @@ import {
 import { getByoaClient } from "@/lib/byoa/service.ts";
 import { getCanonicalVeyraAgentIdentity, getArcPublicClient } from "@/lib/erc8004/client.ts";
 import {
-  ARC_ERC8004_IDENTITY_REGISTRY,
   ARC_ERC8004_REPUTATION_REGISTRY,
   ARC_ERC8004_VALIDATION_REGISTRY,
 } from "@/lib/erc8004/types.ts";
 
+export const dynamic = "force-dynamic";
 export const revalidate = 30;
 
 export default async function PublicVeyraAgentIdentityPage() {
   const publicClient = getArcPublicClient();
   const identityRecord = await getCanonicalVeyraAgentIdentity(publicClient);
-  const agentId = identityRecord?.agent_id || process.env.ERC8004_VEYRA_AGENT_ID || "unregistered";
-  const identityRegistry = identityRecord?.registry_address || ARC_ERC8004_IDENTITY_REGISTRY;
-  const ownerAddress = identityRecord?.owner_address || process.env.VEYRA_EVALUATOR_ATTESTER_ADDRESS || "0x0d2c04580e081e222bbe5bf9818af337e2633eb7";
-  const metadataUri = identityRecord?.metadata_uri || "https://agent-commerce-six.vercel.app/.well-known/veyra-agent.json";
+  if (!identityRecord) notFound();
+  const agentId = identityRecord.agent_id;
+  const identityRegistry = identityRecord.registry_address;
+  const ownerAddress = identityRecord.owner_address;
+  const metadataUri = identityRecord.metadata_uri;
   const evaluatorAddress = process.env.NEXT_PUBLIC_VEYRA_ERC8183_EVALUATOR_ADDRESS || "0x0d2c04580e081e222bbe5bf9818af337e2633eb7";
 
   let totalValidations = 0;
   let passedValidations = 0;
   let failedValidations = 0;
 
-  try {
-    const supabase = getByoaClient();
-    const { data: valRecords } = await supabase.from("erc8004_validation_links").select("response, status");
-    if (valRecords) {
-      totalValidations = valRecords.length;
-      for (const rec of valRecords) {
-        if (rec.response === 100) passedValidations++;
-        else failedValidations++;
-      }
+  const supabase = getByoaClient();
+  const { data: valRecords, error: validationStatsError } = await supabase
+    .from("erc8004_validation_links")
+    .select("response, status")
+    .eq("status", "confirmed");
+  if (validationStatsError) {
+    throw new Error("ERC-8004 validation statistics are unavailable");
+  }
+  if (valRecords) {
+    totalValidations = valRecords.length;
+    for (const rec of valRecords) {
+      if (rec.response === 100) passedValidations++;
+      else failedValidations++;
     }
-  } catch (err) {
-    console.error("Failed to query validation stats:", err);
   }
 
   return (

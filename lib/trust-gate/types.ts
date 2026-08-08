@@ -20,6 +20,7 @@ export type TrustRiskCode =
 
 export interface TrustDecisionRequest {
   subjectAgentId: string;
+  executorWallet?: string;
   counterpartyAgentId?: string;
   counterpartyWallet?: string;
   action: TrustAction;
@@ -46,6 +47,9 @@ export interface TrustRequestInfo {
   action: TrustAction;
   requestedValueUsdc: number;
   counterparty?: string;
+  executor?: string;
+  serviceId?: string;
+  workflowType?: string;
 }
 
 export interface TrustPolicyInfo {

@@ -25,36 +25,36 @@ export default async function PublicEvaluationsExplorerPage({
   let evaluations: Erc8183EvaluationRecord[] = [];
   let totalCount = 0;
 
-  try {
-    const supabase = getByoaClient();
-    let query = supabase.from("erc8183_evaluations").select("*", { count: "exact" });
+  const supabase = getByoaClient();
+  let query = supabase
+    .from("erc8183_evaluations")
+    .select("public_id,job_id,decision,status,policy_id,report_hash,created_at", { count: "exact" })
+    .in("status", ["completed", "rejected"]);
 
-    if (currentFilter === "completed") {
-      query = query.or("decision.eq.complete,status.eq.completed");
-    } else if (currentFilter === "rejected") {
-      query = query.or("decision.eq.reject,status.eq.rejected");
-    } else if (currentFilter === "retryable") {
-      query = query.eq("status", "retryable");
-    }
+  if (currentFilter === "completed") {
+    query = query.eq("status", "completed").eq("decision", "complete");
+  } else if (currentFilter === "rejected") {
+    query = query.eq("status", "rejected").eq("decision", "reject");
+  }
 
-    if (searchQuery) {
-      query = query.or(
-        `public_id.ilike.%${searchQuery}%,job_id.ilike.%${searchQuery}%,report_hash.ilike.%${searchQuery}%`
-      );
-    }
+  if (searchQuery) {
+    query = query.or(
+      `public_id.ilike.%${searchQuery}%,job_id.ilike.%${searchQuery}%,report_hash.ilike.%${searchQuery}%`
+    );
+  }
 
-    const { data, count } = await query
-      .order("created_at", { ascending: false })
-      .range((page - 1) * limit, page * limit - 1);
+  const { data, count, error } = await query
+    .order("created_at", { ascending: false })
+    .range((page - 1) * limit, page * limit - 1);
 
-    if (data) {
-      evaluations = data as Erc8183EvaluationRecord[];
-    }
-    if (count !== null) {
-      totalCount = count;
-    }
-  } catch (err) {
-    console.error("Failed to fetch evaluations list:", err);
+  if (error) {
+    throw new Error("Public evaluation explorer is unavailable");
+  }
+  if (data) {
+    evaluations = data as Erc8183EvaluationRecord[];
+  }
+  if (count !== null) {
+    totalCount = count;
   }
 
   const totalPages = Math.ceil(totalCount / limit);
@@ -97,7 +97,6 @@ export default async function PublicEvaluationsExplorerPage({
               { id: "all", label: "All Evaluations" },
               { id: "completed", label: "Completed" },
               { id: "rejected", label: "Rejected" },
-              { id: "retryable", label: "Retryable" },
             ].map((tab) => {
               const isActive = currentFilter === tab.id;
               return (

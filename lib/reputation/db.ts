@@ -26,6 +26,7 @@ export async function saveReputationEvidence(evidence: ReputationEvidence): Prom
       list.unshift(evidence);
     }
     memoryEvidenceStore.set(evidence.agentId, list);
+    return true;
   }
 
   try {
@@ -71,6 +72,7 @@ export async function saveReputationEvidence(evidence: ReputationEvidence): Prom
 export async function fetchReputationEvidenceForAgent(agentId: string): Promise<ReputationEvidence[]> {
   const allowMemory = isMemoryStoreAllowed();
   const memList = memoryEvidenceStore.get(agentId) || [];
+  if (allowMemory) return memList;
   try {
     const supabase = getByoaClient();
     const { data, error } = await supabase
@@ -106,15 +108,7 @@ export async function fetchReputationEvidenceForAgent(agentId: string): Promise<
         canonicalHash: row.canonical_hash,
       }));
 
-      if (!allowMemory) {
-        return dbList;
-      }
-
-      const mergedMap = new Map<string, ReputationEvidence>();
-      for (const item of [...dbList, ...memList]) {
-        mergedMap.set(`${item.sourceId}_${item.canonicalHash}`, item);
-      }
-      return Array.from(mergedMap.values());
+      return dbList;
     }
   } catch (err) {
     if (!allowMemory) {
@@ -136,6 +130,7 @@ export async function saveReputationSnapshot(snapshot: ReputationSnapshot): Prom
       list.unshift(snapshot);
     }
     memorySnapshotStore.set(snapshot.agentId, list);
+    return true;
   }
 
   try {
@@ -177,6 +172,7 @@ export async function saveReputationSnapshot(snapshot: ReputationSnapshot): Prom
 export async function fetchLatestReputationSnapshot(agentId: string): Promise<ReputationSnapshot | null> {
   const allowMemory = isMemoryStoreAllowed();
   const memList = memorySnapshotStore.get(agentId) || [];
+  if (allowMemory) return memList[0] || null;
   try {
     const supabase = getByoaClient();
     const { data, error } = await supabase
@@ -207,6 +203,7 @@ export async function fetchLatestReputationSnapshot(agentId: string): Promise<Re
 export async function fetchReputationSnapshotHistory(agentId: string): Promise<ReputationSnapshot[]> {
   const allowMemory = isMemoryStoreAllowed();
   const memList = memorySnapshotStore.get(agentId) || [];
+  if (allowMemory) return memList;
   try {
     const supabase = getByoaClient();
     const { data, error } = await supabase
@@ -224,14 +221,7 @@ export async function fetchReputationSnapshotHistory(agentId: string): Promise<R
 
     if (data && data.length > 0) {
       const dbList = data.map((r) => r.snapshot_payload as unknown as ReputationSnapshot);
-      if (!allowMemory) {
-        return dbList;
-      }
-      const mergedMap = new Map<string, ReputationSnapshot>();
-      for (const item of [...dbList, ...memList]) {
-        mergedMap.set(item.snapshotId, item);
-      }
-      return Array.from(mergedMap.values());
+      return dbList;
     }
   } catch (err) {
     if (!allowMemory) {

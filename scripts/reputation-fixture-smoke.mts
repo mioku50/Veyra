@@ -44,9 +44,10 @@ async function main() {
 
   // [3] Canonical DB & Onchain identity lookup
   const identityRecord = await getCanonicalVeyraAgentIdentity(publicClient);
-  const agentId = identityRecord?.agent_id || process.env.ERC8004_VEYRA_AGENT_ID || "1";
-  const ownerAddress = identityRecord?.owner_address || process.env.VEYRA_EVALUATOR_ATTESTER_ADDRESS || "0x0d2c04580e081e222bbe5bf9818af337e2633eb7";
-  const metadataUri = identityRecord?.metadata_uri || "https://agent-commerce-six.vercel.app/.well-known/veyra-agent.json";
+  assert.ok(identityRecord, "Canonical DB + onchain identity is required even for fixture scoring");
+  const agentId = identityRecord.agent_id;
+  const ownerAddress = identityRecord.owner_address;
+  const metadataUri = identityRecord.metadata_uri;
 
   const canonicalIdentity: CanonicalAgentIdentity = {
     agentId,
@@ -54,7 +55,7 @@ async function main() {
     identityRegistry: ARC_ERC8004_IDENTITY_REGISTRY,
     owner: ownerAddress,
     metadataUri,
-    verifiedOnchain: Boolean(identityRecord?.agent_id),
+    verifiedOnchain: true,
   };
 
   console.log(`✅ [3] Veyra Agent Identity verified, agentId = #${agentId}`);
@@ -76,7 +77,6 @@ async function main() {
     score: deriveReputationScoreFromEvaluation({ status: "completed", decision: "complete" }),
     economicValueUsdc: 15.0,
     clientAddress: "0x3333333333333333333333333333333333333333",
-    arcProofTx: "0x0000000000000000000000000000000000000000000000000000000000000000",
     observedAt: now.toISOString(),
   });
   console.log("✅ [6] Ingested ERC-8183 Job Outcome Evidence");

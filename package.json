@@ -95,6 +95,7 @@
     "reputation:product-test": "node --experimental-transform-types --no-warnings --env-file-if-exists=.env.local scripts/reputation-product-test.mts",
     "reputation:fixture-smoke": "node --experimental-transform-types --no-warnings --env-file-if-exists=.env.local scripts/reputation-fixture-smoke.mts",
     "reputation:live-acceptance": "node --experimental-transform-types --no-warnings --env-file-if-exists=.env.local scripts/reputation-live-acceptance.mts",
+    "reputation:bootstrap": "node --experimental-transform-types --no-warnings --env-file-if-exists=.env.local scripts/bootstrap-initial-reputation.mts",
     "reputation:negative-test": "node --experimental-transform-types --no-warnings --env-file-if-exists=.env.local scripts/reputation-negative-tests.mts",
     "reputation:provenance-regression": "node --experimental-transform-types --no-warnings --env-file-if-exists=.env.local scripts/reputation-provenance-regression.mts",
     "reputation:production-smoke": "npm run reputation:fixture-smoke && npm run reputation:live-acceptance",
@@ -115,9 +116,12 @@
     "trust-gate:test": "node --experimental-transform-types --no-warnings scripts/trust-gate-tests.mts",
     "trust-gate:api-test": "node --experimental-transform-types --no-warnings --env-file-if-exists=.env.local scripts/trust-gate-api-tests.mts",
     "trust-gate:contract-test": "node --experimental-transform-types --no-warnings --env-file-if-exists=.env.local scripts/trust-gate-contract-tests.mts",
+    "trust-gate:deploy": "node --experimental-transform-types --no-warnings --env-file-if-exists=.env.local scripts/deploy-veyra-trust-gate.mts",
     "trust-gate:negative-test": "node --experimental-transform-types --no-warnings --env-file-if-exists=.env.local scripts/trust-gate-negative-tests.mts",
     "trust-gate:real-data-regression": "node --experimental-transform-types --no-warnings --env-file-if-exists=.env.local scripts/trust-gate-real-data-regression.mts",
-    "trust-gate:live-acceptance": "node --experimental-transform-types --no-warnings --env-file-if-exists=.env.local scripts/trust-gate-live-acceptance.mts"
+    "trust-gate:live-acceptance": "node --experimental-transform-types --no-warnings --env-file-if-exists=.env.local scripts/trust-gate-live-acceptance.mts",
+    "p544:production-migrate": "node --experimental-transform-types --no-warnings --env-file-if-exists=.env.local scripts/apply-p544-production-migration.mts",
+    "p544:production-verify": "node --experimental-transform-types --no-warnings --env-file-if-exists=.env.local scripts/verify-production-p544-schema.mts"
   },
   "dependencies": {
     "@circle-fin/adapter-viem-v2": "^1.14.0",

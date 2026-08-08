@@ -3,7 +3,7 @@ import { evaluateTrustDecision } from "@/lib/trust-gate/decision";
 import { signTrustClearance } from "@/lib/trust-gate/sign";
 import type { TrustDecisionRequest } from "@/lib/trust-gate/types";
 import { isExecutableTrustDecision } from "@/lib/trust-gate/types";
-import { trustDecisionsCache } from "../store";
+import { saveTrustDecision } from "@/lib/trust-gate/db";
 
 export async function POST(request: NextRequest) {
   try {
@@ -24,13 +24,20 @@ export async function POST(request: NextRequest) {
 
     const decisionRequest = body as TrustDecisionRequest;
     const decision = await evaluateTrustDecision(decisionRequest);
-    trustDecisionsCache.set(decision.decisionId, decision);
 
     let clearanceMessage;
     let signature;
 
     if (isExecutableTrustDecision(decision.decision)) {
-      const privateKey = process.env.VEYRA_TRUST_ATTESTER_PRIVATE_KEY || process.env.VEYRA_ATTESTER_PRIVATE_KEY;
+      if (!body.executorWallet) {
+        return NextResponse.json(
+          { error: "A valid executorWallet is required for an executable clearance." },
+          { status: 400 }
+        );
+      }
+      const privateKey =
+        process.env.VEYRA_TRUST_ATTESTER_PRIVATE_KEY ||
+        process.env.ERC8183_EVALUATOR_ATTESTER_PRIVATE_KEY;
       const chainId = 5042002;
       const contractAddr = process.env.VEYRA_TRUST_GATE_ADDRESS;
 
@@ -50,12 +57,21 @@ export async function POST(request: NextRequest) {
       signature = signed.signature;
     }
 
+    await saveTrustDecision(decision);
+
     return NextResponse.json({
       decision,
       clearance: clearanceMessage,
       signature
     });
-  } catch {
-    return NextResponse.json({ error: "Trust decision evaluation failed." }, { status: 500 });
+  } catch (error) {
+    const unavailable =
+      error instanceof Error &&
+      (error.message.includes("storage_unavailable") ||
+        error.message.includes("identity storage unavailable"));
+    return NextResponse.json(
+      { error: unavailable ? "Trust decision storage is unavailable." : "Trust decision evaluation failed." },
+      { status: unavailable ? 503 : 500 }
+    );
   }
 }

@@ -35,6 +35,7 @@ const createMockSnapshot = (overrides: Partial<ReputationSnapshot>): ReputationS
 const createMockRequest = (overrides: Partial<TrustDecisionRequest>): TrustDecisionRequest => {
   return {
     subjectAgentId: "agent_1",
+    executorWallet: "0x1111111111111111111111111111111111111111",
     action: "erc8183_job",
     requestedValueUsdc: 10,
     ...overrides,

@@ -18,7 +18,10 @@ const arcTestnet = {
 };
 
 const trustGateAddress = process.env.VEYRA_TRUST_GATE_ADDRESS as Hex;
-const attesterPk = process.env.CANARY_DEPLOYER_PRIVATE_KEY as Hex || process.env.VEYRA_TRUST_ATTESTER_PRIVATE_KEY as Hex;
+const attesterPk = (
+  process.env.VEYRA_TRUST_ATTESTER_PRIVATE_KEY
+  || process.env.ERC8183_EVALUATOR_ATTESTER_PRIVATE_KEY
+) as Hex;
 
 if (!trustGateAddress || !attesterPk) {
   throw new Error("Missing VEYRA_TRUST_GATE_ADDRESS or attester private key env var");
@@ -31,6 +34,7 @@ const abi = [
         components: [
           { name: "decisionId", type: "bytes32" },
           { name: "subject", type: "address" },
+          { name: "executor", type: "address" },
           { name: "counterparty", type: "address" },
           { name: "actionHash", type: "bytes32" },
           { name: "requestedAmount", type: "uint256" },
@@ -106,6 +110,7 @@ async function runNegativeTests() {
       action: "test_action",
       requestedValueUsdc: reqAmount,
       counterpartyWallet: "0x2222222222222222222222222222222222222222",
+      executorWallet: account.address,
     }, snapshot);
     const { signature, clearanceMessage } = await signTrustClearance(
       decision,
@@ -117,13 +122,13 @@ async function runNegativeTests() {
   };
 
   // Test 1: Expired clearance -> verifyClearance returns false
-  console.log("⚡ [1/17] Testing Expired Clearance...");
+  console.log("⚡ [1/18] Testing Expired Clearance...");
   const { clearanceMessage: msg1, signature: sig1 } = await getValidClearance(baseSnapshot);
   msg1.expiresAt = BigInt(Math.floor(Date.now() / 1000) - 1000); // expire in past
   const res1 = await verifyTrustClearanceOffchain(msg1, sig1, domain);
   assert.equal(res1.valid, false);
   assert.equal(res1.reason, "Expired");
-  console.log("✅ [1/17] PASSED");
+  console.log("✅ [1/18] PASSED");
 
   // Test 2: Modified amount -> signature invalid
   console.log("⚡ [2/17] Testing Modified Amount...");
@@ -282,6 +287,7 @@ async function runNegativeTests() {
     action: "test_replay",
     requestedValueUsdc: 0,
     counterpartyWallet: "0x2222222222222222222222222222222222222222",
+    executorWallet: account.address,
   }, baseSnapshot);
   dec13.decisionId = `test_replay_${Date.now()}`;
   const { clearanceMessage: msg13b, signature: sig13b } = await signTrustClearance(dec13, 5042002, trustGateAddress, attesterPk);
@@ -344,7 +350,25 @@ async function runNegativeTests() {
   assert.equal(res17.valid, false);
   console.log("✅ [17/17] PASSED");
 
-  console.log("\n🎉 ALL 17 TRUST GATE NEGATIVE ACCEPTANCE TESTS PASSED SUCCESSFULLY!");
+  // Test 18: unrelated caller cannot consume a valid victim clearance.
+  console.log("⚡ [18/18] Testing Caller-Bound Executor...");
+  const { clearanceMessage: msg18, signature: sig18 } = await getValidClearance(baseSnapshot);
+  const attacker = "0xDeaD00000000000000000000000000000000BEEf" as const;
+  await assert.rejects(
+    publicClient.simulateContract({
+      account: attacker,
+      address: trustGateAddress,
+      abi,
+      functionName: "consumeClearance",
+      args: [msg18, sig18],
+    }),
+    /revert|UnauthorizedExecutor/i,
+  );
+  const stillValid = await verifyTrustClearanceOnchain(msg18, sig18, trustGateAddress);
+  assert.equal(stillValid.valid, true, "Attacker simulation must not consume the victim clearance");
+  console.log("✅ [18/18] PASSED");
+
+  console.log("\n🎉 ALL 18 TRUST GATE NEGATIVE ACCEPTANCE TESTS PASSED SUCCESSFULLY!");
 }
 
 runNegativeTests().catch((err) => {

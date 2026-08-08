@@ -9,12 +9,13 @@ contract VeyraTrustGate is EIP712, AccessControl {
     bytes32 public constant TRUST_ATTESTER_ROLE = keccak256("TRUST_ATTESTER_ROLE");
 
     bytes32 public constant CLEARANCE_TYPEHASH = keccak256(
-        "TrustClearance(bytes32 decisionId,address subject,address counterparty,bytes32 actionHash,uint256 requestedAmount,uint256 maxAmount,bytes32 snapshotHash,bytes32 policyVersion,address evaluator,uint64 issuedAt,uint64 expiresAt)"
+        "TrustClearance(bytes32 decisionId,address subject,address executor,address counterparty,bytes32 actionHash,uint256 requestedAmount,uint256 maxAmount,bytes32 snapshotHash,bytes32 policyVersion,address evaluator,uint64 issuedAt,uint64 expiresAt)"
     );
 
     struct TrustClearance {
         bytes32 decisionId;
         address subject;
+        address executor;
         address counterparty;
         bytes32 actionHash;
         uint256 requestedAmount;
@@ -40,6 +41,7 @@ contract VeyraTrustGate is EIP712, AccessControl {
     error ClearanceExpired(uint64 expiresAt, uint64 currentTimestamp);
     error ClearanceAlreadyConsumed(bytes32 decisionHash);
     error UnauthorizedAttester(address signer);
+    error UnauthorizedExecutor(address caller, address executor);
     error ZeroAddress();
     error InvalidHash();
     error AmountExceedsMax(uint256 requested, uint256 max);
@@ -60,6 +62,7 @@ contract VeyraTrustGate is EIP712, AccessControl {
                 CLEARANCE_TYPEHASH,
                 clearance.decisionId,
                 clearance.subject,
+                clearance.executor,
                 clearance.counterparty,
                 clearance.actionHash,
                 clearance.requestedAmount,
@@ -78,7 +81,12 @@ contract VeyraTrustGate is EIP712, AccessControl {
         TrustClearance calldata clearance,
         bytes calldata signature
     ) public view returns (bool valid, address signer) {
-        if (clearance.decisionId == bytes32(0) || clearance.snapshotHash == bytes32(0)) return (false, address(0));
+        if (
+            clearance.decisionId == bytes32(0) ||
+            clearance.snapshotHash == bytes32(0) ||
+            clearance.subject == address(0) ||
+            clearance.executor == address(0)
+        ) return (false, address(0));
         if (clearance.expiresAt < block.timestamp) return (false, address(0));
         if (clearance.requestedAmount > clearance.maxAmount) return (false, address(0));
 
@@ -99,7 +107,15 @@ contract VeyraTrustGate is EIP712, AccessControl {
         TrustClearance calldata clearance,
         bytes calldata signature
     ) external {
-        if (clearance.decisionId == bytes32(0) || clearance.snapshotHash == bytes32(0)) revert InvalidHash();
+        if (
+            clearance.decisionId == bytes32(0) ||
+            clearance.snapshotHash == bytes32(0) ||
+            clearance.subject == address(0) ||
+            clearance.executor == address(0)
+        ) revert InvalidHash();
+        if (msg.sender != clearance.executor) {
+            revert UnauthorizedExecutor(msg.sender, clearance.executor);
+        }
         if (clearance.expiresAt < block.timestamp) {
             revert ClearanceExpired(clearance.expiresAt, uint64(block.timestamp));
         }

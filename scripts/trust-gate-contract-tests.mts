@@ -7,7 +7,7 @@ import { verifyTrustClearanceOnchain } from "../lib/trust-gate/verify.ts";
 const trustGateAddress = process.env.VEYRA_TRUST_GATE_ADDRESS as Hex;
 const attesterPk = (
   process.env.VEYRA_TRUST_ATTESTER_PRIVATE_KEY
-  || process.env.CANARY_DEPLOYER_PRIVATE_KEY
+  || process.env.ERC8183_EVALUATOR_ATTESTER_PRIVATE_KEY
 ) as Hex;
 
 if (!trustGateAddress || !attesterPk) {
@@ -21,6 +21,7 @@ const abi = [
         components: [
           { name: "decisionId", type: "bytes32" },
           { name: "subject", type: "address" },
+          { name: "executor", type: "address" },
           { name: "counterparty", type: "address" },
           { name: "actionHash", type: "bytes32" },
           { name: "requestedAmount", type: "uint256" },
@@ -50,10 +51,11 @@ async function runTests() {
   const later = new Date(now.getTime() + 60000);
   const decisionId = `vtd_test_${Date.now()}`;
 
+  const account = privateKeyToAccount(attesterPk);
   const decision: any = {
     decisionId,
     subject: { agentId: "ag_1", wallet: "0x1111111111111111111111111111111111111111" },
-    request: { action: "paid_api_call", counterparty: "0x2222222222222222222222222222222222222222", requestedValueUsdc: 1.5 },
+    request: { action: "paid_api_call", counterparty: "0x2222222222222222222222222222222222222222", executor: account.address, requestedValueUsdc: 1.5 },
     policy: { version: "v1", maxValueUsdc: 10, evaluatorAddress: "0x3333333333333333333333333333333333333333" },
     trust: { snapshotHash: "0xabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcd" },
     issuedAt: now.toISOString(),
@@ -77,7 +79,6 @@ async function runTests() {
 
   // 2. Consume onchain
   console.log("Consuming clearance...");
-  const account = privateKeyToAccount(attesterPk);
   const client = createWalletClient({
     account,
     chain: arcTestnet,

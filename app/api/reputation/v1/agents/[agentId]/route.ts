@@ -4,7 +4,11 @@
  */
 
 import { NextResponse, type NextRequest } from "next/server";
-import { getArcPublicClient, getCanonicalVeyraAgentIdentity } from "@/lib/erc8004/client.ts";
+import {
+  Erc8004IdentityVerificationError,
+  getArcPublicClient,
+  getCanonicalAgentIdentity,
+} from "@/lib/erc8004/client.ts";
 import { fetchLatestReputationSnapshot, fetchReputationEvidenceForAgent } from "@/lib/reputation/db.ts";
 import { computeAgentReputation, createReputationSnapshot } from "@/lib/reputation/engine.ts";
 
@@ -13,15 +17,37 @@ export const revalidate = 30;
 export async function GET(req: NextRequest, context: { params: Promise<{ agentId: string }> }) {
   const { agentId } = await context.params;
   const publicClient = getArcPublicClient();
-  const canonicalIdentity = await getCanonicalVeyraAgentIdentity(publicClient);
+  let canonicalIdentity;
+  try {
+    canonicalIdentity = await getCanonicalAgentIdentity(agentId, publicClient);
+  } catch (error) {
+    if (error instanceof Erc8004IdentityVerificationError) {
+      return NextResponse.json(
+        {
+          error: {
+            code: "identity_verification_unavailable",
+            message: "Agent identity could not be verified.",
+          },
+        },
+        { status: 503 }
+      );
+    }
+    throw error;
+  }
+  if (!canonicalIdentity) {
+    return NextResponse.json(
+      { error: { code: "identity_not_found", message: "Agent identity was not found." } },
+      { status: 404 }
+    );
+  }
 
   const identity = {
     agentId,
     chainId: 5042002 as const,
-    identityRegistry: canonicalIdentity?.registry_address || "0x8004A818BFB912233c491871b3d84c89A494BD9e",
-    owner: canonicalIdentity?.owner_address || process.env.VEYRA_EVALUATOR_ATTESTER_ADDRESS || "0x0d2c04580e081e222bbe5bf9818af337e2633eb7",
-    metadataUri: canonicalIdentity?.metadata_uri || "https://agent-commerce-six.vercel.app/.well-known/veyra-agent.json",
-    verifiedOnchain: Boolean(canonicalIdentity?.agent_id),
+    identityRegistry: canonicalIdentity.registry_address,
+    owner: canonicalIdentity.owner_address,
+    metadataUri: canonicalIdentity.metadata_uri,
+    verifiedOnchain: true,
   };
 
   const evidenceList = await fetchReputationEvidenceForAgent(agentId);

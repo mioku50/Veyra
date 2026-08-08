@@ -28,6 +28,7 @@ import { ERC8183_AGENTIC_COMMERCE_ABI } from "../lib/erc8183/abi.ts";
 import { fetchOnchainJob } from "../lib/erc8183/client.ts";
 import { prepareDeliverableCommitment } from "../lib/erc8183/deliverable.ts";
 import { executeOffchainJobEvaluation } from "../lib/erc8183/evaluator.ts";
+import { persistTerminalErc8183Evaluation } from "../lib/erc8183/persist.ts";
 import { getByoaClient } from "../lib/byoa/service.ts";
 import { proofRegistryAbi } from "../lib/commerce/onchain-proof.ts";
 import {
@@ -44,6 +45,7 @@ import { publishReputationSnapshotProofToArc } from "../lib/reputation/snapshot.
 import type { CanonicalAgentIdentity, ReputationSnapshot } from "../lib/reputation/types.ts";
 import { buildClearanceMessage, signTrustClearance } from "../lib/trust-gate/sign.ts";
 import { evaluateTrustDecision } from "../lib/trust-gate/decision.ts";
+import { saveTrustDecision } from "../lib/trust-gate/db.ts";
 import { feedbackFromErc8183Completion } from "../lib/trust-gate/feedback.ts";
 import { isExecutableTrustDecision, type TrustDecision } from "../lib/trust-gate/types.ts";
 import { verifyTrustClearanceOnchain } from "../lib/trust-gate/verify.ts";
@@ -77,6 +79,7 @@ const trustGateAbi = [
       components: [
         { name: "decisionId", type: "bytes32" },
         { name: "subject", type: "address" },
+        { name: "executor", type: "address" },
         { name: "counterparty", type: "address" },
         { name: "actionHash", type: "bytes32" },
         { name: "requestedAmount", type: "uint256" },
@@ -108,6 +111,7 @@ const trustGateAbi = [
         components: [
           { name: "decisionId", type: "bytes32" },
           { name: "subject", type: "address" },
+          { name: "executor", type: "address" },
           { name: "counterparty", type: "address" },
           { name: "actionHash", type: "bytes32" },
           { name: "requestedAmount", type: "uint256" },
@@ -295,6 +299,7 @@ async function runBlockedPath(input: {
     action: "x402_payment",
     requestedValueUsdc: 0,
     serviceId: input.endpoint,
+    executorWallet: input.buyer,
   }, input.snapshot);
   assert.ok(
     isExecutableTrustDecision(executableProbe.decision),
@@ -314,12 +319,14 @@ async function runBlockedPath(input: {
     action: "x402_payment",
     requestedValueUsdc: blockedAmount,
     serviceId: input.endpoint,
+    executorWallet: input.buyer,
   }, input.snapshot);
   assert.ok(
     decision.decision === "DENY" || decision.decision === "REVIEW_REQUIRED",
     `Blocked path unexpectedly produced ${decision.decision}`,
   );
   assert.ok(decision.reasons.includes("VALUE_EXCEEDS_TRUST_LIMIT"));
+  await saveTrustDecision(decision);
 
   const candidateClearance = buildClearanceMessage(decision);
   const clearanceBefore = await readClearanceConsumption(input.publicClient, candidateClearance);
@@ -405,6 +412,7 @@ async function runExecutedPath(input: {
     counterpartyWallet: provider.address,
     action: "erc8183_job",
     requestedValueUsdc: 0,
+    executorWallet: buyer.address,
   }, input.snapshot);
   assert.ok(isExecutableTrustDecision(limitProbe.decision), `Executed path blocked by ${limitProbe.decision}`);
   const requestedUsdc = Math.min(preferredValue, limitProbe.policy.maxValueUsdc);
@@ -415,8 +423,10 @@ async function runExecutedPath(input: {
     counterpartyWallet: provider.address,
     action: "erc8183_job",
     requestedValueUsdc: requestedUsdc,
+    executorWallet: buyer.address,
   }, input.snapshot);
   assert.ok(isExecutableTrustDecision(decision.decision), `Executed path denied: ${decision.decision}`);
+  await saveTrustDecision(decision);
 
   const { signature, clearanceMessage } = await signTrustClearance(
     decision,
@@ -602,6 +612,17 @@ async function runExecutedPath(input: {
   });
   assert.ok(providerUsdcAfter > providerUsdcBefore, "Provider received no ERC-8183 settlement value");
 
+  const persistedEvaluation = await persistTerminalErc8183Evaluation({
+    chainId: 5042002,
+    agenticCommerce: COMMERCE_ADDRESS,
+    evaluatorContract: VEYRA_EVALUATOR_ADDRESS,
+    job: completedJob,
+    deliverable: commitment.deliverable,
+    deliverableHash: commitment.deliverableHash,
+    result: evaluation,
+    settlementReceipt: completionReceipt,
+  });
+
   await feedbackFromErc8183Completion({
     agentId: input.identity.agentId,
     jobId: jobId.toString(),
@@ -649,6 +670,7 @@ async function runExecutedPath(input: {
 
   return {
     decision,
+    evaluationPublicId: persistedEvaluation.public_id,
     jobId: jobId.toString(),
     jobCreatedTx: createTx,
     evaluatorVerdict: evaluation.decision,
@@ -671,7 +693,7 @@ async function main() {
   const buyerPrivateKey = requirePrivateKey(process.env.BUYER_PRIVATE_KEY, "BUYER_PRIVATE_KEY");
   const providerPrivateKey = requirePrivateKey(process.env.SELLER_PRIVATE_KEY, "SELLER_PRIVATE_KEY");
   const trustAttesterPrivateKey = requirePrivateKey(
-    process.env.VEYRA_TRUST_ATTESTER_PRIVATE_KEY || process.env.CANARY_DEPLOYER_PRIVATE_KEY,
+    process.env.VEYRA_TRUST_ATTESTER_PRIVATE_KEY || process.env.ERC8183_EVALUATOR_ATTESTER_PRIVATE_KEY,
     "VEYRA_TRUST_ATTESTER_PRIVATE_KEY",
   );
   const evaluatorAttesterPrivateKey = requirePrivateKey(
@@ -752,6 +774,7 @@ async function main() {
   console.log(`ERC-8183 Job ID:                 ${executed.jobId}`);
   console.log(`JobCreated TX:                   ${executed.jobCreatedTx}`);
   console.log(`Evaluator Verdict / Score:       ${executed.evaluatorVerdict} / ${executed.evaluationScore}`);
+  console.log(`Evaluation Public ID:            ${executed.evaluationPublicId}`);
   console.log(`Complete TX:                     ${executed.completeTx}`);
   console.log(`Actual Settled Value:            ${executed.actualSettledValueUsdc} USDC`);
   console.log(`New Snapshot ID:                 ${executed.snapshot.snapshotId}`);

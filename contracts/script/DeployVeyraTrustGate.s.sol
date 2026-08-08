@@ -14,8 +14,8 @@ contract DeployVeyraTrustGate {
     Vm private constant vm = Vm(address(uint160(uint256(keccak256("hevm cheat code")))));
 
     function run() external returns (VeyraTrustGate gate) {
-        address operator = vm.envAddress("PROOF_REGISTRY_OPERATOR_ADDRESS");
-        address attester = vm.envAddress("PROOF_REGISTRY_ATTESTER_ADDRESS");
+        address operator = vm.envAddress("TRUST_GATE_ADMIN_ADDRESS");
+        address attester = vm.envAddress("TRUST_GATE_ATTESTER_ADDRESS");
 
         vm.startBroadcast();
         gate = new VeyraTrustGate(operator, attester);

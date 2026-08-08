@@ -34,15 +34,14 @@ async function main() {
     transport: http(process.env.ARC_TESTNET_RPC_URL || "https://rpc.testnet.arc.network"),
   });
 
-  let canaryAgentId = await recoverAgentIdFromLogs(ownerAddress, registryAddress, publicClient);
-  let txHash = "0x0000000000000000000000000000000000000000000000000000000000000000";
+  let mintRecord = await recoverAgentIdFromLogs(ownerAddress, registryAddress, publicClient);
 
-  if (canaryAgentId) {
-    console.log(`ℹ️ Canary Agent ID already exists for owner ${ownerAddress}: #${canaryAgentId}`);
+  if (mintRecord) {
+    console.log(`ℹ️ Canary Agent ID already exists for owner ${ownerAddress}: #${mintRecord.agentId}`);
   } else {
     console.log("⚡ Minting new Canary Agent ID on Arc Testnet...");
     const abi = parseAbi(["function register(string metadataURI) returns (uint256 tokenId)"]);
-    txHash = await walletClient.writeContract({
+    const txHash = await walletClient.writeContract({
       address: registryAddress,
       abi,
       functionName: "register",
@@ -52,13 +51,17 @@ async function main() {
     const receipt = await publicClient.waitForTransactionReceipt({ hash: txHash, timeout: 30_000 });
     assert.equal(receipt.status, "success", "Canary registration failed");
 
-    canaryAgentId = await recoverAgentIdFromLogs(ownerAddress, registryAddress, publicClient);
-    assert.ok(canaryAgentId, "Failed to recover Canary Agent ID");
-    console.log(`🎉 Minted Canary Agent ID #${canaryAgentId}`);
+    mintRecord = await recoverAgentIdFromLogs(ownerAddress, registryAddress, publicClient, {
+      fromBlock: receipt.blockNumber,
+      toBlock: receipt.blockNumber,
+    });
+    assert.ok(mintRecord, "Failed to recover Canary Agent ID");
+    assert.equal(mintRecord.transactionHash, txHash, "Recovered Canary mint transaction does not match");
+    console.log(`🎉 Minted Canary Agent ID #${mintRecord.agentId}`);
   }
 
   console.log("=======================================================");
-  console.log(`Canary Agent ID: ${canaryAgentId}`);
+  console.log(`Canary Agent ID: ${mintRecord.agentId}`);
   console.log(`Owner Address: ${ownerAddress}`);
   console.log("=======================================================\n");
 }

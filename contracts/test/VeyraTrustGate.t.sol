@@ -51,6 +51,7 @@ contract VeyraTrustGateTest {
         clearance = VeyraTrustGate.TrustClearance({
             decisionId: keccak256("dec_123"),
             subject: address(0x111),
+            executor: address(0x444),
             counterparty: address(0x222),
             actionHash: keccak256("action_123"),
             requestedAmount: 100_000_000,
@@ -110,6 +111,7 @@ contract VeyraTrustGateTest {
             clearance.snapshotHash
         );
 
+        vm.prank(clearance.executor);
         gate.consumeClearance(clearance, sig);
 
         assert(gate.consumedClearances(digest));
@@ -123,9 +125,11 @@ contract VeyraTrustGateTest {
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(attesterPrivateKey, digest);
         bytes memory sig = abi.encodePacked(r, s, v);
 
+        vm.prank(clearance.executor);
         gate.consumeClearance(clearance, sig);
 
         vm.expectRevert(abi.encodeWithSelector(VeyraTrustGate.ClearanceAlreadyConsumed.selector, digest));
+        vm.prank(clearance.executor);
         gate.consumeClearance(clearance, sig);
     }
 
@@ -137,6 +141,7 @@ contract VeyraTrustGateTest {
         vm.warp(block.timestamp + 301);
 
         vm.expectRevert(abi.encodeWithSelector(VeyraTrustGate.ClearanceExpired.selector, clearance.expiresAt, uint64(block.timestamp)));
+        vm.prank(clearance.executor);
         gate.consumeClearance(clearance, sig);
     }
 
@@ -148,6 +153,7 @@ contract VeyraTrustGateTest {
         bytes memory sig = abi.encodePacked(r, s, v);
 
         vm.expectRevert(abi.encodeWithSelector(VeyraTrustGate.AmountExceedsMax.selector, 300_000_000, 200_000_000));
+        vm.prank(clearance.executor);
         gate.consumeClearance(clearance, sig);
     }
 
@@ -155,9 +161,6 @@ contract VeyraTrustGateTest {
         vm.prank(admin);
         gate.setAttester(address(0x444), true);
 
-        bytes32 digest = gate.hashClearance(clearance);
-        (uint8 v, bytes32 r, bytes32 s) = vm.sign(wrongPrivateKey, digest); // We don't have private key for 0x444 easily, so we just check it was set
-        
         vm.prank(admin);
         gate.setAttester(address(0x444), false);
     }
@@ -169,6 +172,25 @@ contract VeyraTrustGateTest {
         bytes memory sig = abi.encodePacked(r, s, v);
 
         vm.expectRevert(VeyraTrustGate.InvalidHash.selector);
+        vm.prank(clearance.executor);
         gate.consumeClearance(clearance, sig);
+    }
+
+    function testAttackerCannotConsumeVictimClearance() public {
+        bytes32 digest = gate.hashClearance(clearance);
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(attesterPrivateKey, digest);
+        bytes memory sig = abi.encodePacked(r, s, v);
+        address attacker = address(0xDEAD);
+
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                VeyraTrustGate.UnauthorizedExecutor.selector,
+                attacker,
+                clearance.executor
+            )
+        );
+        vm.prank(attacker);
+        gate.consumeClearance(clearance, sig);
+        assert(!gate.consumedClearances(digest));
     }
 }

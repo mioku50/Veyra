@@ -3,7 +3,17 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { createPublicClient, http, parseAbiItem, getContract } from "viem";
+import {
+  createPublicClient,
+  getContract,
+  http,
+  isAddress,
+  isHex,
+  parseAbiItem,
+  parseEventLogs,
+  zeroAddress,
+  type Hex,
+} from "viem";
 import { arcTestnet } from "viem/chains";
 import {
   ARC_ERC8004_IDENTITY_REGISTRY,
@@ -23,6 +33,23 @@ import { getByoaClient } from "../byoa/service.ts";
 export const ARC_TESTNET_RPC_URL =
   process.env.ARC_TESTNET_RPC_URL || "https://rpc.testnet.arc.network";
 
+const TRANSFER_EVENT = parseAbiItem(
+  "event Transfer(address indexed from, address indexed to, uint256 indexed tokenId)"
+);
+
+export interface Erc8004MintRecord {
+  agentId: string;
+  transactionHash: Hex;
+  blockNumber: bigint;
+}
+
+export class Erc8004IdentityVerificationError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "Erc8004IdentityVerificationError";
+  }
+}
+
 export function getArcPublicClient(rpcUrl = ARC_TESTNET_RPC_URL) {
   return createPublicClient({
     chain: arcTestnet,
@@ -30,62 +57,124 @@ export function getArcPublicClient(rpcUrl = ARC_TESTNET_RPC_URL) {
   });
 }
 
+export async function getAgentIdentityRecord(
+  agentId: string
+): Promise<Erc8004AgentIdentityRecord | null> {
+  if (!/^\d+$/.test(agentId) || BigInt(agentId) <= BigInt(0)) {
+    return null;
+  }
+
+  const supabase = getByoaClient();
+  const { data, error } = await supabase
+    .from("erc8004_agent_identity")
+    .select("*")
+    .eq("agent_id", agentId)
+    .maybeSingle();
+
+  if (error) {
+    throw new Erc8004IdentityVerificationError(
+      `ERC-8004 identity storage unavailable (${error.code || "query_failed"})`
+    );
+  }
+
+  return data ? (data as Erc8004AgentIdentityRecord) : null;
+}
+
 export async function getVeyraAgentIdentityRecord(): Promise<Erc8004AgentIdentityRecord | null> {
-  const envAgentId = process.env.ERC8004_VEYRA_AGENT_ID || process.env.NEXT_PUBLIC_ERC8004_VEYRA_AGENT_ID;
+  const expectedAgentId = process.env.ERC8004_VEYRA_AGENT_ID?.trim();
+  if (!expectedAgentId) {
+    return null;
+  }
+  return getAgentIdentityRecord(expectedAgentId);
+}
+
+export async function getCanonicalAgentIdentity(
+  agentId: string,
+  publicClient = getArcPublicClient()
+): Promise<Erc8004AgentIdentityRecord | null> {
+  const dbRecord = await getAgentIdentityRecord(agentId);
+  if (!dbRecord) {
+    return null;
+  }
+
+  if (dbRecord.agent_id !== agentId) {
+    throw new Erc8004IdentityVerificationError("Stored ERC-8004 agent identity does not match request");
+  }
+  if (dbRecord.chain_id !== arcTestnet.id) {
+    throw new Erc8004IdentityVerificationError("Stored ERC-8004 identity has an unexpected chain ID");
+  }
+  if (dbRecord.registry_address.toLowerCase() !== ARC_ERC8004_IDENTITY_REGISTRY.toLowerCase()) {
+    throw new Erc8004IdentityVerificationError("Stored ERC-8004 identity uses a non-canonical registry");
+  }
+  if (!isAddress(dbRecord.owner_address)) {
+    throw new Erc8004IdentityVerificationError("Stored ERC-8004 identity owner is invalid");
+  }
+  if (
+    !isHex(dbRecord.registration_tx) ||
+    dbRecord.registration_tx.length !== 66 ||
+    /^0x0{64}$/i.test(dbRecord.registration_tx)
+  ) {
+    throw new Erc8004IdentityVerificationError("Stored ERC-8004 identity has no real registration transaction");
+  }
 
   try {
-    const supabase = getByoaClient();
-    let query = supabase.from("erc8004_agent_identity").select("*");
-    if (envAgentId) {
-      query = query.eq("agent_id", envAgentId);
+    const numericAgentId = BigInt(agentId);
+    const onchain = await fetchAgentIdentityOnchain(
+      numericAgentId,
+      ARC_ERC8004_IDENTITY_REGISTRY,
+      publicClient
+    );
+    if (onchain.owner.toLowerCase() !== dbRecord.owner_address.toLowerCase()) {
+      throw new Erc8004IdentityVerificationError("ERC-8004 ownerOf does not match the stored owner");
     }
-    const { data } = await query.order("created_at", { ascending: false }).limit(1).maybeSingle();
+    if (onchain.tokenURI !== dbRecord.metadata_uri) {
+      throw new Erc8004IdentityVerificationError("ERC-8004 tokenURI does not match stored metadata");
+    }
 
-    if (data) {
-      return data as Erc8004AgentIdentityRecord;
+    const receipt = await publicClient.getTransactionReceipt({
+      hash: dbRecord.registration_tx as Hex,
+    });
+    if (
+      receipt.status !== "success" ||
+      receipt.to?.toLowerCase() !== ARC_ERC8004_IDENTITY_REGISTRY.toLowerCase()
+    ) {
+      throw new Erc8004IdentityVerificationError("ERC-8004 registration transaction is not canonical");
     }
-  } catch (err) {
-    console.error("Failed to query erc8004_agent_identity from DB:", err);
+
+    const mintLogs = parseEventLogs({
+      abi: [TRANSFER_EVENT],
+      eventName: "Transfer",
+      logs: receipt.logs,
+      strict: true,
+    });
+    const exactMint = mintLogs.find(
+      (log) =>
+        log.address.toLowerCase() === ARC_ERC8004_IDENTITY_REGISTRY.toLowerCase() &&
+        log.args.from?.toLowerCase() === zeroAddress &&
+        log.args.to?.toLowerCase() === dbRecord.owner_address.toLowerCase() &&
+        log.args.tokenId === numericAgentId
+    );
+    if (!exactMint) {
+      throw new Erc8004IdentityVerificationError(
+        "ERC-8004 registration receipt does not contain the exact mint event"
+      );
+    }
+  } catch (error) {
+    if (error instanceof Erc8004IdentityVerificationError) throw error;
+    throw new Erc8004IdentityVerificationError("ERC-8004 onchain identity verification failed");
   }
 
-  if (envAgentId) {
-    return {
-      id: "env-fallback",
-      agent_id: envAgentId,
-      registry_address: process.env.ERC8004_IDENTITY_REGISTRY || ARC_ERC8004_IDENTITY_REGISTRY,
-      chain_id: 5042002,
-      owner_address: process.env.VEYRA_EVALUATOR_ATTESTER_ADDRESS || "0x0d2c04580e081e222bbe5bf9818af337e2633eb7",
-      metadata_uri: `${process.env.NEXT_PUBLIC_APP_URL || "https://agent-commerce-six.vercel.app"}/.well-known/veyra-agent.json`,
-      registration_tx: "0x0000000000000000000000000000000000000000000000000000000000000000",
-      created_at: new Date().toISOString(),
-    };
-  }
-
-  return null;
+  return dbRecord;
 }
 
 export async function getCanonicalVeyraAgentIdentity(
   publicClient = getArcPublicClient()
 ): Promise<Erc8004AgentIdentityRecord | null> {
-  const dbRecord = await getVeyraAgentIdentityRecord();
-  if (!dbRecord || !dbRecord.agent_id) {
+  const expectedAgentId = process.env.ERC8004_VEYRA_AGENT_ID?.trim();
+  if (!expectedAgentId) {
     return null;
   }
-
-  try {
-    const agentId = BigInt(dbRecord.agent_id);
-    const registryAddress = (dbRecord.registry_address || ARC_ERC8004_IDENTITY_REGISTRY) as `0x${string}`;
-    const onchain = await fetchAgentIdentityOnchain(agentId, registryAddress, publicClient);
-
-    return {
-      ...dbRecord,
-      owner_address: onchain.owner || dbRecord.owner_address,
-      metadata_uri: onchain.tokenURI || dbRecord.metadata_uri,
-    };
-  } catch (err) {
-    console.warn("⚠️ Onchain identity verification warning for canonical agentId:", err);
-    return dbRecord;
-  }
+  return getCanonicalAgentIdentity(expectedAgentId, publicClient);
 }
 
 /**
@@ -179,21 +268,87 @@ export async function fetchValidationStatusOnchain(
 export async function recoverAgentIdFromLogs(
   ownerAddress: `0x${string}`,
   registryAddress = ARC_ERC8004_IDENTITY_REGISTRY,
-  client = getArcPublicClient()
-): Promise<string | null> {
-  const latestBlock = await client.getBlockNumber();
-  const blockRange = BigInt(9900);
-  const fromBlock = latestBlock > blockRange ? latestBlock - blockRange : BigInt(0);
+  client = getArcPublicClient(),
+  options: { fromBlock?: bigint; toBlock?: bigint; expectedAgentId?: bigint } = {}
+): Promise<Erc8004MintRecord | null> {
+  if (!isAddress(ownerAddress) || registryAddress.toLowerCase() !== ARC_ERC8004_IDENTITY_REGISTRY.toLowerCase()) {
+    throw new Erc8004IdentityVerificationError("Mint recovery requires a valid owner and official registry");
+  }
 
-  const logs = await client.getLogs({
-    address: registryAddress as `0x${string}`,
-    event: parseAbiItem("event Transfer(address indexed from, address indexed to, uint256 indexed tokenId)"),
-    args: { to: ownerAddress },
-    fromBlock,
-    toBlock: latestBlock,
+  const currentBalance = await client.readContract({
+    address: ARC_ERC8004_IDENTITY_REGISTRY,
+    abi: [
+      {
+        name: "balanceOf",
+        type: "function",
+        stateMutability: "view",
+        inputs: [{ name: "owner", type: "address" }],
+        outputs: [{ name: "", type: "uint256" }],
+      },
+    ],
+    functionName: "balanceOf",
+    args: [ownerAddress],
   });
+  if (currentBalance === BigInt(0)) {
+    return null;
+  }
 
-  if (logs.length === 0) return null;
-  const lastLog = logs[logs.length - 1];
-  return lastLog.args.tokenId ? lastLog.args.tokenId.toString() : null;
+  const latestBlock = options.toBlock ?? (await client.getBlockNumber());
+  const floorBlock = options.fromBlock ?? BigInt(0);
+  const chunkSize = BigInt(9_000);
+  let toBlock = latestBlock;
+
+  while (toBlock >= floorBlock) {
+    const fromBlock = toBlock > chunkSize ? toBlock - chunkSize : floorBlock;
+    const logs = await client.getLogs({
+      address: registryAddress as `0x${string}`,
+      event: TRANSFER_EVENT,
+      args: { from: zeroAddress, to: ownerAddress },
+      fromBlock: fromBlock < floorBlock ? floorBlock : fromBlock,
+      toBlock,
+    });
+
+    const canonicalMints = logs.filter(
+      (log) =>
+        log.args.from?.toLowerCase() === zeroAddress &&
+        log.args.to?.toLowerCase() === ownerAddress.toLowerCase()
+    );
+    const exactLogs = options.expectedAgentId
+      ? canonicalMints.filter((log) => log.args.tokenId === options.expectedAgentId)
+      : canonicalMints;
+    for (const mintLog of [...exactLogs].reverse()) {
+      if (mintLog.args.tokenId === undefined || !mintLog.transactionHash || mintLog.blockNumber === null) {
+        continue;
+      }
+      try {
+        const currentOwner = await client.readContract({
+          address: ARC_ERC8004_IDENTITY_REGISTRY,
+          abi: [
+            {
+              name: "ownerOf",
+              type: "function",
+              stateMutability: "view",
+              inputs: [{ name: "tokenId", type: "uint256" }],
+              outputs: [{ name: "", type: "address" }],
+            },
+          ],
+          functionName: "ownerOf",
+          args: [mintLog.args.tokenId],
+        });
+        if (currentOwner.toLowerCase() !== ownerAddress.toLowerCase()) continue;
+        return {
+          agentId: mintLog.args.tokenId.toString(),
+          transactionHash: mintLog.transactionHash,
+          blockNumber: mintLog.blockNumber,
+        };
+      } catch {
+        // Burned or otherwise invalid token; keep searching older canonical mints.
+      }
+    }
+
+    if (fromBlock <= floorBlock) break;
+    toBlock = fromBlock - BigInt(1);
+  }
+
+  return null;
 }

@@ -4,6 +4,7 @@
  */
 
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 
 // Environment fallbacks for offline test execution
 process.env.BYOA_MANAGEMENT_SESSION_SECRET =
@@ -43,6 +44,15 @@ async function main() {
   assert.ok(!jsonStr.includes("private"), "Serialized identity metadata must never expose private fields");
   assert.ok(!jsonStr.includes("secret"), "Serialized identity metadata must never expose secret keys");
   console.log("✅ 2. ERC-8004 public serialization security verified");
+
+  const clientSource = readFileSync("lib/erc8004/client.ts", "utf8");
+  const responderSource = readFileSync("app/api/erc8004/v1/validations/respond/route.ts", "utf8");
+  assert.doesNotMatch(clientSource, /env-fallback|NEXT_PUBLIC_ERC8004_VEYRA_AGENT_ID/);
+  assert.match(responderSource, /ERC8004_VALIDATION_RESPOND_SECRET/);
+  assert.match(responderSource, /timingSafeEqual/);
+  assert.doesNotMatch(responderSource, /BYOA_MANAGEMENT_SESSION_SECRET|VEYRA_RELAYER_KEY/);
+  assert.match(responderSource, /bodyKeys\.length !== 1/);
+  console.log("✅ 3. Canonical identity fallback removal and dedicated responder authentication verified");
 
   console.log("\n🎉 All ERC-8004 Productization verification tests passed successfully!");
 }

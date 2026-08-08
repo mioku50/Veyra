@@ -6,19 +6,23 @@
 import { NextResponse } from "next/server";
 import { getArcPublicClient, getCanonicalVeyraAgentIdentity } from "@/lib/erc8004/client.ts";
 import {
-  ARC_ERC8004_IDENTITY_REGISTRY,
   ARC_ERC8004_REPUTATION_REGISTRY,
   ARC_ERC8004_VALIDATION_REGISTRY,
 } from "@/lib/erc8004/types.ts";
 
+export const dynamic = "force-dynamic";
 export const revalidate = 60;
 
 export async function GET() {
   const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "https://agent-commerce-six.vercel.app";
   const publicClient = getArcPublicClient();
   const identityRecord = await getCanonicalVeyraAgentIdentity(publicClient);
-
-  const isVerifiedOnchain = Boolean(identityRecord?.agent_id && identityRecord.owner_address);
+  if (!identityRecord) {
+    return NextResponse.json(
+      { error: { code: "identity_not_found", message: "Canonical Veyra identity was not found." } },
+      { status: 503 }
+    );
+  }
 
   const metadata = {
     name: "Veyra Trust Evaluator",
@@ -26,14 +30,14 @@ export async function GET() {
     version: "1.0.0",
     network: "arc-testnet",
     chainId: 5042002,
-    verifiedOnchain: isVerifiedOnchain,
+    verifiedOnchain: true,
     identity: {
       standard: "ERC-8004",
-      registry: identityRecord?.registry_address || ARC_ERC8004_IDENTITY_REGISTRY,
+      registry: identityRecord.registry_address,
       reputationRegistry: ARC_ERC8004_REPUTATION_REGISTRY,
       validationRegistry: ARC_ERC8004_VALIDATION_REGISTRY,
-      agentId: identityRecord?.agent_id || "unregistered",
-      ownerAddress: identityRecord?.owner_address || process.env.VEYRA_EVALUATOR_ATTESTER_ADDRESS,
+      agentId: identityRecord.agent_id,
+      ownerAddress: identityRecord.owner_address,
     },
     evaluator: {
       standard: "ERC-8183",

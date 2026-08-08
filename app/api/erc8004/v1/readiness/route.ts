@@ -11,6 +11,8 @@ import {
   getCanonicalVeyraAgentIdentity,
 } from "@/lib/erc8004/client.ts";
 
+export const dynamic = "force-dynamic";
+
 export async function GET() {
   try {
     const publicClient = getArcPublicClient();
@@ -28,14 +30,19 @@ export async function GET() {
 
     const identityReady = identityCode && identityCode !== "0x";
     const validationReady = validationCode && validationCode !== "0x";
-    const relayerReady = Boolean(process.env.VEYRA_EVALUATOR_RELAYER_PRIVATE_KEY);
+    const relayerReady = Boolean(
+      process.env.VEYRA_EVALUATOR_RELAYER_PRIVATE_KEY ||
+      process.env.ERC8183_EVALUATOR_RELAYER_PRIVATE_KEY
+    );
+    const responderAuthReady = Boolean(process.env.ERC8004_VALIDATION_RESPOND_SECRET);
 
     const productionReady =
       chainId === 5042002 &&
       hasIdentity &&
       Boolean(identityReady) &&
       Boolean(validationReady) &&
-      relayerReady;
+      relayerReady &&
+      responderAuthReady;
 
     return NextResponse.json({
       standard: "ERC-8004",
@@ -47,16 +54,17 @@ export async function GET() {
       evaluator: true,
       evaluatorAddress: "0x0d2c04580e081e222bbe5bf9818af337e2633eb7",
       relayer: relayerReady,
+      responderAuth: responderAuthReady,
       validationRegistry: Boolean(validationReady),
       productionReady,
     });
-  } catch (err) {
+  } catch {
     return NextResponse.json(
       {
         productionReady: false,
-        error: err instanceof Error ? err.message : "Readiness check failed",
+        error: "ERC-8004 readiness could not be verified.",
       },
-      { status: 500 }
+      { status: 503 }
     );
   }
 }

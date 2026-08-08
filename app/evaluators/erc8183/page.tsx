@@ -32,31 +32,28 @@ export default async function Erc8183EvaluatorProfilePage() {
   let totalEvaluations = 0;
   let completedCount = 0;
   let rejectedCount = 0;
-  let retryableCount = 0;
   let latestEvaluationTime: string | null = null;
 
-  try {
-    const supabase = getByoaClient();
-    const { data: records } = await supabase
-      .from("erc8183_evaluations")
-      .select("decision, status, created_at")
-      .order("created_at", { ascending: false });
+  const supabase = getByoaClient();
+  const { data: records, error: recordsError } = await supabase
+    .from("erc8183_evaluations")
+    .select("decision, status, created_at")
+    .in("status", ["completed", "rejected"])
+    .order("created_at", { ascending: false });
+  if (recordsError) {
+    throw new Error("Evaluator statistics are unavailable");
+  }
 
-    if (records && records.length > 0) {
-      totalEvaluations = records.length;
-      latestEvaluationTime = records[0].created_at;
-      for (const rec of records) {
-        if (rec.decision === "complete" || rec.status === "completed") {
-          completedCount++;
-        } else if (rec.decision === "reject" || rec.status === "rejected") {
-          rejectedCount++;
-        } else if (rec.status === "retryable") {
-          retryableCount++;
-        }
+  if (records && records.length > 0) {
+    totalEvaluations = records.length;
+    latestEvaluationTime = records[0].created_at;
+    for (const rec of records) {
+      if (rec.decision === "complete" || rec.status === "completed") {
+        completedCount++;
+      } else if (rec.decision === "reject" || rec.status === "rejected") {
+        rejectedCount++;
       }
     }
-  } catch (err) {
-    console.error("Failed to load evaluator statistics:", err);
   }
 
   const completionRate =

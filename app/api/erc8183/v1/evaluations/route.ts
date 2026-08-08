@@ -12,6 +12,7 @@ import { getByoaClient } from "@/lib/byoa/service";
 import { computeDeliverableHash, computePolicyHash } from "@/lib/erc8183/deliverable";
 import { executeOffchainJobEvaluation } from "@/lib/erc8183/evaluator";
 import type { VeyraDeliverableV1 } from "@/lib/erc8183/types";
+import { isAddress, zeroAddress } from "viem";
 
 export async function POST(req: Request) {
   const authResult = await authenticateMachineRequest(req, "erc8183:evaluate");
@@ -35,6 +36,25 @@ export async function POST(req: Request) {
   }
 
   const { chainId, agenticCommerce, jobId, deliverable } = body;
+
+  const evaluatorAddress = process.env.NEXT_PUBLIC_VEYRA_ERC8183_EVALUATOR_ADDRESS;
+  const attesterKey = process.env.ERC8183_EVALUATOR_ATTESTER_PRIVATE_KEY;
+  const relayerKey = process.env.ERC8183_EVALUATOR_RELAYER_PRIVATE_KEY;
+  if (
+    !evaluatorAddress ||
+    !isAddress(evaluatorAddress) ||
+    evaluatorAddress.toLowerCase() === zeroAddress ||
+    !attesterKey ||
+    !/^0x[0-9a-f]{64}$/i.test(attesterKey) ||
+    !relayerKey ||
+    !/^0x[0-9a-f]{64}$/i.test(relayerKey)
+  ) {
+    return createMachineErrorResponse(
+      "provider_unavailable",
+      "ERC-8183 evaluation is not configured.",
+      503
+    );
+  }
 
   if (chainId !== 5042002) {
     return createMachineErrorResponse("invalid_request", "Only Arc Testnet (chainId 5042002) is supported in P5.0.", 400);
@@ -75,13 +95,20 @@ export async function POST(req: Request) {
 
   // Check existing DB evaluation record
   const supabase = getByoaClient();
-  const { data: existingRecord } = await supabase
+  const { data: existingRecord, error: existingError } = await supabase
     .from("erc8183_evaluations")
     .select("*")
     .eq("chain_id", chainId)
     .eq("agentic_commerce", agenticCommerce.toLowerCase())
     .eq("job_id", jobId)
     .maybeSingle();
+  if (existingError) {
+    return createMachineErrorResponse(
+      "provider_unavailable",
+      "Evaluation storage is unavailable.",
+      503
+    );
+  }
 
   let publicId: string;
   if (existingRecord) {
@@ -103,7 +130,7 @@ export async function POST(req: Request) {
       job_id: jobId,
       client_wallet: "0x0000000000000000000000000000000000000000",
       provider_wallet: "0x0000000000000000000000000000000000000000",
-      evaluator_contract: (process.env.NEXT_PUBLIC_VEYRA_ERC8183_EVALUATOR_ADDRESS || "0x0000000000000000000000000000000000000000").toLowerCase(),
+      evaluator_contract: evaluatorAddress.toLowerCase(),
       deliverable_hash: deliverableHash,
       content_hash: deliverableObj.contentHash,
       content_uri: deliverableObj.contentUri,
@@ -130,21 +157,14 @@ export async function POST(req: Request) {
   }
 
   // Run evaluation
-  const evaluatorAddress = (process.env.NEXT_PUBLIC_VEYRA_ERC8183_EVALUATOR_ADDRESS ||
-    "0x0000000000000000000000000000000000000000") as `0x${string}`;
-  const attesterKey = (process.env.ERC8183_EVALUATOR_ATTESTER_PRIVATE_KEY ||
-    "0x0000000000000000000000000000000000000000000000000000000000000001") as `0x${string}`;
-  const relayerKey = (process.env.ERC8183_EVALUATOR_RELAYER_PRIVATE_KEY ||
-    "0x0000000000000000000000000000000000000000000000000000000000000002") as `0x${string}`;
-
   const result = await executeOffchainJobEvaluation({
     chainId,
     agenticCommerce: agenticCommerce as `0x${string}`,
     jobId,
     deliverable: deliverableObj,
-    evaluatorContract: evaluatorAddress,
-    attesterPrivateKey: attesterKey,
-    relayerPrivateKey: relayerKey,
+    evaluatorContract: evaluatorAddress as `0x${string}`,
+    attesterPrivateKey: attesterKey as `0x${string}`,
+    relayerPrivateKey: relayerKey as `0x${string}`,
   });
 
   // Update DB record
@@ -169,10 +189,17 @@ export async function POST(req: Request) {
     updatePayload.settled_at = new Date().toISOString();
   }
 
-  await supabase
+  const { error: updateError } = await supabase
     .from("erc8183_evaluations")
     .update(updatePayload)
     .eq("public_id", publicId);
+  if (updateError) {
+    return createMachineErrorResponse(
+      "provider_unavailable",
+      "Evaluation result could not be safely persisted.",
+      503
+    );
+  }
 
   const responseBody = {
     evaluationId: publicId,

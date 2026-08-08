@@ -18,9 +18,12 @@ import { getByoaClient } from "../lib/byoa/service.ts";
 async function main() {
   console.log("🔥 Running Veyra ERC-8004 Identity Registration & Recovery...\n");
 
-  const privateKey = process.env.VEYRA_EVALUATOR_RELAYER_PRIVATE_KEY || process.env.VEYRA_EVALUATOR_ATTESTER_PRIVATE_KEY;
+  const privateKey =
+    process.env.VEYRA_IDENTITY_OWNER_PRIVATE_KEY || process.env.CANARY_DEPLOYER_PRIVATE_KEY;
   if (!privateKey || !privateKey.startsWith("0x")) {
-    console.error("❌ FAIL-CLOSED PRODUCTION GATE: Missing valid VEYRA_EVALUATOR_RELAYER_PRIVATE_KEY for production smoke.");
+    console.error(
+      "❌ FAIL-CLOSED PRODUCTION GATE: Missing valid VEYRA_IDENTITY_OWNER_PRIVATE_KEY or project deployer key."
+    );
     process.exit(1);
   }
 
@@ -42,15 +45,14 @@ async function main() {
   });
 
   // Check if identity already registered for this owner
-  let agentId = await recoverAgentIdFromLogs(ownerAddress, registryAddress, publicClient);
-  let txHash = "0x0000000000000000000000000000000000000000000000000000000000000000";
+  let mintRecord = await recoverAgentIdFromLogs(ownerAddress, registryAddress, publicClient);
 
-  if (agentId) {
-    console.log(`ℹ️ Agent ID already registered for owner ${ownerAddress}: #${agentId}`);
+  if (mintRecord) {
+    console.log(`ℹ️ Agent ID already registered for owner ${ownerAddress}: #${mintRecord.agentId}`);
   } else {
     console.log("⚡ Submitting IdentityRegistry.register(metadataURI)...");
     const abi = parseAbi(["function register(string metadataURI) returns (uint256 tokenId)"]);
-    txHash = await walletClient.writeContract({
+    const txHash = await walletClient.writeContract({
       address: registryAddress,
       abi,
       functionName: "register",
@@ -63,10 +65,17 @@ async function main() {
     assert.equal(receipt.status, "success", "Identity registration transaction reverted");
 
     // Recover minted agentId from Transfer event
-    agentId = await recoverAgentIdFromLogs(ownerAddress, registryAddress, publicClient);
-    assert.ok(agentId, "Failed to recover minted agentId from Transfer events");
-    console.log(`🎉 Successfully minted ERC-8004 Agent ID #${agentId}`);
+    mintRecord = await recoverAgentIdFromLogs(ownerAddress, registryAddress, publicClient, {
+      fromBlock: receipt.blockNumber,
+      toBlock: receipt.blockNumber,
+    });
+    assert.ok(mintRecord, "Failed to recover minted agentId from the confirmed mint receipt block");
+    assert.equal(mintRecord.transactionHash, txHash, "Recovered mint transaction does not match submission");
+    console.log(`🎉 Successfully minted ERC-8004 Agent ID #${mintRecord.agentId}`);
   }
+
+  assert.ok(mintRecord, "A canonical ERC-8004 mint record is required");
+  const { agentId, transactionHash: txHash, blockNumber } = mintRecord;
 
   // Verify ownerOf and tokenURI onchain
   console.log(`🔍 Verifying ownerOf(#${agentId}) and tokenURI(#${agentId})...`);
@@ -78,31 +87,57 @@ async function main() {
   );
   console.log("✅ Onchain ownerOf verified:", onchainData.owner);
   console.log("✅ Onchain tokenURI verified:", onchainData.tokenURI);
+  assert.equal(onchainData.tokenURI, metadataUri, "Onchain tokenURI does not match canonical metadata URI");
+
+  const registrationReceipt = await publicClient.getTransactionReceipt({ hash: txHash });
+  assert.equal(registrationReceipt.status, "success", "Registration transaction is not successful");
+  assert.equal(registrationReceipt.blockNumber, blockNumber, "Mint block does not match transaction receipt");
+  assert.equal(
+    registrationReceipt.to?.toLowerCase(),
+    registryAddress.toLowerCase(),
+    "Registration transaction target is not the official identity registry"
+  );
+  const registrationBlock = await publicClient.getBlock({ blockNumber });
+  const createdAt = new Date(Number(registrationBlock.timestamp) * 1_000).toISOString();
 
   // Save to Supabase database
-  try {
-    const supabase = getByoaClient();
-    const { error } = await supabase.from("erc8004_agent_identity").upsert(
-      {
-        agent_id: agentId,
-        registry_address: registryAddress,
-        chain_id: 5042002,
-        owner_address: ownerAddress,
-        metadata_uri: metadataUri,
-        registration_tx: txHash,
-        created_at: new Date().toISOString(),
-      },
-      { onConflict: "agent_id" }
-    );
+  const storedIdentity = {
+    agent_id: agentId,
+    registry_address: registryAddress,
+    chain_id: arcTestnet.id,
+    owner_address: ownerAddress,
+    metadata_uri: metadataUri,
+    registration_tx: txHash,
+    created_at: createdAt,
+  };
+  const supabase = getByoaClient();
+  const { error } = await supabase
+    .from("erc8004_agent_identity")
+    .upsert(storedIdentity, { onConflict: "agent_id" });
+  assert.equal(error, null, `Failed to persist ERC-8004 identity: ${error?.code || "unknown"}`);
 
-    if (error) {
-      console.warn("⚠️ Supabase record upsert warning:", error.message);
-    } else {
-      console.log("✅ Database record updated in erc8004_agent_identity");
+  const { data: reloaded, error: reloadError } = await supabase
+    .from("erc8004_agent_identity")
+    .select("agent_id,registry_address,chain_id,owner_address,metadata_uri,registration_tx,created_at")
+    .eq("agent_id", agentId)
+    .single();
+  assert.equal(reloadError, null, `Failed to reload ERC-8004 identity: ${reloadError?.code || "unknown"}`);
+  assert.ok(reloaded, "Persisted ERC-8004 identity could not be reloaded");
+  for (const [field, expected] of Object.entries(storedIdentity)) {
+    const actual = reloaded[field as keyof typeof reloaded];
+    if (field === "created_at") {
+      assert.equal(Date.parse(String(actual)), Date.parse(String(expected)), "Reloaded identity field created_at does not match");
+      continue;
     }
-  } catch (err) {
-    console.warn("⚠️ DB record save skipped:", err);
+    const normalizedActual = field.endsWith("address") || field.endsWith("tx")
+      ? String(actual).toLowerCase()
+      : actual;
+    const normalizedExpected = field.endsWith("address") || field.endsWith("tx")
+      ? String(expected).toLowerCase()
+      : expected;
+    assert.equal(normalizedActual, normalizedExpected, `Reloaded identity field ${field} does not match`);
   }
+  console.log("✅ Database identity record persisted and reloaded exactly");
 
   console.log("\n=======================================================");
   console.log(`ERC-8004 Agent ID: ${agentId}`);
