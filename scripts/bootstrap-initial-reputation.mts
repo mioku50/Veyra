@@ -93,7 +93,13 @@ async function ensureGas(
   if (balance >= parseUnits("0.002", 18)) return;
   const topUp = parseUnits("0.005", 18);
   assert.ok((await publicClient.getBalance({ address: buyer })) > topUp, "Buyer lacks Arc Testnet gas for bounded top-up");
-  const tx = await buyerWallet.sendTransaction({ account: buyer, to: recipient, value: topUp, chain: arcTestnet });
+  assert.ok(buyerWallet.account, "Buyer wallet client has no local signing account");
+  const tx = await buyerWallet.sendTransaction({
+    account: buyerWallet.account,
+    to: recipient,
+    value: topUp,
+    chain: arcTestnet,
+  });
   assert.equal((await publicClient.waitForTransactionReceipt({ hash: tx })).status, "success");
 }
 

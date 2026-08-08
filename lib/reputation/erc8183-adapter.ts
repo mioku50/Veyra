@@ -48,7 +48,7 @@ export function deriveSettledErc8183ValueUsdc(input: {
     log.address.toLowerCase() === input.commerceAddress.toLowerCase()
     && log.topics[0]?.toLowerCase() === ERC8183_JOB_COMPLETED_TOPIC.toLowerCase()
     && log.topics[1]?.toLowerCase() === expectedJobTopic.toLowerCase()
-    && log.topics[2]?.slice(-40).toLowerCase() === input.job.client.slice(2).toLowerCase()
+    && log.topics[2]?.slice(-40).toLowerCase() === input.job.evaluator.slice(2).toLowerCase()
   );
 
   if (!hasExactCompletionEvent) {

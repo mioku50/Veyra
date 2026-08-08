@@ -122,7 +122,7 @@ export const ERC8183_AGENTIC_COMMERCE_ABI = [
     name: "JobCompleted",
     inputs: [
       { type: "uint256", name: "jobId", indexed: true },
-      { type: "address", name: "client", indexed: true },
+      { type: "address", name: "evaluator", indexed: true },
       { type: "bytes32", name: "reason", indexed: false },
     ],
     anonymous: false,

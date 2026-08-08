@@ -4,7 +4,7 @@
  */
 
 import assert from "node:assert/strict";
-import { keccak256, stringToBytes } from "viem";
+import { encodeEventTopics, keccak256, stringToBytes } from "viem";
 import { computeContentHash, computeDeliverableHash, computePolicyHash, prepareDeliverableCommitment, VEYRA_DELIVERABLE_V1_TYPEHASH } from "../lib/erc8183/deliverable.ts";
 import { runDeterministicEvaluationPolicy, validateStructuredDeliverableSchema } from "../lib/erc8183/policy.ts";
 import type { VeyraDeliverableV1 } from "../lib/erc8183/types.ts";
@@ -13,6 +13,7 @@ import { computeVerdictDigest, signVerdict } from "../lib/erc8183/verdict.ts";
 import { buildErc8183EvaluationReport } from "../lib/reports/erc8183-evaluation-report.ts";
 import { SSRFProtectionError } from "../lib/seller/ssrf.ts";
 import { ERC8183_AGENTIC_COMMERCE_ABI } from "../lib/erc8183/abi.ts";
+import { deriveSettledErc8183ValueUsdc } from "../lib/reputation/erc8183-adapter.ts";
 
 async function runAllErc8183Tests() {
   console.log("⚡ Running ERC-8183 Evaluator TypeScript tests...");
@@ -211,6 +212,38 @@ async function runAllErc8183Tests() {
 
   assert.ok(ERC8183_AGENTIC_COMMERCE_ABI.some((item) => item.type === "function" && item.name === "setBudget"));
   assert.ok(ERC8183_AGENTIC_COMMERCE_ABI.some((item) => item.type === "function" && item.name === "fund"));
+
+  // 8. Arc reference JobCompleted binds its indexed address to the evaluator.
+  const commerceAddress = "0x0747EEf0706327138c69792bF28Cd525089e4583" as const;
+  const completedJob = {
+    jobId: 42n,
+    client: "0x1111111111111111111111111111111111111111" as const,
+    provider: "0x2222222222222222222222222222222222222222" as const,
+    evaluator: "0x3333333333333333333333333333333333333333" as const,
+    budget: 10_000n,
+    expiredAt: BigInt(Math.floor(Date.now() / 1000) + 3600),
+    status: "Completed" as const,
+    description: "Completed Arc reference job",
+    hook: "0x0000000000000000000000000000000000000000" as const,
+  };
+  const completionTopics = encodeEventTopics({
+    abi: ERC8183_AGENTIC_COMMERCE_ABI,
+    eventName: "JobCompleted",
+    args: { jobId: completedJob.jobId, evaluator: completedJob.evaluator },
+  });
+  const completionReceipt = {
+    status: "success",
+    logs: [{ address: commerceAddress, topics: completionTopics, data: "0x" }],
+  } as any;
+  assert.equal(
+    deriveSettledErc8183ValueUsdc({
+      job: completedJob,
+      receipt: completionReceipt,
+      commerceAddress,
+    }),
+    0.01,
+    "Completed economic value must require the exact evaluator-bound Arc event",
+  );
 
   console.log("✅ All ERC-8183 Evaluator TypeScript tests passed!");
 }
