@@ -30,7 +30,10 @@ import {
   sidebarNavigation,
 } from "../lib/navigation/sidebar.ts";
 import { humanizeError } from "../lib/errors/humanize-error.ts";
-import { sanitizePublicReportText } from "../lib/agent/public-report-copy.ts";
+import {
+  publicReportSubject,
+  sanitizePublicReportText,
+} from "../lib/agent/public-report-copy.ts";
 import {
   curatedHostedWorkflowTemplates,
   hostedWorkflowTemplates,
@@ -83,9 +86,24 @@ assert(homeSource.includes("BRAND.description"));
 assert(homeSource.includes("Arc Testnet"));
 assert(homeSource.includes("Built for humans and autonomous agents"));
 assert(homeSource.includes("BRAND.agentApi"));
-assert.match(
-  homeSource,
-  /sanitizePublicReportText\(\s*report\.inputPreview \|\| report\.workflowLabel/,
+// Report cards must route their title through the shared subject formatter so a
+// JSON-encoded workflow input can never render as a raw object on a public card.
+assert.match(homeSource, /publicReportSubject\(report\)/);
+assert.equal(
+  publicReportSubject({
+    workflowType: "agent_trust_report",
+    workflowLabel: "Veyra Agent Trust Report",
+    inputPreview: '{"agentId":"agt_e7b2811de8186fb4bb37","agentWallet":null}',
+  }),
+  "agt_e7b2811de8186fb4bb37",
+);
+assert.equal(
+  publicReportSubject({
+    workflowType: "agent_trust_report",
+    workflowLabel: "Veyra Agent Trust Report",
+    inputPreview: '{"agentId":"agt_e7b2811de8186fb4bb37","agentWallet":null,"repositor',
+  }),
+  "Veyra Agent Trust Report",
 );
 assert.equal(
   proofsSource.match(/grid-cols-\[minmax\(0,1fr\)\]/g)?.length,
@@ -209,12 +227,15 @@ assert.deepEqual(
   },
 );
 
-assert.deepEqual(publicSidebarNavigation.map(({ label }) => label), ["Menu"]);
+assert.deepEqual(publicSidebarNavigation.map(({ label }) => label), ["Run", "Verify"]);
 assert.deepEqual(
-  publicSidebarNavigation[0].items.map(({ label, href }) => ({ label, href })),
+  publicSidebarNavigation.flatMap(({ items }) =>
+    items.map(({ label, href }) => ({ label, href })),
+  ),
   [
     { label: "Home", href: "/" },
     { label: "New Report", href: "/agent-runner" },
+    { label: "Project 360", href: "/project-360" },
     { label: "Monitoring", href: "/monitoring" },
     { label: "Reports", href: "/results" },
   ],

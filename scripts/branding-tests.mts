@@ -54,15 +54,48 @@ for (const file of activeFiles) {
   }
 }
 
+// EIP-712 domain names are protocol constants that must byte-match the deployed
+// contracts (`EIP712("Veyra Trust Gate", "1")`), so they are literals on purpose.
+// Routing them through BRAND would silently invalidate every signature the day
+// the product name changes.
+const BRAND_LITERAL_EXEMPT_FILES = [
+  "lib/brand.ts",
+  "lib/trust-gate/sign.ts",
+  "lib/erc8183/verdict.ts",
+];
+
 for (const root of ["app", "components", "lib"]) {
   for (const file of filesUnder(root).filter((candidate) => /\.(?:ts|tsx)$/.test(candidate))) {
-    if (file.endsWith("/lib/brand.ts")) continue;
+    const relativePath = file.slice(REPOSITORY_ROOT.length + 1);
+    if (BRAND_LITERAL_EXEMPT_FILES.includes(relativePath)) continue;
     const source = readFileSync(file, "utf8");
     assert(
       !/[("'`]Veyra(?:\s|[)"'`])/.test(source),
-      `Hardcoded Veyra product copy must use BRAND in ${file.slice(REPOSITORY_ROOT.length + 1)}`,
+      `Hardcoded Veyra product copy must use BRAND in ${relativePath}`,
     );
   }
+}
+
+// The exemptions above are only safe while they still match the contracts.
+for (const [file, domainName] of [
+  ["lib/trust-gate/sign.ts", "Veyra Trust Gate"],
+  ["lib/erc8183/verdict.ts", "Veyra ERC8183 Evaluator"],
+] as const) {
+  const source = readFileSync(resolve(REPOSITORY_ROOT, file), "utf8");
+  assert(
+    source.includes(`name: "${domainName}",`),
+    `${file} must keep the literal EIP-712 domain name "${domainName}".`,
+  );
+}
+for (const [contract, domainName] of [
+  ["contracts/src/VeyraTrustGate.sol", "Veyra Trust Gate"],
+  ["contracts/src/VeyraERC8183Evaluator.sol", "Veyra ERC8183 Evaluator"],
+] as const) {
+  const source = readFileSync(resolve(REPOSITORY_ROOT, contract), "utf8");
+  assert(
+    source.includes(`EIP712("${domainName}", "1")`),
+    `${contract} must keep the EIP-712 domain name "${domainName}" its signers assume.`,
+  );
 }
 
 assert.deepEqual(BRAND, {

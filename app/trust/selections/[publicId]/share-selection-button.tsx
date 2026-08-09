@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { Share2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { BRAND } from "@/lib/brand";
 
 export function ShareSelectionButton() {
   const [copied, setCopied] = useState(false);
@@ -10,7 +11,7 @@ export function ShareSelectionButton() {
     try {
       const url = window.location.href;
       if (navigator.share) {
-        await navigator.share({ title: "Veyra Counterparty Selection", url });
+        await navigator.share({ title: `${BRAND.name} Counterparty Selection`, url });
         return;
       }
       await navigator.clipboard.writeText(url);

@@ -22,7 +22,10 @@ import {
   listHostedFinalReports,
   type HostedFinalReportSummary,
 } from "@/lib/agent/hosted-jobs";
-import { sanitizePublicReportText } from "@/lib/agent/public-report-copy";
+import {
+  publicReportSubject,
+  sanitizePublicReportText,
+} from "@/lib/agent/public-report-copy";
 import {
   filterAndSortResults,
   hasActiveResultsFilters,
@@ -41,16 +44,6 @@ function formatDate(value: string) {
     dateStyle: "medium",
     timeStyle: "short",
   }).format(new Date(value));
-}
-
-function formatReportTitle(report: HostedFinalReportSummary) {
-  if (report.workflowType === "market_context") {
-    const symbolMatch = (report.inputPreview || report.summary).match(/\b(BTC|ETH|SOL|LINK|UNI|AVAX|MATIC|ARB|OP)\/USD\b/i);
-    if (symbolMatch) {
-      return `${symbolMatch[0].toUpperCase()} Market Context`;
-    }
-  }
-  return report.workflowLabel;
 }
 
 type ResultsPageProps = {
@@ -193,7 +186,7 @@ export default async function ResultsPage({ searchParams }: ResultsPageProps) {
                   </Badge>
                 </div>
                 <CardTitle className="text-xl font-bold text-foreground">
-                  {formatReportTitle(report)}
+                  {publicReportSubject(report)}
                 </CardTitle>
                 <p className="mt-2 line-clamp-2 text-xs leading-relaxed text-muted-foreground">
                   {sanitizePublicReportText(report.summary)}

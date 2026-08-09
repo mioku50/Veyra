@@ -5,6 +5,7 @@
 
 import { NextResponse } from "next/server";
 import { getCanonicalVeyraAgentIdentity } from "@/lib/erc8004/client";
+import { BRAND } from "@/lib/brand";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 3600;
@@ -24,7 +25,7 @@ export async function GET() {
   }
 
   const metadata = {
-    name: "Veyra Trust Evaluator",
+    name: `${BRAND.name} Trust Evaluator`,
     description: "Independent trust, deliverable, and contract evaluator for agentic commerce on Arc Testnet.",
     version: "1.0.0",
     network: "arc-testnet",

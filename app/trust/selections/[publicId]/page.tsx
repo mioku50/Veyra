@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { fetchPublicCounterpartySelection } from "@/lib/counterparty-selection/db";
 import { sanitizePublicSelection } from "@/lib/counterparty-selection/service";
+import { BRAND } from "@/lib/brand";
 import { ShareSelectionButton } from "./share-selection-button";
 
 export const dynamic = "force-dynamic";
@@ -23,10 +24,10 @@ export async function generateMetadata({ params }: Context): Promise<Metadata> {
   const data = await receipt((await params).publicId);
   const description = `${data.capability} · Agent ${data.recommendedAgentId} · Trust ${data.trustScore} · ${data.decision}`;
   return {
-    title: "Veyra Counterparty Selection",
+    title: `${BRAND.name} Counterparty Selection`,
     description,
     alternates: { canonical: `/trust/selections/${data.publicId}` },
-    openGraph: { title: "Veyra Counterparty Selection", description },
+    openGraph: { title: `${BRAND.name} Counterparty Selection`, description },
   };
 }
 

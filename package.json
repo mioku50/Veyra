@@ -32,6 +32,7 @@
     "frontend:responsive-test": "node --experimental-transform-types --no-warnings scripts/frontend-responsive-smoke.mts",
     "branding:test": "node --experimental-transform-types --no-warnings scripts/branding-tests.mts",
     "ui:cleanliness-test": "node --experimental-transform-types --no-warnings scripts/verify-public-ui-cleanliness.mts",
+    "ui:report-subject-test": "node --experimental-transform-types --no-warnings scripts/public-report-subject-tests.mts",
     "github:ref-test": "node --experimental-transform-types --no-warnings scripts/github-repository-ref-tests.mts",
     "github:analysis-test": "node --experimental-transform-types --no-warnings scripts/github-due-diligence-tests.mts",
     "github:provider-test": "node --experimental-transform-types --no-warnings scripts/github-provider-tests.mts",

@@ -6,6 +6,7 @@ export type SidebarIconName =
   | "console"
   | "dashboard"
   | "passport"
+  | "project-360"
   | "proof"
   | "receipt"
   | "results"
@@ -13,12 +14,20 @@ export type SidebarIconName =
   | "templates"
   | "tools";
 
+// Split into the two things a visitor can do, so the verification half of the
+// product is discoverable instead of living only behind report links.
 export const publicSidebarNavigation = [
   {
-    label: "Menu",
+    label: "Run",
     items: [
       { href: "/", label: "Home", icon: "dashboard" },
       { href: "/agent-runner", label: "New Report", icon: "agent" },
+      { href: "/project-360", label: "Project 360", icon: "project-360" },
+    ],
+  },
+  {
+    label: "Verify",
+    items: [
       { href: "/monitoring", label: "Monitoring", icon: "monitoring" },
       { href: "/results", label: "Reports", icon: "results" },
     ],

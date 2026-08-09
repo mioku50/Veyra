@@ -34,7 +34,10 @@ import {
   type HostedWorkflowType,
 } from "@/lib/agent/workflow-templates";
 import { hostedWorkflowHref } from "@/lib/agent/workflow-links";
-import { sanitizePublicReportText } from "@/lib/agent/public-report-copy";
+import {
+  publicReportSubject,
+  sanitizePublicReportText,
+} from "@/lib/agent/public-report-copy";
 import { BRAND, BRAND_TITLE } from "@/lib/brand";
 import { API_QUALITY_FINALIZER_PRICE_USDC } from "@/lib/services/constants";
 
@@ -492,9 +495,7 @@ export default async function Home() {
                     </Badge>
                   </div>
                   <h3 className="line-clamp-1 font-bold text-foreground text-base">
-                    {sanitizePublicReportText(
-                      report.inputPreview || report.workflowLabel,
-                    )}
+                    {publicReportSubject(report)}
                   </h3>
                   <p className="line-clamp-2 text-xs leading-relaxed text-muted-foreground">
                     {sanitizePublicReportText(report.summary)}

@@ -5,6 +5,13 @@
 
 import assert from "node:assert/strict";
 import { chromium, type Page } from "playwright";
+import { publicSidebarNavigation } from "../lib/navigation/sidebar.ts";
+
+// Derived from the shared config so a navigation change updates one place, while
+// FORBIDDEN_PATTERNS still guards which vocabulary may reach a public surface.
+const EXPECTED_PUBLIC_NAV_LABELS = publicSidebarNavigation.flatMap((section) =>
+  section.items.map((item) => item.label as string),
+);
 
 const FORBIDDEN_PATTERNS = [
   /\bPhase\s+\d+(?:\.\d+)?\b/i,
@@ -76,7 +83,7 @@ async function verifyNavigationLinks(page: Page, path: string) {
 
   assert.deepEqual(
     navLabels,
-    ["Home", "New Report", "Monitoring", "Reports"],
+    EXPECTED_PUBLIC_NAV_LABELS,
     `Navigation links on ${path} do not match the current public navigation. Found: ${JSON.stringify(navLabels)}`
   );
 }

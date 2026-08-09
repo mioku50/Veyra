@@ -173,9 +173,26 @@ export function useArcWallet() {
     }
   }, []);
 
+  // Injected wallets are not guaranteed to exist at mount: several extensions
+  // attach `window.ethereum` after hydration. Detect the provider on arrival so
+  // the connect button never stays disabled on an installed wallet.
   useEffect(() => {
-    setProviderAvailable(Boolean(getProvider()));
-    void readWalletState();
+    const detect = () => {
+      if (!getProvider()) return false;
+      setProviderAvailable(true);
+      void readWalletState();
+      return true;
+    };
+    if (detect()) return;
+
+    const onInitialized = () => detect();
+    window.addEventListener("ethereum#initialized", onInitialized, { once: true });
+    const timer = window.setTimeout(onInitialized, 3_000);
+
+    return () => {
+      window.removeEventListener("ethereum#initialized", onInitialized);
+      window.clearTimeout(timer);
+    };
   }, [readWalletState]);
 
   useEffect(() => {
@@ -202,7 +219,7 @@ export function useArcWallet() {
       provider.removeListener?.("accountsChanged", handleAccountsChanged);
       provider.removeListener?.("chainChanged", handleChainChanged);
     };
-  }, []);
+  }, [providerAvailable]);
 
   const connect = useCallback(async () => {
     const provider = getProvider();

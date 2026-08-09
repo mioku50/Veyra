@@ -5,6 +5,7 @@
 
 import { NextResponse } from "next/server";
 import { getArcPublicClient, getCanonicalVeyraAgentIdentity } from "@/lib/erc8004/client.ts";
+import { BRAND } from "@/lib/brand.ts";
 import {
   ARC_ERC8004_REPUTATION_REGISTRY,
   ARC_ERC8004_VALIDATION_REGISTRY,
@@ -25,7 +26,7 @@ export async function GET() {
   }
 
   const metadata = {
-    name: "Veyra Trust Evaluator",
+    name: `${BRAND.name} Trust Evaluator`,
     description: "Independent trust, deliverable, and contract evaluator for agentic commerce on Arc Testnet.",
     version: "1.0.0",
     network: "arc-testnet",

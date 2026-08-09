@@ -1,4 +1,5 @@
 import { COUNTERPARTY_SELECTION_POLICY, freshnessFromAge } from "./policy.ts";
+import { BRAND } from "../brand.ts";
 import type {
   CandidateRankingInput,
   EligibilityStatus,
@@ -91,7 +92,7 @@ export function rankCounterpartyCandidate(input: CandidateRankingInput): RankedC
       score: input.evidence.dimensions.evaluatorSuccess,
       evidenceCount: input.evidence.evidenceCounts.evaluator,
       freshness: source("evaluator")?.freshness ?? "missing",
-      explanation: "Veyra evaluator verdict history.",
+      explanation: `${BRAND.name} evaluator verdict history.`,
     },
     {
       name: "economicReliability",
