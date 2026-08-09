@@ -4,6 +4,7 @@ import type { GitHubRepositoryRef } from "../providers/github-repository-ref.ts"
 import type { GitHubRepositorySnapshot } from "../providers/github-types.ts";
 import { snapshotArcContract } from "./contract.ts";
 import { snapshotEndpointAvailability } from "./endpoint.ts";
+import { readArcUsdcBlocklistStatus } from "../wallet/arc-usdc.ts";
 import type {
   AgentIdentitySnapshot,
   AgentServiceSignal,
@@ -546,6 +547,11 @@ export async function collectAgentTrustSources(input: {
       now,
     ),
   ]);
+  const complianceWallet =
+    identityLookup.snapshot.registeredWallet ?? input.reportInput.agentWallet ?? null;
+  const complianceStatus = complianceWallet
+    ? await readArcUsdcBlocklistStatus(complianceWallet)
+    : "not_provided";
 
   return {
     code: {
@@ -564,5 +570,11 @@ export async function collectAgentTrustSources(input: {
     services,
     contract,
     endpoint,
+    arcCompliance: {
+      status: complianceStatus,
+      wallet: complianceWallet,
+      source: "Arc USDC onchain blocklist",
+      checkedAt,
+    },
   };
 }

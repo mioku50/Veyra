@@ -159,6 +159,13 @@ export type CodeIntelligenceSnapshot = {
   checkedAt: string;
 };
 
+export type ArcComplianceSnapshot = {
+  status: "clear" | "blocklisted" | "unknown" | "not_provided";
+  wallet: string | null;
+  source: "Arc USDC onchain blocklist";
+  checkedAt: string;
+};
+
 export type AgentTrustSourceSnapshots = {
   code: CodeIntelligenceSnapshot;
   identity: AgentIdentitySnapshot;
@@ -166,6 +173,7 @@ export type AgentTrustSourceSnapshots = {
   services: ServiceSignalsSnapshot;
   contract: ContractTransparencySnapshot;
   endpoint: EndpointAvailabilitySnapshot;
+  arcCompliance: ArcComplianceSnapshot;
 };
 
 export type AgentTrustVerification = {
@@ -203,6 +211,7 @@ export type AgentTrustReport = {
   services: ServiceSignalsSnapshot;
   contractTransparency: ContractTransparencySnapshot;
   endpointAvailability: EndpointAvailabilitySnapshot;
+  arcCompliance: ArcComplianceSnapshot;
   evidenceBackedStrengths: EvidenceItem[];
   risksAndReviewItems: EvidenceItem[];
   questionsBeforeIntegration: string[];

@@ -1,6 +1,8 @@
+import { randomUUID } from "node:crypto";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import {
   createPublicClient,
+  decodeEventLog,
   getAddress,
   http,
   isAddress,
@@ -27,10 +29,25 @@ import {
   ARC_TESTNET_CHAIN_ID,
   ARC_TESTNET_EXPLORER_URL,
   ARC_TESTNET_RPC_URL,
+  ARC_TESTNET_USDC_ADDRESS,
   arcTestnetChain,
 } from "../wallet/arc.ts";
 import { BRAND } from "../brand.ts";
 import { API_QUALITY_FINALIZER_PRICE_USDC } from "../services/constants.ts";
+import {
+  ARC_MEMO_WORKFLOW_PAYMENT_PROTOCOL,
+  encodeWorkflowPaymentTransaction,
+  workflowPaymentDescriptor,
+  workflowPaymentProtocolForQuote,
+  type WorkflowPaymentQuoteSource,
+} from "./workflow-payment.ts";
+import {
+  ARC_MEMO_ABI,
+  ARC_TESTNET_NATIVE_USDC_EMITTER,
+  ARC_USDC_TRANSFER_ABI,
+} from "../wallet/arc-usdc.ts";
+
+const ARC_NATIVE_USDC_SCALE = BigInt(10) ** BigInt(12);
 
 export const WORKFLOW_CHECKOUT_API_QUALITY_PRICE_USDC = API_QUALITY_FINALIZER_PRICE_USDC;
 
@@ -228,6 +245,9 @@ function publicQuote(row: HostedWorkflowQuoteRow) {
     treasuryAddress: getAddress(row.treasury_address),
     chainId: Number(row.chain_id),
     asset: row.asset,
+    payment: row.payment_mode === "paid"
+      ? workflowPaymentDescriptor(row as WorkflowPaymentQuoteSource)
+      : null,
     status: row.status,
     expiresAt: row.expires_at,
     jobId: row.job_id,
@@ -421,10 +441,13 @@ export async function createHostedWorkflowQuote(input: {
     owner_wallet: input.ownerWallet || null,
     seller_service_public_id: input.sellerSnapshot?.servicePublicId ?? null,
     seller_public_id: input.sellerSnapshot?.sellerPublicId ?? null,
+    checkout_payment_protocol:
+      paymentMode === "paid" ? ARC_MEMO_WORKFLOW_PAYMENT_PROTOCOL : null,
     ...input.metadata,
   };
 
   const row = {
+    id: randomUUID(),
     idempotency_hash: input.idempotencyHash,
     request_hash: input.requestHash,
     requester_fingerprint: input.requesterFingerprint,
@@ -512,7 +535,10 @@ export function validateHostedWorkflowPaymentEvidence(input: {
     | "treasury_address"
     | "created_at"
     | "expires_at"
-  >;
+  > & Partial<Pick<
+    HostedWorkflowQuoteRow,
+    "id" | "request_hash" | "input_hash" | "planner_snapshot"
+  >>;
   transaction: {
     chainId?: number;
     from: string;
@@ -520,29 +546,119 @@ export function validateHostedWorkflowPaymentEvidence(input: {
     value: bigint;
     input?: string;
   };
+  logs?: Array<{
+    address: string;
+    data: Hex;
+    topics: readonly Hex[];
+  }>;
   receiptStatus: "success" | "reverted";
   settledAt: string;
 }) {
   if (input.receiptStatus !== "success") {
     throw new Error("Workflow payment transaction reverted.");
   }
-  // PostgREST may decode NUMERIC as either a string or a number depending on
-  // the project/runtime version. viem requires a decimal string.
-  const expectedAmount = parseUnits(String(input.quote.amount_due_usdc), 18);
   const transaction = input.transaction;
   const settledAt = Date.parse(input.settledAt);
-  if (
+  const commonMismatch =
     transaction.chainId !== ARC_TESTNET_CHAIN_ID ||
-    !transaction.to ||
     transaction.from.toLowerCase() !== input.quote.requester_wallet.toLowerCase() ||
-    transaction.to.toLowerCase() !== input.quote.treasury_address.toLowerCase() ||
-    transaction.value !== expectedAmount ||
-    (transaction.input !== "0x" && transaction.input !== undefined) ||
     !Number.isFinite(settledAt) ||
     settledAt < Date.parse(input.quote.created_at) - 30_000 ||
-    settledAt > Date.parse(input.quote.expires_at) + 60_000
+    settledAt > Date.parse(input.quote.expires_at) + 60_000;
+  if (commonMismatch || !transaction.to) {
+    throw new Error("Workflow payment does not match the immutable quote.");
+  }
+
+  const fullQuote = input.quote.id && input.quote.request_hash && input.quote.input_hash && input.quote.planner_snapshot
+    ? input.quote as WorkflowPaymentQuoteSource
+    : null;
+  const memoPayment = fullQuote &&
+    workflowPaymentProtocolForQuote(fullQuote) === ARC_MEMO_WORKFLOW_PAYMENT_PROTOCOL;
+  if (!memoPayment) {
+    const amountAtomic6 = parseUnits(String(input.quote.amount_due_usdc), 6);
+    const expectedValue = amountAtomic6 * ARC_NATIVE_USDC_SCALE;
+    if (
+      transaction.to.toLowerCase() !== input.quote.treasury_address.toLowerCase() ||
+      transaction.value !== expectedValue ||
+      (transaction.input !== "0x" && transaction.input !== undefined)
+    ) {
+      throw new Error("Workflow payment does not match the immutable quote.");
+    }
+    return;
+  }
+
+  const descriptor = workflowPaymentDescriptor(fullQuote!);
+  const expected = encodeWorkflowPaymentTransaction(descriptor);
+  if (
+    transaction.to.toLowerCase() !== expected.to.toLowerCase() ||
+    transaction.value !== expected.value ||
+    (transaction.input ?? "0x").toLowerCase() !== expected.data.toLowerCase()
   ) {
     throw new Error("Workflow payment does not match the immutable quote.");
+  }
+
+  const requester = getAddress(input.quote.requester_wallet).toLowerCase();
+  const treasury = getAddress(input.quote.treasury_address).toLowerCase();
+  const amountAtomic6 = BigInt(descriptor.amountAtomic6);
+  let memoLogMatched = false;
+  let erc20TransferMatched = false;
+  let systemTransferMatched = false;
+  for (const log of input.logs ?? []) {
+    try {
+      if (log.address.toLowerCase() === descriptor.memo!.contractAddress.toLowerCase()) {
+        const decoded = decodeEventLog({
+          abi: ARC_MEMO_ABI,
+          data: log.data,
+          topics: [...log.topics] as [Hex, ...Hex[]],
+        });
+        if (decoded.eventName === "Memo") {
+          const args = decoded.args as {
+            sender: Address;
+            target: Address;
+            callDataHash: Hex;
+            memoId: Hex;
+            memo: Hex;
+          };
+          memoLogMatched =
+            args.sender.toLowerCase() === requester &&
+            args.target.toLowerCase() === ARC_TESTNET_USDC_ADDRESS.toLowerCase() &&
+            args.callDataHash.toLowerCase() === descriptor.memo!.callDataHash.toLowerCase() &&
+            args.memoId.toLowerCase() === descriptor.memo!.memoId.toLowerCase() &&
+            args.memo.toLowerCase() === descriptor.memo!.memoData.toLowerCase();
+        }
+      } else if (log.address.toLowerCase() === ARC_TESTNET_USDC_ADDRESS.toLowerCase()) {
+        const decoded = decodeEventLog({
+          abi: ARC_USDC_TRANSFER_ABI,
+          data: log.data,
+          topics: [...log.topics] as [Hex, ...Hex[]],
+        });
+        if (decoded.eventName === "Transfer") {
+          const args = decoded.args as { from: Address; to: Address; value: bigint };
+          erc20TransferMatched =
+            args.from.toLowerCase() === requester &&
+            args.to.toLowerCase() === treasury &&
+            args.value === amountAtomic6;
+        }
+      } else if (log.address.toLowerCase() === ARC_TESTNET_NATIVE_USDC_EMITTER) {
+        const decoded = decodeEventLog({
+          abi: ARC_USDC_TRANSFER_ABI,
+          data: log.data,
+          topics: [...log.topics] as [Hex, ...Hex[]],
+        });
+        if (decoded.eventName === "Transfer") {
+          const args = decoded.args as { from: Address; to: Address; value: bigint };
+          systemTransferMatched =
+            args.from.toLowerCase() === requester &&
+            args.to.toLowerCase() === treasury &&
+            args.value === amountAtomic6 * ARC_NATIVE_USDC_SCALE;
+        }
+      }
+    } catch {
+      // Ignore unrelated logs. The required event set is checked below.
+    }
+  }
+  if (!memoLogMatched || !erc20TransferMatched || !systemTransferMatched) {
+    throw new Error("Workflow payment receipt does not contain the required Arc memo evidence.");
   }
 }
 
@@ -565,6 +681,7 @@ async function verifyPaidTransaction(
     quote,
     transaction,
     receiptStatus: receipt.status,
+    logs: receipt.logs,
     settledAt,
   });
   return {

@@ -1,8 +1,10 @@
 import type { Hex } from "viem";
 import type { TrustDecision, TrustDecisionLevel } from "../trust-gate/types.ts";
+import type { ArcUsdcBlocklistStatus } from "../wallet/arc-usdc.ts";
 
 export const COUNTERPARTY_RANKING_VERSION = "veyra-counterparty-selection-v1" as const;
 export const COUNTERPARTY_NETWORK = "eip155:5042002" as const;
+export const COUNTERPARTY_COMPLIANCE_POLICY = "arc-usdc-blocklist-v1" as const;
 
 export type CandidateInput = {
   agentId?: string;
@@ -111,6 +113,7 @@ export type CandidateRankingInput = {
   advertisedPriceUsdc?: number;
   priceKind: PriceKind;
   hardExclusions?: string[];
+  arcUsdcBlocklistStatus?: ArcUsdcBlocklistStatus;
 };
 
 export type RankedCandidate = {
@@ -143,6 +146,7 @@ export type RankedCandidate = {
   riskSignals: string[];
   tradeoffs: string[];
   rejectionReason?: string;
+  arcUsdcBlocklistStatus: ArcUsdcBlocklistStatus;
   rank: number;
 };
 
@@ -177,6 +181,7 @@ export type UnresolvedCandidate = {
   riskSignals: string[];
   tradeoffs: [];
   rejectionReason: string;
+  arcUsdcBlocklistStatus: "unknown";
   rank: number;
 };
 
@@ -281,6 +286,7 @@ export type SelectionCanonicalPayload = {
     serviceId: string | null;
     evidenceHash: Hex;
     trustDecisionHash: Hex;
+    arcUsdcBlocklistStatus: ArcUsdcBlocklistStatus;
   }>;
   finalRanking: Array<{
     candidateKey: Hex;
@@ -291,6 +297,7 @@ export type SelectionCanonicalPayload = {
     trustScore: number;
     confidence: number;
     maxExposureUsdc: string;
+    arcUsdcBlocklistStatus: ArcUsdcBlocklistStatus;
   }>;
   winner: {
     agentId: string;
@@ -301,6 +308,7 @@ export type SelectionCanonicalPayload = {
   };
   policyVersion: string;
   rankingVersion: typeof COUNTERPARTY_RANKING_VERSION;
+  compliancePolicy: typeof COUNTERPARTY_COMPLIANCE_POLICY;
   createdAt: string;
   expiresAt: string;
 };

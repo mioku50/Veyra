@@ -22,6 +22,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useArcWallet } from "@/components/wallet/use-arc-wallet";
+import type { WorkflowPaymentDescriptor } from "@/lib/commerce/workflow-payment";
 import { PROJECT_360_MODULE_LABELS, type Project360Module } from "@/lib/project-360/types";
 
 type HostedQuote = {
@@ -29,6 +30,7 @@ type HostedQuote = {
   paymentMode: "sponsored" | "paid";
   pricing: { amountDueUsdc: number; listPriceUsdc: number };
   treasuryAddress: string;
+  payment: WorkflowPaymentDescriptor | null;
 };
 
 type Project360Suggestion = {
@@ -214,7 +216,11 @@ export function Project360MonitoringClient({ initialJobId = "" }: { initialJobId
         signature = await wallet.signMessage(quoted.sponsoredAuthorizationMessage);
       } else {
         if (!wallet.isArcTestnet) await wallet.switchToArc();
-        transactionHash = await wallet.sendWorkflowPayment({ treasuryAddress: quote.treasuryAddress, amountUsdc: quote.pricing.amountDueUsdc });
+        transactionHash = await wallet.sendWorkflowPayment({
+          treasuryAddress: quote.treasuryAddress,
+          amountUsdc: quote.pricing.amountDueUsdc,
+          payment: quote.payment,
+        });
       }
       const recheck = quoted.recheck as { id: string };
       const launched = await api(`/api/project-360/monitoring/rechecks/${recheck.id}/confirm`, {

@@ -1,4 +1,8 @@
-import { COUNTERPARTY_SELECTION_POLICY, freshnessFromAge } from "./policy.ts";
+import {
+  arcUsdcBlocklistHardExclusion,
+  COUNTERPARTY_SELECTION_POLICY,
+  freshnessFromAge,
+} from "./policy.ts";
 import { BRAND } from "../brand.ts";
 import type {
   CandidateRankingInput,
@@ -26,7 +30,9 @@ function eligibilityFor(input: CandidateRankingInput): {
   status: EligibilityStatus;
   reason?: string;
 } {
-  const hard = input.hardExclusions?.[0];
+  const hard = arcUsdcBlocklistHardExclusion(
+    input.arcUsdcBlocklistStatus ?? "unknown",
+  ) ?? input.hardExclusions?.[0];
   if (hard) return { status: "INELIGIBLE", reason: hard };
   if (input.requireExactCapability && input.capabilityMatch !== "exact") {
     return { status: "INELIGIBLE", reason: "unsupported_capability" };
@@ -184,9 +190,15 @@ export function rankCounterpartyCandidate(input: CandidateRankingInput): RankedC
     riskSignals: Array.from(new Set([
       ...input.evidence.riskSignals,
       ...input.trustDecision.riskSignals,
+      ...(input.arcUsdcBlocklistStatus === "blocklisted"
+        ? ["arc_usdc_blocklisted"]
+        : input.arcUsdcBlocklistStatus === "unknown"
+          ? ["arc_usdc_blocklist_unknown"]
+          : []),
     ])),
     tradeoffs,
     rejectionReason: eligibility.reason,
+    arcUsdcBlocklistStatus: input.arcUsdcBlocklistStatus ?? "unknown",
     rank: 0,
   };
 }

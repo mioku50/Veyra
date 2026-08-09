@@ -206,6 +206,7 @@ export function AgentTrustReportView({
               <div><dt className="text-muted-foreground">Wallet verification</dt><dd>{report.identity.ownerVerified === null ? "Unavailable" : report.identity.ownerVerified ? "Verified" : "Not verified"}</dd></div>
               <div><dt className="text-muted-foreground">Agent Passport</dt><dd>{report.identity.passportPresent ? "Present" : "Not found"}</dd></div>
               <div><dt className="text-muted-foreground">Policy</dt><dd>{report.identity.policy ? `${report.identity.policy.status} · max ${report.identity.policy.maxPricePerRunUsdc ?? "n/a"} USDC/run` : "Unavailable"}</dd></div>
+              <div><dt className="text-muted-foreground">Arc USDC blocklist</dt><dd>{availabilityLabel(report.arcCompliance?.status ?? "not_provided")}</dd></div>
             </dl>
           </div>
           <div className="rounded-md border p-4">

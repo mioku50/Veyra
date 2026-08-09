@@ -19,6 +19,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useArcWallet } from "@/components/wallet/use-arc-wallet";
 import { BRAND } from "@/lib/brand";
+import type { WorkflowPaymentDescriptor } from "@/lib/commerce/workflow-payment";
 import {
   PROJECT_360_MODULE_LABELS,
   PROJECT_360_MODULES,
@@ -62,6 +63,7 @@ type HostedQuote = {
   id: string;
   paymentMode: "sponsored" | "paid";
   treasuryAddress: string;
+  payment: WorkflowPaymentDescriptor | null;
   pricing: {
     estimatedProviderCostUsdc: number;
     platformFeeUsdc: number;
@@ -293,6 +295,7 @@ export function Project360Client({
         transactionHash = await wallet.sendWorkflowPayment({
           treasuryAddress: quote.treasuryAddress,
           amountUsdc: quote.pricing.amountDueUsdc,
+          payment: quote.payment,
         });
       }
       const launched = await api(`/api/project-360/quotes/${quote.id}/confirm`, {

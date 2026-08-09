@@ -12,6 +12,7 @@ import type {
 import type { TreasuryAnalytics } from "../providers/treasury-health-types.ts";
 import { calculateTreasuryHealthScore } from "../providers/treasury-health.ts";
 import type { ConfidenceLevel } from "../providers/api-quality-types.ts";
+import type { ArcUsdcBlocklistStatus } from "../wallet/arc-usdc.ts";
 
 export interface TreasuryHealthRiskItem {
   code: string;
@@ -65,7 +66,13 @@ export interface TreasuryHealthPublicReport {
 
   // Section 5: Payment Distribution by Recipient
   paymentDistribution: {
-    topRecipients: Array<{ address: string; totalUsdc: number; percentage: number; txCount: number }>;
+    topRecipients: Array<{
+      address: string;
+      totalUsdc: number;
+      percentage: number;
+      txCount: number;
+      arcUsdcBlocklistStatus: ArcUsdcBlocklistStatus;
+    }>;
     otherRecipientsCount: number;
     otherRecipientsUsdc: number;
     summary: string;
@@ -149,6 +156,8 @@ export interface TreasuryHealthPublicReport {
     firstTransferAt: string | null;
     lastTransferAt: string | null;
     dataTruncated: boolean;
+    targetArcUsdcBlocklistStatus: ArcUsdcBlocklistStatus;
+    blocklistCheckedAt: string | null;
     summary: string;
   };
 
@@ -220,6 +229,39 @@ export function buildTreasuryHealthPublicReport(
       severity: "medium",
       description: "Over 50,000 transfers found. Analysis is truncated to the most recent.",
       impact: "Long-term trends may not be fully represented."
+    });
+  }
+  if (analytics.targetArcUsdcBlocklistStatus === "blocklisted") {
+    risksAndReviewItems.push({
+      code: "arc_usdc_target_blocklisted",
+      title: "Treasury Wallet Is Blocklisted on Arc",
+      severity: "critical",
+      description: "The Arc USDC contract reports the analyzed treasury wallet as blocklisted.",
+      impact: "USDC transfers involving this wallet are rejected by Arc protocol enforcement.",
+    });
+  }
+  const blockedCounterparties = analytics.topRecipients.filter(
+    (item) => item.arcUsdcBlocklistStatus === "blocklisted",
+  );
+  if (blockedCounterparties.length > 0) {
+    risksAndReviewItems.push({
+      code: "arc_usdc_counterparty_blocklisted",
+      title: "Top Counterparty Is Blocklisted on Arc",
+      severity: "critical",
+      description: `${blockedCounterparties.length} top outbound counterparty address(es) are currently blocklisted by the Arc USDC contract.`,
+      impact: "Future transfers involving those addresses will be rejected onchain.",
+    });
+  }
+  if (
+    analytics.targetArcUsdcBlocklistStatus === "unknown" ||
+    analytics.topRecipients.some((item) => item.arcUsdcBlocklistStatus === "unknown")
+  ) {
+    risksAndReviewItems.push({
+      code: "arc_usdc_blocklist_status_unknown",
+      title: "Arc Blocklist Status Could Not Be Fully Verified",
+      severity: "medium",
+      description: "At least one required onchain blocklist read was unavailable; no clear status was inferred.",
+      impact: "Recheck the affected addresses immediately before relying on this report for a payment decision.",
     });
   }
 
@@ -311,6 +353,8 @@ export function buildTreasuryHealthPublicReport(
       firstTransferAt: analytics.firstTransferAt,
       lastTransferAt: analytics.lastTransferAt,
       dataTruncated: analytics.dataTruncated,
+      targetArcUsdcBlocklistStatus: analytics.targetArcUsdcBlocklistStatus,
+      blocklistCheckedAt: analytics.blocklistCheckedAt,
       summary: `Observed the last ${analytics.observationWindowDays} days across ${analytics.blocksScanned} blocks. Truncated: ${analytics.dataTruncated}.`
     },
 

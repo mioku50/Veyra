@@ -3,7 +3,15 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { getAddress, parseUnits, verifyMessage } from "viem";
+import {
+  encodeAbiParameters,
+  encodeEventTopics,
+  getAddress,
+  parseUnits,
+  verifyMessage,
+  type Hex,
+  type PublicClient,
+} from "viem";
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 import type { HostedPlannerSnapshot } from "../lib/agent/hosted-workflows.ts";
 import {
@@ -15,7 +23,22 @@ import {
   sponsoredWorkflowAuthorizationMessage,
   validateHostedWorkflowPaymentEvidence,
 } from "../lib/commerce/workflow-checkout.ts";
-import { ARC_TESTNET_CHAIN_ID } from "../lib/wallet/arc.ts";
+import {
+  ARC_MEMO_WORKFLOW_PAYMENT_PROTOCOL,
+  encodeWorkflowPaymentTransaction,
+  workflowPaymentDescriptor,
+} from "../lib/commerce/workflow-payment.ts";
+import {
+  ARC_MEMO_ABI,
+  ARC_TESTNET_NATIVE_USDC_EMITTER,
+  ARC_USDC_TRANSFER_ABI,
+  arcAccountKind,
+  readArcUsdcBlocklistStatus,
+} from "../lib/wallet/arc-usdc.ts";
+import {
+  ARC_TESTNET_CHAIN_ID,
+  ARC_TESTNET_USDC_ADDRESS,
+} from "../lib/wallet/arc.ts";
 
 function assert(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(message);
@@ -155,6 +178,147 @@ async function main() {
     "Pre-quote payment replay",
   );
 
+  const memoQuote = {
+    id: "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee",
+    request_hash: `0x${"c".repeat(64)}`,
+    input_hash: `0x${"d".repeat(64)}`,
+    amount_due_usdc: "0.002000",
+    requester_wallet: requester,
+    treasury_address: treasury,
+    created_at: "2026-07-20T11:59:00.000Z",
+    expires_at: "2026-07-20T12:10:00.000Z",
+    planner_snapshot: {
+      metadata: { checkout_payment_protocol: ARC_MEMO_WORKFLOW_PAYMENT_PROTOCOL },
+    },
+  };
+  const memoDescriptor = workflowPaymentDescriptor(memoQuote);
+  const memoTransaction = encodeWorkflowPaymentTransaction(memoDescriptor);
+  assert(memoDescriptor.memo !== null, "Memo quote did not produce a Memo payment descriptor.");
+  assert(
+    JSON.stringify(workflowPaymentDescriptor(memoQuote)) === JSON.stringify(memoDescriptor),
+    "Memo payment descriptor is not deterministic.",
+  );
+  const memoTopics = encodeEventTopics({
+    abi: ARC_MEMO_ABI,
+    eventName: "Memo",
+    args: {
+      sender: requester,
+      target: ARC_TESTNET_USDC_ADDRESS,
+      memoId: memoDescriptor.memo.memoId,
+    },
+  });
+  const memoData = encodeAbiParameters(
+    [{ type: "bytes32" }, { type: "bytes" }, { type: "uint256" }],
+    [memoDescriptor.memo.callDataHash, memoDescriptor.memo.memoData, BigInt(1)],
+  );
+  const transferTopics = encodeEventTopics({
+    abi: ARC_USDC_TRANSFER_ABI,
+    eventName: "Transfer",
+    args: { from: requester, to: treasury },
+  });
+  const amountAtomic6 = BigInt(memoDescriptor.amountAtomic6);
+  const transferData = encodeAbiParameters([{ type: "uint256" }], [amountAtomic6]);
+  const nativeTransferData = encodeAbiParameters(
+    [{ type: "uint256" }],
+    [amountAtomic6 * (BigInt(10) ** BigInt(12))],
+  );
+  const memoLogs = [
+    {
+      address: memoDescriptor.memo.contractAddress,
+      topics: memoTopics,
+      data: memoData,
+    },
+    {
+      address: ARC_TESTNET_USDC_ADDRESS,
+      topics: transferTopics,
+      data: transferData,
+    },
+    {
+      address: ARC_TESTNET_NATIVE_USDC_EMITTER,
+      topics: transferTopics,
+      data: nativeTransferData,
+    },
+  ];
+  validateHostedWorkflowPaymentEvidence({
+    quote: memoQuote,
+    transaction: {
+      chainId: ARC_TESTNET_CHAIN_ID,
+      from: requester,
+      to: memoTransaction.to,
+      value: memoTransaction.value,
+      input: memoTransaction.data,
+    },
+    logs: memoLogs,
+    receiptStatus: "success",
+    settledAt: "2026-07-20T12:00:00.000Z",
+  });
+  expectFailure(
+    () => validateHostedWorkflowPaymentEvidence({
+      quote: memoQuote,
+      transaction: {
+        chainId: ARC_TESTNET_CHAIN_ID,
+        from: requester,
+        to: memoTransaction.to,
+        value: memoTransaction.value,
+        input: memoTransaction.data,
+      },
+      logs: memoLogs.slice(0, 2),
+      receiptStatus: "success",
+      settledAt: "2026-07-20T12:00:00.000Z",
+    }),
+    /required Arc memo evidence/i,
+    "Missing EIP-7708 payment evidence",
+  );
+  const tamperedMemoData = encodeAbiParameters(
+    [{ type: "bytes32" }, { type: "bytes" }, { type: "uint256" }],
+    [memoDescriptor.memo.callDataHash, "0x1234" as Hex, BigInt(1)],
+  );
+  expectFailure(
+    () => validateHostedWorkflowPaymentEvidence({
+      quote: memoQuote,
+      transaction: {
+        chainId: ARC_TESTNET_CHAIN_ID,
+        from: requester,
+        to: memoTransaction.to,
+        value: memoTransaction.value,
+        input: memoTransaction.data,
+      },
+      logs: [{ ...memoLogs[0], data: tamperedMemoData }, ...memoLogs.slice(1)],
+      receiptStatus: "success",
+      settledAt: "2026-07-20T12:00:00.000Z",
+    }),
+    /required Arc memo evidence/i,
+    "Tampered Memo evidence",
+  );
+
+  const blocklistedClient = {
+    readContract: async () => true,
+  } as unknown as PublicClient;
+  const clearClient = {
+    readContract: async () => false,
+  } as unknown as PublicClient;
+  const unavailableClient = {
+    readContract: async () => { throw new Error("provider unavailable"); },
+  } as unknown as PublicClient;
+  assert(
+    await readArcUsdcBlocklistStatus(requester, blocklistedClient) === "blocklisted",
+    "Confirmed Arc USDC blocklist status was not preserved.",
+  );
+  assert(
+    await readArcUsdcBlocklistStatus(requester, clearClient) === "clear",
+    "Clear Arc USDC blocklist status was not preserved.",
+  );
+  assert(
+    await readArcUsdcBlocklistStatus(requester, unavailableClient) === "unknown",
+    "Blocklist provider failure did not fail closed to unknown.",
+  );
+  assert(
+    await arcAccountKind(requester, {
+      getBytecode: async () => "0x",
+    } as unknown as PublicClient) === "eoa",
+    "EOA detection failed for the Memo checkout gate.",
+  );
+
   const account = privateKeyToAccount(generatePrivateKey());
   const sponsoredQuote = {
     id: "11111111-2222-4333-8444-555555555555",
@@ -175,7 +339,7 @@ async function main() {
   );
 
   console.log(
-    "[hosted-checkout-test] passed: exact server pricing, budget/quota caps, Arc payment evidence, calldata rejection, and sponsored signature binding",
+    "[hosted-checkout-test] passed: exact pricing, legacy compatibility, deterministic Memo checkout, EIP-7708 receipt evidence, blocklist/EOA gates, and sponsored signature binding",
   );
 }
 

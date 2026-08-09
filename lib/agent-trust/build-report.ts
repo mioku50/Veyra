@@ -494,11 +494,44 @@ export function buildAgentTrustReport(input: {
     serviceReliability: serviceCategory(input.sources),
     contractTransparency: contractCategory(input.sources),
   };
-  const trustScore = calculateTrustScore(categories);
-  const evidenceItems = Object.values(categories).flatMap((category) => [
+  const calculatedScore = calculateTrustScore(categories);
+  const compliance = input.sources.arcCompliance;
+  const complianceEvidence = compliance.status === "not_provided"
+    ? []
+    : [evidence({
+        category: "agent_identity",
+        signal: compliance.status === "clear"
+          ? "positive"
+          : compliance.status === "blocklisted"
+            ? "review"
+            : "neutral",
+        title: compliance.status === "blocklisted"
+          ? "Arc USDC blocklist restriction"
+          : "Arc USDC blocklist status",
+        detail: compliance.status === "clear"
+          ? "The supplied agent wallet was not blocklisted by the Arc USDC contract at the recorded check time."
+          : compliance.status === "blocklisted"
+            ? "The supplied agent wallet is blocklisted by the Arc USDC contract; Arc rejects USDC transfers involving it."
+            : "The Arc USDC blocklist status could not be verified, so no clear result was inferred.",
+        source: compliance.source,
+        observedAt: compliance.checkedAt,
+      })];
+  const trustScore = compliance.status === "blocklisted"
+    ? {
+        ...calculatedScore,
+        overall: calculatedScore.overall === null
+          ? 0
+          : Math.min(calculatedScore.overall, 20),
+        status: "high_attention" as const,
+      }
+    : calculatedScore;
+  const evidenceItems = [
+    ...Object.values(categories).flatMap((category) => [
     ...category.positiveSignals,
     ...category.reviewItems,
-  ]);
+    ]),
+    ...complianceEvidence,
+  ];
   const strengths = evidenceItems.filter((item) => item.signal === "positive");
   const reviews = evidenceItems.filter((item) => item.signal === "review");
   const identity = input.sources.identity;
@@ -536,6 +569,7 @@ export function buildAgentTrustReport(input: {
     input.sources.services.status === "unavailable" ? "Seller services" : null,
     input.sources.contract.status === "unavailable" ? "Arc contract provider" : null,
     input.sources.endpoint.status === "unreachable" ? "Service endpoint" : null,
+    input.sources.arcCompliance.status === "unknown" ? "Arc USDC blocklist" : null,
   ].filter((value): value is string => Boolean(value));
   const hash = reportHash({
     reportId: input.reportId,
@@ -564,6 +598,7 @@ export function buildAgentTrustReport(input: {
     services: input.sources.services,
     contractTransparency: input.sources.contract,
     endpointAvailability: input.sources.endpoint,
+    arcCompliance: input.sources.arcCompliance,
     evidenceBackedStrengths: strengths,
     risksAndReviewItems: reviews,
     questionsBeforeIntegration: [
@@ -576,6 +611,9 @@ export function buildAgentTrustReport(input: {
         ? "Who controls any readable owner, admin, pause, or upgrade capability?"
         : "Is there a relevant Arc Testnet contract that should be reviewed separately?",
       "What operational fallback exists if the agent or its services become unavailable?",
+      compliance.status === "clear"
+        ? "Will you recheck the Arc USDC blocklist immediately before payment?"
+        : "Can the Arc USDC blocklist status be cleared or independently reverified before payment?",
     ],
     evidence: evidenceItems,
     dataFreshness: [
@@ -615,6 +653,14 @@ export function buildAgentTrustReport(input: {
             fetchedAt: input.sources.endpoint.checkedAt,
             cacheMode: "single_live_request",
             upstreamStatus: input.sources.endpoint.status,
+          }]
+        : []),
+      ...(compliance.status !== "not_provided"
+        ? [{
+            source: compliance.source,
+            fetchedAt: compliance.checkedAt,
+            cacheMode: "live_read",
+            upstreamStatus: compliance.status,
           }]
         : []),
     ],

@@ -15,6 +15,7 @@ import {
   requireMachineWatchlist,
   TrustMonitoringError,
 } from "@/lib/monitoring/service";
+import { workflowPaymentTransactionRequest } from "@/lib/commerce/workflow-payment";
 
 type RouteContext = { params: Promise<{ watchlistId: string }> };
 
@@ -124,6 +125,7 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
         amount: quote.pricing.amountDueUsdc,
         treasuryAddress: quote.treasuryAddress,
         chainId: quote.chainId,
+        transaction: workflowPaymentTransactionRequest(quote.payment),
       },
     };
     await saveMachineIdempotency(

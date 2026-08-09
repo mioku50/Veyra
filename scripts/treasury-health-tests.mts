@@ -11,6 +11,8 @@ import {
   analyzeTreasury,
   calculateTreasuryHealthScore,
   executeTreasuryHealthWithRetry,
+  fetchBlockscoutUsdcTransfers,
+  parseBlockscoutArcMovementLog,
   TreasuryHealthExecutionError,
   TreasuryProviderError,
 } from "../lib/providers/treasury-health.ts";
@@ -18,9 +20,14 @@ import { buildTreasuryHealthPublicReport, formatTreasuryHealthReportAsMarkdown }
 import { validateTreasuryHealthReportPayload, computeCanonicalReportHash, stripInternalKeys } from "../lib/reports/canonical-report-hash.ts";
 import { TREASURY_HEALTH_FINALIZER_PRICE_USDC } from "../lib/services/constants.ts";
 import type { UsdcTransfer } from "../lib/providers/treasury-health-types.ts";
+import {
+  ARC_TESTNET_LEGACY_USDC_EMITTER,
+  ARC_TESTNET_NATIVE_USDC_EMITTER,
+  ARC_ZERO5_ACTIVATION_BLOCK,
+} from "../lib/wallet/arc-usdc.ts";
 
 async function runTests() {
-  console.log("Starting Treasury Health Test Suite (19 Scenarios)...");
+  console.log("Starting Treasury Health Test Suite (23 Scenarios)...");
 
   const wallet = "0x89d24a6b4ccb1b6faa2625fe562bdd9a23260359";
   const recipient1 = "0x0000000000000000000000000000000000000001";
@@ -295,6 +302,96 @@ async function runTests() {
       error.attempts.length === 1,
   );
   assert.equal(malformedAttempts, 1);
+
+  // Scenario 20: EIP-7708 system values are parsed as 18-decimal USDC.
+  console.log("Scenario 20: EIP-7708 system movement parsing");
+  const topicAddress = (address: string) =>
+    `0x${address.slice(2).toLowerCase().padStart(64, "0")}`;
+  const word = (value: bigint) => `0x${value.toString(16).padStart(64, "0")}`;
+  const systemMovement = parseBlockscoutArcMovementLog({
+    address: ARC_TESTNET_NATIVE_USDC_EMITTER,
+    blockNumber: "0x2a",
+    transactionHash: `0x${"1".repeat(64)}`,
+    timeStamp: "0x66",
+    logIndex: "0x3",
+    topics: [
+      "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef",
+      topicAddress(sender1),
+      topicAddress(wallet),
+    ],
+    data: word(1_250_000_000_000_000_000n),
+  }, "system_transfer");
+  assert.equal(systemMovement.decimals, 18);
+  assert.equal(systemMovement.logIndex, 3);
+  assert.equal(analyzeTreasury([systemMovement], wallet, 1.25, 1, false).totalInboundUsdc, 1.25);
+
+  // Scenario 21: mint/burn affect flows without creating fake zero-address counterparties.
+  console.log("Scenario 21: Mint and burn classification");
+  const minted = { ...systemMovement, from: "0x0000000000000000000000000000000000000000", movementType: "mint" as const };
+  const burned = { ...systemMovement, transactionHash: `0x${"2".repeat(64)}`, from: wallet, to: "0x0000000000000000000000000000000000000000", movementType: "burn" as const };
+  const mintBurn = analyzeTreasury([minted, burned], wallet, 0, 2, false);
+  assert.equal(mintBurn.totalInboundUsdc, 1.25);
+  assert.equal(mintBurn.totalOutboundUsdc, 1.25);
+  assert.equal(mintBurn.uniqueCounterparties, 0);
+  assert.equal(mintBurn.topRecipients.length, 0);
+
+  // Scenario 22: pre-Zero5 native events remain available for long testnet windows.
+  console.log("Scenario 22: Pre-Zero5 movement parsing");
+  const legacyMovement = parseBlockscoutArcMovementLog({
+    address: ARC_TESTNET_LEGACY_USDC_EMITTER,
+    blockNumber: "0x29",
+    transactionHash: `0x${"3".repeat(64)}`,
+    timeStamp: "0x65",
+    logIndex: "0x2",
+    topics: [
+      "0x62f084c00a442dcf51cdbb51beed2839bf42a268da8474b0e98f38edb7db5a22",
+      topicAddress(sender1),
+      topicAddress(wallet),
+    ],
+    data: word(2_000_000_000_000_000_000n),
+  }, "legacy_transfer");
+  assert.equal(legacyMovement.emitter, ARC_TESTNET_LEGACY_USDC_EMITTER);
+  assert.equal(analyzeTreasury([legacyMovement], wallet, 2, 1, false).totalInboundUsdc, 2);
+
+  // Scenario 23: production history path queries the canonical emitter, not ERC-20 tokentx.
+  console.log("Scenario 23: Canonical Blockscout log query");
+  const queriedUrls: string[] = [];
+  const nowSeconds = 1_779_894_600;
+  const fetched = await fetchBlockscoutUsdcTransfers({
+    walletAddress: wallet,
+    scanDays: 1,
+    latestBlock: ARC_ZERO5_ACTIVATION_BLOCK + 100n,
+    nowMs: nowSeconds * 1_000,
+    fetchImpl: async (request) => {
+      const url = String(request);
+      queriedUrls.push(url);
+      const parsed = new URL(url);
+      const outgoingSystem =
+        parsed.searchParams.get("address") === ARC_TESTNET_NATIVE_USDC_EMITTER &&
+        parsed.searchParams.has("topic1");
+      return new Response(JSON.stringify({
+        status: "1",
+        message: "OK",
+        result: outgoingSystem ? [{
+          address: ARC_TESTNET_NATIVE_USDC_EMITTER,
+          blockNumber: `0x${(ARC_ZERO5_ACTIVATION_BLOCK + 50n).toString(16)}`,
+          transactionHash: `0x${"4".repeat(64)}`,
+          timeStamp: `0x${nowSeconds.toString(16)}`,
+          logIndex: "0x1",
+          topics: [
+            "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef",
+            topicAddress(wallet),
+            topicAddress(recipient1),
+          ],
+          data: word(500_000_000_000_000_000n),
+        }] : [],
+      }), { status: 200, headers: { "content-type": "application/json" } });
+    },
+  });
+  assert.equal(fetched.transfers.length, 1);
+  assert.ok(queriedUrls.every((url) => url.includes("module=logs")));
+  assert.ok(queriedUrls.every((url) => !url.includes("action=tokentx")));
+  assert.ok(queriedUrls.some((url) => url.includes(ARC_TESTNET_NATIVE_USDC_EMITTER)));
 
   console.log("All Treasury Health tests passed successfully!");
 }

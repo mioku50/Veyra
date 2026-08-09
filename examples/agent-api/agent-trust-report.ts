@@ -35,8 +35,11 @@ const quote = await client.createQuote(
 
 const paymentHash = process.env.VEYRA_ARC_PAYMENT_TX_HASH;
 if (!quote.sponsored && !paymentHash) {
+  const transaction = quote.requiredPayment.transaction;
   throw new Error(
-    `Send ${quote.requiredPayment.amount} USDC on Arc Testnet to ${quote.requiredPayment.treasuryAddress}, then set VEYRA_ARC_PAYMENT_TX_HASH.`,
+    transaction
+      ? `Submit the immutable ${transaction.protocol} Arc transaction from requiredPayment.transaction (to=${transaction.to}, value=${transaction.value}, data=${transaction.data}), then set VEYRA_ARC_PAYMENT_TX_HASH.`
+      : "The paid quote did not include an Arc transaction request.",
   );
 }
 

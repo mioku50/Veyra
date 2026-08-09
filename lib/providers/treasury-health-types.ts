@@ -3,12 +3,18 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import type { ArcUsdcBlocklistStatus } from "../wallet/arc-usdc.ts";
+
 export interface UsdcTransfer {
   blockNumber: bigint;
   transactionHash: string;
   from: string;
   to: string;
   value: bigint;
+  decimals?: 6 | 18;
+  logIndex?: number;
+  emitter?: string;
+  movementType?: "transfer" | "mint" | "burn";
   timestamp?: string;
 }
 
@@ -50,7 +56,13 @@ export interface TreasuryAnalytics {
   totalAgentSpendUsdc: number;
   agentRecipients: Array<{ address: string; totalUsdc: number; txCount: number }>;
   
-  topRecipients: Array<{ address: string; totalUsdc: number; percentage: number; txCount: number }>;
+  topRecipients: Array<{
+    address: string;
+    totalUsdc: number;
+    percentage: number;
+    txCount: number;
+    arcUsdcBlocklistStatus: ArcUsdcBlocklistStatus;
+  }>;
   otherRecipientsCount: number;
   otherRecipientsUsdc: number;
   
@@ -76,4 +88,6 @@ export interface TreasuryAnalytics {
   dataTruncated: boolean;
   observationWindowDays: number;
   dataSource: string;
+  targetArcUsdcBlocklistStatus: ArcUsdcBlocklistStatus;
+  blocklistCheckedAt: string | null;
 }

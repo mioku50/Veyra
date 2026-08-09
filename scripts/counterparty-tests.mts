@@ -90,6 +90,13 @@ assert.equal(ranked.winner?.rank, 1, "Eligibility must be applied before assigni
 assert.equal(ranked.ranked.find((item) => item.identity.agentId === "999")?.eligibility, "INELIGIBLE");
 assert.equal(ranked.ranked.find((item) => item.identity.agentId === "999")?.rank, 2);
 
+const blocklisted = rankCounterpartyCandidate(fixture({
+  arcUsdcBlocklistStatus: "blocklisted",
+}));
+assert.equal(blocklisted.eligibility, "INELIGIBLE");
+assert.equal(blocklisted.rejectionReason, "arc_usdc_blocklisted");
+assert.ok(blocklisted.riskSignals.includes("arc_usdc_blocklisted"));
+
 const missing = fixture();
 missing.evidence = { ...missing.evidence, evidenceCounts: { total: 0, execution: 0, evaluator: 0, economic: 0, serviceQuality: 0, independentCounterparties: 0 } };
 const missingResult = rankCounterpartyCandidate(missing);

@@ -266,6 +266,12 @@ const sources: AgentTrustSourceSnapshots = {
     redirectCount: 0,
     errorCategory: null,
   },
+  arcCompliance: {
+    status: "clear",
+    wallet: "0x0000000000000000000000000000000000000001",
+    source: "Arc USDC onchain blocklist",
+    checkedAt,
+  },
 };
 const reportA = buildAgentTrustReport({
   reportId: "00000000-0000-4000-8000-000000000001",
@@ -283,6 +289,19 @@ const reportB = buildAgentTrustReport({
   sources,
   generatedAt: checkedAt,
 });
+const blocklistedReport = buildAgentTrustReport({
+  reportId: "00000000-0000-4000-8000-000000000002",
+  reportInput: { agentWallet: "0x0000000000000000000000000000000000000001" },
+  sources: {
+    ...sources,
+    arcCompliance: { ...sources.arcCompliance, status: "blocklisted" },
+  },
+  generatedAt: checkedAt,
+});
+assert.equal(blocklistedReport.trustScore.status, "high_attention");
+assert.ok((blocklistedReport.trustScore.overall ?? 100) <= 20);
+assert.ok(blocklistedReport.risksAndReviewItems.some((item) =>
+  item.title === "Arc USDC blocklist restriction"));
 assert.deepEqual(reportA, reportB, "same snapshots must produce the same report and score");
 assert.match(
   reportA.verification.reportHash,

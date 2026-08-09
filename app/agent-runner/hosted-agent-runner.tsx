@@ -379,6 +379,7 @@ export function HostedAgentRunner({
         paymentTransactionHash.current = await wallet.sendWorkflowPayment({
           treasuryAddress: quote.treasuryAddress,
           amountUsdc: quote.pricing.amountDueUsdc,
+          payment: quote.payment,
         });
       }
       if (quote.paymentMode === "sponsored" && !sponsoredSignature.current) {

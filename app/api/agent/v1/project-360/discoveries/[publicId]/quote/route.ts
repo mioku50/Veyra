@@ -24,6 +24,7 @@ import {
 import { createBrowserProject360Quote, Project360Error } from "@/lib/project-360/service";
 import { PROJECT_360_MODULES, type Project360Module } from "@/lib/project-360/types";
 import { Project360InputError } from "@/lib/project-360/input";
+import { workflowPaymentTransactionRequest } from "@/lib/commerce/workflow-payment";
 
 type RouteContext = { params: Promise<{ publicId: string }> };
 
@@ -156,6 +157,7 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
         amount: result.quote.pricing.amountDueUsdc,
         treasuryAddress: result.quote.treasuryAddress,
         chainId: result.quote.chainId,
+        transaction: workflowPaymentTransactionRequest(result.quote.payment),
       },
       expiresAt: result.quote.expiresAt,
     };

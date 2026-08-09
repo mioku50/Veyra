@@ -42,6 +42,7 @@ import {
   createHostedWorkflowQuote,
   HostedCheckoutPolicyError,
 } from "../../../../../lib/commerce/workflow-checkout.ts";
+import { workflowPaymentTransactionRequest } from "../../../../../lib/commerce/workflow-payment.ts";
 import {
   parseGitHubRepositoryInput,
   InvalidGitHubRepositoryError,
@@ -162,6 +163,7 @@ async function createMachineSellerQuote(input: {
         amount: quote.pricing.amountDueUsdc,
         treasuryAddress: quote.treasuryAddress,
         chainId: quote.chainId || ARC_TESTNET_CHAIN_ID,
+        transaction: workflowPaymentTransactionRequest(quote.payment),
       },
     };
     await saveMachineIdempotency(
@@ -612,6 +614,7 @@ export async function POST(request: NextRequest) {
         amount: quoteResult.quote.pricing.amountDueUsdc,
         treasuryAddress: quoteResult.quote.treasuryAddress,
         chainId: quoteResult.quote.chainId || ARC_TESTNET_CHAIN_ID,
+        transaction: workflowPaymentTransactionRequest(quoteResult.quote.payment),
       },
     };
 

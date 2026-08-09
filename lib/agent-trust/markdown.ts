@@ -92,6 +92,12 @@ export function formatAgentTrustReportAsMarkdown(
     JSON.stringify(report.endpointAvailability, null, 2),
     "```",
     "",
+    "## Arc USDC Compliance",
+    "",
+    "```json",
+    JSON.stringify(report.arcCompliance ?? { status: "not_provided" }, null, 2),
+    "```",
+    "",
     "## Evidence-Backed Strengths",
     "",
     ...bulletList(

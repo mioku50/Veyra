@@ -345,6 +345,12 @@ Paid:
 }
 ```
 
+For a paid quote, submit the exact `requiredPayment.transaction` object returned
+by the quote endpoint. New EOA quotes use `arc_memo_erc20_v1`: the transaction
+targets Arc's Memo predeploy, has zero native `value`, and carries an immutable
+USDC transfer plus quote commitment in `data`. Do not replace it with a direct
+native transfer. Legacy quotes may return `arc_native_usdc_v1`.
+
 The transaction must be the exact Arc Testnet checkout described by the quote.
 The project-owned hosted payer performs downstream x402 purchases separately.
 

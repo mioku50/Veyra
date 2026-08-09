@@ -10,6 +10,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { useArcWallet } from "@/components/wallet/use-arc-wallet";
 import type { PublicSellerWorkflow } from "@/lib/seller/marketplace";
+import type { WorkflowPaymentDescriptor } from "@/lib/commerce/workflow-payment";
 
 type SellerQuote = {
   id: string;
@@ -17,6 +18,7 @@ type SellerQuote = {
   inputSha256: string;
   paymentMode: "sponsored" | "paid";
   treasuryAddress: string;
+  payment: WorkflowPaymentDescriptor | null;
   expiresAt: string;
   pricing: {
     estimatedProviderCostUsdc: number;
@@ -105,6 +107,7 @@ export function SellerWorkflowRunner({ workflow }: { workflow: PublicSellerWorkf
         paymentHash.current = await wallet.sendWorkflowPayment({
           treasuryAddress: quote.treasuryAddress,
           amountUsdc: quote.pricing.amountDueUsdc,
+          payment: quote.payment,
         });
       }
       if (quote.paymentMode === "sponsored" && !sponsoredSignature.current) {

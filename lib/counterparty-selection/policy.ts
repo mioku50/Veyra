@@ -1,4 +1,5 @@
 import type { CapabilityMatch, EvidenceFreshness, RankingDimensionName } from "./types.ts";
+import type { ArcUsdcBlocklistStatus } from "../wallet/arc-usdc.ts";
 
 export const COUNTERPARTY_SELECTION_POLICY = {
   version: "veyra-counterparty-selection-v1",
@@ -50,6 +51,12 @@ export const COUNTERPARTY_SELECTION_POLICY = {
     paid_api_quality: 0.03,
   },
 } as const;
+
+export function arcUsdcBlocklistHardExclusion(
+  status: ArcUsdcBlocklistStatus,
+) {
+  return status === "blocklisted" ? "arc_usdc_blocklisted" : null;
+}
 
 export function freshnessFromAge(ageSeconds: number | null): EvidenceFreshness {
   if (ageSeconds === null || !Number.isFinite(ageSeconds)) return "missing";

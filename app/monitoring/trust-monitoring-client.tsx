@@ -25,6 +25,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useArcWallet } from "@/components/wallet/use-arc-wallet";
+import type { WorkflowPaymentDescriptor } from "@/lib/commerce/workflow-payment";
 
 type Watchlist = {
   id: string;
@@ -57,6 +58,7 @@ type HostedQuote = {
     amountDueUsdc: number;
   };
   treasuryAddress: string;
+  payment: WorkflowPaymentDescriptor | null;
   expiresAt: string;
 };
 
@@ -276,6 +278,7 @@ export function TrustMonitoringClient({
         transactionHash = await wallet.sendWorkflowPayment({
           treasuryAddress: quote.treasuryAddress,
           amountUsdc: quote.pricing.amountDueUsdc,
+          payment: quote.payment,
         });
       }
       const launched = await jsonFetch(

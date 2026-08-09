@@ -786,10 +786,10 @@ function createMockSupabaseClient(): any {
             return Promise.resolve({ data: row, error: null });
           }
           if (tableName === "hosted_workflow_quotes") {
-            const id = `quote_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+            const id = row.id ?? `quote_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
             const storedRow = {
-              id,
               ...row,
+              id,
               created_at: new Date().toISOString(),
             };
             mockQuotesStore.set(row.idempotency_hash, storedRow);

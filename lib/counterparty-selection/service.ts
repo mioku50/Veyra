@@ -21,6 +21,7 @@ import { buildClearanceMessage, signTrustClearance } from "../trust-gate/sign.ts
 import type { TrustDecision } from "../trust-gate/types.ts";
 import { TRUST_POLICY_VERSION } from "../trust-gate/types.ts";
 import { verifyTrustClearanceOnchain } from "../trust-gate/verify.ts";
+import { readArcUsdcBlocklistStatus } from "../wallet/arc-usdc.ts";
 import {
   canonicalCandidateInput,
   canonicalSelectionRequest,
@@ -45,6 +46,7 @@ import {
   freshnessFromAge,
 } from "./policy.ts";
 import {
+  COUNTERPARTY_COMPLIANCE_POLICY,
   COUNTERPARTY_NETWORK,
   COUNTERPARTY_RANKING_VERSION,
   type CandidateEvidence,
@@ -490,6 +492,7 @@ function rejectedCandidate(input: {
     riskSignals: [input.reason],
     tradeoffs: [],
     rejectionReason: input.reason,
+    arcUsdcBlocklistStatus: "unknown",
     rank: input.rank,
   };
 }
@@ -725,6 +728,10 @@ export async function selectCounterparty(input: {
     }
     const match = resolved.selectedService?.capabilityMatch
       ?? capabilityMatchFor(request.capability, offered);
+    const arcUsdcBlocklistStatus = await readArcUsdcBlocklistStatus(
+      resolved.identity.ownerAddress,
+      getArcPublicClient(),
+    );
     const hardExclusions: string[] = [];
     if (resolved.selectedService) {
       if (!["active", "live"].includes(resolved.selectedService.status)) hardExclusions.push("provider_suspended");
@@ -742,6 +749,7 @@ export async function selectCounterparty(input: {
       advertisedPriceUsdc: resolved.selectedService?.advertisedPriceUsdc,
       priceKind: resolved.selectedService ? "advertised" : "unknown",
       hardExclusions,
+      arcUsdcBlocklistStatus,
     });
   }
 
@@ -795,6 +803,7 @@ export async function selectCounterparty(input: {
       serviceId: candidate.serviceId ?? null,
       evidenceHash: candidate.evidenceHash,
       trustDecisionHash: candidate.trustDecisionHash,
+      arcUsdcBlocklistStatus: candidate.arcUsdcBlocklistStatus,
     })).sort((left, right) => left.candidateKey.localeCompare(right.candidateKey)),
     finalRanking: combined.map((candidate) => ({
       candidateKey: selectionCandidateKey(candidate),
@@ -805,6 +814,7 @@ export async function selectCounterparty(input: {
       trustScore: candidate.trustScore,
       confidence: candidate.confidence,
       maxExposureUsdc: candidate.recommendedMaxExposureUsdc.toFixed(6),
+      arcUsdcBlocklistStatus: candidate.arcUsdcBlocklistStatus,
     })),
     winner: {
       agentId: winner.identity.agentId,
@@ -815,6 +825,7 @@ export async function selectCounterparty(input: {
     },
     policyVersion: TRUST_POLICY_VERSION,
     rankingVersion: COUNTERPARTY_RANKING_VERSION,
+    compliancePolicy: COUNTERPARTY_COMPLIANCE_POLICY,
     createdAt,
     expiresAt,
   };
@@ -1071,6 +1082,7 @@ export function sanitizePublicSelection(selection: CounterpartySelection) {
       reasons: candidate.topReasons,
       risks: candidate.riskSignals,
       rejectionReason: candidate.rejectionReason,
+      arcUsdcBlocklistStatus: candidate.arcUsdcBlocklistStatus,
       rank: candidate.rank,
     })),
     canonicalHash: selection.canonicalHash,

@@ -4,11 +4,24 @@
  */
 
 import type { PublicClient } from "viem";
-import { createPublicClient, getAddress, http, isAddress, parseAbiItem } from "viem";
+import {
+  createPublicClient,
+  formatUnits,
+  getAddress,
+  http,
+  isAddress,
+  parseAbiItem,
+} from "viem";
 import {
   ARC_TESTNET_USDC_ADDRESS,
   arcTestnetChain,
 } from "../wallet/arc.ts";
+import {
+  ARC_TESTNET_LEGACY_USDC_EMITTER,
+  ARC_TESTNET_NATIVE_USDC_EMITTER,
+  ARC_ZERO5_ACTIVATION_BLOCK,
+  readArcUsdcBlocklistStatuses,
+} from "../wallet/arc-usdc.ts";
 import type {
   UsdcTransfer,
   TreasuryAnalytics,
@@ -45,7 +58,7 @@ export async function fetchUsdcTransfers(
         : currentFrom + CHUNK_SIZE - BigInt(1);
 
     const logsFrom = await client.getLogs({
-      address: ARC_TESTNET_USDC_ADDRESS as `0x${string}`,
+      address: ARC_TESTNET_NATIVE_USDC_EMITTER,
       event: eventAbi,
       args: { from: walletAddress as `0x${string}` },
       fromBlock: currentFrom,
@@ -53,7 +66,7 @@ export async function fetchUsdcTransfers(
     });
 
     const logsTo = await client.getLogs({
-      address: ARC_TESTNET_USDC_ADDRESS as `0x${string}`,
+      address: ARC_TESTNET_NATIVE_USDC_EMITTER,
       event: eventAbi,
       args: { to: walletAddress as `0x${string}` },
       fromBlock: currentFrom,
@@ -88,6 +101,15 @@ export async function fetchUsdcTransfers(
         from: log.args.from!.toLowerCase(),
         to: log.args.to!.toLowerCase(),
         value: log.args.value!,
+        decimals: 18,
+        logIndex: log.logIndex ?? undefined,
+        emitter: ARC_TESTNET_NATIVE_USDC_EMITTER,
+        movementType:
+          log.args.from === "0x0000000000000000000000000000000000000000"
+            ? "mint"
+            : log.args.to === "0x0000000000000000000000000000000000000000"
+              ? "burn"
+              : "transfer",
       });
     }
   }
@@ -111,19 +133,23 @@ export function analyzeTreasury(
   const counterparties = new Set<string>();
 
   const recipientTotals = new Map<string, { totalUsdc: number; txCount: number }>();
+  const valueUsdc = (transfer: UsdcTransfer) =>
+    Number(formatUnits(transfer.value, transfer.decimals ?? 6));
 
   for (const tx of transfers) {
-    const val = Number(tx.value) / 1e6;
+    const val = valueUsdc(tx);
     if (tx.to === normWallet && tx.from !== normWallet) {
       totalIn += val;
-      counterparties.add(tx.from);
+      if ((tx.movementType ?? "transfer") === "transfer") counterparties.add(tx.from);
     } else if (tx.from === normWallet && tx.to !== normWallet) {
       totalOut += val;
-      counterparties.add(tx.to);
-      const rec = recipientTotals.get(tx.to) || { totalUsdc: 0, txCount: 0 };
-      rec.totalUsdc += val;
-      rec.txCount += 1;
-      recipientTotals.set(tx.to, rec);
+      if ((tx.movementType ?? "transfer") === "transfer") {
+        counterparties.add(tx.to);
+        const rec = recipientTotals.get(tx.to) || { totalUsdc: 0, txCount: 0 };
+        rec.totalUsdc += val;
+        rec.txCount += 1;
+        recipientTotals.set(tx.to, rec);
+      }
     }
   }
 
@@ -169,7 +195,7 @@ export function analyzeTreasury(
         : tx.blockNumber >= minBlock;
       if (inWindow) {
         wCount++;
-        const val = Number(tx.value) / 1e6;
+        const val = valueUsdc(tx);
         if (tx.to === normWallet) wIn += val;
         if (tx.from === normWallet) wOut += val;
       }
@@ -214,7 +240,7 @@ export function analyzeTreasury(
   const anomalies: AnomalousTransfer[] = [];
   const avgOut = recipientTotals.size > 0 ? totalOut / recipientTotals.size : 0;
   for (const tx of transfers) {
-    const val = Number(tx.value) / 1e6;
+    const val = valueUsdc(tx);
     if (tx.from === normWallet && val > avgOut * 5 && val > 1000) {
       anomalies.push({
         txHash: tx.transactionHash,
@@ -232,6 +258,7 @@ export function analyzeTreasury(
       totalUsdc: data.totalUsdc,
       percentage: totalOut > 0 ? (data.totalUsdc / totalOut) * 100 : 0,
       txCount: data.txCount,
+      arcUsdcBlocklistStatus: "unknown" as const,
     }))
     .sort((a, b) => b.totalUsdc - a.totalUsdc);
 
@@ -276,6 +303,8 @@ export function analyzeTreasury(
     dataTruncated,
     observationWindowDays,
     dataSource,
+    targetArcUsdcBlocklistStatus: "unknown",
+    blocklistCheckedAt: null,
   };
 }
 
@@ -396,22 +425,37 @@ export class TreasuryHealthExecutionError extends Error {
   }
 }
 
-type BlockscoutTransfer = {
+type BlockscoutLog = {
+  address?: string;
   blockNumber?: string;
-  hash?: string;
+  transactionHash?: string;
   timeStamp?: string;
-  from?: string;
-  to?: string;
-  contractAddress?: string;
-  tokenDecimal?: string;
-  value?: string;
+  logIndex?: string;
+  topics?: Array<string | null>;
+  data?: string;
 };
 
-type BlockscoutTransferPage = {
+type BlockscoutLogPage = {
   status?: string;
   message?: string;
-  result?: BlockscoutTransfer[] | string;
+  result?: BlockscoutLog[] | string;
 };
+
+type ArcMovementLogKind =
+  | "system_transfer"
+  | "legacy_transfer"
+  | "legacy_mint"
+  | "legacy_burn";
+
+const ARC_TRANSFER_TOPIC =
+  "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef";
+const ARC_LEGACY_TRANSFER_TOPIC =
+  "0x62f084c00a442dcf51cdbb51beed2839bf42a268da8474b0e98f38edb7db5a22";
+const ARC_LEGACY_MINT_TOPIC =
+  "0xb049859d09b3a7d0189a07db4d4becee1a2aa269023205478b1360ab6fc12114";
+const ARC_LEGACY_BURN_TOPIC =
+  "0xaaf1ef013644e67c5cea90217acdf0accd334f8437fc9a89a53cfc9b25fb5c25";
+const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
 
 function nestedHttpStatus(error: unknown): number | null {
   if (!error || typeof error !== "object") return null;
@@ -472,51 +516,83 @@ export function normalizeTreasuryProviderError(
   );
 }
 
-function assertBlockscoutTransfer(value: BlockscoutTransfer): UsdcTransfer | null {
-  const tokenAddress = value.contractAddress;
-  if (
-    typeof tokenAddress !== "string" ||
-    tokenAddress.toLowerCase() !== ARC_TESTNET_USDC_ADDRESS.toLowerCase()
-  ) return null;
-  const from = value.from;
-  const to = value.to;
-  const transactionHash = value.hash;
-  const timestampSeconds = String(value.timeStamp ?? "");
-  const blockNumber = String(value.blockNumber ?? "");
-  const rawValue = value.value;
-  const decimals = Number(value.tokenDecimal);
-  if (
-    !from ||
-    !to ||
-    !isAddress(from) ||
-    !isAddress(to) ||
-    typeof transactionHash !== "string" ||
-    !/^0x[0-9a-fA-F]{64}$/.test(transactionHash) ||
-    !/^\d+$/.test(timestampSeconds) ||
-    !/^\d+$/.test(blockNumber) ||
-    typeof rawValue !== "string" ||
-    !/^\d+$/.test(rawValue) ||
-    decimals !== 6
-  ) {
+function parseHexQuantity(value: unknown) {
+  if (typeof value !== "string" || !/^0x[0-9a-fA-F]+$/.test(value)) {
+    throw new Error("invalid hex quantity");
+  }
+  return BigInt(value);
+}
+
+function addressFromTopic(value: unknown) {
+  if (typeof value !== "string" || !/^0x[0-9a-fA-F]{64}$/.test(value)) {
+    throw new Error("invalid address topic");
+  }
+  return getAddress(`0x${value.slice(-40)}`).toLowerCase();
+}
+
+export function parseBlockscoutArcMovementLog(
+  value: BlockscoutLog,
+  kind: ArcMovementLogKind,
+): UsdcTransfer {
+  try {
+    const emitter = kind === "system_transfer"
+      ? ARC_TESTNET_NATIVE_USDC_EMITTER
+      : ARC_TESTNET_LEGACY_USDC_EMITTER;
+    if (value.address?.toLowerCase() !== emitter.toLowerCase()) {
+      throw new Error("unexpected emitter");
+    }
+    const transactionHash = value.transactionHash;
+    if (!transactionHash || !/^0x[0-9a-fA-F]{64}$/.test(transactionHash)) {
+      throw new Error("invalid transaction hash");
+    }
+    const topics = value.topics ?? [];
+    const expectedTopic = kind === "system_transfer"
+      ? ARC_TRANSFER_TOPIC
+      : kind === "legacy_transfer"
+        ? ARC_LEGACY_TRANSFER_TOPIC
+        : kind === "legacy_mint"
+          ? ARC_LEGACY_MINT_TOPIC
+          : ARC_LEGACY_BURN_TOPIC;
+    if (topics[0]?.toLowerCase() !== expectedTopic) throw new Error("unexpected topic");
+    const blockNumber = parseHexQuantity(value.blockNumber);
+    const timestampSeconds = parseHexQuantity(value.timeStamp);
+    const logIndex = Number(parseHexQuantity(value.logIndex));
+    const rawValue = parseHexQuantity(value.data);
+    if (!Number.isSafeInteger(logIndex)) throw new Error("invalid log index");
+    const from = kind === "legacy_mint" ? ZERO_ADDRESS : addressFromTopic(topics[1]);
+    const to = kind === "legacy_burn"
+      ? ZERO_ADDRESS
+      : kind === "legacy_mint"
+        ? addressFromTopic(topics[1])
+        : addressFromTopic(topics[2]);
+    return {
+      blockNumber,
+      transactionHash,
+      from,
+      to,
+      value: rawValue,
+      decimals: 18,
+      logIndex,
+      emitter,
+      movementType: kind === "legacy_mint" || from === ZERO_ADDRESS
+        ? "mint"
+        : kind === "legacy_burn" || to === ZERO_ADDRESS
+          ? "burn"
+          : "transfer",
+      timestamp: new Date(Number(timestampSeconds) * 1_000).toISOString(),
+    };
+  } catch {
     throw new TreasuryProviderError(
       "treasury_provider_malformed_response",
       TREASURY_HISTORY_PROVIDER,
       false,
       null,
-      "The treasury history provider returned an invalid transfer record.",
+      "The treasury history provider returned an invalid Arc movement log.",
     );
   }
-  return {
-    blockNumber: BigInt(blockNumber),
-    transactionHash,
-    from: getAddress(from).toLowerCase(),
-    to: getAddress(to).toLowerCase(),
-    value: BigInt(rawValue),
-    timestamp: new Date(Number(timestampSeconds) * 1_000).toISOString(),
-  };
 }
 
-async function fetchBlockscoutUsdcTransfers(input: {
+export async function fetchBlockscoutUsdcTransfers(input: {
   walletAddress: string;
   scanDays: number;
   latestBlock: bigint;
@@ -530,7 +606,6 @@ async function fetchBlockscoutUsdcTransfers(input: {
   const maxTransfers = input.maxTransfers ?? 50_000;
   const transfers: UsdcTransfer[] = [];
   let dataTruncated = false;
-  let reachedCutoff = false;
   let queryCount = 0;
   // 200k blocks/day is a conservative envelope around Arc's documented
   // ~0.48-second block time. Timestamp filtering enforces the exact window.
@@ -538,139 +613,167 @@ async function fetchBlockscoutUsdcTransfers(input: {
   const startBlock = input.latestBlock > totalWindowBlocks
     ? input.latestBlock - totalWindowBlocks
     : BigInt(0);
-  const initialRangeSize = BigInt(30 * 200_000);
-  const ranges: Array<{ fromBlock: bigint; toBlock: bigint }> = [];
-  for (let toBlock = input.latestBlock; toBlock >= startBlock;) {
-    const fromBlock = toBlock - startBlock + BigInt(1) > initialRangeSize
-      ? toBlock - initialRangeSize + BigInt(1)
-      : startBlock;
-    ranges.push({ fromBlock, toBlock });
-    if (fromBlock === BigInt(0) || fromBlock === startBlock) break;
-    toBlock = fromBlock - BigInt(1);
+  const walletTopic = `0x${getAddress(input.walletAddress).slice(2).toLowerCase().padStart(64, "0")}`;
+  const specs: Array<{
+    kind: ArcMovementLogKind;
+    emitter: string;
+    topic0: string;
+    walletTopicPosition: 1 | 2;
+    fromBlock: bigint;
+    toBlock: bigint;
+  }> = [];
+  const systemFromBlock = startBlock > ARC_ZERO5_ACTIVATION_BLOCK
+    ? startBlock
+    : ARC_ZERO5_ACTIVATION_BLOCK;
+  if (systemFromBlock <= input.latestBlock) {
+    specs.push(
+      { kind: "system_transfer", emitter: ARC_TESTNET_NATIVE_USDC_EMITTER, topic0: ARC_TRANSFER_TOPIC, walletTopicPosition: 1, fromBlock: systemFromBlock, toBlock: input.latestBlock },
+      { kind: "system_transfer", emitter: ARC_TESTNET_NATIVE_USDC_EMITTER, topic0: ARC_TRANSFER_TOPIC, walletTopicPosition: 2, fromBlock: systemFromBlock, toBlock: input.latestBlock },
+    );
+  }
+  const legacyToBlock = input.latestBlock < ARC_ZERO5_ACTIVATION_BLOCK
+    ? input.latestBlock
+    : ARC_ZERO5_ACTIVATION_BLOCK - BigInt(1);
+  if (startBlock <= legacyToBlock) {
+    specs.push(
+      { kind: "legacy_transfer", emitter: ARC_TESTNET_LEGACY_USDC_EMITTER, topic0: ARC_LEGACY_TRANSFER_TOPIC, walletTopicPosition: 1, fromBlock: startBlock, toBlock: legacyToBlock },
+      { kind: "legacy_transfer", emitter: ARC_TESTNET_LEGACY_USDC_EMITTER, topic0: ARC_LEGACY_TRANSFER_TOPIC, walletTopicPosition: 2, fromBlock: startBlock, toBlock: legacyToBlock },
+      { kind: "legacy_mint", emitter: ARC_TESTNET_LEGACY_USDC_EMITTER, topic0: ARC_LEGACY_MINT_TOPIC, walletTopicPosition: 1, fromBlock: startBlock, toBlock: legacyToBlock },
+      { kind: "legacy_burn", emitter: ARC_TESTNET_LEGACY_USDC_EMITTER, topic0: ARC_LEGACY_BURN_TOPIC, walletTopicPosition: 1, fromBlock: startBlock, toBlock: legacyToBlock },
+    );
   }
 
-  while (ranges.length > 0 && !dataTruncated && transfers.length < maxTransfers) {
-    input.signal?.throwIfAborted();
-    const range = ranges.shift()!;
-    const url = new URL("/api", ARC_BLOCKSCOUT_API_ORIGIN);
-    url.searchParams.set("module", "account");
-    url.searchParams.set("action", "tokentx");
-    url.searchParams.set("contractaddress", ARC_TESTNET_USDC_ADDRESS);
-    url.searchParams.set("address", getAddress(input.walletAddress));
-    url.searchParams.set("startblock", range.fromBlock.toString());
-    url.searchParams.set("endblock", range.toBlock.toString());
-    url.searchParams.set("page", "1");
-    url.searchParams.set("offset", "10000");
-    url.searchParams.set("sort", "desc");
-    let response: Response;
-    try {
-      response = await fetchImpl(url, {
-        headers: { Accept: "application/json" },
-        signal: input.signal,
-      });
-    } catch (error) {
-      throw normalizeTreasuryProviderError(error, TREASURY_HISTORY_PROVIDER);
+  const initialRangeSize = BigInt(30 * 200_000);
+  for (const spec of specs) {
+    if (dataTruncated || transfers.length >= maxTransfers) break;
+    const ranges: Array<{ fromBlock: bigint; toBlock: bigint }> = [];
+    for (let toBlock = spec.toBlock; toBlock >= spec.fromBlock;) {
+      const fromBlock = toBlock - spec.fromBlock + BigInt(1) > initialRangeSize
+        ? toBlock - initialRangeSize + BigInt(1)
+        : spec.fromBlock;
+      ranges.push({ fromBlock, toBlock });
+      if (fromBlock === spec.fromBlock) break;
+      toBlock = fromBlock - BigInt(1);
     }
-    if (!response.ok) {
-      await response.body?.cancel().catch(() => undefined);
-      const retryable =
-        response.status === 408 ||
-        response.status === 425 ||
-        response.status === 429 ||
-        response.status >= 500;
-      throw new TreasuryProviderError(
-        retryable
-          ? "treasury_provider_unavailable"
-          : response.status === 403
-            ? "policy_denial"
-            : "treasury_provider_malformed_response",
-        TREASURY_HISTORY_PROVIDER,
-        retryable,
-        response.status,
-        TREASURY_PUBLIC_REASON,
-      );
-    }
-    let payload: unknown;
-    try {
-      payload = await response.json();
-    } catch {
-      throw new TreasuryProviderError(
-        "treasury_provider_malformed_response",
-        TREASURY_HISTORY_PROVIDER,
-        false,
-        response.status,
-        "The treasury history provider returned malformed JSON.",
-      );
-    }
-    if (
-      !payload ||
-      typeof payload !== "object" ||
-      Array.isArray(payload) ||
-      !("result" in payload)
-    ) {
-      throw new TreasuryProviderError(
-        "treasury_provider_malformed_response",
-        TREASURY_HISTORY_PROVIDER,
-        false,
-        response.status,
-        "The treasury history provider returned an invalid response shape.",
-      );
-    }
-    const typed = payload as BlockscoutTransferPage;
-    const noTransactions =
-      typed.status === "0" &&
-      /no transactions found/i.test(String(typed.message ?? typed.result ?? ""));
-    if (!Array.isArray(typed.result) && !noTransactions) {
-      const providerMessage = String(typed.message ?? typed.result ?? "");
-      const retryable = /rate limit|timeout|temporar|unavailable/i.test(providerMessage);
-      throw new TreasuryProviderError(
-        retryable
-          ? "treasury_provider_unavailable"
-          : "treasury_provider_malformed_response",
-        TREASURY_HISTORY_PROVIDER,
-        retryable,
-        response.status,
-        TREASURY_PUBLIC_REASON,
-      );
-    }
-    const items = Array.isArray(typed.result) ? typed.result : [];
-    queryCount += 1;
-    if (queryCount > 100) {
-      dataTruncated = true;
-      break;
-    }
-    if (items.length === 10_000 && range.toBlock > range.fromBlock) {
-      const midpoint = (range.fromBlock + range.toBlock) / BigInt(2);
-      ranges.unshift({ fromBlock: range.fromBlock, toBlock: midpoint });
-      ranges.unshift({ fromBlock: midpoint + BigInt(1), toBlock: range.toBlock });
-      continue;
-    }
-    for (const item of items) {
-      const transfer = assertBlockscoutTransfer(item);
-      if (!transfer) continue;
-      if (Date.parse(transfer.timestamp!) < cutoffMs) {
-        reachedCutoff = true;
-        continue;
+    let reachedCutoff = false;
+    while (ranges.length > 0 && !dataTruncated && !reachedCutoff) {
+      input.signal?.throwIfAborted();
+      const range = ranges.shift()!;
+      const url = new URL("/api", ARC_BLOCKSCOUT_API_ORIGIN);
+      url.searchParams.set("module", "logs");
+      url.searchParams.set("action", "getLogs");
+      url.searchParams.set("address", spec.emitter);
+      url.searchParams.set("fromBlock", range.fromBlock.toString());
+      url.searchParams.set("toBlock", range.toBlock.toString());
+      url.searchParams.set("topic0", spec.topic0);
+      url.searchParams.set(`topic${spec.walletTopicPosition}`, walletTopic);
+      url.searchParams.set(`topic0_${spec.walletTopicPosition}_opr`, "and");
+      let response: Response;
+      try {
+        response = await fetchImpl(url, {
+          headers: { Accept: "application/json" },
+          signal: input.signal,
+        });
+      } catch (error) {
+        throw normalizeTreasuryProviderError(error, TREASURY_HISTORY_PROVIDER);
       }
-      transfers.push(transfer);
-      if (transfers.length >= maxTransfers) {
+      if (!response.ok) {
+        await response.body?.cancel().catch(() => undefined);
+        const retryable = [408, 425, 429].includes(response.status) || response.status >= 500;
+        throw new TreasuryProviderError(
+          retryable
+            ? "treasury_provider_unavailable"
+            : response.status === 403
+              ? "policy_denial"
+              : "treasury_provider_malformed_response",
+          TREASURY_HISTORY_PROVIDER,
+          retryable,
+          response.status,
+          TREASURY_PUBLIC_REASON,
+        );
+      }
+      let payload: unknown;
+      try {
+        payload = await response.json();
+      } catch {
+        throw new TreasuryProviderError(
+          "treasury_provider_malformed_response",
+          TREASURY_HISTORY_PROVIDER,
+          false,
+          response.status,
+          "The treasury history provider returned malformed JSON.",
+        );
+      }
+      if (!payload || typeof payload !== "object" || Array.isArray(payload) || !("result" in payload)) {
+        throw new TreasuryProviderError(
+          "treasury_provider_malformed_response",
+          TREASURY_HISTORY_PROVIDER,
+          false,
+          response.status,
+          "The treasury history provider returned an invalid response shape.",
+        );
+      }
+      const typed = payload as BlockscoutLogPage;
+      const noLogs = typed.status === "0" && /no (logs|records) found/i.test(
+        String(typed.message ?? typed.result ?? ""),
+      );
+      if (!Array.isArray(typed.result) && !noLogs) {
+        const providerMessage = String(typed.message ?? typed.result ?? "");
+        const retryable = /rate limit|timeout|temporar|unavailable/i.test(providerMessage);
+        throw new TreasuryProviderError(
+          retryable ? "treasury_provider_unavailable" : "treasury_provider_malformed_response",
+          TREASURY_HISTORY_PROVIDER,
+          retryable,
+          response.status,
+          TREASURY_PUBLIC_REASON,
+        );
+      }
+      const items = Array.isArray(typed.result) ? typed.result : [];
+      queryCount += 1;
+      if (queryCount > 200) {
         dataTruncated = true;
         break;
       }
+      if (items.length >= 1_000 && range.toBlock > range.fromBlock) {
+        const midpoint = (range.fromBlock + range.toBlock) / BigInt(2);
+        ranges.unshift({ fromBlock: range.fromBlock, toBlock: midpoint });
+        ranges.unshift({ fromBlock: midpoint + BigInt(1), toBlock: range.toBlock });
+        continue;
+      }
+      for (const item of items) {
+        const transfer = parseBlockscoutArcMovementLog(item, spec.kind);
+        if (Date.parse(transfer.timestamp!) < cutoffMs) {
+          reachedCutoff = true;
+          continue;
+        }
+        transfers.push(transfer);
+        if (transfers.length >= maxTransfers) {
+          dataTruncated = true;
+          break;
+        }
+      }
+      if (items.length >= 1_000 && range.toBlock === range.fromBlock) dataTruncated = true;
     }
-    if (items.length === 10_000) dataTruncated = true;
-    if (reachedCutoff) break;
   }
+
+  const unique = new Map<string, UsdcTransfer>();
+  for (const transfer of transfers) {
+    unique.set(
+      `${transfer.emitter}-${transfer.transactionHash}-${transfer.logIndex}`,
+      transfer,
+    );
+  }
+  transfers.splice(0, transfers.length, ...unique.values());
 
   transfers.sort((left, right) =>
     left.blockNumber === right.blockNumber
-      ? left.transactionHash.localeCompare(right.transactionHash)
+      ? (left.logIndex ?? 0) - (right.logIndex ?? 0)
       : left.blockNumber < right.blockNumber ? -1 : 1,
   );
   return {
     transfers,
     dataTruncated,
-    blocksScanned: Number(input.latestBlock - startBlock),
+    blocksScanned: Number(input.latestBlock - startBlock + BigInt(1)),
   };
 }
 
@@ -749,16 +852,32 @@ export async function analyzeTreasuryHealth(
       nowMs,
       maxTransfers: options.maxTransfers,
     });
-  return analyzeTreasury(
+  const analytics = analyzeTreasury(
     transfers,
     getAddress(walletAddress),
-    Number(balanceWei) / 1e6,
+    Number(formatUnits(balanceWei, 6)),
     blocksScanned,
     dataTruncated,
     nowMs,
     scanDays,
-    "Arcscan Blockscout API + Arc JSON-RPC",
+    "Arc EIP-7708 system events + pre-Zero5 native events via Arcscan Blockscout; Arc JSON-RPC",
   );
+  const checkedAt = new Date(nowMs).toISOString();
+  const blocklistStatuses = await readArcUsdcBlocklistStatuses(
+    [analytics.walletAddress, ...analytics.topRecipients.map((item) => item.address)],
+    client,
+  );
+  return {
+    ...analytics,
+    targetArcUsdcBlocklistStatus:
+      blocklistStatuses.get(analytics.walletAddress.toLowerCase()) ?? "unknown",
+    blocklistCheckedAt: checkedAt,
+    topRecipients: analytics.topRecipients.map((item) => ({
+      ...item,
+      arcUsdcBlocklistStatus:
+        blocklistStatuses.get(item.address.toLowerCase()) ?? "unknown",
+    })),
+  };
 }
 
 export async function executeTreasuryHealthWithRetry(input: {

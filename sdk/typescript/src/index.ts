@@ -438,6 +438,21 @@ export type WebhookDelivery = {
   deliveredAt: string | null;
 };
 
+export type WorkflowPaymentTransaction = {
+  protocol: "arc_memo_erc20_v1" | "arc_native_usdc_v1";
+  chainId: 5_042_002;
+  to: `0x${string}`;
+  value: `0x${string}`;
+  data: `0x${string}`;
+  memo: null | {
+    contractAddress: `0x${string}`;
+    targetAddress: `0x${string}`;
+    memoId: `0x${string}`;
+    memoData: `0x${string}`;
+    callDataHash: `0x${string}`;
+  };
+};
+
 export type TrustRecheckQuote = {
   watchlistId: string;
   recheckId: string;
@@ -458,6 +473,7 @@ export type TrustRecheckQuote = {
     amount: number;
     treasuryAddress: string;
     chainId: 5_042_002;
+    transaction: WorkflowPaymentTransaction | null;
   };
 };
 
@@ -486,6 +502,7 @@ export type WorkflowQuote = {
     amount: number;
     treasuryAddress: string;
     chainId: 5_042_002;
+    transaction: WorkflowPaymentTransaction | null;
   };
 };
 

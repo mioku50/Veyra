@@ -1,6 +1,7 @@
 import type { GitHubRepositoryRef } from "@/lib/providers/github-repository-ref";
 
 import type { HostedWorkflowType } from "@/lib/agent/hosted-workflows";
+import type { WorkflowPaymentDescriptor } from "@/lib/commerce/workflow-payment";
 
 export type { HostedWorkflowType };
 
@@ -54,6 +55,7 @@ export type HostedWorkflowQuote = {
   treasuryAddress: string;
   chainId: number;
   asset: "native_usdc";
+  payment: WorkflowPaymentDescriptor | null;
   status: "quoted" | "consumed" | "completed" | "expired" | "credited" | "cancelled";
   expiresAt: string;
   jobId: string | null;

@@ -43,6 +43,15 @@ import {
   requestArcTestnet,
   type ArcNetworkProvider,
 } from "@/lib/wallet/request-arc-testnet";
+import {
+  arcAccountKind,
+  readArcUsdcBlocklistStatuses,
+} from "@/lib/wallet/arc-usdc";
+import {
+  ARC_MEMO_WORKFLOW_PAYMENT_PROTOCOL,
+  encodeWorkflowPaymentTransaction,
+  type WorkflowPaymentDescriptor,
+} from "@/lib/commerce/workflow-payment";
 
 export type EthereumProvider = ArcNetworkProvider & {
   on?(
@@ -325,6 +334,7 @@ export function useArcWallet() {
   const sendWorkflowPayment = useCallback(async (input: {
     treasuryAddress: string;
     amountUsdc: number;
+    payment?: WorkflowPaymentDescriptor | null;
   }) => {
     const provider = getProvider();
     if (!provider || !address) throw new Error("Connect a wallet before paying.");
@@ -343,14 +353,53 @@ export function useArcWallet() {
     ) {
       throw new Error("Workflow price must be a positive USDC amount with at most 6 decimals.");
     }
+    const treasuryAddress = getAddress(input.treasuryAddress);
+    const compliance = await readArcUsdcBlocklistStatuses(
+      [address, treasuryAddress],
+      arcClient,
+    );
+    const senderStatus = compliance.get(getAddress(address).toLowerCase()) ?? "unknown";
+    const treasuryStatus = compliance.get(treasuryAddress.toLowerCase()) ?? "unknown";
+    if (senderStatus === "blocklisted" || treasuryStatus === "blocklisted") {
+      throw new Error("Arc USDC payment is blocked by the onchain blocklist.");
+    }
+    if (senderStatus === "unknown" || treasuryStatus === "unknown") {
+      throw new Error("Arc USDC blocklist status could not be verified. Try again before paying.");
+    }
+    const descriptor = input.payment ?? null;
+    if (descriptor) {
+      if (
+        descriptor.treasuryAddress.toLowerCase() !== treasuryAddress.toLowerCase() ||
+        BigInt(descriptor.amountAtomic6) !== BigInt(amountAtomic6)
+      ) {
+        throw new Error("Workflow payment details do not match the immutable quote.");
+      }
+      if (descriptor.protocol === ARC_MEMO_WORKFLOW_PAYMENT_PROTOCOL) {
+        const accountKind = await arcAccountKind(address, arcClient);
+        if (accountKind !== "eoa") {
+          throw new Error(
+            accountKind === "contract"
+              ? "Arc Memo checkout requires an EOA wallet; smart-contract wallets are not supported for this payment."
+              : "Wallet type could not be verified for Arc Memo checkout.",
+          );
+        }
+      }
+    }
+    const transaction = descriptor
+      ? encodeWorkflowPaymentTransaction(descriptor)
+      : {
+          to: treasuryAddress,
+          value: parseUnits((amountAtomic6 / 1_000_000).toFixed(6), 18),
+          data: "0x" as Hex,
+        };
     try {
       const transactionHash = await provider.request<Hex>({
         method: "eth_sendTransaction",
         params: [{
           from: address,
-          to: getAddress(input.treasuryAddress),
-          value: toHex(parseUnits((amountAtomic6 / 1_000_000).toFixed(6), 18)),
-          data: "0x",
+          to: transaction.to,
+          value: toHex(transaction.value),
+          data: transaction.data,
         }],
       });
       setError(null);

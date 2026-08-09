@@ -54,6 +54,13 @@ export interface WorkflowQuoteResponse {
     amount: number;
     treasuryAddress: string;
     chainId: number;
+    transaction: null | {
+      protocol: "arc_memo_erc20_v1" | "arc_native_usdc_v1";
+      chainId: 5_042_002;
+      to: `0x${string}`;
+      value: `0x${string}`;
+      data: `0x${string}`;
+    };
   };
 }
 
