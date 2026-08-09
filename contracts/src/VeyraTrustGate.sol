@@ -30,9 +30,10 @@ contract VeyraTrustGate is EIP712, AccessControl {
     mapping(bytes32 => bool) public consumedClearances;
 
     event TrustClearanceConsumed(
-        bytes32 indexed decisionHash,
+        bytes32 indexed clearanceDigest,
         address indexed subject,
         address indexed counterparty,
+        bytes32 decisionId,
         bytes32 actionHash,
         uint256 amount,
         bytes32 reputationSnapshotHash
@@ -132,9 +133,10 @@ contract VeyraTrustGate is EIP712, AccessControl {
         consumedClearances[digest] = true;
 
         emit TrustClearanceConsumed(
-            clearance.decisionId,
+            digest,
             clearance.subject,
             clearance.counterparty,
+            clearance.decisionId,
             clearance.actionHash,
             clearance.requestedAmount,
             clearance.snapshotHash

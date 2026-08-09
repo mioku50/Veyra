@@ -76,6 +76,8 @@ export async function POST(req: Request) {
   const deliverableHash = computeDeliverableHash(deliverableObj);
   const policyHash = computePolicyHash(deliverableObj.policyId);
 
+  let reservationToken: string | undefined;
+
   // Idempotency check
   if (idempotencyKey) {
     const check = await inspectMachineIdempotency({
@@ -88,9 +90,58 @@ export async function POST(req: Request) {
     if (check.conflict) {
       return createMachineErrorResponse("idempotency_conflict", "Idempotency key reused with different payload.", 409);
     }
+    if (check.unavailable) {
+      return createMachineErrorResponse(
+        "idempotency_store_unavailable",
+        "The request cannot be safely processed right now.",
+        503,
+        true,
+      );
+    }
+    if (check.pending) {
+      return createMachineErrorResponse(
+        "idempotency_in_progress",
+        "An evaluation with this Idempotency-Key is already running.",
+        409,
+        true,
+      );
+    }
     if (check.cached && check.cachedResponse) {
       return NextResponse.json(check.cachedResponse.body, { status: check.cachedResponse.status });
     }
+
+    const reservation = await resolveMachineIdempotency({
+      key: idempotencyKey,
+      credentialId: context.credential.id,
+      agentId: context.agentId,
+      route: "/api/erc8183/v1/evaluations",
+      payload: body,
+    });
+    if (reservation.unavailable) {
+      return createMachineErrorResponse(
+        "idempotency_store_unavailable",
+        "The request cannot be safely processed right now.",
+        503,
+        true,
+      );
+    }
+    if (reservation.conflict) {
+      return createMachineErrorResponse("idempotency_conflict", "Idempotency key reused with different payload.", 409);
+    }
+    if (reservation.pending) {
+      return createMachineErrorResponse(
+        "idempotency_in_progress",
+        "An evaluation with this Idempotency-Key is already running.",
+        409,
+        true,
+      );
+    }
+    if (reservation.cachedResponse) {
+      return NextResponse.json(reservation.cachedResponse.body, {
+        status: reservation.cachedResponse.status,
+      });
+    }
+    reservationToken = reservation.reservationToken;
   }
 
   // Check existing DB evaluation record
@@ -118,6 +169,19 @@ export async function POST(req: Request) {
         status: existingRecord.status,
         statusUrl: `/api/erc8183/v1/evaluations/${existingRecord.public_id}`,
       };
+      if (idempotencyKey) {
+        await saveMachineIdempotency({
+          key: idempotencyKey,
+          credentialId: context.credential.id,
+          agentId: context.agentId,
+          route: "/api/erc8183/v1/evaluations",
+          payload: body,
+          responseStatus: 200,
+          responseBody,
+          reservationToken,
+        });
+        reservationToken = undefined;
+      }
       return NextResponse.json(responseBody, { status: 200 });
     }
     publicId = existingRecord.public_id;
@@ -144,16 +208,6 @@ export async function POST(req: Request) {
       console.error("[erc8183-evaluations] Insert error:", insertError);
       return createMachineErrorResponse("internal_error", "Failed to queue evaluation record.", 500);
     }
-  }
-
-  // Reserve idempotency
-  if (idempotencyKey) {
-    await resolveMachineIdempotency({
-      key: idempotencyKey,
-      credentialId: context.credential.id,
-      route: "/api/erc8183/v1/evaluations",
-      payload: body,
-    });
   }
 
   // Run evaluation
@@ -215,7 +269,9 @@ export async function POST(req: Request) {
       payload: body,
       responseStatus: 200,
       responseBody,
+      reservationToken,
     });
+    reservationToken = undefined;
   }
 
   return NextResponse.json(responseBody, { status: 200 });

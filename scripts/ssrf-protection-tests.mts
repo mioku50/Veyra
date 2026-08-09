@@ -46,6 +46,9 @@ async function runTests() {
   assert.equal(isRestrictedIpAddress("fe90::1"), true, "the full IPv6 link-local range must be restricted");
   assert.equal(isRestrictedIpAddress("0:0:0:0:0:0:0:1"), true, "expanded IPv6 loopback must be restricted");
   assert.equal(isRestrictedIpAddress("8.8.8.8"), false, "8.8.8.8 must not be restricted");
+  assert.equal(isRestrictedIpAddress("ffmpeg.org"), false, "hostnames beginning with ff must not be treated as IPv6");
+  assert.equal(isRestrictedIpAddress("fdic.gov"), false, "hostnames beginning with fd must not be treated as IPv6");
+  assert.equal(isRestrictedIpAddress("fc-bayern.com"), false, "hostnames beginning with fc must not be treated as IPv6");
   assert.equal(isRestrictedIpAddress("127.0.0.1", true), false, "127.0.0.1 allowed when allowLocalhost is true");
 
   // Test 2: URL validation
@@ -69,6 +72,8 @@ async function runTests() {
 
   const validUrl = validateUrlSsrf("https://api.example.com/fulfillment");
   assert.equal(validUrl.hostname, "api.example.com");
+  assert.equal(validateUrlSsrf("https://ffmpeg.org/").hostname, "ffmpeg.org");
+  assert.equal(validateUrlSsrf("https://fdic.gov/").hostname, "fdic.gov");
 
   // Test 3: Safe header filtering
   const filtered = filterSafeHeaders({

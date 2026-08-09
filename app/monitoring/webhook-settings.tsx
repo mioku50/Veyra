@@ -251,7 +251,7 @@ export function WebhookSettings() {
             <Button
               variant="outline"
               className="w-fit"
-              onClick={() => navigator.clipboard.writeText(secret)}
+              onClick={() => void navigator.clipboard.writeText(secret).catch(() => undefined)}
             >
               <Copy /> Copy secret
             </Button>

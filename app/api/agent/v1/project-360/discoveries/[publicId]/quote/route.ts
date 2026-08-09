@@ -12,6 +12,7 @@ import {
 } from "@/lib/api/machine-errors";
 import {
   resolveMachineIdempotency,
+  releaseMachineIdempotency,
   saveMachineIdempotency,
 } from "@/lib/api/machine-idempotency";
 import {
@@ -62,6 +63,7 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
     );
   }
   let body: Record<string, unknown>;
+  let reservationToken: string | undefined;
   try {
     body = await request.json();
   } catch {
@@ -122,6 +124,7 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
         headers: { "Cache-Control": "no-store" },
       });
     }
+    reservationToken = reservation.reservationToken;
     const { publicId } = await params;
     const result = await createBrowserProject360Quote({
       ownerWallet: auth.context.ownerWallet as Address,
@@ -168,13 +171,24 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
         responseStatus: status,
         resourceType: "quote",
         resourceId: result.quote.id,
+        reservationToken,
       },
     );
+    reservationToken = undefined;
     return NextResponse.json(payload, {
       status,
       headers: { "Cache-Control": "no-store" },
     });
   } catch (error) {
+    if (reservationToken) {
+      await releaseMachineIdempotency(
+        key,
+        auth.context.credential.id,
+        body,
+        "/api/agent/v1/project-360/discoveries/[publicId]/quote",
+        reservationToken,
+      );
+    }
     if (error instanceof Project360Error || error instanceof Project360InputError) {
       return createMachineErrorResponse(
         error.code as MachineErrorCode,

@@ -32,9 +32,10 @@ contract VeyraTrustGateTest {
     VeyraTrustGate.TrustClearance public clearance;
 
     event TrustClearanceConsumed(
-        bytes32 indexed decisionHash,
+        bytes32 indexed clearanceDigest,
         address indexed subject,
         address indexed counterparty,
+        bytes32 decisionId,
         bytes32 actionHash,
         uint256 amount,
         bytes32 reputationSnapshotHash
@@ -103,9 +104,10 @@ contract VeyraTrustGateTest {
 
         vm.expectEmit(true, true, true, true, address(gate));
         emit TrustClearanceConsumed(
-            clearance.decisionId,
+            digest,
             clearance.subject,
             clearance.counterparty,
+            clearance.decisionId,
             clearance.actionHash,
             clearance.requestedAmount,
             clearance.snapshotHash

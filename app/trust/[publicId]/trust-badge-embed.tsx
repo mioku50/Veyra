@@ -31,9 +31,13 @@ export function TrustBadgeEmbed({
   );
 
   async function copy() {
-    await navigator.clipboard.writeText(markdown);
-    setCopied(true);
-    window.setTimeout(() => setCopied(false), 1800);
+    try {
+      await navigator.clipboard.writeText(markdown);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1800);
+    } catch {
+      setCopied(false);
+    }
   }
 
   return (

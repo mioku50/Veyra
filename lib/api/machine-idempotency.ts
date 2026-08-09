@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { tryGetServerSupabaseConfig } from "../supabase/server-env.ts";
 
@@ -12,6 +12,7 @@ export interface IdempotencyCheckResult<T = unknown> {
   conflict: boolean;
   pending?: boolean;
   unavailable?: boolean;
+  reservationToken?: string;
   cachedResponse?: {
     status: number;
     body: T;
@@ -45,6 +46,7 @@ export interface SaveMachineIdempotencyOptions {
   responseBody: unknown;
   resourceType?: string;
   resourceId?: string;
+  reservationToken?: string;
 }
 
 interface MemoryStoredRecord {
@@ -59,11 +61,13 @@ interface MemoryStoredRecord {
   resourceType?: string;
   resourceId?: string;
   createdAt: number;
+  reservationToken: string;
 }
 
 const memoryStore = new Map<string, MemoryStoredRecord>();
 const MAX_STORE_SIZE = 1000;
 const TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
+const PENDING_LEASE_MS = 5 * 60 * 1000;
 
 let customClient: SupabaseClient | null | undefined;
 
@@ -159,7 +163,7 @@ export async function inspectMachineIdempotency<T = unknown>(
     try {
       const { data: existing, error } = await supabase
         .from("machine_api_idempotency")
-        .select("request_hash,response_status,response_body,expires_at")
+        .select("request_hash,response_status,response_body,created_at,expires_at")
         .eq("credential_id", credentialId)
         .eq("route", route)
         .eq("idempotency_key_hash", idempotencyKeyHash)
@@ -185,6 +189,20 @@ export async function inspectMachineIdempotency<T = unknown>(
             result: undefined,
           };
         }
+        const completed =
+          existing.response_status !== null &&
+          existing.response_status !== undefined;
+        if (!completed && Date.parse(existing.created_at) <= Date.now() - PENDING_LEASE_MS) {
+          // The reservation RPC can atomically reclaim this expired lease,
+          // including for a new payload bound to the same caller key.
+          return {
+            ok: true,
+            conflict: false,
+            cached: false,
+            cachedResponse: null,
+            result: undefined,
+          };
+        }
         if (existing.request_hash !== requestHash) {
           return {
             ok: false,
@@ -194,10 +212,7 @@ export async function inspectMachineIdempotency<T = unknown>(
             result: undefined,
           };
         }
-        if (
-          existing.response_status !== null &&
-          existing.response_status !== undefined
-        ) {
+        if (completed) {
           return {
             ok: true,
             conflict: false,
@@ -250,7 +265,11 @@ export async function inspectMachineIdempotency<T = unknown>(
       result: undefined,
     };
   }
-  if (Date.now() - existing.createdAt > TTL_MS) {
+  if (
+    Date.now() - existing.createdAt > TTL_MS ||
+    (existing.responseStatus === undefined &&
+      Date.now() - existing.createdAt > PENDING_LEASE_MS)
+  ) {
     memoryStore.delete(compositeKey);
     return {
       ok: true,
@@ -367,6 +386,7 @@ export async function resolveMachineIdempotency<T = unknown>(
             reservation_outcome?: string;
             cached_status?: number | null;
             cached_body?: T | null;
+            reservation_token?: string | null;
           }> | null
         )?.[0];
 
@@ -380,12 +400,21 @@ export async function resolveMachineIdempotency<T = unknown>(
             };
           }
         } else if (record.reservation_outcome === "reserved") {
+          if (!record.reservation_token) {
+            return {
+              ok: false,
+              unavailable: true,
+              conflict: false,
+              cached: false,
+            };
+          }
           return {
             ok: true,
             conflict: false,
             cached: false,
             cachedResponse: null,
             result: undefined,
+            reservationToken: record.reservation_token,
           };
         } else if (record.reservation_outcome === "conflict") {
           return {
@@ -457,7 +486,11 @@ export async function resolveMachineIdempotency<T = unknown>(
   const existing = memoryStore.get(compositeKey);
 
   if (existing) {
-    if (Date.now() - existing.createdAt > TTL_MS) {
+    if (
+      Date.now() - existing.createdAt > TTL_MS ||
+      (existing.responseStatus === undefined &&
+        Date.now() - existing.createdAt > PENDING_LEASE_MS)
+    ) {
       memoryStore.delete(compositeKey);
     } else {
       if (existing.requestHash !== requestHash) {
@@ -500,6 +533,7 @@ export async function resolveMachineIdempotency<T = unknown>(
     if (oldestKey) memoryStore.delete(oldestKey);
   }
 
+  const reservationToken = randomUUID();
   memoryStore.set(compositeKey, {
     key: key.trim(),
     credentialId,
@@ -510,6 +544,7 @@ export async function resolveMachineIdempotency<T = unknown>(
     responseStatus: undefined,
     responseBody: undefined,
     createdAt: Date.now(),
+    reservationToken,
   });
 
   return {
@@ -518,6 +553,7 @@ export async function resolveMachineIdempotency<T = unknown>(
     cached: false,
     cachedResponse: null,
     result: undefined,
+    reservationToken,
   };
 }
 
@@ -532,6 +568,7 @@ export async function saveMachineIdempotency<T = unknown>(
     responseStatus?: number;
     resourceType?: string;
     resourceId?: string;
+    reservationToken?: string;
   },
 ): Promise<void> {
   let key: string;
@@ -543,6 +580,7 @@ export async function saveMachineIdempotency<T = unknown>(
   let responseBody: unknown;
   let resourceType: string | undefined;
   let resourceId: string | undefined;
+  let reservationToken: string | undefined;
 
   if (typeof keyOrOptions === "object" && keyOrOptions !== null) {
     key = keyOrOptions.key;
@@ -554,6 +592,7 @@ export async function saveMachineIdempotency<T = unknown>(
     responseBody = keyOrOptions.responseBody;
     resourceType = keyOrOptions.resourceType;
     resourceId = keyOrOptions.resourceId;
+    reservationToken = keyOrOptions.reservationToken;
   } else {
     key = keyOrOptions;
     credentialId = credentialIdArg!;
@@ -564,6 +603,7 @@ export async function saveMachineIdempotency<T = unknown>(
     responseBody = resultArg;
     resourceType = optionsArg?.resourceType;
     resourceId = optionsArg?.resourceId;
+    reservationToken = optionsArg?.reservationToken;
   }
 
   if (!key || !key.trim()) return;
@@ -576,32 +616,36 @@ export async function saveMachineIdempotency<T = unknown>(
   const supabase = getSupabaseClient();
   if (supabase) {
     try {
-      const { error } = await supabase.from("machine_api_idempotency").upsert(
+      if (!reservationToken) {
+        console.warn(
+          "[machine-idempotency] Completion skipped without a reservation token.",
+        );
+        return;
+      }
+      const { data, error } = await supabase.rpc(
+        "complete_machine_api_idempotency_v1",
         {
-          credential_id: credentialId,
-          agent_id: agentId,
-          route: route,
-          idempotency_key_hash: idempotencyKeyHash,
-          request_hash: requestHash,
-          response_status: responseStatus,
-          response_body: responseBody as any,
-          resource_type: resourceType || null,
-          resource_id: resourceId || null,
-          expires_at: expiresAt,
-        },
-        {
-          onConflict: "credential_id,route,idempotency_key_hash",
+          p_credential_id: credentialId,
+          p_route: route,
+          p_idempotency_key_hash: idempotencyKeyHash,
+          p_request_hash: requestHash,
+          p_reservation_token: reservationToken,
+          p_response_status: responseStatus,
+          p_response_body: responseBody as any,
+          p_resource_type: resourceType || null,
+          p_resource_id: resourceId || null,
+          p_expires_at: expiresAt,
         },
       );
-      if (!error) return;
+      if (!error && data === true) return;
       console.warn(
-        "[machine-idempotency] DB upsert error:",
-        error,
+        "[machine-idempotency] DB completion error:",
+        error || "reservation lease no longer belongs to this invocation",
       );
       if (!allowMemoryFallback) return;
     } catch (err) {
       console.warn(
-        "[machine-idempotency] DB upsert failed:",
+        "[machine-idempotency] DB completion failed:",
         err,
       );
       if (!allowMemoryFallback) return;
@@ -612,6 +656,7 @@ export async function saveMachineIdempotency<T = unknown>(
 
   const compositeKey = `${credentialId}:${route}:${idempotencyKeyHash}`;
   const existing = memoryStore.get(compositeKey);
+  if (!existing || existing.reservationToken !== reservationToken) return;
   memoryStore.set(compositeKey, {
     key: key.trim(),
     credentialId,
@@ -623,8 +668,60 @@ export async function saveMachineIdempotency<T = unknown>(
     responseBody,
     resourceType,
     resourceId,
-    createdAt: existing?.createdAt || Date.now(),
+    createdAt: existing.createdAt,
+    reservationToken: existing.reservationToken,
   });
+}
+
+export async function releaseMachineIdempotency(
+  key: string,
+  credentialId: string,
+  payload: unknown,
+  route = "/api/agent/v1",
+  reservationToken?: string,
+): Promise<void> {
+  if (!key || !key.trim() || !reservationToken) return;
+
+  const idempotencyKeyHash = createHash("sha256").update(key.trim()).digest("hex");
+  const requestHash = computeCanonicalRequestHash(payload);
+  const allowMemoryFallback = isMemoryFallbackAllowed();
+  const supabase = getSupabaseClient();
+
+  if (supabase) {
+    try {
+      const { data, error } = await supabase.rpc(
+        "release_machine_api_idempotency_v1",
+        {
+          p_credential_id: credentialId,
+          p_route: route,
+          p_idempotency_key_hash: idempotencyKeyHash,
+          p_request_hash: requestHash,
+          p_reservation_token: reservationToken,
+        },
+      );
+      if (!error && data === true) return;
+      console.warn(
+        "[machine-idempotency] DB release error:",
+        error || "reservation lease no longer belongs to this invocation",
+      );
+      if (!allowMemoryFallback) return;
+    } catch (error) {
+      console.warn("[machine-idempotency] DB release failed:", error);
+      if (!allowMemoryFallback) return;
+    }
+  } else if (!allowMemoryFallback) {
+    return;
+  }
+
+  const compositeKey = `${credentialId}:${route}:${idempotencyKeyHash}`;
+  const existing = memoryStore.get(compositeKey);
+  if (
+    existing?.requestHash === requestHash &&
+    existing.reservationToken === reservationToken &&
+    existing.responseStatus === undefined
+  ) {
+    memoryStore.delete(compositeKey);
+  }
 }
 
 export function clearMachineIdempotencyStore(): void {

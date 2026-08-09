@@ -361,18 +361,24 @@ export function buildApiQualityPublicReport(
   const obsMap: Record<string, ApiQualityObservation[]> = {};
   if (input.observationsByService) {
     for (const id of uniqueServices) {
-      obsMap[id] = input.observationsByService[id] || [];
+      obsMap[id] = (input.observationsByService[id] || []).filter(
+        (observation) => observation.source !== "scheduled_probe",
+      );
     }
   } else if (input.observations) {
     for (const id of uniqueServices) {
-      obsMap[id] = input.observations.filter((o) => o.serviceId === id);
+      obsMap[id] = input.observations.filter(
+        (o) => o.serviceId === id && o.source !== "scheduled_probe",
+      );
     }
     // If no observations matched exact service ID and only 1 service is targeted, assign all observations
     if (
       uniqueServices.length === 1 &&
       (obsMap[uniqueServices[0]] || []).length === 0
     ) {
-      obsMap[uniqueServices[0]] = input.observations;
+      obsMap[uniqueServices[0]] = input.observations.filter(
+        (observation) => observation.source !== "scheduled_probe",
+      );
     }
   } else {
     for (const id of uniqueServices) {

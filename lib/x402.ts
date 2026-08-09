@@ -155,7 +155,14 @@ function logVerificationFailure(
 
 function buildPaymentRequirements(price: string, payTo: string = sellerAddress) {
   // Parse dollar amount to USDC atomic units (6 decimals)
-  const amount = Math.round(parseFloat(price.replace("$", "")) * 1_000_000);
+  const normalizedPrice = price.trim().replace(/^\$/, "");
+  if (!/^\d+(?:\.\d{1,6})?$/.test(normalizedPrice)) {
+    throw new Error("A valid x402 USDC price with at most 6 decimals is required.");
+  }
+  const amount = Math.round(Number(normalizedPrice) * 1_000_000);
+  if (!Number.isSafeInteger(amount) || amount <= 0) {
+    throw new Error("A positive x402 USDC price is required.");
+  }
   if (!/^0x[0-9a-fA-F]{40}$/.test(payTo)) {
     throw new Error("A valid x402 seller payout address is required.");
   }
@@ -260,7 +267,7 @@ export function withGateway(
         return NextResponse.json(
           {
             error: "Payment verification failed",
-            reason: verifyResult.invalidReason,
+            reason: "payment_signature_invalid",
             requestId: diagnostics.requestId,
           },
           {
@@ -299,12 +306,12 @@ export function withGateway(
 
       if (!settleResult.success) {
         console.error(
-          `[x402] Settlement failed for ${endpoint} requestId=${diagnostics.requestId}: ${settleResult.errorReason}`,
+          `[x402] Settlement failed for ${endpoint} requestId=${diagnostics.requestId}: ${sanitizeDiagnosticText(settleResult.errorReason ?? "unknown_error")}`,
         );
         return NextResponse.json(
           {
             error: "Payment settlement failed",
-            reason: settleResult.errorReason,
+            reason: "payment_settlement_failed",
             requestId: diagnostics.requestId,
           },
           {
@@ -423,8 +430,6 @@ export function withGateway(
 
       return response;
     } catch (error) {
-      const message =
-        error instanceof Error ? error.message : String(error);
       console.error(
         "[x402] Payment processing error:",
         JSON.stringify({
@@ -433,7 +438,11 @@ export function withGateway(
         }),
       );
       return NextResponse.json(
-        { error: "Payment processing error", message, requestId: diagnostics.requestId },
+        {
+          error: "Payment processing error",
+          message: "The payment could not be processed safely.",
+          requestId: diagnostics.requestId,
+        },
         {
           status: 500,
           headers: {

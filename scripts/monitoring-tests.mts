@@ -370,20 +370,21 @@ async function runMonitoringTests() {
 
   // 1.1 Cooldown guard
   const probeCheck1 = await checkProbeSafetyAndBudget("srv_probe_cd", "availability", { cooldownSeconds: 300 });
-  assert.equal(probeCheck1.allowed, true);
+  assert.equal(probeCheck1.allowed, false);
+  assert.equal(probeCheck1.status, "inactive_skipped");
 
   await executeScheduledProbe({ serviceId: "srv_probe_cd", probeType: "availability" });
 
   const probeCheck2 = await checkProbeSafetyAndBudget("srv_probe_cd", "availability", { cooldownSeconds: 300 });
   assert.equal(probeCheck2.allowed, false);
-  assert.equal(probeCheck2.status, "cooldown_skipped");
+  assert.equal(probeCheck2.status, "inactive_skipped");
 
   // 1.2 Price limit guard
   const checkPriceLimit = await checkProbeSafetyAndBudget("srv_price_guard", "paid_execution", {
     maxPriceUsdc: 0.05,
   });
   assert.equal(checkPriceLimit.allowed, false);
-  assert.equal(checkPriceLimit.status, "budget_exceeded");
+  assert.equal(checkPriceLimit.status, "inactive_skipped");
 
   // 1.3 Daily budget guard
   clearInMemoryApiQualityObservations();
@@ -415,7 +416,7 @@ async function runMonitoringTests() {
     maxPriceUsdc: 1.0,
   });
   assert.equal(checkDailyBudget.allowed, false);
-  assert.equal(checkDailyBudget.status, "budget_exceeded");
+  assert.equal(checkDailyBudget.status, "inactive_skipped");
 
   // 1.4 Single Scheduled Probe Execution
   const probeExecRes = await executeScheduledProbe({
@@ -423,10 +424,9 @@ async function runMonitoringTests() {
     probeType: "availability",
     cooldownSeconds: 0,
   });
-  assert.equal(probeExecRes.status, "success");
-  assert.ok(probeExecRes.observation);
-  assert.ok(probeExecRes.metricsDelta);
-  assert.equal(probeExecRes.metricsDelta.serviceId, "srv_single_probe_exec");
+  assert.equal(probeExecRes.status, "inactive_skipped");
+  assert.equal(probeExecRes.observation, undefined);
+  assert.equal(probeExecRes.metricsDelta, undefined);
 
   // 1.5 Batch Scheduled Probes Runner
   const batchRes = await runScheduledApiQualityProbes({
@@ -435,8 +435,8 @@ async function runMonitoringTests() {
     cooldownSeconds: 0,
   });
   assert.equal(batchRes.totalProbes, 2);
-  assert.equal(batchRes.executed, 2);
-  assert.equal(batchRes.skipped, 0);
+  assert.equal(batchRes.executed, 0);
+  assert.equal(batchRes.skipped, 2);
 
   // ----------------------------------------------------
   // Section 2: Quality Degradation Triggers

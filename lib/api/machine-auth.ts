@@ -432,8 +432,55 @@ export async function enforceReadRateLimit(
   context: MachineAuthContext,
   maxPerMinute = 120,
 ): Promise<{ ok: true } | { ok: false; response: NextResponse }> {
+  if (process.env.NODE_ENV !== "test") {
+    const { data, error } = await getByoaClient().rpc(
+      "consume_machine_api_read_limit_v1",
+      {
+        p_credential_id: context.credential.id,
+        p_route: "machine_api_results_read",
+        p_max_per_minute: maxPerMinute,
+      },
+    );
+    if (error) {
+      return {
+        ok: false,
+        response: createMachineErrorResponse(
+          "internal_error",
+          "The read rate limit could not be safely evaluated right now.",
+          503,
+          true,
+        ),
+      };
+    }
+    const row = (data as Array<{
+      allowed?: boolean;
+      retry_after_seconds?: number;
+    }> | null)?.[0];
+    if (!row?.allowed) {
+      return {
+        ok: false,
+        response: createMachineErrorResponse(
+          "rate_limited",
+          "Read rate limit exceeded. Please retry shortly.",
+          429,
+          true,
+        ),
+      };
+    }
+    return { ok: true };
+  }
+
   const now = Date.now();
-  const key = context.agentId;
+  const key = context.credential.id;
+  if (readRateLimitStore.size >= 1000) {
+    for (const [storedKey, stored] of readRateLimitStore) {
+      if (now - stored.windowStart > 60_000) readRateLimitStore.delete(storedKey);
+    }
+    if (readRateLimitStore.size >= 1000) {
+      const oldestKey = readRateLimitStore.keys().next().value;
+      if (oldestKey) readRateLimitStore.delete(oldestKey);
+    }
+  }
   const entry = readRateLimitStore.get(key);
 
   if (!entry || now - entry.windowStart > 60000) {

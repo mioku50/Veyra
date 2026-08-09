@@ -17,8 +17,12 @@ export function WalletAddress({
   full?: boolean;
 }) {
   async function copyAddress() {
-    await navigator.clipboard.writeText(address);
-    toast.success("Copied wallet address");
+    try {
+      await navigator.clipboard.writeText(address);
+      toast.success("Copied wallet address");
+    } catch {
+      toast.error("Could not copy wallet address");
+    }
   }
 
   return (

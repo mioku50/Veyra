@@ -88,6 +88,8 @@ GitHub Due Diligence agent example.
 | GitHub Project Due Diligence | Repository-health verdict and evidence report | 0.002 USDC |
 | Veyra Agent Trust Report | Identity, code, execution, payment, service, and Arc trust signals | 0.0004 USDC |
 | Veyra Project 360 Due Diligence | Explicitly selected multi-source evidence, coverage-aware score, 15-section report, and one aggregate Arc proof | Per selected module |
+| Treasury Health | Wallet balance, concentration, activity, and runway signals | 0.0004 USDC |
+| Paid API Quality | Observed availability, latency, response, payment, and settlement quality | 0.002 USDC |
 | Market Context Brief | Live provider-backed market snapshot | 0.0013 USDC |
 | Sentiment & Tone Report | Structured sentiment and tone signals | 0.0013 USDC |
 | Builder Update Summary | Delivery summary, signals, and next steps | 0.0013 USDC |

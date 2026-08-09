@@ -15,6 +15,7 @@ import {
 } from "../../../../../lib/api/machine-errors.ts";
 import {
   inspectMachineIdempotency,
+  releaseMachineIdempotency,
   resolveMachineIdempotency,
   saveMachineIdempotency,
 } from "../../../../../lib/api/machine-idempotency.ts";
@@ -114,82 +115,125 @@ async function launchMachineSellerRun(input: {
     });
   }
 
-  let jobId: string | null = null;
-  if (input.quote.payment_mode === "sponsored") {
-    const checkoutConfig = getHostedWorkflowCheckoutConfig();
-    const { data, error } = await getByoaClient().rpc("launch_hosted_workflow_checkout_v1", {
-      p_quote_id: input.quote.id,
-      p_idempotency_hash: input.quote.idempotency_hash,
-      p_request_hash: input.quote.request_hash,
-      p_payment_mode: "sponsored",
-      p_transaction_hash: null,
-      p_block_number: null,
-      p_settled_at: null,
-      p_sponsored_quota: checkoutConfig.sponsoredQuota,
-    });
-    if (error) throw new Error("Failed to launch sponsored seller workflow checkout.");
-    const row = (data as Array<{ job_id: string | null; reason: string }> | null)?.[0];
-    if (!row?.job_id) {
-      return createMachineErrorResponse(
-        row?.reason === "sponsored_quota_exhausted" ? "spending_limit_exceeded" : "internal_error",
-        "Sponsored seller workflow checkout could not be finalized.",
-        row?.reason === "sponsored_quota_exhausted" ? 429 : 500,
+  let reservationToken = reservation.reservationToken;
+  try {
+    let jobId: string | null = null;
+    if (input.quote.payment_mode === "sponsored") {
+      const checkoutConfig = getHostedWorkflowCheckoutConfig();
+      const { data, error } = await getByoaClient().rpc(
+        "launch_hosted_workflow_checkout_v1",
+        {
+          p_quote_id: input.quote.id,
+          p_idempotency_hash: input.quote.idempotency_hash,
+          p_request_hash: input.quote.request_hash,
+          p_payment_mode: "sponsored",
+          p_transaction_hash: null,
+          p_block_number: null,
+          p_settled_at: null,
+          p_sponsored_quota: checkoutConfig.sponsoredQuota,
+        },
+      );
+      if (error) {
+        throw new Error("Failed to launch sponsored seller workflow checkout.");
+      }
+      const row = (
+        data as Array<{ job_id: string | null; reason: string }> | null
+      )?.[0];
+      if (!row?.job_id) {
+        return createMachineErrorResponse(
+          row?.reason === "sponsored_quota_exhausted"
+            ? "spending_limit_exceeded"
+            : "internal_error",
+          "Sponsored seller workflow checkout could not be finalized.",
+          row?.reason === "sponsored_quota_exhausted" ? 429 : 500,
+        );
+      }
+      jobId = row.job_id;
+    } else {
+      const result = await confirmHostedWorkflowQuoteInput({
+        quoteId: input.quote.id,
+        idempotencyHash: input.quote.idempotency_hash,
+        requestHash: input.quote.request_hash,
+        inputText,
+        transactionHash: input.paymentAuthorization?.payload?.trim() ?? null,
+      });
+      if (!result.jobId) {
+        return createMachineErrorResponse(
+          "payment_invalid",
+          `Paid seller workflow checkout failed: ${result.reason}`,
+          400,
+        );
+      }
+      jobId = result.jobId;
+    }
+
+    const ownershipUpdate = await getByoaClient()
+      .from("hosted_agent_jobs")
+      .update({
+        byoa_agent_id: input.context.agentId,
+        machine_credential_id: input.context.credential.id,
+      })
+      .eq("id", jobId);
+    if (ownershipUpdate.error) {
+      throw new Error(
+        `Unable to persist ${BRAND.agentApi} job credential ownership.`,
       );
     }
-    jobId = row.job_id;
-  } else {
-    const result = await confirmHostedWorkflowQuoteInput({
-      quoteId: input.quote.id,
-      idempotencyHash: input.quote.idempotency_hash,
-      requestHash: input.quote.request_hash,
-      inputText,
-      transactionHash: input.paymentAuthorization?.payload?.trim() ?? null,
-    });
-    if (!result.jobId) {
-      return createMachineErrorResponse("payment_invalid", `Paid seller workflow checkout failed: ${result.reason}`, 400);
+
+    const responsePayload = {
+      runId: jobId,
+      status: "queued",
+      pollAfterMs: 2000,
+    };
+    await saveMachineIdempotency(
+      input.idempotencyKey,
+      input.context.credential.id,
+      input.body,
+      responsePayload,
+      {
+        agentId: input.context.agentId,
+        route: "/api/agent/v1/runs",
+        responseStatus: 201,
+        resourceType: "run",
+        resourceId: jobId,
+        reservationToken,
+      },
+    );
+    reservationToken = undefined;
+    try {
+      after(async () => {
+        try {
+          await runSellerAgentJob(jobId!, input.body.input);
+        } catch (error) {
+          console.error(
+            `[runs/route] Async seller execution failed for job=${jobId}:`,
+            error,
+          );
+        }
+      });
+    } catch {
+      runSellerAgentJob(jobId, input.body.input).catch((error) => {
+        console.error(
+          `[runs/route] Async seller execution fallback failed for job=${jobId}:`,
+          error,
+        );
+      });
     }
-    jobId = result.jobId;
-  }
-
-  const ownershipUpdate = await getByoaClient().from("hosted_agent_jobs").update({
-    byoa_agent_id: input.context.agentId,
-    machine_credential_id: input.context.credential.id,
-  }).eq("id", jobId);
-  if (ownershipUpdate.error) {
-    throw new Error(`Unable to persist ${BRAND.agentApi} job credential ownership.`);
-  }
-
-  const responsePayload = { runId: jobId, status: "queued", pollAfterMs: 2000 };
-  await saveMachineIdempotency(
-    input.idempotencyKey,
-    input.context.credential.id,
-    input.body,
-    responsePayload,
-    {
-      agentId: input.context.agentId,
-      route: "/api/agent/v1/runs",
-      responseStatus: 201,
-      resourceType: "run",
-      resourceId: jobId,
-    },
-  );
-  try {
-    after(async () => {
-      try {
-        await runSellerAgentJob(jobId!, input.body.input);
-      } catch (error) {
-        console.error(`[runs/route] Async seller execution failed for job=${jobId}:`, error);
-      }
+    return NextResponse.json(responsePayload, {
+      status: 201,
+      headers: { "Cache-Control": "no-store" },
     });
-  } catch {
-    runSellerAgentJob(jobId, input.body.input).catch((error) => {
-      console.error(`[runs/route] Async seller execution fallback failed for job=${jobId}:`, error);
-    });
+  } finally {
+    if (reservationToken) {
+      await releaseMachineIdempotency(
+        input.idempotencyKey,
+        input.context.credential.id,
+        input.body,
+        "/api/agent/v1/runs",
+        reservationToken,
+      );
+    }
   }
-  return NextResponse.json(responsePayload, {
-    status: 201,
-    headers: { "Cache-Control": "no-store" },
-  });
 }
 
 export async function POST(request: NextRequest) {
@@ -503,6 +547,7 @@ export async function POST(request: NextRequest) {
   }
 
   let jobId: string | null = null;
+  let reservationToken = reservation.reservationToken;
 
   try {
     if (storedQuote.payment_mode === "sponsored") {
@@ -622,8 +667,10 @@ export async function POST(request: NextRequest) {
         responseStatus: 201,
         resourceType: "run",
         resourceId: jobId,
+        reservationToken,
       },
     );
+    reservationToken = undefined;
 
     // Launch execution asynchronously
     if (jobId) {
@@ -687,5 +734,15 @@ export async function POST(request: NextRequest) {
       "/api/agent/v1/runs",
       context.agentId,
     );
+  } finally {
+    if (reservationToken) {
+      await releaseMachineIdempotency(
+        idempotencyKey,
+        context.credential.id,
+        body,
+        "/api/agent/v1/runs",
+        reservationToken,
+      );
+    }
   }
 }

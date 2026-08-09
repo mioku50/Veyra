@@ -289,9 +289,13 @@ export function HostedJobResult({ initialView }: { initialView: HostedJobView })
   const [pollError, setPollError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
 
+  const proofStatusKey = view.proofs.map((proof) => proof.status).join(",");
+  const allProofsFinal =
+    view.proofs.length > 0 &&
+    view.proofs.every((proof) => proof.status !== "pending");
+
   useEffect(() => {
     if (view.job.status === "failed") return;
-    const allProofsFinal = view.proofs.length > 0 && view.proofs.every((proof) => proof.status !== "pending");
     if (view.job.status === "completed" && allProofsFinal) return;
     let cancelled = false;
     let timer: number | undefined;
@@ -314,13 +318,14 @@ export function HostedJobResult({ initialView }: { initialView: HostedJobView })
       cancelled = true;
       if (timer) window.clearTimeout(timer);
     };
-  }, [view.job.id, view.job.status, view.proofs]);
+  }, [allProofsFinal, proofStatusKey, view.job.id, view.job.status]);
 
   function copyShareLink() {
     if (typeof window !== "undefined") {
-      navigator.clipboard.writeText(window.location.href);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
+      void navigator.clipboard.writeText(window.location.href).then(() => {
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+      }).catch(() => setCopied(false));
     }
   }
 

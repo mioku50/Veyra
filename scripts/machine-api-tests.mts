@@ -13,6 +13,7 @@ import { setByoaClientForTesting } from "../lib/byoa/service.ts";
 import {
   inspectMachineIdempotency,
   resolveMachineIdempotency,
+  releaseMachineIdempotency,
   saveMachineIdempotency,
   clearMachineIdempotencyStore,
   computeCanonicalRequestHash,
@@ -93,6 +94,36 @@ async function testMachineIdempotencyUnit() {
   assert.equal(check1.cached, false);
   assert.equal(check1.conflict, false);
   assert.equal(check1.ok, true);
+  assert.ok(check1.reservationToken);
+
+  await releaseMachineIdempotency(
+    idempotencyKey,
+    credId,
+    payloadA,
+    "/api/agent/v1",
+    "00000000-0000-4000-8000-000000000000",
+  );
+  const wrongOwnerRelease = await resolveMachineIdempotency(idempotencyKey, credId, payloadA);
+  assert.equal(wrongOwnerRelease.pending, true, "A different lease owner must not release the reservation");
+
+  await releaseMachineIdempotency(
+    idempotencyKey,
+    credId,
+    payloadA,
+    "/api/agent/v1",
+    check1.reservationToken,
+  );
+  const releasedCheck = await resolveMachineIdempotency(idempotencyKey, credId, payloadB);
+  assert.equal(releasedCheck.ok, true, "A failed mutation must be able to release its pending lease");
+  await releaseMachineIdempotency(
+    idempotencyKey,
+    credId,
+    payloadB,
+    "/api/agent/v1",
+    releasedCheck.reservationToken,
+  );
+  const restoredCheck = await resolveMachineIdempotency(idempotencyKey, credId, payloadA);
+  assert.equal(restoredCheck.ok, true);
   assert.equal(check1.result, undefined);
 
   // A concurrent replay before the first response is finalized must not execute.
@@ -106,7 +137,9 @@ async function testMachineIdempotencyUnit() {
   assert.equal(pendingCheck.conflict, false);
 
   // Save record
-  await saveMachineIdempotency(idempotencyKey, credId, payloadA, mockResult);
+  await saveMachineIdempotency(idempotencyKey, credId, payloadA, mockResult, {
+    reservationToken: restoredCheck.reservationToken,
+  });
 
   // Re-check with identical payload -> should return cached result
   const check2 = await resolveMachineIdempotency(idempotencyKey, credId, payloadA);
@@ -426,6 +459,7 @@ mockJobsStore.set("job-running-1", fixtureRunningJob);
 
 const mockIdempotencyDbStore = new Map<string, any>();
 let mockDailyCallCount = 0;
+let mockReservationSequence = 0;
 
 function createMockSupabaseClient(): any {
   return {
@@ -436,6 +470,8 @@ function createMockSupabaseClient(): any {
         const existing = mockIdempotencyDbStore.get(compositeKey);
 
         if (!existing || Date.parse(existing.expires_at) <= Date.now()) {
+          mockReservationSequence += 1;
+          const reservationToken = `00000000-0000-4000-8000-${String(mockReservationSequence).padStart(12, "0")}`;
           mockIdempotencyDbStore.set(compositeKey, {
             credential_id: args.p_credential_id,
             agent_id: args.p_agent_id,
@@ -444,6 +480,8 @@ function createMockSupabaseClient(): any {
             request_hash: args.p_request_hash,
             response_status: null,
             response_body: null,
+            reservation_token: reservationToken,
+            created_at: new Date().toISOString(),
             expires_at: args.p_expires_at,
           });
           return Promise.resolve({
@@ -451,6 +489,7 @@ function createMockSupabaseClient(): any {
               reservation_outcome: "reserved",
               cached_status: null,
               cached_body: null,
+              reservation_token: reservationToken,
             }],
             error: null,
           });
@@ -489,6 +528,45 @@ function createMockSupabaseClient(): any {
           }],
           error: null,
         });
+      }
+
+      if (fnName === "complete_machine_api_idempotency_v1") {
+        const compositeKey =
+          `${args.p_credential_id}:${args.p_route}:${args.p_idempotency_key_hash}`;
+        const existing = mockIdempotencyDbStore.get(compositeKey);
+        if (
+          !existing ||
+          existing.request_hash !== args.p_request_hash ||
+          existing.reservation_token !== args.p_reservation_token ||
+          existing.response_status !== null
+        ) {
+          return Promise.resolve({ data: false, error: null });
+        }
+        mockIdempotencyDbStore.set(compositeKey, {
+          ...existing,
+          response_status: args.p_response_status,
+          response_body: args.p_response_body,
+          resource_type: args.p_resource_type,
+          resource_id: args.p_resource_id,
+          expires_at: args.p_expires_at,
+        });
+        return Promise.resolve({ data: true, error: null });
+      }
+
+      if (fnName === "release_machine_api_idempotency_v1") {
+        const compositeKey =
+          `${args.p_credential_id}:${args.p_route}:${args.p_idempotency_key_hash}`;
+        const existing = mockIdempotencyDbStore.get(compositeKey);
+        if (
+          !existing ||
+          existing.request_hash !== args.p_request_hash ||
+          existing.reservation_token !== args.p_reservation_token ||
+          existing.response_status !== null
+        ) {
+          return Promise.resolve({ data: false, error: null });
+        }
+        mockIdempotencyDbStore.delete(compositeKey);
+        return Promise.resolve({ data: true, error: null });
       }
 
       if (fnName === "launch_hosted_workflow_checkout_v1") {

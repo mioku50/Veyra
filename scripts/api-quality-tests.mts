@@ -7,6 +7,11 @@ process.env.NODE_ENV = "test";
 
 import assert from "node:assert/strict";
 import { createClient } from "@supabase/supabase-js";
+import { NextRequest } from "next/server.js";
+import {
+  GET as monitoringProbesGET,
+  POST as monitoringProbesPOST,
+} from "../app/api/monitoring/probes/route.ts";
 import {
   calculateQualityScore,
   checkProbeSafetyAndBudget,
@@ -428,28 +433,32 @@ async function runTests() {
   assert.equal(latencyHighlight?.winnerServiceId, "srv_comp_weather");
 
   // ----------------------------------------------------
-  // Scenario 11: Probe Cooldown Safety Guard (cooldown_skipped)
+  // Scenario 11: Unknown services fail closed without observations
   // ----------------------------------------------------
-  console.log("Scenario 11: Probe Cooldown Safety Guard");
+  console.log("Scenario 11: Unknown probe target fails closed");
   const check1 = await checkProbeSafetyAndBudget("srv_cooldown_test", "availability", { cooldownSeconds: 300 });
-  assert.equal(check1.allowed, true);
+  assert.equal(check1.allowed, false);
+  assert.equal(check1.status, "inactive_skipped");
 
-  await executeScheduledProbe({ serviceId: "srv_cooldown_test", probeType: "availability" });
+  const observationsBeforeProbe = getInMemoryApiQualityObservations().length;
+  const closedProbe = await executeScheduledProbe({ serviceId: "srv_cooldown_test", probeType: "availability" });
+  assert.equal(closedProbe.status, "inactive_skipped");
+  assert.equal(closedProbe.observation, undefined);
+  assert.equal(getInMemoryApiQualityObservations().length, observationsBeforeProbe);
 
   const check2 = await checkProbeSafetyAndBudget("srv_cooldown_test", "availability", { cooldownSeconds: 300 });
   assert.equal(check2.allowed, false);
-  assert.equal(check2.status, "cooldown_skipped");
+  assert.equal(check2.status, "inactive_skipped");
 
   // ----------------------------------------------------
-  // Scenario 12: Probe Per-Request Price Limit Guard (budget_exceeded)
+  // Scenario 12: Paid probes cannot fabricate settlement evidence
   // ----------------------------------------------------
-  console.log("Scenario 12: Probe Per-Request Price Limit Guard");
+  console.log("Scenario 12: Paid probes fail closed");
   const checkPriceLimit = await checkProbeSafetyAndBudget("srv_price_guard", "paid_execution", {
     maxPriceUsdc: 0.05,
   });
-  // Service price defaults to 0.10 in mock metadata fetch if DB unavailable -> 0.10 > 0.05
   assert.equal(checkPriceLimit.allowed, false);
-  assert.equal(checkPriceLimit.status, "budget_exceeded");
+  assert.equal(checkPriceLimit.status, "inactive_skipped");
 
   // ----------------------------------------------------
   // Scenario 13: Probe Cumulative Daily Budget Guard
@@ -484,7 +493,14 @@ async function runTests() {
     maxPriceUsdc: 1.0,
   });
   assert.equal(checkDailyBudget.allowed, false);
-  assert.equal(checkDailyBudget.status, "budget_exceeded");
+  assert.equal(checkDailyBudget.status, "inactive_skipped");
+  assert.equal(
+    computeApiQualityMetrics(
+      getInMemoryApiQualityObservations().filter((observation) => observation.serviceId === "srv_budget_fill"),
+    ).totalObservations,
+    0,
+    "Legacy synthetic scheduled probes must not contribute to quality scores",
+  );
 
   // ----------------------------------------------------
   // Scenario 14: Single Scheduled Probe Execution & Pre/Post Delta Calculation
@@ -496,10 +512,9 @@ async function runTests() {
     cooldownSeconds: 0,
   });
 
-  assert.equal(probeExecRes.status, "success");
-  assert.ok(probeExecRes.observation);
-  assert.ok(probeExecRes.metricsDelta);
-  assert.equal(probeExecRes.metricsDelta.serviceId, "srv_single_probe");
+  assert.equal(probeExecRes.status, "inactive_skipped");
+  assert.equal(probeExecRes.observation, undefined);
+  assert.equal(probeExecRes.metricsDelta, undefined);
 
   // ----------------------------------------------------
   // Scenario 15: Batch Scheduled Probes Runner
@@ -512,9 +527,48 @@ async function runTests() {
   });
 
   assert.equal(batchRes.totalProbes, 2);
-  assert.equal(batchRes.executed, 2);
-  assert.equal(batchRes.skipped, 0);
+  assert.equal(batchRes.executed, 0);
+  assert.equal(batchRes.skipped, 2);
   assert.equal(batchRes.results.length, 2);
+
+  const previousCronSecret = process.env.CRON_SECRET;
+  process.env.CRON_SECRET = "probe-route-test-secret";
+  try {
+    const unauthorizedProbeResponse = await monitoringProbesGET(
+      new NextRequest("http://localhost/api/monitoring/probes"),
+    );
+    assert.equal(unauthorizedProbeResponse.status, 404);
+
+    const authorizedProbeResponse = await monitoringProbesPOST(
+      new NextRequest("http://localhost/api/monitoring/probes", {
+        method: "POST",
+        headers: {
+          authorization: "Bearer probe-route-test-secret",
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          probeType: "paid_execution",
+          cooldownSeconds: 0,
+          maxDailyProbeBudgetUsdc: 99999,
+          serviceIds: ["attacker-controlled-service"],
+        }),
+      }),
+    );
+    assert.equal(authorizedProbeResponse.status, 200);
+    const authorizedProbeBody = await authorizedProbeResponse.json();
+    assert.equal(authorizedProbeBody.summary.totalCostUsdc, 0);
+    assert.equal(
+      authorizedProbeBody.summary.results.some(
+        (result: { probeType?: string; serviceId?: string }) =>
+          result.probeType === "paid_execution" || result.serviceId === "attacker-controlled-service",
+      ),
+      false,
+      "Request body must not control paid probe policy or target selection",
+    );
+  } finally {
+    if (previousCronSecret === undefined) delete process.env.CRON_SECRET;
+    else process.env.CRON_SECRET = previousCronSecret;
+  }
 
   // ----------------------------------------------------
   // Scenario 16: Delta Degradation Alert - Score Drop (>= 15 pts)

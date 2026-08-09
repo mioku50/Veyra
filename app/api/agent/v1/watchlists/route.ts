@@ -3,6 +3,7 @@ import { authenticateMachineRequest } from "@/lib/api/machine-auth";
 import { createMachineErrorResponse, handleMachineInternalError } from "@/lib/api/machine-errors";
 import {
   resolveMachineIdempotency,
+  releaseMachineIdempotency,
   saveMachineIdempotency,
 } from "@/lib/api/machine-idempotency";
 import {
@@ -59,6 +60,7 @@ export async function POST(request: NextRequest) {
   } catch {
     return createMachineErrorResponse("invalid_request", "Request body must be valid JSON.", 400);
   }
+  let reservationToken: string | undefined;
   try {
     validateTrustWatchlistDraft({
       label: body.label,
@@ -102,6 +104,7 @@ export async function POST(request: NextRequest) {
         headers: { "Cache-Control": "no-store" },
       });
     }
+    reservationToken = reservation.reservationToken;
     const result = await createTrustWatchlist({
       ownerWallet: auth.context.ownerWallet,
       label: body.label,
@@ -124,13 +127,24 @@ export async function POST(request: NextRequest) {
         responseStatus: status,
         resourceType: "watchlist",
         resourceId: payload.id,
+        reservationToken,
       },
     );
+    reservationToken = undefined;
     return NextResponse.json(payload, {
       status,
       headers: { "Cache-Control": "no-store" },
     });
   } catch (error) {
+    if (reservationToken) {
+      await releaseMachineIdempotency(
+        key,
+        auth.context.credential.id,
+        body,
+        "/api/agent/v1/watchlists",
+        reservationToken,
+      );
+    }
     return monitoringMachineError(error);
   }
 }

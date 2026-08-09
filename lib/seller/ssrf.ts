@@ -98,6 +98,10 @@ export function isRestrictedIpAddress(ip: string, allowLocalhost = false): boole
     }
   }
 
+  // Range prefix checks below are valid only for literal IP addresses. Applying
+  // them to hostnames caused false positives such as fdic.gov and ffmpeg.org.
+  if (cleanIp !== "localhost" && isIP(cleanIp) === 0) return false;
+
   // Loopback / 0.0.0.0 / localhost
   if (
     cleanIp === "localhost" || cleanIp === "0.0.0.0" || cleanIp.startsWith("0.") ||
@@ -211,7 +215,7 @@ export function validateUrlSsrf(
   }
 
   // Check if hostname itself is a restricted literal IP
-  if (isRestrictedIpAddress(hostname, allowLocal)) {
+  if (isIP(hostname) !== 0 && isRestrictedIpAddress(hostname, allowLocal)) {
     throw new SSRFProtectionError(
       `SSRF protection: target hostname "${hostname}" resolves or matches a restricted IP range`,
     );

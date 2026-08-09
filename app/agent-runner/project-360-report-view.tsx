@@ -64,9 +64,13 @@ export function Project360ReportView({
   const [copied, setCopied] = useState(false);
 
   async function share() {
-    await navigator.clipboard.writeText(window.location.href);
-    setCopied(true);
-    window.setTimeout(() => setCopied(false), 1_500);
+    try {
+      await navigator.clipboard.writeText(window.location.href);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1_500);
+    } catch {
+      setCopied(false);
+    }
   }
 
   function download() {

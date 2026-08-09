@@ -130,6 +130,8 @@
     "counterparty:example": "node --experimental-transform-types --no-warnings --env-file-if-exists=.env.local examples/agent-to-agent-selection.ts",
     "counterparty:production-migrate": "node --experimental-transform-types --no-warnings --env-file-if-exists=.env.local scripts/apply-p55-production-migration.mts",
     "counterparty:production-verify": "node --experimental-transform-types --no-warnings --env-file-if-exists=.env.local scripts/verify-production-p55-schema.mts",
+    "security-audit:production-migrate": "node --experimental-transform-types --no-warnings --env-file-if-exists=.env.local scripts/apply-security-audit-production-migration.mts",
+    "security-audit:production-verify": "node --experimental-transform-types --no-warnings --env-file-if-exists=.env.local scripts/verify-production-security-audit-schema.mts",
     "counterparty:bootstrap": "node --experimental-transform-types --no-warnings --env-file-if-exists=.env.local scripts/bootstrap-p55-counterparties.mts"
   },
   "dependencies": {

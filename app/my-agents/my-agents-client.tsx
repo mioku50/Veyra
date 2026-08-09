@@ -1167,7 +1167,7 @@ export function MyAgentsClient({ diagnostic }: { diagnostic: Diagnostic }) {
                           <span className="font-semibold text-amber-500">
                             {oneTimeCredential.credentialType === "machine_api" ? BRAND.agentApi : "BYOA Workflow"} secret (displayed once)
                           </span>
-                          <Button size="sm" variant="outline" onClick={() => void navigator.clipboard.writeText(oneTimeCredential.token)}>
+                          <Button size="sm" variant="outline" onClick={() => void navigator.clipboard.writeText(oneTimeCredential.token).catch(() => undefined)}>
                             <Copy className="mr-1 size-3" /> Copy once
                           </Button>
                         </div>

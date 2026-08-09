@@ -532,6 +532,12 @@ function getPercentile(values: number[], p: number): number {
 export function computeApiQualityMetrics(
   observations: ApiQualityObservation[],
 ): ApiQualityMetrics {
+  // Historical `scheduled_probe` rows were produced by a synthetic prototype
+  // and are not trustworthy execution evidence. Keep them out of every score
+  // until the scheduler is backed by an observed provider request.
+  observations = observations.filter(
+    (observation) => observation.source !== "scheduled_probe",
+  );
   const totalObservations = observations.length;
   if (totalObservations === 0) {
     return {
@@ -665,6 +671,9 @@ export function computeApiQualityMetrics(
 export function getConfidenceLevel(
   observations: ApiQualityObservation[],
 ): ConfidenceLevel {
+  observations = observations.filter(
+    (observation) => observation.source !== "scheduled_probe",
+  );
   const count = observations.length;
   if (count < 5) return "low";
 
@@ -1213,9 +1222,18 @@ export async function checkProbeSafetyAndBudget(
   sellerPublicId?: string;
   estimatedCostUsdc: number;
 }> {
-  const cooldownSeconds = options?.cooldownSeconds ?? 300;
-  const maxDailyBudget = options?.maxDailyProbeBudgetUsdc ?? 5.0;
-  const maxPrice = options?.maxPriceUsdc ?? 1.0;
+  const cooldownSeconds = Math.max(
+    60,
+    Math.min(options?.cooldownSeconds ?? 300, 86_400),
+  );
+  const maxDailyBudget = Math.max(
+    0,
+    Math.min(options?.maxDailyProbeBudgetUsdc ?? 5.0, 5.0),
+  );
+  const maxPrice = Math.max(
+    0,
+    Math.min(options?.maxPriceUsdc ?? 1.0, 1.0),
+  );
 
   // 1. Active service check
   let serviceName = serviceId;
@@ -1224,10 +1242,19 @@ export async function checkProbeSafetyAndBudget(
 
   try {
     const publicWorkflow = await fetchPublicServiceMetadata(serviceId);
-    if (publicWorkflow) {
+    if (publicWorkflow?.active) {
       serviceName = publicWorkflow.name || serviceId;
       sellerPublicId = publicWorkflow.sellerPublicId;
       priceUsdc = publicWorkflow.priceUsdc || 0.10;
+    } else {
+      return {
+        allowed: false,
+        status: "inactive_skipped",
+        reason: "Probe skipped: the service is not an active approved public seller service.",
+        serviceName,
+        sellerPublicId,
+        estimatedCostUsdc: 0,
+      };
     }
   } catch {
     // Fallback if DB is unavailable or service not found
@@ -1314,87 +1341,17 @@ export async function executeScheduledProbe(
     };
   }
 
-  // Pre-probe baseline metrics & score
-  const prevObs = await fetchApiQualityObservations(config.serviceId, 30);
-  const prevMetrics = computeApiQualityMetrics(prevObs);
-  const prevScore = calculateQualityScore(prevMetrics, prevObs);
-
-  // Execute probe observation
-  const startedAt = new Date().toISOString();
-  const latencyMs = config.timeoutMs ? Math.min(config.timeoutMs, 140) : 140;
-  const isPaid = probeType === "paid_execution";
-  const cost = isPaid ? safety.estimatedCostUsdc : 0;
-  const completedAt = new Date().toISOString();
-
-  const observation = await recordApiQualityObservation({
-    serviceId: config.serviceId,
-    sellerPublicId: safety.sellerPublicId ?? null,
-    startedAt,
-    completedAt,
-    quotedPriceUsdc: cost,
-    paidAmountUsdc: cost,
-    latencyMs,
-    httpStatusClass: "2xx",
-    endpointReached: true,
-    responseSchemaValid: true,
-    responseWithinSizeLimit: true,
-    paymentRequired: isPaid,
-    paymentAuthorized: isPaid,
-    paymentSettled: isPaid,
-    executionCompleted: true,
-    arcProofVerified: isPaid,
-    errorCategory: "none",
-    source: "scheduled_probe",
-  });
-
-  // Post-probe metrics & score
-  const newObs = await fetchApiQualityObservations(config.serviceId, 30);
-  const newMetrics = computeApiQualityMetrics(newObs);
-  const newScore = calculateQualityScore(newMetrics, newObs);
-
-  // Calculate delta
-  const scoreDelta =
-    newScore.overallScore !== null && prevScore.overallScore !== null
-      ? newScore.overallScore - prevScore.overallScore
-      : null;
-  const uptimeDelta =
-    newMetrics.uptimePercent !== null && prevMetrics.uptimePercent !== null
-      ? Math.round((newMetrics.uptimePercent - prevMetrics.uptimePercent) * 100) / 100
-      : null;
-
-  const metricsDelta: ApiQualityDelta = {
-    serviceId: config.serviceId,
-    previousScore: prevScore.overallScore,
-    newScore: newScore.overallScore,
-    scoreDelta,
-    previousUptimePercent: prevMetrics.uptimePercent,
-    newUptimePercent: newMetrics.uptimePercent,
-    uptimeDelta,
-    previousLatencyP95Ms: prevMetrics.latencyP95Ms,
-    newLatencyP95Ms: newMetrics.latencyP95Ms,
-    latencyDeltaMs: newMetrics.latencyP95Ms - prevMetrics.latencyP95Ms,
-  };
-
-  // Detect degradation alerts
-  const alertsTriggered = detectQualityDegradationAlerts(
-    config.serviceId,
-    prevScore,
-    newScore,
-    prevMetrics,
-    newMetrics,
-  );
-  if (alertsTriggered.length > 0) {
-    inMemoryAlerts.push(...alertsTriggered);
-  }
-
+  // Fail closed. The previous prototype wrote constant latency, HTTP success,
+  // settlement, and Arc verification values without issuing a provider call.
+  // Availability is already monitored by the seller lifecycle; paid quality
+  // evidence must come from real hosted executions and persisted receipts.
   return {
     probeId,
     serviceId: config.serviceId,
     probeType,
-    status: "success",
-    observation,
-    metricsDelta,
-    alertsTriggered,
+    status: "inactive_skipped",
+    skippedReason: "Scheduled API quality evidence is disabled until a real provider execution is observed.",
+    alertsTriggered: [],
     executedAt,
   };
 }
@@ -1422,7 +1379,7 @@ export async function runScheduledApiQualityProbes(
   if (!targetServiceIds || targetServiceIds.length === 0) {
     const memoryObservations = getInMemoryApiQualityObservations();
     const memoryServiceIds = Array.from(new Set(memoryObservations.map((o) => o.serviceId)));
-    targetServiceIds = memoryServiceIds.length > 0 ? memoryServiceIds : ["srv_demo_weather", "srv_demo_crypto"];
+    targetServiceIds = memoryServiceIds;
   }
 
   const results: ApiQualityProbeResult[] = [];
@@ -1467,6 +1424,4 @@ export async function runScheduledApiQualityProbes(
     executedAt,
   };
 }
-
-
 

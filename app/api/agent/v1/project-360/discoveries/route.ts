@@ -7,6 +7,7 @@ import {
 } from "@/lib/api/machine-errors";
 import {
   resolveMachineIdempotency,
+  releaseMachineIdempotency,
   saveMachineIdempotency,
 } from "@/lib/api/machine-idempotency";
 import { Project360InputError } from "@/lib/project-360/input";
@@ -45,6 +46,7 @@ export async function POST(request: NextRequest) {
     );
   }
   let body: Record<string, unknown>;
+  let reservationToken: string | undefined;
   try {
     body = await request.json();
   } catch {
@@ -87,6 +89,7 @@ export async function POST(request: NextRequest) {
         headers: { "Cache-Control": "no-store" },
       });
     }
+    reservationToken = reservation.reservationToken;
     const result = await createMachineProject360Discovery({
       ownerWallet: auth.context.ownerWallet,
       machineCredentialId: auth.context.credential.id,
@@ -106,13 +109,24 @@ export async function POST(request: NextRequest) {
         responseStatus: status,
         resourceType: "project_360_discovery",
         resourceId: result.discovery.id,
+        reservationToken,
       },
     );
+    reservationToken = undefined;
     return NextResponse.json(result, {
       status,
       headers: { "Cache-Control": "no-store" },
     });
   } catch (error) {
+    if (reservationToken) {
+      await releaseMachineIdempotency(
+        key,
+        auth.context.credential.id,
+        body,
+        "/api/agent/v1/project-360/discoveries",
+        reservationToken,
+      );
+    }
     return errorResponse(error);
   }
 }

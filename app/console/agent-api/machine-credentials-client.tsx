@@ -221,7 +221,7 @@ export function MachineCredentialsClient() {
         <div className="grid gap-2 rounded-md border border-amber-400/40 bg-amber-400/10 p-4 text-xs">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <span className="font-semibold text-amber-600">Secret shown once — copy it now</span>
-            <Button size="sm" variant="outline" onClick={() => void navigator.clipboard.writeText(oneTimeSecret)}>
+            <Button size="sm" variant="outline" onClick={() => void navigator.clipboard.writeText(oneTimeSecret).catch(() => undefined)}>
               <Copy className="mr-1 size-3" /> Copy once
             </Button>
           </div>

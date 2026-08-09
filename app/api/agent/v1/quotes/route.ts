@@ -17,6 +17,7 @@ import {
 } from "../../../../../lib/api/machine-errors.ts";
 import {
   inspectMachineIdempotency,
+  releaseMachineIdempotency,
   resolveMachineIdempotency,
   saveMachineIdempotency,
 } from "../../../../../lib/api/machine-idempotency.ts";
@@ -125,60 +126,72 @@ async function createMachineSellerQuote(input: {
   }
 
   const config = getHostedRunnerConfig();
-  const quoteResult = await createSellerWorkflowQuote({
-    service,
-    payload,
-    idempotencyKey: input.idempotencyKey,
-    requesterFingerprint: hostedRequesterFingerprint({
-      secret: config.rateLimitSecret,
-      forwardedFor: input.request.headers.get("x-forwarded-for"),
-      userAgent: input.request.headers.get("user-agent"),
-    }),
-    requesterWallet: input.context.ownerWallet as Address,
-    byoaAgentId: input.context.agentId,
-    machineCredentialId: input.context.credential.id,
-    ownerWallet: input.context.ownerWallet,
-  });
-  const quote = quoteResult.quote;
-  const responsePayload = {
-    quoteId: quote.id,
-    workflow: quote.workflowType,
-    serviceId: quote.sellerSnapshot?.serviceId,
-    serviceVersion: quote.sellerSnapshot?.serviceVersion,
-    totalUsdc: quote.pricing.listPriceUsdc,
-    sponsored: quote.paymentMode === "sponsored",
-    checkout: {
-      mode: quote.paymentMode === "sponsored" ? "sponsored" : "arc_transaction",
-      asset: "USDC",
-      network: "arc-testnet",
-    },
-    downstreamSettlement: "server_side_x402",
-    expiresAt: quote.expiresAt,
-    requiredPayment: {
-      network: "arc-testnet",
-      asset: "USDC",
-      amount: quote.pricing.amountDueUsdc,
-      treasuryAddress: quote.treasuryAddress,
-      chainId: quote.chainId || ARC_TESTNET_CHAIN_ID,
-    },
-  };
-  await saveMachineIdempotency(
-    input.idempotencyKey,
-    input.context.credential.id,
-    input.body,
-    responsePayload,
-    {
-      agentId: input.context.agentId,
-      route: "/api/agent/v1/quotes",
-      responseStatus: quoteResult.created ? 201 : 200,
-      resourceType: "quote",
-      resourceId: quote.id,
-    },
-  );
-  return NextResponse.json(responsePayload, {
-    status: quoteResult.created ? 201 : 200,
-    headers: { "Cache-Control": "no-store" },
-  });
+  try {
+    const quoteResult = await createSellerWorkflowQuote({
+      service,
+      payload,
+      idempotencyKey: input.idempotencyKey,
+      requesterFingerprint: hostedRequesterFingerprint({
+        secret: config.rateLimitSecret,
+        forwardedFor: input.request.headers.get("x-forwarded-for"),
+        userAgent: input.request.headers.get("user-agent"),
+      }),
+      requesterWallet: input.context.ownerWallet as Address,
+      byoaAgentId: input.context.agentId,
+      machineCredentialId: input.context.credential.id,
+      ownerWallet: input.context.ownerWallet,
+    });
+    const quote = quoteResult.quote;
+    const responsePayload = {
+      quoteId: quote.id,
+      workflow: quote.workflowType,
+      serviceId: quote.sellerSnapshot?.serviceId,
+      serviceVersion: quote.sellerSnapshot?.serviceVersion,
+      totalUsdc: quote.pricing.listPriceUsdc,
+      sponsored: quote.paymentMode === "sponsored",
+      checkout: {
+        mode: quote.paymentMode === "sponsored" ? "sponsored" : "arc_transaction",
+        asset: "USDC",
+        network: "arc-testnet",
+      },
+      downstreamSettlement: "server_side_x402",
+      expiresAt: quote.expiresAt,
+      requiredPayment: {
+        network: "arc-testnet",
+        asset: "USDC",
+        amount: quote.pricing.amountDueUsdc,
+        treasuryAddress: quote.treasuryAddress,
+        chainId: quote.chainId || ARC_TESTNET_CHAIN_ID,
+      },
+    };
+    await saveMachineIdempotency(
+      input.idempotencyKey,
+      input.context.credential.id,
+      input.body,
+      responsePayload,
+      {
+        agentId: input.context.agentId,
+        route: "/api/agent/v1/quotes",
+        responseStatus: quoteResult.created ? 201 : 200,
+        resourceType: "quote",
+        resourceId: quote.id,
+        reservationToken: reservation.reservationToken,
+      },
+    );
+    return NextResponse.json(responsePayload, {
+      status: quoteResult.created ? 201 : 200,
+      headers: { "Cache-Control": "no-store" },
+    });
+  } catch (error) {
+    await releaseMachineIdempotency(
+      input.idempotencyKey,
+      input.context.credential.id,
+      input.body,
+      "/api/agent/v1/quotes",
+      reservation.reservationToken,
+    );
+    throw error;
+  }
 }
 
 export async function POST(request: NextRequest) {
@@ -201,6 +214,7 @@ export async function POST(request: NextRequest) {
   }
 
   let body: Record<string, unknown>;
+  let reservationToken: string | undefined;
   try {
     body = (await request.json()) as Record<string, unknown>;
   } catch {
@@ -523,6 +537,7 @@ export async function POST(request: NextRequest) {
         headers: { "Cache-Control": "no-store" },
       });
     }
+    reservationToken = reservation.reservationToken;
 
     const config = getHostedRunnerConfig();
     const inputSha256 = hashHostedWorkflowInput(workflowRequest.inputText);
@@ -611,14 +626,25 @@ export async function POST(request: NextRequest) {
         responseStatus: quoteResult.created ? 201 : 200,
         resourceType: "quote",
         resourceId: (responsePayload as any).quoteId,
+        reservationToken,
       },
     );
+    reservationToken = undefined;
 
     return NextResponse.json(responsePayload, {
       status: quoteResult.created ? 201 : 200,
       headers: { "Cache-Control": "no-store" },
     });
   } catch (error) {
+    if (reservationToken) {
+      await releaseMachineIdempotency(
+        idempotencyKey,
+        context.credential.id,
+        body,
+        "/api/agent/v1/quotes",
+        reservationToken,
+      );
+    }
     if (error instanceof HostedCheckoutPolicyError) {
       if (error.reason === "idempotency_conflict") {
         return createMachineErrorResponse(

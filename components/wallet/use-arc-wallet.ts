@@ -126,7 +126,7 @@ export function useArcWallet() {
   const [switching, setSwitching] = useState(false);
   const [loadingBalances, setLoadingBalances] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const providerAvailable = typeof window !== "undefined" && Boolean(window.ethereum);
+  const [providerAvailable, setProviderAvailable] = useState(false);
   const isArcTestnet = chainId === ARC_TESTNET_CHAIN_ID;
 
   const readWalletState = useCallback(async () => {
@@ -174,6 +174,7 @@ export function useArcWallet() {
   }, []);
 
   useEffect(() => {
+    setProviderAvailable(Boolean(getProvider()));
     void readWalletState();
   }, [readWalletState]);
 

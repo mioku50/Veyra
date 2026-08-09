@@ -8,14 +8,18 @@ export function ShareProfileButton({ title }: { title: string }) {
   const [copied, setCopied] = useState(false);
 
   async function share() {
-    const url = window.location.href;
-    if (navigator.share) {
-      await navigator.share({ title, url });
-      return;
+    try {
+      const url = window.location.href;
+      if (navigator.share) {
+        await navigator.share({ title, url });
+        return;
+      }
+      await navigator.clipboard.writeText(url);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 2_000);
+    } catch {
+      setCopied(false);
     }
-    await navigator.clipboard.writeText(url);
-    setCopied(true);
-    window.setTimeout(() => setCopied(false), 2_000);
   }
 
   return (

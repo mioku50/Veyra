@@ -100,9 +100,10 @@ export function AgentApiInteractiveClient() {
   const [copied, setCopied] = useState(false);
 
   function copyActiveSnippet() {
-    void navigator.clipboard.writeText(codeExamples[activeTab]);
-    setCopied(true);
-    window.setTimeout(() => setCopied(false), 2_000);
+    void navigator.clipboard.writeText(codeExamples[activeTab]).then(() => {
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 2_000);
+    }).catch(() => setCopied(false));
   }
 
   return (

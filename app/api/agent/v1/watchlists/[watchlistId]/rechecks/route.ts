@@ -7,6 +7,7 @@ import {
 import { createMachineErrorResponse, handleMachineInternalError } from "@/lib/api/machine-errors";
 import {
   resolveMachineIdempotency,
+  releaseMachineIdempotency,
   saveMachineIdempotency,
 } from "@/lib/api/machine-idempotency";
 import {
@@ -33,6 +34,7 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
   }
   const { watchlistId } = await params;
   const body = { watchlistId };
+  let reservationToken: string | undefined;
   try {
     const policy = await enforceQuoteCreationPolicy(auth.context);
     if (!policy.ok) return policy.response;
@@ -78,6 +80,7 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
         headers: { "Cache-Control": "no-store" },
       });
     }
+    reservationToken = reservation.reservationToken;
     const result = await createTrustMonitoringQuote({
       watchlist,
       trigger: "machine",
@@ -134,13 +137,24 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
         responseStatus: result.created ? 201 : 200,
         resourceType: "quote",
         resourceId: quote.id,
+        reservationToken,
       },
     );
+    reservationToken = undefined;
     return NextResponse.json(payload, {
       status: result.created ? 201 : 200,
       headers: { "Cache-Control": "no-store" },
     });
   } catch (error) {
+    if (reservationToken) {
+      await releaseMachineIdempotency(
+        key,
+        auth.context.credential.id,
+        body,
+        `/api/agent/v1/watchlists/${watchlistId}/rechecks`,
+        reservationToken,
+      );
+    }
     if (error instanceof TrustMonitoringError) {
       return createMachineErrorResponse(
         error.code as Parameters<typeof createMachineErrorResponse>[0],

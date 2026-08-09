@@ -475,6 +475,9 @@ export async function createHostedWorkflowQuote(input: {
     if (replay.data && (replay.data as HostedWorkflowQuoteRow).request_hash === input.requestHash) {
       return { quote: publicQuote(replay.data as HostedWorkflowQuoteRow), created: false };
     }
+    if (inserted.error.message.includes("machine_quote_spending_limit_exceeded")) {
+      throw new HostedCheckoutPolicyError("rate_limited");
+    }
     throw new HostedCheckoutInfrastructureError("quote_persistence");
   }
   return {
