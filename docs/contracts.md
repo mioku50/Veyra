@@ -20,6 +20,7 @@
 - **Purpose**: Stores immutable cryptographic hashes and metadata for completed workflow executions and evaluation receipts on Arc.
 
 ### 2. Veyra Trust Gate
+- **Address**: [`0x1cD66BCd4FCB73a079c05635840Fde029Ce6BEbB`](https://testnet.arcscan.app/address/0x1cD66BCd4FCB73a079c05635840Fde029Ce6BEbB)
 - **Source Code**: [`contracts/src/VeyraTrustGate.sol`](../contracts/src/VeyraTrustGate.sol)
 - **EIP-712 Domain**: `"Veyra Trust Gate"`, Version `"1"`
 - **Deploy Script**: [`scripts/deploy-veyra-trust-gate.mts`](../scripts/deploy-veyra-trust-gate.mts)
