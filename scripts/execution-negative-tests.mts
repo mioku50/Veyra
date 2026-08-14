@@ -171,6 +171,49 @@ async function runNegativeTests() {
     console.log("✅ Illegal execution state transitions strictly rejected.");
   }
 
+  // 9. Autopilot disabled when VEYRA_AUTOPILOT_ENABLED !== "true"
+  {
+    const oldVal = process.env.VEYRA_AUTOPILOT_ENABLED;
+    delete process.env.VEYRA_AUTOPILOT_ENABLED;
+    const { runAutopilotExecution, ExecutionError } = await import("../lib/execution/executor.ts");
+    await assert.rejects(
+      async () => {
+        await runAutopilotExecution({
+          mandateId: "vman_neg_test",
+          capability: "github_due_diligence",
+          task: {},
+          requestedBudgetUsdc: 1.0,
+        });
+      },
+      (err: any) => err instanceof ExecutionError && err.code === "AUTOPILOT_DISABLED",
+      "Autopilot must be rejected when VEYRA_AUTOPILOT_ENABLED is not 'true'"
+    );
+    if (oldVal !== undefined) process.env.VEYRA_AUTOPILOT_ENABLED = oldVal;
+    console.log("✅ Autopilot default-off security check successfully verified.");
+  }
+
+  // 10. Cross-wallet authorization 404 check
+  {
+    const { assertMandateAccess } = await import("../lib/execution/auth.ts");
+    const { ExecutionError } = await import("../lib/execution/executor.ts");
+    const caller = { wallet: "0x2222222222222222222222222222222222222222" as const, source: "test_auth" as const };
+    assert.throws(
+      () => assertMandateAccess(caller, "0x1111111111111111111111111111111111111111"),
+      (err: any) => err instanceof ExecutionError && err.status === 404,
+      "Cross-wallet access must throw 404 MANDATE_NOT_FOUND"
+    );
+    console.log("✅ Cross-wallet mandate access correctly rejected with 404.");
+  }
+
+  // 11. Sanitized mandate verification (no signature leaked)
+  {
+    const { sanitizeMandate } = await import("../lib/execution/types.ts");
+    const sanitized = sanitizeMandate(validMandate);
+    assert.equal((sanitized as any).signature, undefined, "Sanitized mandate must not expose signature");
+    assert.equal((sanitized as any).nonce, undefined, "Sanitized mandate must not expose nonce");
+    console.log("✅ Sanitized mandate model verified (signature omitted).");
+  }
+
   console.log("\n🎉 ALL P6.1 Negative & Adversarial Security Tests Passed Successfully!");
 }
 

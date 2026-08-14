@@ -81,12 +81,15 @@ export async function POST(
 
     await saveExecutionMandate(mandate);
 
+    const { sanitizeMandate } = await import("@/lib/execution/types");
+
     return NextResponse.json({
       success: true,
       mandateId,
       status: "ACTIVE",
       canonicalHash: mandate.canonicalHash,
       owner: mandate.ownerWallet,
+      mandate: sanitizeMandate(mandate),
     });
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 });

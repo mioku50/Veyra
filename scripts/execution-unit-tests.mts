@@ -128,8 +128,14 @@ async function runUnitTests() {
       "FAILED is terminal and cannot transition to COMPLETED"
     );
 
+    // Intermediate and unproven state transitions
+    assert.ok(validateStateTransition("EXECUTING", "EVIDENCE_PENDING", "exec_1"));
+    assert.ok(validateStateTransition("EVIDENCE_PENDING", "COMPLETED_UNPROVEN", "exec_1"));
+    assert.ok(validateStateTransition("COMPLETED_UNPROVEN", "COMPLETED", "exec_1"));
+
     // Terminal states check
     assert.ok(isTerminalState("COMPLETED"));
+    assert.ok(isTerminalState("COMPLETED_UNPROVEN"));
     assert.ok(isTerminalState("FAILED"));
     assert.ok(isTerminalState("REJECTED"));
     assert.ok(isTerminalState("CANCELLED"));
@@ -138,6 +144,7 @@ async function runUnitTests() {
     assert.ok(isTerminalState("EVALUATION_REJECTED"));
     assert.ok(!isTerminalState("EXECUTING"));
     assert.ok(!isTerminalState("PREPARED"));
+    assert.ok(!isTerminalState("EVIDENCE_PENDING"));
 
     console.log("✅ State machine transitions and terminal states strictly enforced.");
   }

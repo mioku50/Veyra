@@ -4,24 +4,31 @@
  */
 
 import { NextResponse } from "next/server";
+import { assertMandateAccess, authenticateExecutionCaller } from "@/lib/execution/auth";
 import { getExecutionMandate, revokeExecutionMandate } from "@/lib/execution/db";
+import { sanitizeMandate } from "@/lib/execution/types";
 
 export const dynamic = "force-dynamic";
 
 export async function GET(
-  _req: Request,
+  req: Request,
   { params }: { params: Promise<{ mandateId: string }> }
 ) {
   try {
+    const caller = await authenticateExecutionCaller(req);
     const { mandateId } = await params;
     const mandate = await getExecutionMandate(mandateId);
+
     if (!mandate) {
-      return NextResponse.json({ error: "Mandate not found" }, { status: 404 });
+      return NextResponse.json({ error: "Mandate not found", code: "MANDATE_NOT_FOUND" }, { status: 404 });
     }
 
-    return NextResponse.json({ mandate });
+    assertMandateAccess(caller, mandate.ownerWallet, mandate.subjectWallet);
+
+    return NextResponse.json({ mandate: sanitizeMandate(mandate) });
   } catch (err: any) {
-    return NextResponse.json({ error: err.message }, { status: 500 });
+    const status = err.status || 500;
+    return NextResponse.json({ error: err.message, code: err.code || "SERVER_ERROR" }, { status });
   }
 }
 
@@ -30,20 +37,21 @@ export async function DELETE(
   { params }: { params: Promise<{ mandateId: string }> }
 ) {
   try {
+    const caller = await authenticateExecutionCaller(req);
     const { mandateId } = await params;
-    const { ownerWallet } = await req.json();
+    const mandate = await getExecutionMandate(mandateId);
 
-    if (!ownerWallet) {
-      return NextResponse.json({ error: "ownerWallet is required to revoke mandate" }, { status: 400 });
+    if (!mandate) {
+      return NextResponse.json({ error: "Mandate not found", code: "MANDATE_NOT_FOUND" }, { status: 404 });
     }
 
-    const success = await revokeExecutionMandate(mandateId, ownerWallet);
-    if (!success) {
-      return NextResponse.json({ error: "Mandate not found or owner mismatch" }, { status: 404 });
-    }
+    // Only owner can revoke mandate
+    assertMandateAccess(caller, mandate.ownerWallet);
 
-    return NextResponse.json({ success: true, mandateId, status: "REVOKED" });
+    const revoked = await revokeExecutionMandate(mandateId, caller.wallet);
+    return NextResponse.json({ success: revoked, revokedAt: new Date().toISOString() });
   } catch (err: any) {
-    return NextResponse.json({ error: err.message }, { status: 500 });
+    const status = err.status || 500;
+    return NextResponse.json({ error: err.message, code: err.code || "SERVER_ERROR" }, { status });
   }
 }

@@ -15,6 +15,8 @@ export type ExecutionState =
   | "SUBMITTED"
   | "EVALUATING"
   | "SETTLING"
+  | "EVIDENCE_PENDING"
+  | "COMPLETED_UNPROVEN"
   | "COMPLETED"
   | "REJECTED"
   | "EXPIRED"
@@ -47,6 +49,13 @@ export interface ExecutionMandate {
   expiresAt: string;
   revokedAt?: string | null;
   createdAt: string;
+}
+
+export type SanitizedExecutionMandate = Omit<ExecutionMandate, "signature" | "nonce">;
+
+export function sanitizeMandate(mandate: ExecutionMandate): SanitizedExecutionMandate {
+  const { signature: _sig, nonce: _nonce, ...sanitized } = mandate;
+  return sanitized;
 }
 
 export interface ExecutionMandateInput {
@@ -135,7 +144,7 @@ export interface ExecutionResult {
   requestedAmountUsdc: number;
   authorizedAmountUsdc: number;
   actualSettledAmountUsdc: number;
-  status: "COMPLETED" | "REJECTED" | "FAILED";
+  status: "COMPLETED" | "COMPLETED_UNPROVEN" | "REJECTED" | "FAILED";
   failureCode?: string | null;
   createTx?: string | null;
   completeTx?: string | null;

@@ -32,30 +32,37 @@ export interface PreflightRevalidationResult {
 
 const memorySelectionStore = new Map<string, CounterpartySelection>();
 
+function isMemoryStoreAllowed(): boolean {
+  return process.env.NODE_ENV === "test" && process.env.EXECUTION_ALLOW_MEMORY_STORE === "true";
+}
+
 export function registerMemorySelection(selection: CounterpartySelection): void {
-  memorySelectionStore.set(selection.selectionId, selection);
+  if (isMemoryStoreAllowed()) {
+    memorySelectionStore.set(selection.selectionId, selection);
+  }
 }
 
 export async function fetchSelectionById(selectionId: string): Promise<CounterpartySelection | null> {
-  if (memorySelectionStore.has(selectionId)) {
+  if (isMemoryStoreAllowed() && memorySelectionStore.has(selectionId)) {
     return memorySelectionStore.get(selectionId) || null;
   }
 
-  try {
-    const supabase = getByoaClient();
-    const { data, error } = await supabase
-      .from("counterparty_selections")
-      .select("selection_payload")
-      .eq("selection_id", selectionId)
-      .maybeSingle();
+  const supabase = getByoaClient();
+  const { data, error } = await supabase
+    .from("counterparty_selections")
+    .select("selection_payload")
+    .eq("selection_id", selectionId)
+    .maybeSingle();
 
-    if (error || !data) {
+  if (error) {
+    if (isMemoryStoreAllowed()) {
       return memorySelectionStore.get(selectionId) || null;
     }
-    return data.selection_payload as CounterpartySelection;
-  } catch {
-    return memorySelectionStore.get(selectionId) || null;
+    throw new Error(`Database error fetching selection: ${error.message}`);
   }
+
+  if (!data) return null;
+  return data.selection_payload as CounterpartySelection;
 }
 
 /**

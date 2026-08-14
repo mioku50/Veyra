@@ -5,6 +5,19 @@ All notable changes to the Veyra platform will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.0-beta.2] - 2026-08-15
+
+### Security & Hardening
+- **P6.1.1 Real Trust-Routed Execution Closure**:
+  - Removed all production synthetic execution fallbacks; all production operations now strictly fail closed if live rails or required signing keys are unavailable.
+  - Enforced strict database persistence in production; removed in-memory store fallbacks outside explicit test harness mode (`NODE_ENV=test`).
+  - Added cryptographic caller authentication and session verification (`authenticateExecutionCaller`) across all execution API endpoints (`/mandates`, `/prepare`, `/[executionId]/execute`, `/autopilot`); cross-wallet access attempts now return 404 to eliminate enumeration risks.
+  - Sanitized public and API mandate models (`sanitizeMandate`) to prevent leaking private nonces, internal authorization structures, or signatures.
+  - Autopilot mode is now default-off and requires explicit opt-in via `VEYRA_AUTOPILOT_ENABLED=true`.
+  - Added intermediate finality states `EVIDENCE_PENDING` and `COMPLETED_UNPROVEN` to decouple onchain economic settlement from downstream evidence indexing and proof anchoring.
+  - Integrated real onchain clearance consumption on `VeyraTrustGate`, onchain `IERC8183AgenticCommerce` job creation and offchain independent evaluation, real HTTP 402 challenge/response with paid retries on Arc Testnet, and evidence feedback loop with dynamic reputation snapshot recomputation.
+  - Added Live Acceptance test suite (`scripts/execution-live-acceptance.mts`) covering Scenarios A through E.
+
 ---
 
 ## [0.2.0-beta.1] - 2026-08-15

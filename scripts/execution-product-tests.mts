@@ -9,8 +9,11 @@
  * - Evidence ingestion & reputation update
  */
 
+process.env.NODE_ENV = "test";
 process.env.REPUTATION_ALLOW_MEMORY_STORE = "true";
 process.env.EXECUTION_ALLOW_MEMORY_STORE = "true";
+process.env.EXECUTION_ALLOW_TEST_FALLBACK = "true";
+process.env.VEYRA_AUTOPILOT_ENABLED = "true";
 
 import assert from "node:assert/strict";
 import { privateKeyToAccount } from "viem/accounts";

@@ -5,7 +5,12 @@
 
 import { randomUUID } from "node:crypto";
 import { selectCounterparty } from "../counterparty-selection/service.ts";
-import { fetchLatestReputationSnapshot } from "../reputation/db.ts";
+import {
+  fetchLatestReputationSnapshot,
+  fetchReputationEvidenceForAgent,
+  saveReputationSnapshot,
+} from "../reputation/db.ts";
+import { computeAgentReputation, createReputationSnapshot } from "../reputation/engine.ts";
 import { ingestErc8183JobOutcomeEvidence, ingestX402PaymentEvidence } from "../reputation/ingest.ts";
 import { signTrustClearance } from "../trust-gate/sign.ts";
 import { Erc8183ExecutionAdapter } from "./adapters/erc8183.ts";
@@ -208,7 +213,7 @@ export async function executePreparedIntent(params: {
     }
   }
 
-  if (attempt.state === "COMPLETED") {
+  if (attempt.state === "COMPLETED" || attempt.state === "COMPLETED_UNPROVEN") {
     return {
       executionId: attempt.executionId,
       rail: attempt.rail,
@@ -220,7 +225,7 @@ export async function executePreparedIntent(params: {
       requestedAmountUsdc: attempt.requestedAmountUsdc,
       authorizedAmountUsdc: attempt.authorizedAmountUsdc,
       actualSettledAmountUsdc: attempt.actualSettledAmountUsdc ?? attempt.requestedAmountUsdc,
-      status: "COMPLETED",
+      status: attempt.state as any,
       createTx: attempt.createTx,
       completeTx: attempt.completeTx,
       paymentTx: attempt.paymentTx,
@@ -345,6 +350,7 @@ export async function executePreparedIntent(params: {
 
   // Ingest real reputation evidence
   let evidenceHash: string | null = null;
+  let evidenceIngested = false;
   try {
     if (attempt.rail === "erc8183") {
       const ev = await ingestErc8183JobOutcomeEvidence({
@@ -358,6 +364,7 @@ export async function executePreparedIntent(params: {
         arcProofTx: railResult.completeTx,
       });
       evidenceHash = ev.canonicalHash;
+      evidenceIngested = true;
     } else {
       const ev = await ingestX402PaymentEvidence({
         agentId: attempt.counterpartyAgentId,
@@ -367,28 +374,49 @@ export async function executePreparedIntent(params: {
         clientAddress: mandate?.ownerWallet || attempt.counterpartyWallet,
       });
       evidenceHash = ev.canonicalHash;
+      evidenceIngested = true;
     }
   } catch {
-    // Non-fatal if offline
+    evidenceIngested = false;
   }
 
   // Recompute reputation snapshot
   let newReputationSnapshot: any = null;
+  let snapshotSaved = false;
   try {
-    const snap = await fetchLatestReputationSnapshot(attempt.counterpartyAgentId);
-    if (snap) {
-      newReputationSnapshot = {
-        trustScore: snap.trustScore,
-        confidence: snap.confidence,
-        snapshotHash: snap.canonicalHash,
-      };
-    }
+    const evidenceList = await fetchReputationEvidenceForAgent(attempt.counterpartyAgentId);
+    const previousSnapshot = await fetchLatestReputationSnapshot(attempt.counterpartyAgentId);
+    const agentIdentity = {
+      agentId: attempt.counterpartyAgentId,
+      chainId: 5042002 as const,
+      owner: attempt.counterpartyWallet,
+      identityRegistry: "0x8004A818BFB912233c491871b3d84c89A494BD9e",
+      verifiedOnchain: true,
+    };
+    const computed = computeAgentReputation(agentIdentity, evidenceList);
+    const newSnapshot = createReputationSnapshot(
+      agentIdentity,
+      evidenceList,
+      computed,
+      railResult.completeTx || railResult.paymentTx
+    );
+    await saveReputationSnapshot(newSnapshot);
+
+    newReputationSnapshot = {
+      snapshotId: newSnapshot.snapshotId,
+      trustScore: newSnapshot.trustScore,
+      confidence: newSnapshot.confidence,
+      snapshotHash: newSnapshot.canonicalHash,
+    };
+    snapshotSaved = true;
   } catch {
-    // Non-fatal if offline
+    snapshotSaved = false;
   }
 
-  // Complete attempt
-  await updateExecutionAttemptState(attempt.executionId, "COMPLETED", {
+  // Determine terminal state: COMPLETED if proven, or COMPLETED_UNPROVEN if evidence/proof degraded
+  const finalState = evidenceIngested && snapshotSaved ? "COMPLETED" : "COMPLETED_UNPROVEN";
+
+  await updateExecutionAttemptState(attempt.executionId, finalState, {
     actualSettledAmountUsdc: railResult.actualSettledAmountUsdc,
     createTx: railResult.createTx,
     completeTx: railResult.completeTx,
@@ -408,7 +436,7 @@ export async function executePreparedIntent(params: {
     requestedAmountUsdc: attempt.requestedAmountUsdc,
     authorizedAmountUsdc: attempt.authorizedAmountUsdc,
     actualSettledAmountUsdc: railResult.actualSettledAmountUsdc,
-    status: "COMPLETED",
+    status: finalState,
     createTx: railResult.createTx,
     completeTx: railResult.completeTx,
     paymentTx: railResult.paymentTx,
@@ -431,9 +459,9 @@ export async function runAutopilotExecution(params: {
   requestedBudgetUsdc: number;
   idempotencyKey?: string;
 }): Promise<ExecutionResult> {
-  if (process.env.VEYRA_AUTOPILOT_ENABLED === "false") {
+  if (process.env.VEYRA_AUTOPILOT_ENABLED !== "true") {
     throw new ExecutionError(
-      "Autopilot execution is disabled by configuration (VEYRA_AUTOPILOT_ENABLED=false)",
+      "Autopilot execution is disabled by configuration (VEYRA_AUTOPILOT_ENABLED must be 'true')",
       "AUTOPILOT_DISABLED",
       503
     );
@@ -448,8 +476,12 @@ export async function runAutopilotExecution(params: {
     throw new ExecutionError(
       `Mandate ${params.mandateId} is configured for ${mandate.mode}, not AUTOPILOT`,
       "INVALID_MANDATE_MODE",
-      400
+      422
     );
+  }
+
+  if (mandate.revokedAt) {
+    throw new ExecutionError(`Mandate ${params.mandateId} has been revoked`, "MANDATE_REVOKED", 422);
   }
 
   // 1. Run counterparty discovery and selection
@@ -488,10 +520,14 @@ export async function runAutopilotExecution(params: {
     executorWallet: mandate.subjectWallet,
   });
 
-  // 3. Execute prepared intent
+  // 3. Execute intent
   return executePreparedIntent({
     executionId: prepared.executionId,
     idempotencyKey: params.idempotencyKey,
-    taskPayload: params.task,
+    taskPayload: {
+      task: params.task,
+      clearance: prepared.clearance,
+      clearanceSignature: (prepared as any).clearance?.signature,
+    },
   });
 }

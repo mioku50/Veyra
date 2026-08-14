@@ -1,6 +1,6 @@
 {
   "name": "veyra",
-  "version": "0.2.0-beta.1",
+  "version": "0.2.0-beta.2",
   "private": true,
   "description": "Trust Infrastructure for Agentic Commerce on Arc.",
   "license": "Apache-2.0",
@@ -137,6 +137,7 @@
     "execution:test": "node --experimental-transform-types --no-warnings scripts/execution-unit-tests.mts",
     "execution:product-test": "node --experimental-transform-types --no-warnings --env-file-if-exists=.env.local scripts/execution-product-tests.mts",
     "execution:negative-test": "node --experimental-transform-types --no-warnings --env-file-if-exists=.env.local scripts/execution-negative-tests.mts",
+    "execution:live-acceptance": "node --experimental-transform-types --no-warnings --env-file-if-exists=.env.local scripts/execution-live-acceptance.mts",
     "execution:example": "node --experimental-transform-types --no-warnings --env-file-if-exists=.env.local examples/trust-routed-execution.ts",
     "execution:production-migrate": "node --experimental-transform-types --no-warnings --env-file-if-exists=.env.local scripts/apply-p61-migration.mts",
     "execution:production-verify": "node --experimental-transform-types --no-warnings --env-file-if-exists=.env.local scripts/verify-p61-schema.mts",

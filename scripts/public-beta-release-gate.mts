@@ -102,6 +102,14 @@ runStep("Project 360 Deterministic Tests", () => {
   execSync("npm run project-360:test", { cwd: root, stdio: "inherit" });
 });
 
+runStep("Trust-Routed Execution Unit Tests", () => {
+  execSync("npm run execution:test", { cwd: root, stdio: "inherit" });
+});
+
+runStep("Trust-Routed Execution Negative & Security Tests", () => {
+  execSync("npm run execution:negative-test", { cwd: root, stdio: "inherit" });
+});
+
 // 7. Foundry Smart Contract Test Suite
 runStep("Foundry Smart Contract Tests (forge test)", () => {
   execSync("forge test", { cwd: resolve(root, "contracts"), stdio: "inherit" });

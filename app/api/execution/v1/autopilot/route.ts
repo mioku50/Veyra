@@ -4,28 +4,38 @@
  */
 
 import { NextResponse } from "next/server";
+import { assertMandateAccess, authenticateExecutionCaller } from "@/lib/execution/auth";
+import { getExecutionMandate } from "@/lib/execution/db";
 import { ExecutionError, runAutopilotExecution } from "@/lib/execution/executor";
 
 export const dynamic = "force-dynamic";
 
 export async function POST(req: Request) {
   try {
+    const caller = await authenticateExecutionCaller(req);
     const body = await req.json();
     const { mandateId, capability, task = {}, requestedBudgetUsdc } = body;
     const idempotencyKey = req.headers.get("idempotency-key") || req.headers.get("x-idempotency-key") || undefined;
 
     if (!mandateId) {
-      return NextResponse.json({ error: "mandateId is required" }, { status: 400 });
+      return NextResponse.json({ error: "mandateId is required", code: "INVALID_REQUEST" }, { status: 400 });
     }
     if (!capability) {
-      return NextResponse.json({ error: "capability is required" }, { status: 400 });
+      return NextResponse.json({ error: "capability is required", code: "INVALID_REQUEST" }, { status: 400 });
     }
     if (typeof requestedBudgetUsdc !== "number" || requestedBudgetUsdc <= 0) {
       return NextResponse.json(
-        { error: "Valid positive requestedBudgetUsdc is required" },
+        { error: "Valid positive requestedBudgetUsdc is required", code: "INVALID_REQUEST" },
         { status: 400 }
       );
     }
+
+    const mandate = await getExecutionMandate(mandateId);
+    if (!mandate) {
+      return NextResponse.json({ error: "Mandate not found", code: "MANDATE_NOT_FOUND" }, { status: 404 });
+    }
+
+    assertMandateAccess(caller, mandate.ownerWallet, mandate.subjectWallet);
 
     const result = await runAutopilotExecution({
       mandateId,
@@ -40,6 +50,6 @@ export async function POST(req: Request) {
     if (err instanceof ExecutionError) {
       return NextResponse.json({ error: err.message, code: err.code }, { status: err.status });
     }
-    return NextResponse.json({ error: err.message }, { status: 500 });
+    return NextResponse.json({ error: err.message, code: "SERVER_ERROR" }, { status: 500 });
   }
 }

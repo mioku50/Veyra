@@ -5,35 +5,27 @@
 
 import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
+import { authenticateExecutionCaller } from "@/lib/execution/auth";
 import {
   buildMandateEip712Message,
   computeCanonicalMandateHash,
   EIP712_MANDATE_TYPES,
   VEYRA_EXECUTION_EIP712_DOMAIN,
 } from "@/lib/execution/canonical";
-import {
-  listExecutionMandatesByOwner,
-  saveExecutionMandate,
-} from "@/lib/execution/db";
-import type { ExecutionMandate } from "@/lib/execution/types";
+import { listExecutionMandatesByOwner } from "@/lib/execution/db";
+import { sanitizeMandate } from "@/lib/execution/types";
 
 export const dynamic = "force-dynamic";
 
 export async function GET(req: Request) {
   try {
-    const { searchParams } = new URL(req.url);
-    const ownerWallet = searchParams.get("ownerWallet");
-    if (!ownerWallet || !/^0x[0-9a-f]{40}$/i.test(ownerWallet)) {
-      return NextResponse.json(
-        { error: "Valid ownerWallet parameter is required" },
-        { status: 400 }
-      );
-    }
-
-    const mandates = await listExecutionMandatesByOwner(ownerWallet);
-    return NextResponse.json({ mandates });
+    const caller = await authenticateExecutionCaller(req);
+    const mandates = await listExecutionMandatesByOwner(caller.wallet);
+    const sanitizedMandates = mandates.map(sanitizeMandate);
+    return NextResponse.json({ mandates: sanitizedMandates });
   } catch (err: any) {
-    return NextResponse.json({ error: err.message }, { status: 500 });
+    const status = err.status || 500;
+    return NextResponse.json({ error: err.message, code: err.code || "SERVER_ERROR" }, { status });
   }
 }
 
@@ -103,8 +95,6 @@ export async function POST(req: Request) {
       minimumConfidence,
       requireVerifiedIdentity,
       evaluatorThresholdUsdc,
-      nonce: 0,
-      version: "v1",
       issuedAt,
       expiresAt,
     });
@@ -114,13 +104,10 @@ export async function POST(req: Request) {
     return NextResponse.json({
       mandateId,
       canonicalHash,
-      eip712Payload: {
-        domain: VEYRA_EXECUTION_EIP712_DOMAIN,
-        types: EIP712_MANDATE_TYPES,
-        primaryType: "ExecutionMandate",
-        message: eip712Message,
-      },
-      instructions: "Sign the eip712Payload with ownerWallet, then POST to /api/execution/v1/mandates/[mandateId]/activate",
+      eip712Domain: VEYRA_EXECUTION_EIP712_DOMAIN,
+      eip712Types: EIP712_MANDATE_TYPES,
+      eip712Message,
+      instructions: "Sign the EIP-712 typed data with ownerWallet and submit to /api/execution/v1/mandates/{mandateId}/activate",
     });
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 });
