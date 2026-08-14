@@ -57,7 +57,10 @@ export type MachineErrorBody = {
   };
 };
 
-export class AgentCommerceApiError extends Error {
+/**
+ * Canonical Veyra API error representing structured machine error responses.
+ */
+export class VeyraApiError extends Error {
   readonly status: number;
   readonly code: MachineErrorCode;
   readonly retryable: boolean;
@@ -71,11 +74,27 @@ export class AgentCommerceApiError extends Error {
     requestId?: string | null;
   }) {
     super(input.message);
-    this.name = "AgentCommerceApiError";
+    this.name = "VeyraApiError";
     this.status = input.status;
     this.code = input.code;
     this.retryable = input.retryable;
     this.requestId = input.requestId ?? null;
+  }
+}
+
+/**
+ * @deprecated Use `VeyraApiError` instead. Kept for backward compatibility.
+ */
+export class AgentCommerceApiError extends VeyraApiError {
+  constructor(input: {
+    status: number;
+    code: MachineErrorCode;
+    message: string;
+    retryable: boolean;
+    requestId?: string | null;
+  }) {
+    super(input);
+    this.name = "AgentCommerceApiError";
   }
 }
 
@@ -651,12 +670,17 @@ export type AgentTrustReport = {
   generatedAt: string;
 };
 
-export type AgentCommerceClientOptions = {
+export type VeyraClientOptions = {
   baseUrl: string;
   credential: string;
   fetch?: typeof globalThis.fetch;
   timeoutMs?: number;
 };
+
+/**
+ * @deprecated Use `VeyraClientOptions` instead.
+ */
+export type AgentCommerceClientOptions = VeyraClientOptions;
 
 export type CounterpartyCandidateInput = {
   agentId?: string;
@@ -1558,9 +1582,20 @@ export class AgentCommerceClient {
   }
 }
 
-/** Named facade used by agent examples and integrations. */
-export class VeyraTrustSdk extends AgentCommerceClient {}
+/** Canonical Veyra Agent API client */
+export class VeyraClient extends AgentCommerceClient {}
 
-export function veyraTrustSdk(options: AgentCommerceClientOptions) {
+/** Canonical Veyra SDK client alias */
+export class VeyraSDK extends VeyraClient {}
+
+/** Factory to instantiate a VeyraClient */
+export function createVeyraClient(options: VeyraClientOptions): VeyraClient {
+  return new VeyraClient(options);
+}
+
+/** Named facade used by agent examples and integrations. */
+export class VeyraTrustSdk extends VeyraClient {}
+
+export function veyraTrustSdk(options: VeyraClientOptions) {
   return new VeyraTrustSdk(options);
 }

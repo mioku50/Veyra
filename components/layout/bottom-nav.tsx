@@ -2,12 +2,13 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { House, Bot, Radar, FileText } from "lucide-react";
+import { House, ShieldCheck, Bot, Radar, FileText } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const mobileBottomLinks = [
   { href: "/", label: "Home", icon: House },
-  { href: "/agent-runner", label: "New Report", icon: Bot },
+  { href: "/trust", label: "Trust", icon: ShieldCheck },
+  { href: "/agent-runner", label: "Analyze", icon: Bot },
   { href: "/monitoring", label: "Monitoring", icon: Radar },
   { href: "/results", label: "Reports", icon: FileText },
 ];

@@ -1,5 +1,5 @@
 /**
- * Copyright 2026 Circle Internet Group, Inc.  All rights reserved.
+ * Copyright 2026 Veyra
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -13,7 +13,6 @@ import {
   Code2,
   FileText,
   Sparkles,
-  UserRound,
   ShieldCheck,
   Github,
   Activity,
@@ -21,10 +20,15 @@ import {
   MessageSquareText,
   Rocket,
   Zap,
+  SlidersHorizontal,
+  BadgeCheck,
+  Layers,
+  Terminal,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { PublicBetaBadge } from "@/components/ui/public-beta-badge";
 import {
   listHostedFinalReports,
   type HostedFinalReportSummary,
@@ -62,7 +66,46 @@ const featuredBenefits = [
   "Shareable Arc-verified report",
 ] as const;
 
-const publicWorkflows: Array<{
+const quickTrustActions = [
+  {
+    title: "Verify Agent",
+    tagline: "Reputation & Evidence",
+    desc: "Inspect identity, verified track record, and risk profiles before interaction.",
+    href: "/reputation",
+    icon: Bot,
+    color: "from-purple-500/20 via-purple-500/5 to-transparent border-purple-500/30 text-purple-400 hover:border-purple-500/60",
+    badge: "ERC-8004",
+  },
+  {
+    title: "Select Counterparty",
+    tagline: "Constraint-Based Ranking",
+    desc: "Compare candidates across performance, reputation, and pricing budgets.",
+    href: "/trust/select",
+    icon: SlidersHorizontal,
+    color: "from-blue-500/20 via-blue-500/5 to-transparent border-blue-500/30 text-blue-400 hover:border-blue-500/60",
+    badge: "Selection Engine",
+  },
+  {
+    title: "Trust Preflight",
+    tagline: "Policy Decision Gate",
+    desc: "Preflight transactions with fail-closed rules and signed clearance tickets.",
+    href: "/trust-gate",
+    icon: ShieldCheck,
+    color: "from-cyan-500/20 via-cyan-500/5 to-transparent border-cyan-500/30 text-cyan-400 hover:border-cyan-500/60",
+    badge: "Trust Gate",
+  },
+  {
+    title: "Explore Evaluator",
+    tagline: "Independent Verification",
+    desc: "Verify ERC-8183 deliverables on Arc before funds settle.",
+    href: "/evaluators",
+    icon: BadgeCheck,
+    color: "from-emerald-500/20 via-emerald-500/5 to-transparent border-emerald-500/30 text-emerald-400 hover:border-emerald-500/60",
+    badge: "ERC-8183",
+  },
+] as const;
+
+const evidenceWorkflows: Array<{
   type: HostedWorkflowType;
   description: string;
   benefits: readonly string[];
@@ -181,44 +224,59 @@ export default async function Home() {
 
   return (
     <main className="min-h-screen bg-background text-foreground selection:bg-primary/30">
-      {/* Hero Section */}
+      {/* 1. Veyra Trust Platform Hero */}
       <section className="relative overflow-hidden border-b border-white/5 bg-gradient-to-b from-[#0a0d15] via-[#080a0f] to-[#07090e] py-16 sm:py-24">
-        {/* Glow backdrop blobs */}
         <div className="pointer-events-none absolute -top-40 left-1/2 -z-10 h-[500px] w-[800px] -translate-x-1/2 rounded-full bg-gradient-to-tr from-primary/20 via-cyan-500/10 to-purple-500/10 blur-[120px] opacity-70" />
-        
+
         <div className="mx-auto flex w-full max-w-7xl flex-col items-center px-4 text-center sm:px-6">
-          <Badge className="mb-6 rounded-full border-emerald-500/30 bg-emerald-500/10 px-4 py-1 text-xs font-semibold text-emerald-300 backdrop-blur-md shadow-[0_0_15px_rgba(0,208,132,0.2)]">
-            <span className="mr-2 inline-block size-2 rounded-full bg-emerald-400 animate-pulse shadow-[0_0_8px_rgba(0,208,132,0.8)]" />
-            Arc Testnet · Verifiable Execution
-          </Badge>
-          
+          <div className="mb-6">
+            <PublicBetaBadge showDisclaimer />
+          </div>
+
           <h1 className="text-xl font-extrabold uppercase tracking-[0.24em] text-white">
             {BRAND.name}
           </h1>
-          <p className="mt-2 text-sm font-medium text-cyan-300">{BRAND.tagline}</p>
+          <p className="mt-2 text-sm font-semibold text-cyan-300">{BRAND.tagline}</p>
 
-          <h2 className="mt-5 max-w-4xl text-4xl font-extrabold tracking-tight sm:text-6xl lg:text-7xl leading-[1.1]">
-            <span className="gradient-text">Verified Workflows</span> <br className="hidden sm:inline" />
-            <span className="text-muted-foreground font-semibold">for People & AI Agents</span>
+          <h2 className="mt-5 max-w-4xl text-3xl font-extrabold tracking-tight sm:text-5xl lg:text-6xl leading-[1.15]">
+            <span className="text-white">Trust Infrastructure for</span>{" "}
+            <span className="gradient-text">Agentic Commerce</span>
           </h2>
 
-          <p className="mt-6 max-w-2xl text-base font-normal leading-relaxed text-muted-foreground sm:text-lg">
-            {BRAND.description}
-          </p>
-          <p className="mt-2 text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
-            Built for humans and autonomous agents
+          <p className="mt-5 max-w-3xl text-base font-normal leading-relaxed text-muted-foreground sm:text-lg">
+            Verify agents. Select trusted counterparties. Enforce transaction policy. Evaluate work. Build verifiable reputation on Arc.
           </p>
 
           <div className="mt-8 flex flex-col gap-3.5 sm:flex-row sm:items-center">
-            <Button asChild size="lg" className="rounded-xl bg-gradient-to-r from-primary via-blue-600 to-cyan-500 font-semibold text-white shadow-[0_0_25px_rgba(61,126,255,0.35)] transition-all duration-300 hover:scale-105 hover:shadow-[0_0_35px_rgba(61,126,255,0.5)]">
-              <Link href="/agent-runner">
-                <Sparkles className="size-5" />
-                Explore Workflows
+            <Button
+              asChild
+              size="lg"
+              className="rounded-xl bg-gradient-to-r from-primary via-blue-600 to-cyan-500 font-semibold text-white shadow-[0_0_25px_rgba(61,126,255,0.35)] transition-all duration-300 hover:scale-105 hover:shadow-[0_0_35px_rgba(61,126,255,0.5)]"
+            >
+              <Link href="/trust">
+                <ShieldCheck className="size-5 mr-2" />
+                Explore Agent Trust
               </Link>
             </Button>
-            <Button asChild size="lg" variant="outline" className="rounded-xl border-white/10 bg-white/5 backdrop-blur-md transition-all duration-200 hover:bg-white/10 hover:border-white/20">
+            <Button
+              asChild
+              size="lg"
+              variant="outline"
+              className="rounded-xl border-white/10 bg-white/5 backdrop-blur-md transition-all duration-200 hover:bg-white/10 hover:border-white/20"
+            >
+              <Link href="/agent-runner">
+                <Sparkles className="size-5 mr-2 text-cyan-400" />
+                Run a Workflow
+              </Link>
+            </Button>
+            <Button
+              asChild
+              size="lg"
+              variant="ghost"
+              className="rounded-xl text-muted-foreground hover:text-white hover:bg-white/5 text-xs sm:text-sm"
+            >
               <Link href="/console/agent-api">
-                <Code2 className="size-5 text-cyan-400" />
+                <Code2 className="size-4 mr-1.5" />
                 Developer API
               </Link>
             </Button>
@@ -226,15 +284,70 @@ export default async function Home() {
         </div>
       </section>
 
-      {/* Featured Workflow Card */}
+      {/* 2. Quick Trust Actions Block */}
       <section className="mx-auto w-full max-w-7xl px-4 py-12 sm:px-6">
+        <div className="mb-6 flex flex-col sm:flex-row sm:items-end sm:justify-between gap-2">
+          <div>
+            <Badge variant="outline" className="border-primary/30 text-primary bg-primary/5 text-xs">
+              Trust Stack
+            </Badge>
+            <h2 className="mt-2 text-2xl font-bold tracking-tight sm:text-3xl text-foreground">
+              Core Trust Primitives
+            </h2>
+          </div>
+          <Button asChild variant="ghost" size="sm" className="w-fit text-cyan-400 hover:text-cyan-300 p-0 text-xs">
+            <Link href="/trust">
+              View full trust overview <ArrowRight className="size-3.5 ml-1" />
+            </Link>
+          </Button>
+        </div>
+
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          {quickTrustActions.map((action) => {
+            const Icon = action.icon;
+            return (
+              <Link
+                key={action.title}
+                href={action.href}
+                className={`group relative flex flex-col justify-between rounded-2xl border bg-gradient-to-b p-5 backdrop-blur-xl transition-all duration-300 hover:-translate-y-1 ${action.color}`}
+              >
+                <div>
+                  <div className="flex items-center justify-between gap-2 mb-3">
+                    <div className="flex size-9 items-center justify-center rounded-xl bg-white/10 border border-white/10 text-foreground group-hover:scale-110 transition-transform">
+                      <Icon className="size-4.5" />
+                    </div>
+                    <span className="rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-[10px] font-semibold text-muted-foreground">
+                      {action.badge}
+                    </span>
+                  </div>
+                  <h3 className="text-base font-bold text-foreground group-hover:text-primary transition-colors">
+                    {action.title}
+                  </h3>
+                  <p className="text-[11px] font-medium text-cyan-300/80 mb-2">
+                    {action.tagline}
+                  </p>
+                  <p className="text-xs leading-relaxed text-muted-foreground">
+                    {action.desc}
+                  </p>
+                </div>
+                <div className="mt-4 flex items-center text-xs font-semibold text-primary pt-2 border-t border-white/5">
+                  Launch <ArrowRight className="size-3.5 ml-1 group-hover:translate-x-1 transition-transform" />
+                </div>
+              </Link>
+            );
+          })}
+        </div>
+      </section>
+
+      {/* 3. Try Veyra in 30 Seconds: GitHub Due Diligence */}
+      <section className="mx-auto w-full max-w-7xl px-4 py-10 sm:px-6">
         <div className="relative overflow-hidden rounded-2xl border border-primary/30 bg-gradient-to-br from-[#0c101a] via-[#090c13] to-[#07090e] p-1 shadow-[0_0_40px_rgba(61,126,255,0.1)] transition-all duration-300 hover:border-primary/50 hover:shadow-[0_0_50px_rgba(61,126,255,0.18)]">
           <div className="grid gap-0 lg:grid-cols-[minmax(0,1.1fr)_minmax(320px,0.9fr)]">
             <div className="p-6 sm:p-8 flex flex-col justify-between">
               <div>
                 <div className="flex items-center gap-2 mb-3">
                   <Badge variant="secondary" className="border-primary/30 bg-primary/10 text-primary font-semibold">
-                    Featured Workflow
+                    Try Veyra in 30 Seconds
                   </Badge>
                   <span className="text-xs text-muted-foreground">x402 Verified</span>
                 </div>
@@ -286,53 +399,23 @@ export default async function Home() {
         </div>
       </section>
 
-      {/* Trust Infrastructure for Agentic Commerce - ERC-8183 Evaluator Block */}
-      <section className="mx-auto w-full max-w-7xl px-4 py-12 sm:px-6">
-        <div className="relative overflow-hidden rounded-2xl border border-sky-500/30 bg-gradient-to-br from-[#0a1120] via-[#080d1a] to-[#06080d] p-8 shadow-[0_0_40px_rgba(14,165,233,0.15)] transition-all duration-300">
-          <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
-            <div className="space-y-3 max-w-2xl">
-              <div className="flex items-center gap-2">
-                <Badge variant="outline" className="border-sky-500/40 text-sky-400 bg-sky-500/10 font-semibold">
-                  Trust Infrastructure for Agentic Commerce
-                </Badge>
-                <span className="text-xs text-muted-foreground font-mono">Arc Testnet</span>
-              </div>
-              <h2 className="text-2xl font-bold tracking-tight sm:text-3xl text-foreground">
-                Independent ERC-8183 Evaluator
-              </h2>
-              <p className="text-sm leading-relaxed text-muted-foreground sm:text-base">
-                Veyra can independently evaluate agent deliverables and authorize ERC-8183 job settlement on Arc. Non-custodial, fail-closed policy evaluation backed by cryptographic EIP-712 proofs.
-              </p>
-            </div>
-            <div className="flex items-center gap-4 shrink-0">
-              <Button asChild size="lg" className="rounded-xl bg-sky-500 hover:bg-sky-400 font-bold text-slate-950 shadow-[0_0_20px_rgba(14,165,233,0.3)]">
-                <Link href="/evaluators">
-                  <ShieldCheck className="size-5" />
-                  Explore Evaluator
-                </Link>
-              </Button>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* Available Workflows Grid */}
+      {/* 4. Evidence Workflows Grid */}
       <section className="border-t border-white/5 bg-[#06080d]/60 py-16">
         <div className="mx-auto w-full max-w-7xl px-4 sm:px-6">
           <div className="max-w-3xl">
             <Badge variant="outline" className="border-cyan-500/30 text-cyan-400 bg-cyan-500/5">
-              Available Workflows
+              Evidence Workflows
             </Badge>
             <h2 className="mt-3 text-3xl font-extrabold tracking-tight sm:text-4xl">
-              Choose the report you need
+              Structured Evidence Generation
             </h2>
             <p className="mt-3 text-base leading-relaxed text-muted-foreground">
-              Every workflow presents an immutable quote before checkout and produces a structured, Arc-verified result.
+              Every workflow presents an immutable quote before checkout and produces a structured, Arc-verified result that feeds into the Veyra reputation engine.
             </p>
           </div>
 
           <div className="mt-10 grid gap-5 md:grid-cols-2 lg:grid-cols-3">
-            {publicWorkflows.map((workflow) => {
+            {evidenceWorkflows.map((workflow) => {
               const template = getHostedWorkflowTemplate(workflow.type);
               if (!template) return null;
               const Icon = workflow.icon;
@@ -382,32 +465,24 @@ export default async function Home() {
         </div>
       </section>
 
-      {/* Two Ways to Run */}
+      {/* 5. Project 360 & Continuous Monitoring Feature */}
       <section className="mx-auto w-full max-w-7xl px-4 py-16 sm:px-6">
-        <div className="text-center">
-          <Badge variant="secondary" className="border-white/10 bg-white/5">
-            Flexible Integration
-          </Badge>
-          <h2 className="mt-3 text-3xl font-extrabold tracking-tight sm:text-4xl">
-            One platform, two ways to run
-          </h2>
-        </div>
-        <div className="mt-10 grid gap-6 md:grid-cols-2">
+        <div className="grid gap-6 md:grid-cols-2">
           <Card className="rounded-2xl border border-white/10 bg-gradient-to-br from-[#0c101a] to-[#07090e] p-2 backdrop-blur-xl shadow-xl">
             <CardHeader className="p-6">
               <CardTitle className="flex items-center gap-3 text-xl font-bold">
                 <div className="flex size-9 items-center justify-center rounded-lg bg-primary/20 text-primary">
-                  <UserRound className="size-5" />
+                  <Layers className="size-5" />
                 </div>
-                Public Web Application
+                Project 360 Analysis
               </CardTitle>
             </CardHeader>
             <CardContent className="px-6 pb-6 pt-0 grid gap-5">
               <p className="text-sm leading-relaxed text-muted-foreground">
-                Choose a workflow, preview the immutable price quote, submit non-sensitive input, and receive a shareable Arc-verified report.
+                Run cross-source discovery across GitHub repositories, onchain contracts, and live API endpoints with non-custodial quotes and Arc-verified reports.
               </p>
               <Button asChild className="w-fit rounded-xl bg-primary hover:bg-blue-600 font-semibold">
-                <Link href="/agent-runner">Create Report</Link>
+                <Link href="/project-360">Open Project 360</Link>
               </Button>
             </CardContent>
           </Card>
@@ -423,7 +498,7 @@ export default async function Home() {
             </CardHeader>
             <CardContent className="px-6 pb-6 pt-0 grid gap-5">
               <p className="text-sm leading-relaxed text-muted-foreground">
-                Allow external AI agents to discover workflows, obtain quotes, execute paid runs via Machine API credentials, and query verified reports.
+                Empower external AI agents to programmatically verify counterparties, evaluate policy decisions, select services, and settle work via machine credentials.
               </p>
               <Button asChild variant="outline" className="w-fit rounded-xl border-white/10 bg-white/5 hover:bg-white/10 font-semibold">
                 <Link href="/console/agent-api">Open Developer API</Link>
@@ -433,89 +508,61 @@ export default async function Home() {
         </div>
       </section>
 
-      {/* How it Works Step Bar */}
+      {/* 6. Recent Reports Section */}
       <section className="border-t border-white/5 bg-[#06080d]/60 py-16">
         <div className="mx-auto w-full max-w-7xl px-4 sm:px-6">
-          <div className="max-w-3xl">
-            <Badge variant="outline" className="border-primary/30 text-primary bg-primary/5">
-              Execution Model
-            </Badge>
-            <h2 className="mt-3 text-3xl font-extrabold tracking-tight sm:text-4xl">
-              From input to verified report
-            </h2>
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+            <div>
+              <Badge variant="secondary" className="border-white/10 bg-white/5">
+                Audit Trail
+              </Badge>
+              <h2 className="mt-3 text-3xl font-extrabold tracking-tight sm:text-4xl">
+                Latest verified reports
+              </h2>
+            </div>
+            <Button asChild variant="outline" className="rounded-xl border-white/10 bg-white/5 hover:bg-white/10">
+              <Link href="/results">
+                View all reports <ArrowRight className="size-4 ml-1" />
+              </Link>
+            </Button>
           </div>
-          <ol className="mt-10 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            {[
-              { title: "Select Workflow", desc: "Pick from curated due diligence, quality, or trust templates." },
-              { title: "Provide Input", desc: "Submit repository URL, agent ID, wallet address, or API endpoints." },
-              { title: "Immutable Quote", desc: "Receive transparent pricing before confirming payment." },
-              { title: "Arc Verification", desc: "Receive a structured report with onchain verification status." },
-            ].map((step, index) => (
-              <li key={step.title} className="rounded-2xl border border-white/10 bg-gradient-to-b from-white/5 to-transparent p-6 backdrop-blur-xl">
-                <span className="flex size-9 items-center justify-center rounded-xl bg-primary font-bold text-white text-sm shadow-[0_0_15px_rgba(61,126,255,0.4)]">
-                  {index + 1}
-                </span>
-                <h3 className="mt-4 font-bold text-base text-foreground">{step.title}</h3>
-                <p className="mt-1.5 text-xs leading-relaxed text-muted-foreground">{step.desc}</p>
-              </li>
-            ))}
-          </ol>
-        </div>
-      </section>
 
-      {/* Recent Reports Section */}
-      <section className="mx-auto w-full max-w-7xl px-4 py-16 sm:px-6">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-          <div>
-            <Badge variant="secondary" className="border-white/10 bg-white/5">
-              Audit Trail
-            </Badge>
-            <h2 className="mt-3 text-3xl font-extrabold tracking-tight sm:text-4xl">
-              Latest completed workflows
-            </h2>
+          <div className="mt-8 grid gap-5 md:grid-cols-2">
+            {reports.length ? (
+              reports.map((report) => (
+                <Card key={report.id} className="rounded-2xl border border-white/10 bg-[#090c13]/80 p-1 backdrop-blur-xl hover:border-white/20 transition-all">
+                  <CardContent className="grid gap-3.5 p-5">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <Badge variant="secondary" className="border-primary/20 bg-primary/10 text-primary text-xs font-semibold">
+                        {report.workflowLabel}
+                      </Badge>
+                      <Badge variant={report.completedWithWarnings ? "outline" : "default"} className={report.completedWithWarnings ? "border-amber-500/30 bg-amber-500/10 text-amber-300 text-[11px]" : "bg-emerald-500/10 border-emerald-500/30 text-emerald-300 text-[11px]"}>
+                        {report.completedWithWarnings ? "Completed with warnings" : "Arc Verified"}
+                      </Badge>
+                    </div>
+                    <h3 className="line-clamp-1 font-bold text-foreground text-base">
+                      {publicReportSubject(report)}
+                    </h3>
+                    <p className="line-clamp-2 text-xs leading-relaxed text-muted-foreground">
+                      {sanitizePublicReportText(report.summary)}
+                    </p>
+                    <div className="flex items-center justify-between gap-3 border-t border-white/5 pt-3.5 text-xs text-muted-foreground">
+                      <span>{formatDate(report.generatedAt)}</span>
+                      <Button asChild size="sm" variant="ghost" className="hover:bg-white/10 hover:text-white">
+                        <Link href={report.href}>
+                          <FileText className="size-4 mr-1 text-primary" /> View Report
+                        </Link>
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))
+            ) : (
+              <p className="rounded-2xl border border-white/10 bg-[#090c13]/60 p-8 text-center text-sm text-muted-foreground md:col-span-2">
+                Completed reports will appear here after real workflows finish.
+              </p>
+            )}
           </div>
-          <Button asChild variant="outline" className="rounded-xl border-white/10 bg-white/5 hover:bg-white/10">
-            <Link href="/results">
-              View all reports <ArrowRight className="size-4 ml-1" />
-            </Link>
-          </Button>
-        </div>
-
-        <div className="mt-8 grid gap-5 md:grid-cols-2">
-          {reports.length ? (
-            reports.map((report) => (
-              <Card key={report.id} className="rounded-2xl border border-white/10 bg-[#090c13]/80 p-1 backdrop-blur-xl hover:border-white/20 transition-all">
-                <CardContent className="grid gap-3.5 p-5">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <Badge variant="secondary" className="border-primary/20 bg-primary/10 text-primary text-xs font-semibold">
-                      {report.workflowLabel}
-                    </Badge>
-                    <Badge variant={report.completedWithWarnings ? "outline" : "default"} className={report.completedWithWarnings ? "border-amber-500/30 bg-amber-500/10 text-amber-300 text-[11px]" : "bg-emerald-500/10 border-emerald-500/30 text-emerald-300 text-[11px]"}>
-                      {report.completedWithWarnings ? "Completed with warnings" : "Arc Verified"}
-                    </Badge>
-                  </div>
-                  <h3 className="line-clamp-1 font-bold text-foreground text-base">
-                    {publicReportSubject(report)}
-                  </h3>
-                  <p className="line-clamp-2 text-xs leading-relaxed text-muted-foreground">
-                    {sanitizePublicReportText(report.summary)}
-                  </p>
-                  <div className="flex items-center justify-between gap-3 border-t border-white/5 pt-3.5 text-xs text-muted-foreground">
-                    <span>{formatDate(report.generatedAt)}</span>
-                    <Button asChild size="sm" variant="ghost" className="hover:bg-white/10 hover:text-white">
-                      <Link href={report.href}>
-                        <FileText className="size-4 mr-1 text-primary" /> View Report
-                      </Link>
-                    </Button>
-                  </div>
-                </CardContent>
-              </Card>
-            ))
-          ) : (
-            <p className="rounded-2xl border border-white/10 bg-[#090c13]/60 p-8 text-center text-sm text-muted-foreground md:col-span-2">
-              Completed reports will appear here after real workflows finish.
-            </p>
-          )}
         </div>
       </section>
     </main>

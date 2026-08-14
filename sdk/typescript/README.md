@@ -1,24 +1,20 @@
-# `@arc-agent-commerce/sdk`
+# `@veyra/sdk`
 
-Typed, dependency-free TypeScript client for Veyra Agent API v1.
+Typed, dependency-free TypeScript client for Veyra Agent API v1 on Arc Testnet.
 
-The SDK covers workflow discovery, immutable quotes, idempotent run creation,
-polling, structured reports, Markdown export, normalized errors, and Arc proof
-metadata. It also covers trust watchlists, public status, alerts, and signed
-webhook management when the credential has explicit trust automation scopes.
-Project 360 uses a separate free discovery phase so detected identifiers can
-never enter paid modules without an explicit selection.
-It works in Node.js 20+ and runtimes that provide `fetch`,
-`AbortController`, and `crypto.randomUUID`.
+The SDK covers agent trust verification, counterparty selection, Trust Gate preflight, ERC-8183 evaluation, workflow execution, immutable quotes, idempotent runs, polling, structured reports, Markdown export, normalized errors, and Arc proof metadata. It also covers continuous trust monitoring, alerts, and signed webhooks.
+
+It works in Node.js 20+ and modern runtimes that provide standard `fetch`, `AbortController`, and `crypto.randomUUID`.
 
 ```ts
-import { AgentCommerceClient } from "@arc-agent-commerce/sdk";
+import { VeyraClient } from "@veyra/sdk";
 
-const client = new AgentCommerceClient({
-  baseUrl: "https://agent-commerce-six.vercel.app",
-  credential: process.env.ARC_AGENT_COMMERCE_API_KEY!,
+const client = new VeyraClient({
+  baseUrl: process.env.VEYRA_API_BASE_URL || "https://veyra.app",
+  credential: process.env.VEYRA_API_KEY!,
 });
 
+// Run a verified trust evaluation or workflow
 const { report } = await client.executeWorkflow({
   workflow: "github_due_diligence",
   repository: "circlefin/developer-controlled-wallets-web-sdk",
@@ -60,7 +56,7 @@ Agent Trust Report uses a structured public-identifier input and the same
 quote → run → report lifecycle:
 
 ```ts
-import type { AgentTrustReport } from "@arc-agent-commerce/sdk";
+import type { AgentTrustReport } from "@veyra/sdk";
 
 const quote = await client.createQuote({
   workflow: "agent_trust_report",

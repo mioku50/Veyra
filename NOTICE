@@ -1,0 +1,36 @@
+Veyra
+Copyright 2026 Veyra Contributors
+
+This product includes software developed by the Veyra Project (https://github.com/mioku50/Veyra).
+
+==============================================================================
+Third-Party Software and Copyright Notices
+==============================================================================
+
+Portions of this software are derived from and/or incorporate open-source materials
+created by Circle Internet Group, Inc.:
+
+Copyright 2026 Circle Internet Group, Inc.
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+
+==============================================================================
+Project Independence and Disclaimer
+==============================================================================
+
+Veyra is an independent open-source project and is not affiliated with, endorsed
+by, sponsored by, or officially associated with Circle Internet Group, Inc.,
+Arc, or any of their affiliates or subsidiaries.
+
+"Circle", "Arc", "USDC", and related names and logos are trademarks of Circle
+Internet Financial Limited or its affiliates and are used herein solely for
+technical factual reference and descriptive compatibility purposes.

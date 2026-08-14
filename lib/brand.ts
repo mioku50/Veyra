@@ -1,9 +1,9 @@
 export const BRAND = {
   name: "Veyra",
   monogram: "V",
-  tagline: "Verified workflows for people and AI agents",
+  tagline: "Trust Infrastructure for Agentic Commerce",
   description:
-    "Run paid data and analysis workflows, receive structured reports, and verify the results on Arc.",
+    "Verify agents and services, evaluate counterparties before money moves, independently evaluate ERC-8183 work, and turn completed interactions into verifiable reputation on Arc.",
   developerConsole: "Veyra Developer Console",
   agentApi: "Veyra Agent API",
   reports: "Veyra Reports",

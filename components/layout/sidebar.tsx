@@ -147,7 +147,7 @@ export function Sidebar({ collapsed = false }: { collapsed?: boolean }) {
 
         <div className="mt-auto grid gap-2.5 border-t border-white/5 pt-4">
           <Link
-            href="https://github.com/mioku50/Agent-Commerce#readme"
+            href="https://github.com/mioku50/Veyra#readme"
             target="_blank"
             rel="noreferrer"
             className={cn(

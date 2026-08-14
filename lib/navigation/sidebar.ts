@@ -18,10 +18,19 @@ export type SidebarIconName =
 // product is discoverable instead of living only behind report links.
 export const publicSidebarNavigation = [
   {
-    label: "Run",
+    label: "Trust",
     items: [
-      { href: "/", label: "Home", icon: "dashboard" },
-      { href: "/agent-runner", label: "New Report", icon: "agent" },
+      { href: "/trust", label: "Trust Overview", icon: "proof" },
+      { href: "/reputation", label: "Agent Trust", icon: "agent" },
+      { href: "/trust/select", label: "Counterparty Selection", icon: "activity" },
+      { href: "/trust-gate", label: "Trust Gate", icon: "passport" },
+      { href: "/evaluators", label: "Evaluator", icon: "proof" },
+    ],
+  },
+  {
+    label: "Analyze",
+    items: [
+      { href: "/agent-runner", label: "New Report", icon: "templates" },
       { href: "/project-360", label: "Project 360", icon: "project-360" },
     ],
   },

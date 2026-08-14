@@ -1,8 +1,8 @@
 {
-  "name": "arc-agent-commerce",
-  "version": "0.1.0",
+  "name": "veyra",
+  "version": "0.1.0-beta.1",
   "private": true,
-  "description": "Veyra verified workflows for people and AI agents on Arc.",
+  "description": "Trust Infrastructure for Agentic Commerce on Arc.",
   "license": "Apache-2.0",
   "scripts": {
     "dev": "next dev",
@@ -133,7 +133,9 @@
     "counterparty:production-verify": "node --experimental-transform-types --no-warnings --env-file-if-exists=.env.local scripts/verify-production-p55-schema.mts",
     "security-audit:production-migrate": "node --experimental-transform-types --no-warnings --env-file-if-exists=.env.local scripts/apply-security-audit-production-migration.mts",
     "security-audit:production-verify": "node --experimental-transform-types --no-warnings --env-file-if-exists=.env.local scripts/verify-production-security-audit-schema.mts",
-    "counterparty:bootstrap": "node --experimental-transform-types --no-warnings --env-file-if-exists=.env.local scripts/bootstrap-p55-counterparties.mts"
+    "counterparty:bootstrap": "node --experimental-transform-types --no-warnings --env-file-if-exists=.env.local scripts/bootstrap-p55-counterparties.mts",
+    "audit:secrets": "node --experimental-transform-types --no-warnings scripts/audit-secrets.mts",
+    "release:gate": "node --experimental-transform-types --no-warnings scripts/public-beta-release-gate.mts"
   },
   "dependencies": {
     "@circle-fin/adapter-viem-v2": "^1.14.0",

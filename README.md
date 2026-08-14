@@ -1,154 +1,207 @@
 # Veyra
 
-Verified workflows for people and AI agents.
+[![Release](https://img.shields.io/badge/release-v0.1.0--beta.1-blue.svg)](https://github.com/mioku50/Veyra/releases)
+[![CI](https://github.com/mioku50/Veyra/actions/workflows/release-gate.yml/badge.svg)](https://github.com/mioku50/Veyra/actions/workflows/release-gate.yml)
+[![Network](https://img.shields.io/badge/network-Arc%20Testnet%20(5042002)-emerald.svg)](https://testnet.arcscan.app)
+[![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 
-Veyra lets people and autonomous agents run paid data and analysis workflows,
-receive structured reports, and verify results on Arc.
+> **Trust Infrastructure for Agentic Commerce on Arc.**
+> 
+> Verify agents and services, evaluate counterparties before money moves, independently evaluate ERC-8183 work, and turn completed interactions into verifiable reputation on Arc.
 
-[Run a workflow](https://agent-commerce-six.vercel.app/agent-runner) ·
-[Monitor trust](https://agent-commerce-six.vercel.app/monitoring) ·
-[Browse reports](https://agent-commerce-six.vercel.app/results) ·
-[Veyra Agent API](https://agent-commerce-six.vercel.app/console/agent-api)
+---
 
-## Flagship workflow
+## At a Glance
 
-GitHub Project Due Diligence turns a public repository URL into an
-evidence-backed report with:
+| Question | Answer |
+| :--- | :--- |
+| **What is Veyra?** | A unified trust and verification platform for autonomous AI agents and human operators. |
+| **What problem does it solve?** | Unsafe autonomous payments, unverified agent counterparties, lack of verifiable reputation, and unaudited offchain work settlement. |
+| **Why Arc?** | Arc provides native USDC gas abstraction, sub-second finality, predictable settlement costs, and onchain verification primitives. |
+| **What can I try right now?** | Inspect [Agent Trust](/reputation), evaluate transaction policies with [Trust Gate](/trust-gate), rank counterparties in the [Selection Matrix](/trust/select), verify work with [ERC-8183 Evaluator](/evaluators), or run [Project 360](/project-360) and [GitHub Due Diligence](/agent-runner). |
+| **Is this experimental?** | **Yes.** Veyra is currently running on **Arc Testnet** (Chain ID `5042002`). Smart contracts are experimental and unaudited. |
 
-- live repository, activity, release, contributor, and governance data;
-- deterministic engineering-quality and adoption-risk analysis;
-- a clear verdict with confidence and evidence coverage;
-- JSON and Markdown export plus a shareable report URL;
-- receipts and Arc Testnet proof links for paid workflow steps.
+---
 
-The verdict is repository-health guidance, not a security audit or investment
-recommendation.
+## Architecture Lifecycle
 
-## Continuous Trust Monitoring
-
-One report is a snapshot. Veyra watchlists turn public projects and agents into
-an Arc-verifiable history:
+Veyra unifies identity, reputation, policy, execution, and settlement into a continuous cryptographic feedback loop on Arc:
 
 ```text
-watchlist → manual/daily/weekly recheck → canonical snapshot → delta → Arc proof
+ERC-8004 Identity
+       ↓
+Evidence-Weighted Reputation
+       ↓
+Multi-Criteria Counterparty Selection
+       ↓
+Trust Gate Policy Preflight
+       ↓
+EIP-712 Signed Clearance
+       ↓
+ERC-8183 / x402 Execution
+       ↓
+Independent ERC-8183 Evaluation
+       ↓
+Onchain Arc Settlement
+       ↓
+Observed Evidence Loop
 ```
 
-Delta reports surface score movement, new and resolved risks, repository
-activity, agent status, endpoint availability, service reliability, contract
-changes, and verification coverage without repeating an unchanged full report.
-The Public App and Veyra Agent API use the same deterministic delta model.
+---
 
-Each explicitly published subject gets one canonical, wallet-free Trust Profile
-at `/trust/vtr_...`. The page renders real snapshot scores, meaningful changes,
-the exact Arc proof for every snapshot, a full-report link, and a share preview.
-Equivalent GitHub URLs and normalized endpoint, wallet, contract, or agent
-identifiers converge on the same stable profile. Private watchlists and unknown
-profiles both return the same 404 response.
+## Core Capabilities
 
-Public profiles also expose server-rendered, snapshot-aware SVG badges for
-README files and websites plus a compact public status endpoint. Meaningful
-changes create in-app alerts and can be delivered as signed, retryable,
-SSRF-protected webhooks.
+### 1. Agent Trust & Reputation (ERC-8004)
+Inspect agent identity, evidence coverage, execution history, and deterministic reputation scores (0–100) before initiating transactions. Self-rating is strictly filtered and multi-source evidence is weighted with temporal decay.
 
-## Two product paths
+### 2. Multi-Criteria Counterparty Selection
+Programmatically discover, filter, and rank candidate agents based on historical reputation, observed latency, availability, pricing, and budget constraints.
 
-People use the Public App:
+### 3. Trust Gate Transaction Preflight
+Execute pre-transaction policy checks before an ERC-8183 job, x402 payment, or service purchase. Decisions fail closed (`ALLOW`, `ALLOW_WITH_LIMITS`, `REQUIRE_EVALUATOR`, `REVIEW_REQUIRED`, `DENY`) and issue EIP-712 signed clearance tickets for onchain consumption.
 
-```text
-workflow → immutable quote → sponsored or USDC checkout → report → Arc proof
-```
+### 4. Independent ERC-8183 Evaluator
+A non-custodial, fail-closed evaluation service that independently verifies submitted deliverables (e.g. schema compliance, hash validation, policy satisfaction) and signs onchain verdicts to authorize job settlement on Arc.
 
-AI agents use Veyra Agent API v1:
+### 5. Evidence Workflows
+Structured analysis pipelines that generate verifiable reports and onchain proof trails:
+- **Project 360**: Multi-source discovery across GitHub, onchain contracts, and live APIs.
+- **GitHub Project Due Diligence**: Repository health, maintainer velocity, and adoption risks.
+- **Treasury Health**: Onchain USDC inflow/outflow analysis, counterparty concentration (HHI), and runway signals.
+- **Paid API Quality**: Latency, uptime, response validity, and payment reliability benchmarking.
 
-```text
-discover → quote → idempotent run → poll → structured report
-```
+### 6. Continuous Trust Monitoring
+Turn one-time snapshots into verifiable history. Watchlists track agent drift, risk signals, and endpoint availability, emitting alerts and signed, retryable webhooks.
 
-Project 360 uses an explicit safety boundary:
+### 7. Veyra Agent API & SDK
+Full machine-readable API for autonomous AI agents with an OpenAPI 3.0 specification (`/openapi/veyra-agent-api-v1.json`) and a typed, dependency-free TypeScript SDK (`@veyra/sdk`).
 
-```text
-free source discovery → user-confirmed candidates → transparent module quote
-→ one confirmation → isolated module execution → aggregate Arc proof
-```
+---
 
-The Veyra Agent API includes a typed dependency-free TypeScript SDK, normalized
-errors, strict credential isolation, an OpenAPI specification, and a runnable
-GitHub Due Diligence agent example.
+## Arc Integration Details
 
-- [Veyra Agent API guide](docs/agent-api.md)
-- [TypeScript SDK](sdk/typescript)
-- [Production-ready agent example](examples/machine-agent/github-due-diligence-agent.ts)
-- [OpenAPI specification](public/openapi/agent-commerce-v1.json)
-- [Trust webhooks and HMAC verification](docs/webhooks.md)
+Veyra leverages the Arc Testnet ecosystem for deterministic execution and settlement:
 
-## Curated workflows
+- **Network**: Arc Testnet
+- **Chain ID**: `5042002` (hex: `0x4CEF52`)
+- **Native Gas**: USDC (18 decimals for native gas, 6 decimals for ERC-20 token)
+- **RPC Endpoint**: `https://rpc.testnet.arc.network`
+- **Explorer**: [https://testnet.arcscan.app](https://testnet.arcscan.app)
+- **Standards & Contracts**:
+  - **ERC-8004**: Onchain Agent Identity and Validation Registries.
+  - **ERC-8183**: Agentic Commerce job contracts with external evaluator authorization.
+  - **Veyra Trust Gate**: EIP-712 clearance ticket verifier contract.
+  - **Veyra Proof Registry**: Onchain record of verified execution and evaluation receipts.
 
-| Workflow | Result | Starting provider cost |
-| --- | --- | ---: |
-| GitHub Project Due Diligence | Repository-health verdict and evidence report | 0.002 USDC |
-| Veyra Agent Trust Report | Identity, code, execution, payment, service, and Arc trust signals | 0.0004 USDC |
-| Veyra Project 360 Due Diligence | Explicitly selected multi-source evidence, coverage-aware score, 15-section report, and one aggregate Arc proof | Per selected module |
-| Treasury Health | Wallet balance, concentration, activity, and runway signals | 0.0004 USDC |
-| Paid API Quality | Observed availability, latency, response, payment, and settlement quality | 0.002 USDC |
-| Market Context Brief | Live provider-backed market snapshot | 0.0013 USDC |
-| Sentiment & Tone Report | Structured sentiment and tone signals | 0.0013 USDC |
-| Builder Update Summary | Delivery summary, signals, and next steps | 0.0013 USDC |
+*Note: Smart contracts are deployed on Arc Testnet for evaluation and testing purposes and have not undergone an independent third-party security audit.*
 
-External seller commerce remains an internal capability. It is not the primary
-catalog or product positioning.
+---
 
-## Local development
+## Developer Quickstart
+
+### 1. Clone and Install
 
 ```bash
-git clone https://github.com/mioku50/Agent-Commerce.git
-cd Agent-Commerce
+git clone https://github.com/mioku50/Veyra.git
+cd Veyra
 npm install
 cp .env.example .env.local
 npm run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000).
+Open [http://localhost:3000](http://localhost:3000) in your browser.
 
-Common verification:
+### 2. Using the TypeScript SDK
+
+Install the SDK:
 
 ```bash
+npm install @veyra/sdk
+```
+
+#### Read Agent Reputation:
+```typescript
+import { VeyraClient } from "@veyra/sdk";
+
+const client = new VeyraClient({
+  baseUrl: process.env.NEXT_PUBLIC_APP_URL || "https://veyra.app",
+  credential: process.env.VEYRA_API_KEY || "anonymous",
+});
+
+const reputation = await client.getAgentReputation("agent_01");
+console.log(`Trust Score: ${reputation.trustScore}/100 (${reputation.statusLabel})`);
+```
+
+#### Preflight a Transaction with Trust Gate:
+```typescript
+const decision = await client.requestTrustDecision({
+  subjectAgentId: "agent_01",
+  action: "erc8183_job_settlement",
+  requestedValueUsdc: 5.0,
+  executorWallet: "0xYourWalletAddress...",
+});
+
+if (decision.decision.decision === "ALLOW") {
+  console.log("Approved! Signed clearance:", decision.signature);
+}
+```
+
+#### Select Optimal Counterparty:
+```typescript
+const selection = await client.selectCounterparty({
+  taskType: "github_due_diligence",
+  budgetUsdc: 10.0,
+  candidates: [
+    { agentId: "agent_01", quotedPriceUsdc: 2.5 },
+    { agentId: "agent_02", quotedPriceUsdc: 1.8 },
+  ],
+});
+console.log("Selected Agent:", selection.selectedAgentId);
+```
+
+---
+
+## Verification & Testing
+
+Run the full local deterministic test suite (no secrets required):
+
+```bash
+# Lint code
 npm run lint
+
+# Compile and typecheck SDK
 npm run machine:sdk-build
-npm run github:analysis-test
-npm run monitoring:test
-npm run trust-profile:test
-npm run webhooks:test
+
+# Run deterministic test suites
+npm run erc8004:test
+npm run erc8183:test
+npm run reputation:test
+npm run trust-gate:test
+npm run counterparty:test
 npm run project-360:test
-npm run machine:api-test
-npm run operations:test
+npm run monitoring:test
+
+# Run Foundry smart contract tests
+cd contracts && forge test && cd ..
+
+# Build Next.js application
 npm run build
 ```
 
-## Operations and safety
+---
 
-The production console aggregates execution failures, provider latency,
-checkout failures, and Arc proof delays. Paid provider calls are never blindly
-retried; quote/run idempotency and existing payment records are reconciled
-before recovery.
+## Security & Responsible Disclosure
 
-Public surfaces do not publish full prompts, credentials, authorization
-headers, raw provider errors, or raw provider payloads.
+- **Testnet Only**: Veyra is deployed exclusively on **Arc Testnet**. Never use real production funds or private keys with real assets.
+- **Unaudited Software**: Smart contracts and protocol implementations are experimental.
+- **Reporting Vulnerabilities**: If you discover a security issue, please consult [SECURITY.md](SECURITY.md) for responsible disclosure instructions. Do not open public GitHub issues for active vulnerabilities.
 
-Veyra currently runs on Arc Testnet (`5042002`). Contracts are
-experimental and are not presented as audited.
+---
 
-## Stack
+## License & Third-Party Notices
 
-Next.js, TypeScript, Supabase, Arc Testnet, USDC, x402, GitHub API, and Vercel.
+This project is licensed under the [Apache License 2.0](LICENSE).
 
-## License and attribution
+Portions of this codebase are derived from or incorporate open-source materials created by Circle Internet Group, Inc. (licensed under Apache-2.0). See [NOTICE](NOTICE) for full third-party attribution and copyright details.
 
-Licensed under the [Apache License 2.0](LICENSE). Redistributions and derivative
-works must retain required notices and identify modified files.
-
-The project name, original branding, logo, screenshots, and visual identity are
-not licensed for reuse. Do not present a fork as the original product or imply
-endorsement by its author.
-
-Copyright © 2026 Sergio Romanov
-([@mioku50](https://github.com/mioku50)).
+Copyright © 2026 Veyra Contributors.

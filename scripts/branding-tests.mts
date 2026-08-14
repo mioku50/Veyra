@@ -42,6 +42,7 @@ const activeFiles = [
   "sdk/typescript/package.json",
   "sdk/typescript/src",
   "public/openapi/agent-commerce-v1.json",
+  "public/openapi/veyra-agent-api-v1.json",
 ].flatMap(filesUnder).filter((file) => ACTIVE_EXTENSIONS.test(file));
 
 for (const file of activeFiles) {
@@ -101,9 +102,9 @@ for (const [contract, domainName] of [
 assert.deepEqual(BRAND, {
   name: "Veyra",
   monogram: "V",
-  tagline: "Verified workflows for people and AI agents",
+  tagline: "Trust Infrastructure for Agentic Commerce",
   description:
-    "Run paid data and analysis workflows, receive structured reports, and verify the results on Arc.",
+    "Verify agents and services, evaluate counterparties before money moves, independently evaluate ERC-8183 work, and turn completed interactions into verifiable reputation on Arc.",
   developerConsole: "Veyra Developer Console",
   agentApi: "Veyra Agent API",
   reports: "Veyra Reports",
@@ -129,19 +130,17 @@ assert(iconSource.includes("<path"));
 assert(!iconSource.includes(">AC<"));
 
 const openApi = JSON.parse(
-  readFileSync(resolve(REPOSITORY_ROOT, "public/openapi/agent-commerce-v1.json"), "utf8"),
+  readFileSync(resolve(REPOSITORY_ROOT, "public/openapi/veyra-agent-api-v1.json"), "utf8"),
 ) as {
   info?: { title?: string; version?: string; description?: string };
   servers?: Array<{ url?: string }>;
   paths?: Record<string, unknown>;
 };
 assert.equal(openApi.info?.title, BRAND.agentApi);
-assert.equal(
-  openApi.info?.description,
-  "Machine API for verified Veyra workflows, Project 360 free discovery and explicit quoting, continuous trust monitoring, alerts, signed webhooks, and public trust badges.",
-);
-assert.equal(openApi.info?.version, "1.5.0");
-assert.equal(openApi.servers?.[0]?.url, "https://agent-commerce-six.vercel.app");
+assert(openApi.info?.description?.includes("verified workflows"));
+assert(openApi.info?.description?.includes("reputation"));
+assert.equal(openApi.info?.version, "0.1.0-beta.1");
+assert.equal(openApi.servers?.[0]?.url, "https://veyra.app");
 for (const path of [
   "/api/agent/v1/workflows",
   "/api/agent/v1/project-360/discoveries",
@@ -155,6 +154,12 @@ for (const path of [
   "/api/agent/v1/webhooks",
   "/api/public/trust/{publicId}/status",
   "/api/trust/{publicId}/badge.svg",
+  "/api/status",
+  "/api/trust/v1/decisions",
+  "/api/trust/v1/counterparties/discover",
+  "/api/trust/v1/counterparties/select",
+  "/api/trust/v1/selections/{selectionId}",
+  "/api/trust/v1/selections/{selectionId}/clearance",
 ]) {
   assert(path in (openApi.paths ?? {}), `OpenAPI path changed or disappeared: ${path}`);
 }
