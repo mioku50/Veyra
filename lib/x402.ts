@@ -33,7 +33,7 @@ const ARC_TESTNET_USDC = "0x3600000000000000000000000000000000000000";
 const ARC_TESTNET_GATEWAY_WALLET = "0x0077777d7EBA4688BDeF3E311b846F25870A19B9";
 const GATEWAY_BATCHED_MAX_TIMEOUT_SECONDS = 604_900;
 
-export const sellerAddress = process.env.SELLER_ADDRESS as `0x${string}`;
+export const sellerAddress = (process.env.SELLER_ADDRESS || "0x0000000000000000000000000000000000000000") as `0x${string}`;
 
 const facilitator = new BatchFacilitatorClient();
 
@@ -163,7 +163,8 @@ function buildPaymentRequirements(price: string, payTo: string = sellerAddress) 
   if (!Number.isSafeInteger(amount) || amount <= 0) {
     throw new Error("A positive x402 USDC price is required.");
   }
-  if (!/^0x[0-9a-fA-F]{40}$/.test(payTo)) {
+  const targetPayTo = /^0x[0-9a-fA-F]{40}$/.test(payTo) ? payTo : sellerAddress;
+  if (!/^0x[0-9a-fA-F]{40}$/.test(targetPayTo)) {
     throw new Error("A valid x402 seller payout address is required.");
   }
 
@@ -172,7 +173,7 @@ function buildPaymentRequirements(price: string, payTo: string = sellerAddress) 
     network: ARC_TESTNET_NETWORK,
     asset: ARC_TESTNET_USDC,
     amount: amount.toString(),
-    payTo,
+    payTo: targetPayTo,
     maxTimeoutSeconds: GATEWAY_BATCHED_MAX_TIMEOUT_SECONDS,
     extra: {
       name: "GatewayWalletBatched",
