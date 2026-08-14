@@ -114,7 +114,8 @@ export async function evaluateTrustDecision(
     return decision;
   }
 
-  const snapshotAgeSeconds = (Date.now() - new Date(snapshot.createdAt).getTime()) / 1000;
+  const created = snapshot.createdAt || (snapshot as any).snapshotCreatedAt || new Date().toISOString();
+  const snapshotAgeSeconds = Math.max(0, Math.floor((Date.now() - new Date(created).getTime()) / 1000)) || 0;
 
   let confidenceNum = 0;
   if (snapshot.confidence === "High" || snapshot.confidence === "Very High") confidenceNum = 0.9;
@@ -126,8 +127,8 @@ export async function evaluateTrustDecision(
   
   if (snapshot.dimensions.economicReliability < 50) riskSignals.push("LOW_ECONOMIC_RELIABILITY");
   if (snapshot.dimensions.execution < 50) riskSignals.push("LOW_EXECUTION_RELIABILITY");
-  if (snapshot.riskSignals.includes("sybilRisk") || snapshot.riskSignals.includes("SYBIL_RISK")) riskSignals.push("SYBIL_RISK");
-  if (snapshot.riskSignals.includes("counterpartyFarming") || snapshot.riskSignals.includes("COUNTERPARTY_FARMING")) riskSignals.push("COUNTERPARTY_FARMING");
+  if (snapshot.riskSignals?.includes("sybilRisk") || snapshot.riskSignals?.includes("SYBIL_RISK")) riskSignals.push("SYBIL_RISK");
+  if (snapshot.riskSignals?.includes("counterpartyFarming") || snapshot.riskSignals?.includes("COUNTERPARTY_FARMING")) riskSignals.push("COUNTERPARTY_FARMING");
   if (!snapshot.arcProofTx) riskSignals.push("ARC_PROOF_UNVERIFIED");
 
   if (confidenceNum < 0.3) riskSignals.push("LOW_CONFIDENCE");

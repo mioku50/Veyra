@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.2.0-beta.1] - 2026-08-15
+
+### Added
+- **P6.1 Trust-Routed Execution Engine**: Safe execution infrastructure connecting counterparty selection, trust policy, signed clearance, and multi-rail settlement across ERC-8183 and x402.
+- **3 Execution Modes**: `PREVIEW` (read-only preflight check), `PREPARE` (preflight revalidation, EIP-712 clearance issuance, caller-driven settlement), and `AUTOPILOT` (autonomous execution under active mandate).
+- **EIP-712 Execution Mandates**: Cryptographically signed owner authorizations enforcing per-transaction, daily, and total USDC spending caps, allowed capabilities, rails, and minimum trust scores.
+- **Atomic Budget Reservation**: Row-level locked PostgreSQL stored procedures (`reserve_mandate_budget`, `release_mandate_budget`, `settle_mandate_budget`) preventing overspending race conditions across concurrent agent executions.
+- **Deterministic State Machine**: Strict 14-state execution lifecycle validator preventing invalid or premature state transitions.
+- **Machine API & SDK Updates**: Added `/api/execution/v1/*` endpoints and full typed `client.execution.*` methods to `@veyra/sdk`.
+- **Interactive UI & Verifiable Receipts**:
+  - `/trust/mandates`: Dashboard for creating, signing, viewing, and revoking execution mandates.
+  - `/execution/[publicId]`: Public execution receipt and cryptographic Arc proof viewer.
+- **Comprehensive Test Suites**: Unit tests (`execution:test`), negative/adversarial tests (`execution:negative-test`), and product acceptance tests (`execution:product-test`).
+
+---
+
 ## [0.1.0-beta.2] - 2026-08-14
 
 ### Security & Maintenance

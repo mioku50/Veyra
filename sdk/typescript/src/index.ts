@@ -1580,6 +1580,177 @@ export class AgentCommerceClient {
       options,
     );
   }
+
+  // --- P6.1 Trust-Routed Execution & Mandate Methods ---
+
+  async createExecutionMandate(
+    input: {
+      ownerWallet: string;
+      subjectAgentId: string;
+      subjectWallet: string;
+      mode: "PREVIEW" | "PREPARE" | "AUTOPILOT";
+      network?: string;
+      allowedCapabilities: string[];
+      allowedRails?: ("erc8183" | "x402")[];
+      maxPerTransactionUsdc: number;
+      maxPerDayUsdc: number;
+      maxTotalUsdc: number;
+      minimumTrustScore?: number;
+      minimumConfidence?: number;
+      requireVerifiedIdentity?: boolean;
+      evaluatorThresholdUsdc?: number;
+      expiresAt: string;
+    },
+    options: { signal?: AbortSignal } = {}
+  ) {
+    return this.request<{
+      mandateId: string;
+      canonicalHash: string;
+      eip712Payload: Record<string, any>;
+      instructions: string;
+    }>("/api/execution/v1/mandates", { method: "POST", body: JSON.stringify(input) }, options);
+  }
+
+  async activateExecutionMandate(
+    mandateId: string,
+    input: {
+      ownerWallet: string;
+      subjectAgentId: string;
+      subjectWallet: string;
+      mode: "PREVIEW" | "PREPARE" | "AUTOPILOT";
+      network?: string;
+      allowedCapabilities: string[];
+      allowedRails?: ("erc8183" | "x402")[];
+      maxPerTransactionUsdc: number;
+      maxPerDayUsdc: number;
+      maxTotalUsdc: number;
+      minimumTrustScore?: number;
+      minimumConfidence?: number;
+      requireVerifiedIdentity?: boolean;
+      evaluatorThresholdUsdc?: number;
+      signature: string;
+      expiresAt: string;
+    },
+    options: { signal?: AbortSignal } = {}
+  ) {
+    return this.request<{
+      success: boolean;
+      mandateId: string;
+      status: "ACTIVE";
+      canonicalHash: string;
+      owner: string;
+    }>(
+      `/api/execution/v1/mandates/${encodeURIComponent(mandateId)}/activate`,
+      { method: "POST", body: JSON.stringify(input) },
+      options
+    );
+  }
+
+  async getExecutionMandate(mandateId: string, options: { signal?: AbortSignal } = {}) {
+    return this.request<{ mandate: any }>(
+      `/api/execution/v1/mandates/${encodeURIComponent(mandateId)}`,
+      { method: "GET" },
+      options
+    );
+  }
+
+  async listExecutionMandates(ownerWallet: string, options: { signal?: AbortSignal } = {}) {
+    return this.request<{ mandates: any[] }>(
+      `/api/execution/v1/mandates?ownerWallet=${encodeURIComponent(ownerWallet)}`,
+      { method: "GET" },
+      options
+    );
+  }
+
+  async revokeExecutionMandate(mandateId: string, ownerWallet: string, options: { signal?: AbortSignal } = {}) {
+    return this.request<{ success: boolean; mandateId: string; status: "REVOKED" }>(
+      `/api/execution/v1/mandates/${encodeURIComponent(mandateId)}/revoke`,
+      { method: "POST", body: JSON.stringify({ ownerWallet }) },
+      options
+    );
+  }
+
+  async prepareExecution(
+    input: {
+      selectionId: string;
+      mandateId?: string;
+      requestedAmountUsdc: number;
+      mode?: "PREVIEW" | "PREPARE" | "AUTOPILOT";
+      executorWallet?: string;
+    },
+    options: { signal?: AbortSignal } = {}
+  ) {
+    return this.request<any>(
+      "/api/execution/v1/prepare",
+      { method: "POST", body: JSON.stringify(input) },
+      options
+    );
+  }
+
+  async execute(
+    executionId: string,
+    input?: { taskPayload?: any },
+    options: { idempotencyKey?: string; signal?: AbortSignal } = {}
+  ) {
+    return this.request<any>(
+      `/api/execution/v1/${encodeURIComponent(executionId)}/execute`,
+      { method: "POST", body: input ? JSON.stringify(input) : undefined },
+      {
+        idempotencyKey: options.idempotencyKey ?? createIdempotencyKey("exec"),
+        signal: options.signal,
+      }
+    );
+  }
+
+  async runAutopilot(
+    input: {
+      mandateId: string;
+      capability: string;
+      task?: Record<string, unknown>;
+      requestedBudgetUsdc: number;
+    },
+    options: { idempotencyKey?: string; signal?: AbortSignal } = {}
+  ) {
+    return this.request<any>(
+      "/api/execution/v1/autopilot",
+      { method: "POST", body: JSON.stringify(input) },
+      {
+        idempotencyKey: options.idempotencyKey ?? createIdempotencyKey("autopilot"),
+        signal: options.signal,
+      }
+    );
+  }
+
+  async getExecution(executionId: string, options: { signal?: AbortSignal } = {}) {
+    return this.request<{ execution: any }>(
+      `/api/execution/v1/${encodeURIComponent(executionId)}`,
+      { method: "GET" },
+      options
+    );
+  }
+
+  async getExecutionEvidence(executionId: string, options: { signal?: AbortSignal } = {}) {
+    return this.request<any>(
+      `/api/execution/v1/${encodeURIComponent(executionId)}/evidence`,
+      { method: "GET" },
+      options
+    );
+  }
+
+  get execution() {
+    return {
+      createMandate: this.createExecutionMandate.bind(this),
+      activateMandate: this.activateExecutionMandate.bind(this),
+      getMandate: this.getExecutionMandate.bind(this),
+      listMandates: this.listExecutionMandates.bind(this),
+      revokeMandate: this.revokeExecutionMandate.bind(this),
+      prepare: this.prepareExecution.bind(this),
+      execute: this.execute.bind(this),
+      autopilot: this.runAutopilot.bind(this),
+      get: this.getExecution.bind(this),
+      getEvidence: this.getExecutionEvidence.bind(this),
+    };
+  }
 }
 
 /** Canonical Veyra Agent API client */

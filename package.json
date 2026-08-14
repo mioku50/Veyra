@@ -1,6 +1,6 @@
 {
   "name": "veyra",
-  "version": "0.1.0-beta.2",
+  "version": "0.2.0-beta.1",
   "private": true,
   "description": "Trust Infrastructure for Agentic Commerce on Arc.",
   "license": "Apache-2.0",
@@ -134,6 +134,12 @@
     "security-audit:production-migrate": "node --experimental-transform-types --no-warnings --env-file-if-exists=.env.local scripts/apply-security-audit-production-migration.mts",
     "security-audit:production-verify": "node --experimental-transform-types --no-warnings --env-file-if-exists=.env.local scripts/verify-production-security-audit-schema.mts",
     "counterparty:bootstrap": "node --experimental-transform-types --no-warnings --env-file-if-exists=.env.local scripts/bootstrap-p55-counterparties.mts",
+    "execution:test": "node --experimental-transform-types --no-warnings scripts/execution-unit-tests.mts",
+    "execution:product-test": "node --experimental-transform-types --no-warnings --env-file-if-exists=.env.local scripts/execution-product-tests.mts",
+    "execution:negative-test": "node --experimental-transform-types --no-warnings --env-file-if-exists=.env.local scripts/execution-negative-tests.mts",
+    "execution:example": "node --experimental-transform-types --no-warnings --env-file-if-exists=.env.local examples/trust-routed-execution.ts",
+    "execution:production-migrate": "node --experimental-transform-types --no-warnings --env-file-if-exists=.env.local scripts/apply-p61-migration.mts",
+    "execution:production-verify": "node --experimental-transform-types --no-warnings --env-file-if-exists=.env.local scripts/verify-p61-schema.mts",
     "audit:secrets": "node --experimental-transform-types --no-warnings scripts/audit-secrets.mts",
     "release:gate": "node --experimental-transform-types --no-warnings scripts/public-beta-release-gate.mts"
   },

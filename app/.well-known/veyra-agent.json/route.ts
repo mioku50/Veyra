@@ -52,6 +52,8 @@ export async function GET() {
       "trust_monitoring",
       "paid_api_quality",
       "treasury_health",
+      "trust_routed_execution",
+      "execution_mandates",
     ],
     services: {
       profile: `${baseUrl}/agents/veyra`,

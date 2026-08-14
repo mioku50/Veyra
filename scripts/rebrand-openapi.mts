@@ -289,6 +289,89 @@ spec.paths["/api/trust/v1/selections/{selectionId}/clearance"] = {
   },
 };
 
+// Add Execution Mandates
+spec.paths["/api/execution/v1/mandates"] = {
+  post: {
+    summary: "Create Execution Mandate Challenge",
+    description: "Creates an EIP-712 execution mandate message challenge with spending caps and policy rules.",
+    operationId: "createExecutionMandate",
+    security: [],
+    responses: {
+      "200": { description: "Mandate EIP-712 payload ready for signing" },
+    },
+  },
+  get: {
+    summary: "List Execution Mandates by Owner",
+    description: "Returns active and historical execution mandates for a given owner wallet.",
+    operationId: "listExecutionMandates",
+    security: [],
+    parameters: [
+      { name: "ownerWallet", in: "query", required: true, schema: { type: "string" } },
+    ],
+    responses: {
+      "200": { description: "List of mandates" },
+    },
+  },
+};
+
+spec.paths["/api/execution/v1/mandates/{mandateId}/activate"] = {
+  post: {
+    summary: "Activate Signed Execution Mandate",
+    description: "Validates the EIP-712 signature against the owner wallet and activates the mandate.",
+    operationId: "activateExecutionMandate",
+    security: [],
+    parameters: [
+      { name: "mandateId", in: "path", required: true, schema: { type: "string" } },
+    ],
+    responses: {
+      "200": { description: "Mandate activated" },
+      "401": { description: "Signature verification failed" },
+    },
+  },
+};
+
+spec.paths["/api/execution/v1/prepare"] = {
+  post: {
+    summary: "Prepare Execution Intent",
+    description: "Preflights selection and policy checks, issues clearance, and prepares rail payload without committing funds.",
+    operationId: "prepareExecution",
+    security: [],
+    responses: {
+      "200": { description: "Prepared execution payload" },
+      "422": { description: "Preflight revalidation failed" },
+    },
+  },
+};
+
+spec.paths["/api/execution/v1/{executionId}/execute"] = {
+  post: {
+    summary: "Execute Prepared Intent",
+    description: "Executes a prepared intent across ERC-8183 or x402, ingests reputation evidence, and updates state.",
+    operationId: "executePreparedIntent",
+    security: [],
+    parameters: [
+      { name: "executionId", in: "path", required: true, schema: { type: "string" } },
+    ],
+    responses: {
+      "200": { description: "Execution result" },
+      "422": { description: "Budget or preflight rejected" },
+    },
+  },
+};
+
+spec.paths["/api/execution/v1/autopilot"] = {
+  post: {
+    summary: "Run Autonomous Autopilot Execution",
+    description: "Discovers counterparty, selects winner, preflights, and executes under an active mandate.",
+    operationId: "runAutopilotExecution",
+    security: [],
+    responses: {
+      "200": { description: "Execution result" },
+      "503": { description: "Autopilot disabled" },
+    },
+  },
+};
+
 const formatted = JSON.stringify(spec, null, 2) + "\n";
 
 writeFileSync(canonicalPath, formatted, "utf8");

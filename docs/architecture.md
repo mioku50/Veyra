@@ -59,6 +59,7 @@ The Trust Layer transforms raw observations into actionable, policy-enforcing tr
 
 The Execution Layer facilitates safe payment, work evaluation, and onchain settlement on Arc:
 
+- **Trust-Routed Execution & EIP-712 Mandates**: Bounded autonomous and caller-prepared execution across ERC-8183 and x402 with atomic row-level budget locks.
 - **x402 Micropayments**: Native HTTP 402 payment protocol integration with USDC gas abstraction on Arc.
 - **ERC-8183 Agentic Commerce Protocol**: Standardized smart contracts coordinating job creation, fund escrow, evaluator authorization, and release.
 - **Independent Veyra ERC-8183 Evaluator**: Non-custodial evaluator service that inspects submitted deliverables against contract policy hashes and issues onchain settlement verdicts.
