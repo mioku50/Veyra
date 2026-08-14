@@ -14,7 +14,7 @@ const spec = JSON.parse(readFileSync(originalPath, "utf8"));
 
 spec.info = {
   title: "Veyra Agent API",
-  version: "0.1.0-beta.1",
+  version: "0.1.0-beta.2",
   description:
     "Machine API for Veyra on Arc Testnet — verified workflows, evidence-weighted agent reputation, Trust Gate policy decisions, counterparty selection, ERC-8183 independent evaluation, continuous trust monitoring, and Project 360.",
   contact: {

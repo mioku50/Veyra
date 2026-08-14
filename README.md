@@ -1,6 +1,6 @@
 # Veyra
 
-[![Release](https://img.shields.io/badge/release-v0.1.0--beta.1-blue.svg)](https://github.com/mioku50/Veyra/releases/tag/v0.1.0-beta.1)
+[![Release](https://img.shields.io/badge/release-v0.1.0--beta.2-blue.svg)](https://github.com/mioku50/Veyra/releases/tag/v0.1.0-beta.2)
 [![CI](https://github.com/mioku50/Veyra/actions/workflows/release-gate.yml/badge.svg)](https://github.com/mioku50/Veyra/actions/workflows/release-gate.yml)
 [![Network](https://img.shields.io/badge/network-Arc%20Testnet%20(5042002)-emerald.svg)](https://testnet.arcscan.app)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)

@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.1.0-beta.2] - 2026-08-14
+
+### Security & Maintenance
+- **Next.js & ESLint Upgrade**: Upgraded `next` to `^16.3.1` (>= 16.2.11) and `eslint-config-next` to `^16.3.1`, resolving all upstream Next.js framework advisories and PostCSS vulnerabilities.
+- **Dependency Audit**: Verified and reduced runtime vulnerabilities in `npm audit --omit=dev`.
+- **Contract Documentation**: Documented canonical deployed address `0x1cD66BCd4FCB73a079c05635840Fde029Ce6BEbB` and Arcscan link for `VeyraTrustGate` on Arc Testnet.
+- **CI / Release Gate**: Enforced strict branch protection on `main` requiring the Release Verification Suite.
+
+---
+
 ## [0.1.0-beta.1] - 2026-08-14
 
 ### Added

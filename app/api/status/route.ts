@@ -13,7 +13,7 @@ export async function GET() {
       status: "operational",
       network: "arc-testnet",
       chainId: 5_042_002,
-      version: "0.1.0-beta.1",
+      version: "0.1.0-beta.2",
       timestamp: new Date().toISOString(),
     },
     {
