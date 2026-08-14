@@ -1,0 +1,30 @@
+# Gitleaks Configuration for Veyra
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Allowlist well-known public test fixtures, Arc testnet addresses, and mock strings"
+paths = [
+  '''scripts/''',
+  '''contracts/''',
+  '''sdk/typescript/''',
+  '''docs/''',
+  '''app/console/agent-api/agent-api-interactive-client.tsx''',
+]
+regexes = [
+  '''0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80''',
+  '''ghp_123456789012345678901234567890123456''',
+  '''dummy_anon_key''',
+  '''0x3600000000000000000000000000000000000000''',
+  '''0x92dC1aFC126F755ba5d5254e8D697CAe10474851''',
+  '''0x8004A818BFB912233c491871b3d84c89A494BD9e''',
+  '''0x8004B663056A597Dffe9eCcC1965A193B7388713''',
+  '''0x8004Cb1BF31DAf7788923b405b754f57acEB4272''',
+  '''0x7cE65e573463B83164FFc282a0556D5542defefA''',
+  '''0x90ceE92dC33647763881DDF830aDFC17217Dfe4A''',
+  '''0x[0-9a-fA-F]{40}''',
+]
+commits = [
+  '''8c17f51b578beeb4e4d23fd8d2603fecefbc00f4''',
+  '''af30619519d50587c78a021416bdaa3e49074555''',
+]

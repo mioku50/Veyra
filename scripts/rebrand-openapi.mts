@@ -29,8 +29,8 @@ spec.info = {
 
 spec.servers = [
   {
-    url: "https://veyra.app",
-    description: "Arc Testnet Canonical Production Server",
+    url: "https://agent-commerce-six.vercel.app",
+    description: "Arc Testnet Live Production Server",
   },
   {
     url: "http://localhost:3000",

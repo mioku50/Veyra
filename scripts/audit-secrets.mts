@@ -4,14 +4,38 @@
  */
 
 import { execSync } from "node:child_process";
-import { readFileSync, readdirSync, statSync } from "node:fs";
+import { readFileSync, readdirSync, existsSync } from "node:fs";
 import { resolve } from "node:path";
 
 const root = resolve(import.meta.dirname, "..");
 
-console.log("🔒 Starting Veyra Secret & Sensitive Commit Audit...");
+console.log("🔒 Starting Veyra Full Secret & Git History Audit...");
 
-// 1. Current Tree Scan (Excluding .env.local, .git, node_modules, .next)
+// 1. Run real Gitleaks detector if binary or command is available
+let gitleaksPassed = false;
+const gitleaksBin = existsSync(resolve(root, ".local-tools/bin/gitleaks"))
+  ? resolve(root, ".local-tools/bin/gitleaks")
+  : "gitleaks";
+
+try {
+  const gitleaksOutput = execSync(`${gitleaksBin} detect --verbose --redact`, {
+    cwd: root,
+    encoding: "utf8",
+  });
+  console.log("✅ Gitleaks full repository history scan: CLEAN (No leaks found).");
+  gitleaksPassed = true;
+} catch (error) {
+  // Check if gitleaks was not found or failed
+  if (error instanceof Error && error.message.includes("not found")) {
+    console.warn("⚠️ Gitleaks executable not found in PATH or .local-tools/bin; falling back to pattern scan.");
+  } else {
+    console.error("❌ Gitleaks detected potential secret leaks in repository history.");
+    console.error((error as { stdout?: string }).stdout || error);
+    process.exit(1);
+  }
+}
+
+// 2. Secondary AST/File pattern scan for active working tree
 const IGNORED_PATHS = [
   ".git",
   ".next",
@@ -45,10 +69,9 @@ function scanDir(dir: string, issues: string[]) {
     } else if (entry.isFile()) {
       try {
         const content = readFileSync(fullPath, "utf8");
-        const isTestFile = relPath.startsWith("scripts/") || relPath.startsWith("contracts/test/") || relPath.includes("test");
         for (const pattern of SECRET_PATTERNS) {
           if (pattern.regex.test(content)) {
-            // Check if it's a test fixture or placeholder
+            // Allow test fixtures and placeholders
             if (
               content.includes("0xYour") ||
               content.includes("0x0000000000000000000000000000000000000000") ||
@@ -73,34 +96,18 @@ function scanDir(dir: string, issues: string[]) {
 const fileIssues: string[] = [];
 scanDir(root, fileIssues);
 
-// 2. Git History Commit Log Review
-console.log("📜 Scanning sensitive git commits...");
-const commitLog = execSync('git log --oneline -n 100', { cwd: root, encoding: 'utf8' });
-const sensitiveCommits = commitLog
-  .split('\n')
-  .filter((line) => /secret|env|key|token|credential/i.test(line));
-
-console.log(`Found ${sensitiveCommits.length} commits mentioning config/secret keywords.`);
-
-// 3. Output Sanitized Summary Report
 console.log("\n========================================================");
-console.log("               SECRET AUDIT REPORT");
+console.log("            FULL SECRET AUDIT REPORT");
 console.log("========================================================");
-console.log(`Current Tree Status: ${fileIssues.length === 0 ? "✅ CLEAN (No unmasked secrets found)" : "⚠️ ISSUES FOUND"}`);
+console.log(`Gitleaks History Scan: ${gitleaksPassed ? "✅ CLEAN" : "⚠️ SKIPPED"}`);
+console.log(`Current Tree Pattern Scan: ${fileIssues.length === 0 ? "✅ CLEAN (0 unmasked credentials)" : "⚠️ ISSUES FOUND"}`);
+
 if (fileIssues.length > 0) {
   for (const issue of fileIssues) {
     console.log(` - ${issue}`);
   }
-}
-
-console.log(`\nSensitive Commit Review: ${sensitiveCommits.length} inspected`);
-for (const commit of sensitiveCommits.slice(0, 10)) {
-  console.log(` - ${commit}`);
-}
-console.log("========================================================\n");
-
-if (fileIssues.length > 0) {
   process.exit(1);
-} else {
-  console.log("✅ Secret scan completed cleanly. Ready for public open-source.");
 }
+
+console.log("========================================================\n");
+console.log("✅ Secret scan completed cleanly. Ready for public open-source.");

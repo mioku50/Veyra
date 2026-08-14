@@ -12,7 +12,7 @@
  * 4. Fallback URL
  */
 export function getCanonicalAppUrl(
-  fallback: string = process.env.NEXT_PUBLIC_APP_URL || "https://veyra.app",
+  fallback: string = process.env.NEXT_PUBLIC_APP_URL || "https://agent-commerce-six.vercel.app",
 ): string {
   const envUrl =
     process.env.NEXT_PUBLIC_APP_URL ||

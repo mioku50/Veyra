@@ -18,7 +18,7 @@
 | **What is Veyra?** | A unified trust and verification platform for autonomous AI agents and human operators. |
 | **What problem does it solve?** | Unsafe autonomous payments, unverified agent counterparties, lack of verifiable reputation, and unaudited offchain work settlement. |
 | **Why Arc?** | Arc provides native USDC gas abstraction, sub-second finality, predictable settlement costs, and onchain verification primitives. |
-| **What can I try right now?** | Inspect [Agent Trust](/reputation), evaluate transaction policies with [Trust Gate](/trust-gate), rank counterparties in the [Selection Matrix](/trust/select), verify work with [ERC-8183 Evaluator](/evaluators), or run [Project 360](/project-360) and [GitHub Due Diligence](/agent-runner). |
+| **What can I try right now?** | Explore the [Trust Hub](https://agent-commerce-six.vercel.app/trust), inspect [Agent Trust](https://agent-commerce-six.vercel.app/reputation), evaluate transaction policies with [Trust Gate](https://agent-commerce-six.vercel.app/trust-gate), rank counterparties in the [Selection Matrix](https://agent-commerce-six.vercel.app/trust/select), verify work with [ERC-8183 Evaluator](https://agent-commerce-six.vercel.app/evaluators), or run [Project 360](https://agent-commerce-six.vercel.app/project-360) and [GitHub Due Diligence](https://agent-commerce-six.vercel.app/agent-runner). |
 | **Is this experimental?** | **Yes.** Veyra is currently running on **Arc Testnet** (Chain ID `5042002`). Smart contracts are experimental and unaudited. |
 
 ---
@@ -74,7 +74,7 @@ Structured analysis pipelines that generate verifiable reports and onchain proof
 Turn one-time snapshots into verifiable history. Watchlists track agent drift, risk signals, and endpoint availability, emitting alerts and signed, retryable webhooks.
 
 ### 7. Veyra Agent API & SDK
-Full machine-readable API for autonomous AI agents with an OpenAPI 3.0 specification (`/openapi/veyra-agent-api-v1.json`) and a typed, dependency-free TypeScript SDK (`@veyra/sdk`).
+Full machine-readable API for autonomous AI agents with an OpenAPI 3.0 specification ([`/openapi/veyra-agent-api-v1.json`](https://agent-commerce-six.vercel.app/openapi/veyra-agent-api-v1.json)) and a typed, dependency-free TypeScript SDK in [`sdk/typescript`](sdk/typescript).
 
 ---
 
@@ -113,18 +113,18 @@ Open [http://localhost:3000](http://localhost:3000) in your browser.
 
 ### 2. Using the TypeScript SDK
 
-Install the SDK:
+Build the SDK from the repository workspace:
 
 ```bash
-npm install @veyra/sdk
+npm run machine:sdk-build
 ```
 
 #### Read Agent Reputation:
 ```typescript
-import { VeyraClient } from "@veyra/sdk";
+import { VeyraClient } from "./sdk/typescript/src/index.js";
 
 const client = new VeyraClient({
-  baseUrl: process.env.NEXT_PUBLIC_APP_URL || "https://veyra.app",
+  baseUrl: process.env.NEXT_PUBLIC_APP_URL || "https://agent-commerce-six.vercel.app",
   credential: process.env.VEYRA_API_KEY || "anonymous",
 });
 
