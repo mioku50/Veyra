@@ -95,6 +95,15 @@ const quickTrustActions = [
     badge: "Trust Gate",
   },
   {
+    title: "Authorize & Execute",
+    tagline: "Trust-Routed Execution",
+    desc: "Execute selected actions within signed spending and trust limits.",
+    href: "/trust/mandates",
+    icon: Zap,
+    color: "from-amber-500/20 via-amber-500/5 to-transparent border-amber-500/30 text-amber-400 hover:border-amber-500/60",
+    badge: "Mandates",
+  },
+  {
     title: "Explore Evaluator",
     tagline: "Independent Verification",
     desc: "Verify ERC-8183 deliverables on Arc before funds settle.",
@@ -302,7 +311,7 @@ export default async function Home() {
           </Button>
         </div>
 
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
           {quickTrustActions.map((action) => {
             const Icon = action.icon;
             return (

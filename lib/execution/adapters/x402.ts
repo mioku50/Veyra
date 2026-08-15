@@ -84,7 +84,7 @@ export class X402ExecutionAdapter implements ExecutionRailAdapter {
         const evmSigner = toClientEvmSigner(payerAccount, publicClient);
 
         const client = new x402Client()
-          ._registerScheme(2, "eip155:5042002", new ExactEvmScheme(evmSigner));
+          .register("eip155:5042002", new ExactEvmScheme(evmSigner));
         const httpClient = new x402HTTPClient(client);
 
         // Step 1: Initial request to endpoint
@@ -242,7 +242,7 @@ export class X402ExecutionAdapter implements ExecutionRailAdapter {
             method: "POST",
             headers: {
               "Content-Type": "application/json",
-              "payment-signature": signatureHeader,
+              ...signatureHeader,
             },
             body: JSON.stringify(params.taskPayload?.body || { task: params.capability }),
           });

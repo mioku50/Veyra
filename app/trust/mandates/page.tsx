@@ -165,9 +165,9 @@ export default function ExecutionMandatesPage() {
     <div className="container max-w-6xl py-8 space-y-8">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b pb-6">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">Execution Mandates</h1>
+          <h1 className="text-3xl font-bold tracking-tight">Control what your agent may execute.</h1>
           <p className="text-muted-foreground mt-1">
-            Authorise AI agents to execute trust-routed tasks with cryptographically bounded spending caps and policy rules.
+            Set explicit capabilities, spending limits, trust requirements, execution rails and expiration.
           </p>
         </div>
         <div>

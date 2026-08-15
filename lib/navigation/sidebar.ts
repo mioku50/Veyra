@@ -28,6 +28,13 @@ export const publicSidebarNavigation = [
     ],
   },
   {
+    label: "Execute",
+    items: [
+      { href: "/trust/mandates", label: "Mandates", icon: "passport" },
+      { href: "/executions", label: "Executions", icon: "activity" },
+    ],
+  },
+  {
     label: "Analyze",
     items: [
       { href: "/agent-runner", label: "New Report", icon: "templates" },

@@ -277,6 +277,78 @@ export async function getExecutionAttempt(executionId: string): Promise<Executio
   };
 }
 
+export async function listExecutionAttempts(options?: {
+  mandateId?: string;
+  counterpartyWallet?: string;
+  limit?: number;
+}): Promise<ExecutionAttempt[]> {
+  const limit = options?.limit || 50;
+
+  if (isMemoryStoreAllowed()) {
+    let attempts = Array.from(memoryAttemptStore.values());
+    if (options?.mandateId) {
+      attempts = attempts.filter((a) => a.mandateId === options.mandateId);
+    }
+    if (options?.counterpartyWallet) {
+      const target = options.counterpartyWallet.toLowerCase();
+      attempts = attempts.filter((a) => a.counterpartyWallet.toLowerCase() === target);
+    }
+    return attempts
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+      .slice(0, limit);
+  }
+
+  const supabase = getByoaClient();
+  let query = supabase.from("execution_attempts").select("*").order("created_at", { ascending: false }).limit(limit);
+
+  if (options?.mandateId) {
+    query = query.eq("mandate_id", options.mandateId);
+  }
+  if (options?.counterpartyWallet) {
+    query = query.eq("counterparty_wallet", options.counterpartyWallet.toLowerCase());
+  }
+
+  const { data, error } = await query;
+
+  if (error) {
+    throw new Error(`Database error listing execution attempts: ${error.message}`);
+  }
+
+  if (!data) return [];
+
+  return data.map((d: any) => ({
+    executionId: d.execution_id,
+    mandateId: d.mandate_id,
+    selectionId: d.selection_id,
+    clearanceId: d.clearance_id,
+    rail: d.rail,
+    counterpartyAgentId: d.counterparty_agent_id,
+    counterpartyWallet: d.counterparty_wallet as `0x${string}`,
+    capability: d.capability,
+    requestedAmountUsdc: Number(d.requested_amount_usdc),
+    authorizedAmountUsdc: Number(d.authorized_amount_usdc),
+    actualSettledAmountUsdc: d.actual_settled_amount_usdc != null ? Number(d.actual_settled_amount_usdc) : null,
+    state: d.state,
+    failureCode: d.failure_code,
+    createTx: d.create_tx,
+    completeTx: d.complete_tx,
+    paymentTx: d.payment_tx,
+    evaluationId: d.evaluation_id,
+    selectionHash: d.selection_hash,
+    clearanceDigest: d.clearance_digest,
+    clearancePayload: d.clearance_payload || null,
+    evidenceHash: d.evidence_hash,
+    providerContentUri: d.provider_content_uri,
+    providerContentHash: d.provider_content_hash,
+    providerContentType: d.provider_content_type,
+    providerSubmittedAt: d.provider_submitted_at,
+    idempotencyKey: d.idempotency_key,
+    canonicalHash: d.canonical_hash,
+    createdAt: d.created_at,
+    updatedAt: d.updated_at,
+  }));
+}
+
 export async function getExecutionAttemptByIdempotency(
   mandateId: string,
   idempotencyKey: string
