@@ -53,7 +53,7 @@ export default function EvaluatorsLandingPage() {
         <section className="space-y-6">
           <div className="flex items-center justify-between">
             <h3 className="text-xl font-bold text-white flex items-center gap-2">
-              <Cpu className="w-5 h-5 text-sky-400" /> Featured Production Evaluator
+              <Cpu className="w-5 h-5 text-sky-400" /> Veyra Arc Testnet Evaluator
             </h3>
             <span className="flex items-center gap-1.5 text-xs font-medium text-emerald-400 bg-emerald-950/60 border border-emerald-800/60 px-3 py-1 rounded-full">
               <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />

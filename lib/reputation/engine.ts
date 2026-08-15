@@ -14,6 +14,7 @@ import {
   type ReputationSnapshot,
   type ReputationStatusLabel,
   type SanitizedEvidenceItem,
+  getTrustDisplayLabel,
 } from "./types.ts";
 
 export function calculateTemporalDecay(observedAt: string, now: Date = new Date()): number {
@@ -253,21 +254,8 @@ export function computeAgentReputation(
   else if (coverage >= 65) confidence = "High";
   else if (coverage >= 30) confidence = "Medium";
 
-  // Determine Status Label (requires at least 50% coverage for strong trust statuses)
-  let statusLabel: ReputationStatusLabel = "Limited Evidence";
-  if (coverage < 50) {
-    statusLabel = "Limited Evidence";
-  } else if (trustScore >= 90) {
-    statusLabel = "Highly Trusted";
-  } else if (trustScore >= 75) {
-    statusLabel = "Strong";
-  } else if (trustScore >= 55) {
-    statusLabel = "Mixed Signals";
-  } else if (trustScore >= 35) {
-    statusLabel = "High Attention";
-  } else {
-    statusLabel = "Elevated Risk";
-  }
+  // Determine Status Label via deterministic trust display logic
+  const statusLabel = getTrustDisplayLabel(trustScore, confidence, totalEvidenceCount);
 
   // Build top positive explanations
   if (identity.verifiedOnchain) topPositiveEvidence.push("ERC-8004 Identity verified onchain");

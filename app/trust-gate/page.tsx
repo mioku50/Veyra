@@ -121,17 +121,30 @@ export default function TrustGatePage() {
             </div>
           </div>
 
-          <button
-            type="submit"
-            disabled={loading || !agentId || !amountUsdc}
-            className="w-full bg-sky-500 hover:bg-sky-400 text-slate-950 font-semibold py-3 rounded-lg transition-colors disabled:opacity-50 flex justify-center items-center gap-2"
-          >
-            {loading ? (
-              <span className="animate-pulse">Evaluating...</span>
-            ) : (
-              <>Evaluate Trust <ArrowRight className="w-4 h-4" /></>
-            )}
-          </button>
+          <div className="flex flex-col sm:flex-row items-center gap-3 pt-2">
+            <button
+              type="button"
+              onClick={() => {
+                setAgentId("agent_github_auditor");
+                setAction("erc8183_job");
+                setAmountUsdc("1.50");
+              }}
+              className="w-full sm:w-auto px-4 py-3 rounded-lg border border-slate-700 bg-slate-800/80 hover:bg-slate-700 text-slate-300 hover:text-white text-sm font-medium transition-colors"
+            >
+              Try Example
+            </button>
+            <button
+              type="submit"
+              disabled={loading || !agentId || !amountUsdc}
+              className="w-full flex-1 bg-gradient-to-r from-sky-500 to-blue-600 hover:from-sky-400 hover:to-blue-500 text-white font-semibold py-3 rounded-lg shadow-lg shadow-sky-500/20 transition-all disabled:opacity-50 flex justify-center items-center gap-2"
+            >
+              {loading ? (
+                <span className="animate-pulse">Evaluating...</span>
+              ) : (
+                <>Evaluate Trust <ArrowRight className="w-4 h-4" /></>
+              )}
+            </button>
+          </div>
         </form>
 
         {error && (

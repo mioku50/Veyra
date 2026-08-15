@@ -358,7 +358,7 @@ export default async function Home() {
                   <Badge variant="secondary" className="border-primary/30 bg-primary/10 text-primary font-semibold">
                     Try Veyra in 30 Seconds
                   </Badge>
-                  <span className="text-xs text-muted-foreground">x402 Verified</span>
+                  <span className="text-xs text-muted-foreground">x402 Enabled</span>
                 </div>
                 <h2 className="text-2xl font-bold tracking-tight sm:text-3xl text-foreground">
                   GitHub Project Due Diligence

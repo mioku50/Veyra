@@ -396,6 +396,20 @@ async function runNegativeTests() {
     console.log("✅ Fake values and non-deterministic Math.random removed from executor.");
   }
 
+  // 18. Deterministic trust display labeling tests
+  {
+    const { getTrustDisplayLabel } = await import("../lib/reputation/types.ts");
+    assert.strictEqual(getTrustDisplayLabel(95, "Medium", 5), "High Score");
+    assert.strictEqual(getTrustDisplayLabel(95, "High", 5), "Highly Trusted");
+    assert.strictEqual(getTrustDisplayLabel(95, "Low", 1), "High Score · Limited Evidence");
+    assert.notStrictEqual(getTrustDisplayLabel(95, "Medium", 5), "Highly Trusted");
+    assert.strictEqual(getTrustDisplayLabel(75, "High", 3), "Trusted");
+    assert.strictEqual(getTrustDisplayLabel(60, "Medium", 2), "Strong");
+    assert.strictEqual(getTrustDisplayLabel(40, "Low", 1), "Mixed Signals");
+    assert.strictEqual(getTrustDisplayLabel(20, "Low", 0), "Elevated Risk");
+    console.log("✅ Deterministic Trust Display Labels verified.");
+  }
+
   console.log("\n🎉 ALL P6.1 Negative & Adversarial Security Tests Passed Successfully!");
 }
 
