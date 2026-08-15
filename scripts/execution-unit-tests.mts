@@ -200,6 +200,23 @@ async function runUnitTests() {
     console.log("✅ x402 V2 official HTTP header encoding and decoding verified.");
   }
 
+  // 6. Deterministic Snapshot IDs
+  {
+    const { createReputationSnapshot } = await import("../lib/reputation/engine.ts");
+    const agent = { agentId: "test_agent_1", chainId: 5042002 as const, owner: "0x1111111111111111111111111111111111111111", identityRegistry: "0x", verifiedOnchain: true };
+    const explanation = { trustScore: 100, confidence: "High" as any, coverage: 100, statusLabel: "Strong" as any, dimensions: {} as any, topPositiveEvidence: [], riskSignals: [] };
+    const evidence = [{ canonicalHash: "0x1", economicValueUsdc: 0, tier: 1 }] as any[];
+    const newEvidence = { canonicalHash: "0x2", economicValueUsdc: 0, tier: 1 } as any;
+
+    const snap1 = createReputationSnapshot(agent, evidence, explanation, undefined, new Date("2026-01-01"));
+    const snap2 = createReputationSnapshot(agent, evidence, explanation, undefined, new Date("2026-01-01"));
+    assert.strictEqual(snap1.snapshotId, snap2.snapshotId, "Same evidence must produce same snapshotId");
+
+    const snap3 = createReputationSnapshot(agent, [...evidence, newEvidence], explanation, undefined, new Date("2026-01-01"));
+    assert.notStrictEqual(snap1.snapshotId, snap3.snapshotId, "New evidence must produce different snapshotId");
+    console.log("✅ Deterministic Snapshot IDs verified.");
+  }
+
   console.log("\n🎉 ALL P6.1 Execution Module Unit Tests Passed Successfully!");
 }
 

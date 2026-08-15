@@ -4,6 +4,8 @@
  */
 
 import { randomUUID } from "node:crypto";
+import { createPublicClient, http } from "viem";
+import { arcTestnet } from "viem/chains";
 import { getRailAdapter } from "./adapters/index.ts";
 import { computeCanonicalExecutionHash } from "./canonical.ts";
 import { getCurrentDailyPeriod } from "./budget.ts";
@@ -421,19 +423,43 @@ export async function executePreparedIntent(params: {
       computed
     );
 
-    // Assert that the snapshot is genuinely new
-    if (previousSnapshot && newSnapshot.snapshotId === previousSnapshot.snapshotId) {
-      newSnapshot.snapshotId = `snap_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-    }
+    // If no new evidence changes the snapshot, do not mutate ID.
 
     // Publish to AgentCommerceProofRegistry on Arc Testnet
     const proofResult = await publishReputationSnapshotProofToArc(
       newSnapshot,
       attempt.counterpartyWallet,
       undefined,
-      railResult.actualSettledAmountUsdc > 0 ? railResult.actualSettledAmountUsdc : 0.01
+      railResult.actualSettledAmountUsdc // Use real value, even if 0
     );
     if (proofResult && proofResult.verifiedOnchain && proofResult.transactionHash) {
+      const publicClient = createPublicClient({ chain: arcTestnet, transport: http() });
+      
+      const proofReceipt = await publicClient.waitForTransactionReceipt({ hash: proofResult.transactionHash as `0x${string}` });
+      if (proofReceipt.status !== "success") {
+        throw new Error("ProofRegistry tx failed");
+      }
+
+      const PROOF_REGISTRY_ADDRESS = (process.env.NEXT_PUBLIC_VEYRA_PROOF_REGISTRY_ADDRESS || "0x") as `0x${string}`;
+      const proofRegistryAbi = [{
+        type: 'function',
+        name: 'isRegistered',
+        inputs: [{ name: 'hash', type: 'bytes32' }],
+        outputs: [{ type: 'bool' }],
+        stateMutability: 'view'
+      }] as const;
+
+      const isRegistered = await publicClient.readContract({
+        address: PROOF_REGISTRY_ADDRESS,
+        abi: proofRegistryAbi,
+        functionName: "isRegistered",
+        args: [newSnapshot.canonicalHash as `0x${string}`],
+      });
+
+      if (isRegistered !== true) {
+        throw new Error("Proof not registered after tx");
+      }
+
       arcProofTx = proofResult.transactionHash;
       proofVerifiedOnchain = true;
       newSnapshot.arcProofTx = arcProofTx;

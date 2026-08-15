@@ -313,7 +313,19 @@ export function createReputationSnapshot(
   };
 
   const canonicalHash = keccak256(stringToBytes(JSON.stringify(snapshotPayload)));
-  const snapshotId = `vrs_${canonicalHash.substring(2, 18)}`;
+
+  // Deterministic snapshot ID from canonical inputs
+  const sortedEvidenceHashes = [...evidenceList].map(e => e.canonicalHash).sort();
+  const snapshotIdHash = keccak256(
+    stringToBytes(
+      JSON.stringify({
+        agentId: identity.agentId,
+        evidenceHashes: sortedEvidenceHashes,
+        computedAt: now.toISOString(),
+      })
+    )
+  );
+  const snapshotId = `vrs_${snapshotIdHash.substring(2, 18)}`;
 
   const economicEvidenceCount = evidenceList.filter((e) => (e.economicValueUsdc || 0) > 0 || e.tier >= 3).length;
 
