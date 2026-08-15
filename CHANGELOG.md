@@ -5,6 +5,18 @@ All notable changes to the Veyra platform will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.0-beta.8] - 2026-08-15
+
+### Security, Cryptographic Authorization Binding & Exact Settlement
+- **P6.1.3d x402 Authorization-Bound Settlement Resolution**:
+  - **Complete x402 Context Enforcement**: `RealArcSettlementResolver` strictly requires complete canonical context (`payerWallet`, `payTo`, `asset`, `authorizedAmountAtomic`, `authorizationNonce`, `authorizationValidBefore`). Missing context leaves execution safely in `SETTLEMENT_UNVERIFIED`.
+  - **Exact Integer Atomic Amount Match**: Replaced floating-point comparisons (`amountUsdc <= maxAllowedUsdc`) with exact base unit matching (`transfer.value === expectedAmountAtomic`, e.g. 10000 = 0.01 USDC).
+  - **EIP-3009 Authorization Binding**: Verified transaction corresponds to the exact stored authorization via decoded EIP-3009 calldata (`receiveWithAuthorization` / `transferWithAuthorization`) and/or `AuthorizationUsed` USDC contract event logs matching `authorizer`, `recipient`, `nonce`, and `validBefore`.
+  - **Protected Reverted Transactions**: Arbitrary reverted transaction receipts no longer release budget. A revert proves failure only if the reverted transaction is cryptographically bound to the execution's authorization.
+  - **Anti-Cheat V6**: Added static analysis regression checks preventing loose amount matching, missing payer fallbacks, and unbound reverted transaction acceptance.
+
+---
+
 ## [0.2.0-beta.7] - 2026-08-15
 
 ### Security, Settlement Certainty & Decoupled Resolver

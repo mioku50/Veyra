@@ -279,9 +279,20 @@ async function runProductTests() {
   // 14. Zero arbitrary time-based failure release
   assert.ok(!executorSource.match(/createdAt.*15\s*\*\s*60/), "Executor must not release budget purely based on 15m expiration");
 
-  console.log("✅ All Anti-Cheat V5 static analysis regression checks passed.");
+  // 15. RealArcSettlementResolver must strictly require payer matching
+  const resolverSource = readFileSync("lib/execution/settlement-resolver.ts", "utf8");
+  assert.ok(!resolverSource.includes("!expectedPayer"), "Settlement resolver must not allow missing payer matching fallback");
 
-  console.log("\n🎉 ALL P6.1 Execution Product Acceptance & Anti-Cheat V5 Tests Passed Successfully!");
+  // 16. RealArcSettlementResolver must use exact integer atomic comparison, not floating amount <= authorized
+  assert.ok(!resolverSource.includes("amountUsdc <= maxAllowedUsdc"), "Settlement resolver must not use loose float comparison");
+  assert.ok(resolverSource.includes("expectedAmountAtomic"), "Settlement resolver must use exact integer atomic amount comparison");
+
+  // 17. Reverted transaction must be authorization-bound to prove failure
+  assert.ok(resolverSource.includes("isAuthorizationBound"), "Settlement resolver must bind transaction to authorization before confirming revert");
+
+  console.log("✅ All Anti-Cheat V6 static analysis regression checks passed.");
+
+  console.log("\n🎉 ALL P6.1 Execution Product Acceptance & Anti-Cheat V6 Tests Passed Successfully!");
 }
 
 runProductTests().catch((err) => {

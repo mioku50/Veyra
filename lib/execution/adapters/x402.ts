@@ -237,15 +237,20 @@ export class X402ExecutionAdapter implements ExecutionRailAdapter {
           const paymentPayload = await httpClient.createPaymentPayload(paymentRequired);
           const signatureHeader = httpClient.encodePaymentSignatureHeader(paymentPayload);
 
+          const requiredAmountRaw = (selectedOption.maxAmountRequired ?? selectedOption.amount ?? "0").toString();
+          const authPayload = (paymentPayload as any)?.payload?.authorization;
+          const authSignature = (paymentPayload as any)?.payload?.signature;
+
           const x402Context = {
             payerWallet: payerAccount.address,
             payTo: requiredRecipient as `0x${string}`,
             asset: (requiredAsset || ARC_USDC) as `0x${string}`,
             network: selectedOption.network,
             authorizedAmountUsdc: requiredAmountUsdc,
-            authorizationNonce: (paymentPayload as any)?.payload?.authorization?.nonce || null,
-            authorizationSignature: (paymentPayload as any)?.payload?.signature || null,
-            authorizationValidBefore: (paymentPayload as any)?.payload?.authorization?.validBefore ? Number((paymentPayload as any).payload.authorization.validBefore) : null,
+            authorizedAmountAtomic: requiredAmountRaw,
+            authorizationNonce: authPayload?.nonce || null,
+            authorizationSignature: authSignature || null,
+            authorizationValidBefore: authPayload?.validBefore ? Number(authPayload.validBefore) : null,
             resource: endpointUrl,
             paymentRequirementsHash: paymentRequiredHeader ? keccak256(stringToBytes(paymentRequiredHeader)) : null,
             facilitatorReference: null,

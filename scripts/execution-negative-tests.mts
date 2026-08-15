@@ -538,7 +538,20 @@ async function runNegativeTests() {
     const usageIdempotent = await getExecutionMandateUsage(testMandateId, dailyPeriod.periodStart);
     assert.strictEqual(usageIdempotent.usedUsdc, 5.0, "Duplicate reconciliation must not double-settle budget");
 
-    // Test 6: Expired authorization alone does NOT release budget
+    // Test 6: RealArcSettlementResolver fails unresolved on missing/incomplete x402Context
+    const realResolver = new RealArcSettlementResolver();
+    const incompleteContextAttempt = await realResolver.resolve({
+      attempt: {
+        ...unverifiedAttempt1 as any,
+        x402Context: {
+          payerWallet: "0x1111111111111111111111111111111111111111",
+          // missing authorizationNonce, authorizationValidBefore, asset
+        } as any,
+      },
+    });
+    assert.strictEqual(incompleteContextAttempt.resolved, false, "RealArcSettlementResolver must fail unresolved if x402Context is incomplete");
+
+    // Test 7: Expired authorization alone does NOT release budget
     const unverifiedExecId2 = "vexec_unverified_expire_test";
     await reserveBudgetAtomic(testMandateId, 3.0, dailyPeriod);
     await saveExecutionAttempt({
@@ -562,6 +575,8 @@ async function runNegativeTests() {
         asset: "0x3600000000000000000000000000000000000000",
         network: "eip155:5042002",
         authorizedAmountUsdc: 3.0,
+        authorizedAmountAtomic: "3000000",
+        authorizationNonce: "0x1234567890123456789012345678901234567890123456789012345678901234",
         authorizationValidBefore: Math.floor(Date.now() / 1000) - 300, // expired 5 minutes ago
         requestTimestamp: new Date(Date.now() - 3600000).toISOString(),
       },
@@ -580,8 +595,20 @@ async function runNegativeTests() {
     const usageExpired = await getExecutionMandateUsage(testMandateId, dailyPeriod.periodStart);
     assert.strictEqual(usageExpired.reservedUsdc, 3.0, "Budget must stay reserved when settlement is unverified");
 
-    // Test 7: Canonical failure (reverted tx or facilitator confirmed failed) -> FAILED + release reservation
-    const mockFailedResolver = new MockSettlementResolver(() => ({
+    // Test 8: Unrelated reverted tx does NOT fail execution or release budget
+    const mockUnrelatedRevertResolver = new MockSettlementResolver(() => ({
+      resolved: false,
+      settled: false,
+      failed: false,
+    }));
+    const unrelatedRevertResult = await reconcileExecutionSettlement(unverifiedExecId2, {
+      resolver: mockUnrelatedRevertResolver,
+      hint: "0x" + "c".repeat(64),
+    });
+    assert.strictEqual(unrelatedRevertResult.status, "SETTLEMENT_UNVERIFIED", "Unrelated reverted tx must NOT release budget");
+
+    // Test 9: Authorization-bound reverted tx -> FAILED + release reservation
+    const mockBoundFailedResolver = new MockSettlementResolver(() => ({
       resolved: true,
       settled: false,
       failed: true,
@@ -589,7 +616,7 @@ async function runNegativeTests() {
       txHash: "0x" + "b".repeat(64),
     }));
     const reconcileFailResult = await reconcileExecutionSettlement(unverifiedExecId2, {
-      resolver: mockFailedResolver,
+      resolver: mockBoundFailedResolver,
     });
 
     assert.strictEqual(reconcileFailResult.status, "FAILED");
@@ -599,7 +626,7 @@ async function runNegativeTests() {
     assert.strictEqual(usageFinal.reservedUsdc, 0, "Reservation released only upon verified canonical negative evidence");
     assert.strictEqual(usageFinal.usedUsdc, 5.0, "Used budget unchanged from first settled execution");
 
-    console.log("✅ Canonical SETTLEMENT_UNVERIFIED, MockSettlementResolver, and Zero Synthetic Reconciliation verified.");
+    console.log("✅ Canonical SETTLEMENT_UNVERIFIED, MockSettlementResolver, and Authorization-Bound Settlement verified.");
   }
 
   console.log("\n🎉 ALL P6.1 Negative & Adversarial Security Tests Passed Successfully!");

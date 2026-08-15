@@ -97,6 +97,7 @@ export interface X402ReconciliationContext {
   asset: `0x${string}`;
   network: string; // e.g. "eip155:5042002"
   authorizedAmountUsdc: number;
+  authorizedAmountAtomic?: string | number | null;
   authorizationNonce?: string | null;
   authorizationSignature?: `0x${string}` | null;
   authorizationValidBefore?: number | null;

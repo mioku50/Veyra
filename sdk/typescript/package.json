@@ -1,6 +1,6 @@
 {
   "name": "@veyra/sdk",
-  "version": "0.2.0-beta.7",
+  "version": "0.2.0-beta.8",
   "description": "Typed Veyra Agent API client for verified agentic commerce and trust workflows on Arc.",
   "type": "module",
   "license": "Apache-2.0",
