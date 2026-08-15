@@ -10,12 +10,19 @@
  * 5. Disallowed rail rejection
  * 6. Sybil risk detection rejection
  * 7. Illegal state transition rejection
+ * 8. Autopilot default-off security check
+ * 9. Cross-wallet mandate access rejection (404)
+ * 10. Sanitized mandate model verification (signature omitted)
+ * 11. Mandatory clearance requirement in ERC-8183 adapter
+ * 12. Authentication replay detection (single-use nonce)
  */
 
 import assert from "node:assert/strict";
 import { checkMandateEligibility } from "../lib/execution/mandate.ts";
 import { validateStateTransition, InvalidStateTransitionError } from "../lib/execution/state-machine.ts";
 import type { ExecutionMandate } from "../lib/execution/types.ts";
+import { Erc8183ExecutionAdapter } from "../lib/execution/adapters/erc8183.ts";
+import { authenticateExecutionCaller } from "../lib/execution/auth.ts";
 
 async function runNegativeTests() {
   console.log("=== Starting P6.1 Execution Negative & Adversarial Tests ===\n");
@@ -198,7 +205,7 @@ async function runNegativeTests() {
     const { ExecutionError } = await import("../lib/execution/executor.ts");
     const caller = { wallet: "0x2222222222222222222222222222222222222222" as const, source: "test_auth" as const };
     assert.throws(
-      () => assertMandateAccess(caller, "0x1111111111111111111111111111111111111111"),
+      () => assertMandateAccess(caller, validMandate),
       (err: any) => err instanceof ExecutionError && err.status === 404,
       "Cross-wallet access must throw 404 MANDATE_NOT_FOUND"
     );
@@ -212,6 +219,61 @@ async function runNegativeTests() {
     assert.equal((sanitized as any).signature, undefined, "Sanitized mandate must not expose signature");
     assert.equal((sanitized as any).nonce, undefined, "Sanitized mandate must not expose nonce");
     console.log("✅ Sanitized mandate model verified (signature omitted).");
+  }
+
+  // 12. Mandatory clearance requirement in ERC-8183 adapter
+  {
+    const adapter = new Erc8183ExecutionAdapter();
+    const result = await adapter.execute({
+      executionId: "vexec_no_clearance",
+      selectionId: "vsel_123",
+      selectionHash: "0x123",
+      counterpartyAgentId: "agent_alpha",
+      counterpartyWallet: "0x1111111111111111111111111111111111111111",
+      capability: "github_due_diligence",
+      amountUsdc: 1.0,
+      clearancePayload: null, // Missing clearance
+    });
+    assert.equal(result.success, false);
+    assert.equal(result.failureCode, "CLEARANCE_REQUIRED");
+    assert.equal(result.economicCommitted, false);
+    assert.equal(result.actualSettledAmountUsdc, 0);
+    console.log("✅ Execution without signed clearance strictly rejected with CLEARANCE_REQUIRED.");
+  }
+
+  // 13. Authentication replay detection
+  {
+    const now = Date.now();
+    const mockRequest1 = new Request("http://localhost:3000/api/execution/v1/mandates", {
+      headers: {
+        "x-wallet-address": "0x1111111111111111111111111111111111111111",
+        "x-wallet-signature": "0x123",
+        "x-wallet-timestamp": String(now),
+        "x-wallet-nonce": "nonce_replay_test_1",
+      },
+    });
+
+    const mockRequest2 = new Request("http://localhost:3000/api/execution/v1/mandates", {
+      headers: {
+        "x-wallet-address": "0x1111111111111111111111111111111111111111",
+        "x-wallet-signature": "0x123",
+        "x-wallet-timestamp": String(now),
+        "x-wallet-nonce": "nonce_replay_test_1", // Replay same nonce
+      },
+    });
+
+    // First call consumes the nonce (may fail signature check if invalid, but records nonce)
+    await authenticateExecutionCaller(mockRequest1).catch(() => {});
+
+    // Second call with same nonce must be detected as replay
+    await assert.rejects(
+      async () => {
+        await authenticateExecutionCaller(mockRequest2);
+      },
+      (err: any) => err.code === "AUTH_REPLAY_DETECTED",
+      "Replayed authentication nonce must be rejected with AUTH_REPLAY_DETECTED"
+    );
+    console.log("✅ Authentication challenge replay strictly rejected.");
   }
 
   console.log("\n🎉 ALL P6.1 Negative & Adversarial Security Tests Passed Successfully!");

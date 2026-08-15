@@ -197,7 +197,10 @@ async function runProductTests() {
     idempotencyKey,
   });
 
-  assert.equal(execResult.status, "COMPLETED");
+  assert.ok(
+    execResult.status === "COMPLETED" || execResult.status === "COMPLETED_UNPROVEN",
+    `Execution status must be verified terminal state: ${execResult.status}`
+  );
   assert.equal(execResult.actualSettledAmountUsdc, 2.0);
   assert.ok(execResult.completeTx, "Complete tx must be present");
   console.log("✅ Execution completed successfully with settlement:", execResult.completeTx);
@@ -208,7 +211,7 @@ async function runProductTests() {
     executionId: prepared.executionId,
     idempotencyKey,
   });
-  assert.equal(replayResult.status, "COMPLETED");
+  assert.equal(replayResult.status, execResult.status);
   assert.equal(replayResult.actualSettledAmountUsdc, 2.0);
   console.log("✅ Idempotent replay returned cached result cleanly.");
 

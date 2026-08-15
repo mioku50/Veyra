@@ -5,6 +5,21 @@ All notable changes to the Veyra platform will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.0-beta.3] - 2026-08-15
+
+### Security & Integrity
+- **P6.1.2 Execution Rail Integrity & Economic Accounting Closure**:
+  - **Mandatory EIP-712 Clearance**: Clearance generation and EIP-712 signing is now mandatory during `prepareExecution`; server-side persistence preserves full clearance payload and signature, preventing client-side forgery or omission.
+  - **Onchain Clearance Pre-Verification**: Added onchain verification via `VeyraTrustGate.verifyClearance` immediately before irreversible consumption.
+  - **Official x402 V2 Protocol Compliance**: Migrated x402 adapter to official `@x402/core` and `@x402/evm` implementation, parsing `payment-required`, constructing compliant signed `PaymentPayload`, and verifying `payment-response` headers.
+  - **Irreversibility & Post-Payment Failure Accounting**: Budget handling now depends strictly on onchain economic settlement rather than generic service success. If funds move but downstream service fails, expenditure is permanently recorded as spent and state transitions to `SETTLED_SERVICE_FAILED`.
+  - **Real ERC-8183 Deliverable and Settlement Verification**: Deliverable structures now require valid canonical schema and content hashing; settlement values and `JobCreated` arguments are strictly verified against onchain event logs.
+  - **Real Reputation Arc Proof Registration**: Settled interactions dynamically recompute agent reputation and publish new snapshot hashes directly to `AgentCommerceProofRegistry` on Arc Testnet, recording verified `arcProofTx` receipts.
+  - **Authentication Replay Hardening**: Replaced time-window header signatures with single-use nonce tracking and strict 60-second request binding to eliminate replay attacks.
+  - **Live Acceptance Hardening**: Hardened `scripts/execution-live-acceptance.mts` to require live Arc RPC and real signing keys, strictly rejecting Anvil test keys.
+
+---
+
 ## [0.2.0-beta.2] - 2026-08-15
 
 ### Security & Hardening

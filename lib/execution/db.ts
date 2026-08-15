@@ -188,7 +188,7 @@ export async function saveExecutionAttempt(attempt: ExecutionAttempt): Promise<v
   }
 
   const supabase = getByoaClient();
-  const { error } = await supabase.from("execution_attempts").insert({
+  const insertPayload: any = {
     execution_id: attempt.executionId,
     mandate_id: attempt.mandateId || null,
     selection_id: attempt.selectionId,
@@ -213,7 +213,9 @@ export async function saveExecutionAttempt(attempt: ExecutionAttempt): Promise<v
     canonical_hash: attempt.canonicalHash,
     created_at: attempt.createdAt,
     updated_at: attempt.updatedAt,
-  });
+  };
+
+  const { error } = await supabase.from("execution_attempts").insert(insertPayload);
 
   if (error) {
     throw new Error(`Database error saving execution attempt: ${error.message}`);
@@ -258,6 +260,7 @@ export async function getExecutionAttempt(executionId: string): Promise<Executio
     evaluationId: data.evaluation_id,
     selectionHash: data.selection_hash,
     clearanceDigest: data.clearance_digest,
+    clearancePayload: data.clearance_payload || null,
     evidenceHash: data.evidence_hash,
     idempotencyKey: data.idempotency_key,
     canonicalHash: data.canonical_hash,

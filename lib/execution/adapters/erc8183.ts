@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { createWalletClient, http, parseEventLogs, parseUnits } from "viem";
+import { createWalletClient, getAddress, http, parseEventLogs, parseUnits } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { arcTestnet } from "viem/chains";
 import { getArcPublicClient } from "../../erc8183/client.ts";
@@ -37,6 +37,36 @@ const VEYRA_TRUST_GATE_ABI = [
       { name: "signature", type: "bytes" },
     ],
     outputs: [],
+  },
+  {
+    name: "verifyClearance",
+    type: "function",
+    stateMutability: "view",
+    inputs: [
+      {
+        name: "clearance",
+        type: "tuple",
+        components: [
+          { name: "decisionId", type: "bytes32" },
+          { name: "subject", type: "address" },
+          { name: "executor", type: "address" },
+          { name: "counterparty", type: "address" },
+          { name: "actionHash", type: "bytes32" },
+          { name: "requestedAmount", type: "uint256" },
+          { name: "maxAmount", type: "uint256" },
+          { name: "snapshotHash", type: "bytes32" },
+          { name: "policyVersion", type: "bytes32" },
+          { name: "evaluator", type: "address" },
+          { name: "issuedAt", type: "uint64" },
+          { name: "expiresAt", type: "uint64" },
+        ],
+      },
+      { name: "signature", type: "bytes" },
+    ],
+    outputs: [
+      { name: "valid", type: "bool" },
+      { name: "signer", type: "address" },
+    ],
   },
   {
     name: "consumedClearances",
@@ -104,14 +134,32 @@ export class Erc8183ExecutionAdapter implements ExecutionRailAdapter {
   async execute(params: RailExecutionParams): Promise<NormalizedRailResult> {
     const isTestMode = process.env.NODE_ENV === "test" && process.env.EXECUTION_ALLOW_TEST_FALLBACK === "true";
 
-    // Validate recipient
+    // 1. Mandatory Clearance Enforcement
+    if (!params.clearancePayload?.message || !params.clearancePayload?.signature) {
+      return {
+        executionId: params.executionId,
+        rail: "erc8183",
+        success: false,
+        failureCode: "CLEARANCE_REQUIRED",
+        economicCommitted: false,
+        economicSettled: false,
+        actualSettledAmountUsdc: 0,
+        serviceSucceeded: false,
+        evidenceType: "erc8183_job_rejected",
+      };
+    }
+
+    // 2. Validate counterparty wallet
     if (!params.counterpartyWallet || params.counterpartyWallet === "0x0000000000000000000000000000000000000000") {
       return {
         executionId: params.executionId,
         rail: "erc8183",
         success: false,
         failureCode: "INVALID_COUNTERPARTY_WALLET",
+        economicCommitted: false,
+        economicSettled: false,
         actualSettledAmountUsdc: 0,
+        serviceSucceeded: false,
         evidenceType: "erc8183_job_rejected",
       };
     }
@@ -138,7 +186,10 @@ export class Erc8183ExecutionAdapter implements ExecutionRailAdapter {
         executionId: params.executionId,
         rail: "erc8183",
         success: true,
+        economicCommitted: true,
+        economicSettled: true,
         actualSettledAmountUsdc: params.amountUsdc,
+        serviceSucceeded: true,
         externalReference: mockJobId,
         createTx: mockTx,
         completeTx: mockTx,
@@ -165,28 +216,55 @@ export class Erc8183ExecutionAdapter implements ExecutionRailAdapter {
       });
 
       try {
-        // Step 1: Real Clearance Consumption on VeyraTrustGate
-        if (params.taskPayload?.clearance && params.taskPayload?.clearanceSignature) {
-          const consumeTxHash = await walletClient.writeContract({
-            address: trustGateAddress,
-            abi: VEYRA_TRUST_GATE_ABI,
-            functionName: "consumeClearance",
-            args: [params.taskPayload.clearance, params.taskPayload.clearanceSignature],
-          });
-          const consumeReceipt = await publicClient.waitForTransactionReceipt({ hash: consumeTxHash });
-          if (consumeReceipt.status !== "success") {
-            return {
-              executionId: params.executionId,
-              rail: "erc8183",
-              success: false,
-              failureCode: "CLEARANCE_CONSUMPTION_REVERTED",
-              actualSettledAmountUsdc: 0,
-              evidenceType: "erc8183_job_rejected",
-            };
-          }
+        const clearanceMsg = params.clearancePayload.message;
+        const clearanceSig = params.clearancePayload.signature;
+
+        // Step 1: Pre-verify clearance onchain before consumption
+        const [isClearanceValidOnchain] = await publicClient.readContract({
+          address: trustGateAddress,
+          abi: VEYRA_TRUST_GATE_ABI,
+          functionName: "verifyClearance",
+          args: [clearanceMsg, clearanceSig],
+        });
+
+        if (!isClearanceValidOnchain) {
+          return {
+            executionId: params.executionId,
+            rail: "erc8183",
+            success: false,
+            failureCode: "INVALID_CLEARANCE_ONCHAIN",
+            economicCommitted: false,
+            economicSettled: false,
+            actualSettledAmountUsdc: 0,
+            serviceSucceeded: false,
+            evidenceType: "erc8183_job_rejected",
+          };
         }
 
-        // Step 2: Create Real Onchain Job
+        // Step 2: Real Clearance Consumption on VeyraTrustGate
+        const consumeTxHash = await walletClient.writeContract({
+          address: trustGateAddress,
+          abi: VEYRA_TRUST_GATE_ABI,
+          functionName: "consumeClearance",
+          args: [clearanceMsg, clearanceSig],
+        });
+
+        const consumeReceipt = await publicClient.waitForTransactionReceipt({ hash: consumeTxHash });
+        if (consumeReceipt.status !== "success") {
+          return {
+            executionId: params.executionId,
+            rail: "erc8183",
+            success: false,
+            failureCode: "CLEARANCE_CONSUMPTION_REVERTED",
+            economicCommitted: false,
+            economicSettled: false,
+            actualSettledAmountUsdc: 0,
+            serviceSucceeded: false,
+            evidenceType: "erc8183_job_rejected",
+          };
+        }
+
+        // Step 3: Create Real Onchain Job
         const budgetAtomic = parseUnits(params.amountUsdc.toFixed(6), 6);
         const expiredAt = BigInt(Math.floor(Date.now() / 1000) + 3600); // 1 hour
 
@@ -210,12 +288,15 @@ export class Erc8183ExecutionAdapter implements ExecutionRailAdapter {
             rail: "erc8183",
             success: false,
             failureCode: "ERC8183_CREATE_JOB_REVERTED",
+            economicCommitted: false,
+            economicSettled: false,
             actualSettledAmountUsdc: 0,
+            serviceSucceeded: false,
             evidenceType: "erc8183_job_rejected",
           };
         }
 
-        // Extract real numeric jobId from JobCreated event log
+        // Extract and verify real numeric jobId from JobCreated event log
         const logs = parseEventLogs({
           abi: ERC8183_COMMERCE_ABI,
           eventName: "JobCreated",
@@ -229,12 +310,34 @@ export class Erc8183ExecutionAdapter implements ExecutionRailAdapter {
             rail: "erc8183",
             success: false,
             failureCode: "ERC8183_JOB_ID_NOT_FOUND",
+            economicCommitted: true,
+            economicSettled: false,
             actualSettledAmountUsdc: 0,
+            serviceSucceeded: false,
             evidenceType: "erc8183_job_rejected",
           };
         }
 
-        // Step 3: Submit Deliverable onchain
+        // Verify event parameters match immutable execution intent
+        const jobEvent = logs[0].args;
+        if (
+          getAddress(jobEvent.provider) !== getAddress(params.counterpartyWallet) ||
+          getAddress(jobEvent.evaluator) !== getAddress(evaluatorContract)
+        ) {
+          return {
+            executionId: params.executionId,
+            rail: "erc8183",
+            success: false,
+            failureCode: "ERC8183_EVENT_MISMATCH",
+            economicCommitted: true,
+            economicSettled: false,
+            actualSettledAmountUsdc: 0,
+            serviceSucceeded: false,
+            evidenceType: "erc8183_job_rejected",
+          };
+        }
+
+        // Step 4: Submit Deliverable onchain
         const deliverable = {
           version: 1 as const,
           contentUri: `ipfs://bafkreib${params.executionId.slice(0, 20)}`,
@@ -252,7 +355,7 @@ export class Erc8183ExecutionAdapter implements ExecutionRailAdapter {
         });
         await publicClient.waitForTransactionReceipt({ hash: submitTxHash });
 
-        // Step 4: Execute Offchain Independent Evaluation & Onchain Verdict Settlement
+        // Step 5: Execute Offchain Independent Evaluation & Onchain Verdict Settlement
         const evalResult = await executeOffchainJobEvaluation({
           chainId: 5042002,
           agenticCommerce,
@@ -272,7 +375,10 @@ export class Erc8183ExecutionAdapter implements ExecutionRailAdapter {
           rail: "erc8183",
           success,
           failureCode: success ? null : evalResult.failureCategory || "EVALUATION_REJECTED",
+          economicCommitted: true,
+          economicSettled: success,
           actualSettledAmountUsdc: actualSettled,
+          serviceSucceeded: success,
           externalReference: realJobId,
           createTx: createTxHash,
           completeTx: evalResult.settlementTxHash || null,
@@ -287,7 +393,10 @@ export class Erc8183ExecutionAdapter implements ExecutionRailAdapter {
           rail: "erc8183",
           success: false,
           failureCode: `ERC8183_LIVE_EXECUTION_ERROR: ${err.message}`,
+          economicCommitted: false,
+          economicSettled: false,
           actualSettledAmountUsdc: 0,
+          serviceSucceeded: false,
           evidenceType: "erc8183_job_rejected",
         };
       }
@@ -299,7 +408,10 @@ export class Erc8183ExecutionAdapter implements ExecutionRailAdapter {
       rail: "erc8183",
       success: false,
       failureCode: "ERC8183_KEYS_OR_RPC_UNAVAILABLE",
+      economicCommitted: false,
+      economicSettled: false,
       actualSettledAmountUsdc: 0,
+      serviceSucceeded: false,
       evidenceType: "erc8183_job_rejected",
     };
   }

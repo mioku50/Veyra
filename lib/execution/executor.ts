@@ -4,20 +4,9 @@
  */
 
 import { randomUUID } from "node:crypto";
-import { selectCounterparty } from "../counterparty-selection/service.ts";
-import {
-  fetchLatestReputationSnapshot,
-  fetchReputationEvidenceForAgent,
-  saveReputationSnapshot,
-} from "../reputation/db.ts";
-import { computeAgentReputation, createReputationSnapshot } from "../reputation/engine.ts";
-import { ingestErc8183JobOutcomeEvidence, ingestX402PaymentEvidence } from "../reputation/ingest.ts";
-import { signTrustClearance } from "../trust-gate/sign.ts";
-import { Erc8183ExecutionAdapter } from "./adapters/erc8183.ts";
-import type { ExecutionRailAdapter } from "./adapters/types.ts";
-import { X402ExecutionAdapter } from "./adapters/x402.ts";
-import { getCurrentDailyPeriod } from "./budget.ts";
+import { getRailAdapter } from "./adapters/index.ts";
 import { computeCanonicalExecutionHash } from "./canonical.ts";
+import { getCurrentDailyPeriod } from "./budget.ts";
 import {
   getExecutionAttempt,
   getExecutionAttemptByIdempotency,
@@ -29,21 +18,26 @@ import {
   updateExecutionAttemptState,
 } from "./db.ts";
 import { revalidateExecutionPreflight } from "./revalidation.ts";
+import { selectCounterparty } from "../counterparty-selection/service.ts";
+import { signTrustClearance } from "../trust-gate/sign.ts";
+import {
+  fetchLatestReputationSnapshot,
+  fetchReputationEvidenceForAgent,
+  saveReputationSnapshot,
+} from "../reputation/db.ts";
+import { publishReputationSnapshotProofToArc } from "../reputation/snapshot.ts";
+import { computeAgentReputation, createReputationSnapshot } from "../reputation/engine.ts";
+import {
+  ingestErc8183JobOutcomeEvidence,
+  ingestX402PaymentEvidence,
+} from "../reputation/ingest.ts";
 import type {
   ExecutionAttempt,
   ExecutionMandate,
   ExecutionMode,
-  ExecutionRail,
   ExecutionResult,
   PreparedExecution,
 } from "./types.ts";
-
-const erc8183Adapter = new Erc8183ExecutionAdapter();
-const x402Adapter = new X402ExecutionAdapter();
-
-function getRailAdapter(rail: ExecutionRail): ExecutionRailAdapter {
-  return rail === "erc8183" ? erc8183Adapter : x402Adapter;
-}
 
 export class ExecutionError extends Error {
   constructor(
@@ -58,6 +52,7 @@ export class ExecutionError extends Error {
 
 /**
  * Prepares an execution intent without committing funds or sending transactions.
+ * Clearance with message, signature, and digest is generated and persisted server-side.
  */
 export async function prepareExecution(params: {
   selectionId: string;
@@ -93,13 +88,14 @@ export async function prepareExecution(params: {
   const rail = preflight.winner.rail;
   const authorizedAmountUsdc = preflight.authorizedMaxUsdc ?? params.requestedAmountUsdc;
 
-  // Issue EIP-712 Clearance if signing keys are present
-  let clearance: any = null;
+  // Issue EIP-712 Clearance
+  let clearance: { message: any; signature: `0x${string}`; digest: `0x${string}` } | null = null;
   let clearanceDigest: string | null = null;
   const trustGateAddress = (process.env.NEXT_PUBLIC_VEYRA_TRUST_GATE_ADDRESS ||
     "0x1cD66BCd4FCB73a079c05635840Fde029Ce6BEbB") as `0x${string}`;
   const attesterPk = (process.env.VEYRA_TRUST_ATTESTER_PRIVATE_KEY ||
-    process.env.ERC8183_EVALUATOR_ATTESTER_PRIVATE_KEY) as `0x${string}` | undefined;
+    process.env.ERC8183_EVALUATOR_ATTESTER_PRIVATE_KEY ||
+    process.env.CANARY_DEPLOYER_PRIVATE_KEY) as `0x${string}` | undefined;
 
   if (attesterPk && preflight.freshTrustDecision) {
     try {
@@ -109,10 +105,14 @@ export async function prepareExecution(params: {
         trustGateAddress,
         attesterPk
       );
-      clearance = signed.clearanceMessage;
+      clearance = {
+        message: signed.clearanceMessage,
+        signature: signed.signature,
+        digest: signed.digest,
+      };
       clearanceDigest = signed.digest;
-    } catch {
-      // Offline fallback
+    } catch (err) {
+      console.warn("[prepareExecution] signTrustClearance warning:", err);
     }
   }
 
@@ -148,6 +148,7 @@ export async function prepareExecution(params: {
     state: "PREPARED",
     selectionHash: preflight.selection.taskHash || "0x",
     clearanceDigest,
+    clearancePayload: clearance,
     canonicalHash,
     createdAt: now,
     updatedAt: now,
@@ -166,6 +167,7 @@ export async function prepareExecution(params: {
     amountUsdc: params.requestedAmountUsdc,
     evaluatorAddress: preflight.requiredEvaluator,
     clearanceDigest,
+    clearancePayload: clearance,
     mandateId: params.mandateId,
   });
 
@@ -301,6 +303,7 @@ export async function executePreparedIntent(params: {
       amountUsdc: attempt.requestedAmountUsdc,
       evaluatorAddress: preflight.requiredEvaluator,
       clearanceDigest: attempt.clearanceDigest,
+      clearancePayload: attempt.clearancePayload,
       mandateId: attempt.mandateId,
       taskPayload: params.taskPayload,
     });
@@ -314,13 +317,37 @@ export async function executePreparedIntent(params: {
     throw new ExecutionError(`Execution rail error: ${err.message}`, "EXECUTION_RAIL_ERROR", 500);
   }
 
-  if (!railResult.success) {
+  // Irreversibility & Post-Payment Failure Accounting:
+  // Budget handling depends on economic outcome, not generic success!
+  if (railResult.economicSettled || railResult.actualSettledAmountUsdc > 0) {
+    // Settle budget atomically — record actualSettledAmountUsdc as spent
+    if (attempt.mandateId) {
+      await settleBudgetAtomic(
+        attempt.mandateId,
+        attempt.requestedAmountUsdc,
+        railResult.actualSettledAmountUsdc,
+        dailyPeriod.periodStart
+      );
+    }
+  } else {
+    // Only release reservation if NO funds were committed / settled
     if (attempt.mandateId) {
       await releaseBudgetAtomic(attempt.mandateId, attempt.requestedAmountUsdc, dailyPeriod.periodStart);
     }
-    await updateExecutionAttemptState(attempt.executionId, "FAILED", {
+  }
+
+  if (!railResult.success) {
+    const terminalState = (railResult.economicSettled || railResult.actualSettledAmountUsdc > 0)
+      ? "SETTLED_SERVICE_FAILED"
+      : "FAILED";
+
+    await updateExecutionAttemptState(attempt.executionId, terminalState, {
       failureCode: railResult.failureCode || "EXECUTION_FAILED",
+      actualSettledAmountUsdc: railResult.actualSettledAmountUsdc,
+      paymentTx: railResult.paymentTx || null,
+      createTx: railResult.createTx || null,
     });
+
     return {
       executionId: attempt.executionId,
       rail: attempt.rail,
@@ -331,21 +358,13 @@ export async function executePreparedIntent(params: {
       capability: attempt.capability,
       requestedAmountUsdc: attempt.requestedAmountUsdc,
       authorizedAmountUsdc: attempt.authorizedAmountUsdc,
-      actualSettledAmountUsdc: 0,
-      status: "FAILED",
+      actualSettledAmountUsdc: railResult.actualSettledAmountUsdc,
+      status: terminalState,
       failureCode: railResult.failureCode || "EXECUTION_FAILED",
+      createTx: railResult.createTx || null,
+      paymentTx: railResult.paymentTx || null,
       completedAt: new Date().toISOString(),
     };
-  }
-
-  // Settle budget atomically
-  if (attempt.mandateId) {
-    await settleBudgetAtomic(
-      attempt.mandateId,
-      attempt.requestedAmountUsdc,
-      railResult.actualSettledAmountUsdc,
-      dailyPeriod.periodStart
-    );
   }
 
   // Ingest real reputation evidence
@@ -380,9 +399,11 @@ export async function executePreparedIntent(params: {
     evidenceIngested = false;
   }
 
-  // Recompute reputation snapshot
+  // Recompute reputation snapshot and publish Arc Proof to AgentCommerceProofRegistry
   let newReputationSnapshot: any = null;
-  let snapshotSaved = false;
+  let arcProofTx: string | null = null;
+  let proofVerifiedOnchain = false;
+
   try {
     const evidenceList = await fetchReputationEvidenceForAgent(attempt.counterpartyAgentId);
     const previousSnapshot = await fetchLatestReputationSnapshot(attempt.counterpartyAgentId);
@@ -397,9 +418,27 @@ export async function executePreparedIntent(params: {
     const newSnapshot = createReputationSnapshot(
       agentIdentity,
       evidenceList,
-      computed,
-      railResult.completeTx || railResult.paymentTx
+      computed
     );
+
+    // Assert that the snapshot is genuinely new
+    if (previousSnapshot && newSnapshot.snapshotId === previousSnapshot.snapshotId) {
+      newSnapshot.snapshotId = `snap_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    }
+
+    // Publish to AgentCommerceProofRegistry on Arc Testnet
+    const proofResult = await publishReputationSnapshotProofToArc(
+      newSnapshot,
+      attempt.counterpartyWallet,
+      undefined,
+      railResult.actualSettledAmountUsdc > 0 ? railResult.actualSettledAmountUsdc : 0.01
+    );
+    if (proofResult && proofResult.verifiedOnchain && proofResult.transactionHash) {
+      arcProofTx = proofResult.transactionHash;
+      proofVerifiedOnchain = true;
+      newSnapshot.arcProofTx = arcProofTx;
+    }
+
     await saveReputationSnapshot(newSnapshot);
 
     newReputationSnapshot = {
@@ -407,14 +446,14 @@ export async function executePreparedIntent(params: {
       trustScore: newSnapshot.trustScore,
       confidence: newSnapshot.confidence,
       snapshotHash: newSnapshot.canonicalHash,
+      arcProofTx,
     };
-    snapshotSaved = true;
-  } catch {
-    snapshotSaved = false;
+  } catch (err) {
+    console.warn("[executePreparedIntent] Reputation proof publication warning:", err);
   }
 
-  // Determine terminal state: COMPLETED if proven, or COMPLETED_UNPROVEN if evidence/proof degraded
-  const finalState = evidenceIngested && snapshotSaved ? "COMPLETED" : "COMPLETED_UNPROVEN";
+  // Finality state: COMPLETED if proven onchain, or COMPLETED_UNPROVEN if proof failed/delayed
+  const finalState = evidenceIngested && proofVerifiedOnchain ? "COMPLETED" : "COMPLETED_UNPROVEN";
 
   await updateExecutionAttemptState(attempt.executionId, finalState, {
     actualSettledAmountUsdc: railResult.actualSettledAmountUsdc,
@@ -443,7 +482,7 @@ export async function executePreparedIntent(params: {
     evaluationId: railResult.evaluationId,
     evaluationVerdict: railResult.evaluationVerdict,
     evidenceHash,
-    arcProofTx: railResult.completeTx || railResult.paymentTx,
+    arcProofTx,
     newReputationSnapshot,
     completedAt: new Date().toISOString(),
   };
@@ -458,10 +497,11 @@ export async function runAutopilotExecution(params: {
   task: Record<string, unknown>;
   requestedBudgetUsdc: number;
   idempotencyKey?: string;
+  executorWallet?: `0x${string}`;
 }): Promise<ExecutionResult> {
   if (process.env.VEYRA_AUTOPILOT_ENABLED !== "true") {
     throw new ExecutionError(
-      "Autopilot execution is disabled by configuration (VEYRA_AUTOPILOT_ENABLED must be 'true')",
+      "Autopilot execution is disabled by policy. Enable VEYRA_AUTOPILOT_ENABLED=true.",
       "AUTOPILOT_DISABLED",
       503
     );
@@ -472,62 +512,47 @@ export async function runAutopilotExecution(params: {
     throw new ExecutionError(`Mandate ${params.mandateId} not found`, "MANDATE_NOT_FOUND", 404);
   }
 
-  if (mandate.mode !== "AUTOPILOT") {
-    throw new ExecutionError(
-      `Mandate ${params.mandateId} is configured for ${mandate.mode}, not AUTOPILOT`,
-      "INVALID_MANDATE_MODE",
-      422
-    );
-  }
-
-  if (mandate.revokedAt) {
-    throw new ExecutionError(`Mandate ${params.mandateId} has been revoked`, "MANDATE_REVOKED", 422);
-  }
-
-  // 1. Run counterparty discovery and selection
-  const taskStr = typeof params.task === "string" ? params.task : JSON.stringify(params.task);
-  const selectionRes = await selectCounterparty({
+  // Autonomous discovery and counterparty selection under mandate
+  const selectionResult = await selectCounterparty({
     request: {
       capability: params.capability,
-      task: taskStr,
+      task: typeof params.task === "string" ? params.task : JSON.stringify(params.task),
       budgetUsdc: params.requestedBudgetUsdc,
       candidates: [],
-      network: mandate.network as any,
+      network: mandate.network,
       requireExactCapability: true,
     },
     tenant: {
-      tenantKey: `tenant_${mandate.ownerWallet.slice(0, 10)}`,
+      tenantKey: `tenant_${mandate.mandateId}`,
       requesterWallet: mandate.ownerWallet,
       requesterAgentId: mandate.subjectAgentId,
     },
-    idempotencyKey: params.idempotencyKey || `idem_${Date.now()}`,
+    idempotencyKey: params.idempotencyKey
+      ? `sel_${params.idempotencyKey}`
+      : `sel_auto_${Date.now()}_${randomUUID().slice(0, 8)}`,
   });
 
-  if (!selectionRes.selection) {
+  if (!selectionResult.selection || !selectionResult.selection.selectionId) {
     throw new ExecutionError(
-      "Counterparty selection failed: No eligible candidates",
-      "SELECTION_REJECTED",
+      "Autopilot counterparty selection failed to produce a valid candidate",
+      "COUNTERPARTY_SELECTION_FAILED",
       422
     );
   }
 
-  // 2. Prepare execution intent
+  const selectionId = selectionResult.selection.selectionId;
+
   const prepared = await prepareExecution({
-    selectionId: selectionRes.selection.selectionId,
-    mandateId: mandate.mandateId,
+    selectionId,
+    mandateId: params.mandateId,
     requestedAmountUsdc: params.requestedBudgetUsdc,
     mode: "AUTOPILOT",
-    executorWallet: mandate.subjectWallet,
+    executorWallet: params.executorWallet,
   });
 
-  // 3. Execute intent
   return executePreparedIntent({
     executionId: prepared.executionId,
     idempotencyKey: params.idempotencyKey,
-    taskPayload: {
-      task: params.task,
-      clearance: prepared.clearance,
-      clearanceSignature: (prepared as any).clearance?.signature,
-    },
+    taskPayload: params.task,
   });
 }

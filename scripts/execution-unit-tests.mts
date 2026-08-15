@@ -3,6 +3,7 @@
  * - Canonical EIP-712 hashing
  * - Deterministic state machine validation
  * - Budget calculation invariants
+ * - x402 V2 Header Encoding/Decoding
  */
 
 import assert from "node:assert/strict";
@@ -18,6 +19,13 @@ import {
   validateStateTransition,
   InvalidStateTransitionError,
 } from "../lib/execution/state-machine.ts";
+import {
+  decodePaymentRequiredHeader,
+  decodePaymentResponseHeader,
+  encodePaymentRequiredHeader,
+  encodePaymentResponseHeader,
+  encodePaymentSignatureHeader,
+} from "@x402/core/http";
 
 async function runUnitTests() {
   console.log("Starting P6.1 Execution Module Unit Tests...\n");
@@ -103,9 +111,11 @@ async function runUnitTests() {
     assert.ok(validateStateTransition("EVALUATING", "SETTLING", "exec_1"));
     assert.ok(validateStateTransition("SETTLING", "COMPLETED", "exec_1"));
 
-    // Failure branch transitions
+    // Failure and unproven branch transitions
     assert.ok(validateStateTransition("PREPARED", "CANCELLED", "exec_1"));
     assert.ok(validateStateTransition("EXECUTING", "FAILED", "exec_1"));
+    assert.ok(validateStateTransition("EXECUTING", "SETTLED_SERVICE_FAILED", "exec_1"));
+    assert.ok(validateStateTransition("SETTLING", "SETTLED_SERVICE_FAILED", "exec_1"));
     assert.ok(validateStateTransition("SETTLING", "SETTLEMENT_FAILED", "exec_1"));
     assert.ok(validateStateTransition("EVALUATING", "EVALUATION_REJECTED", "exec_1"));
 
@@ -136,6 +146,7 @@ async function runUnitTests() {
     // Terminal states check
     assert.ok(isTerminalState("COMPLETED"));
     assert.ok(isTerminalState("COMPLETED_UNPROVEN"));
+    assert.ok(isTerminalState("SETTLED_SERVICE_FAILED"));
     assert.ok(isTerminalState("FAILED"));
     assert.ok(isTerminalState("REJECTED"));
     assert.ok(isTerminalState("CANCELLED"));
@@ -147,6 +158,36 @@ async function runUnitTests() {
     assert.ok(!isTerminalState("EVIDENCE_PENDING"));
 
     console.log("✅ State machine transitions and terminal states strictly enforced.");
+  }
+
+  // 5. x402 V2 Header Encoding & Decoding Verification
+  {
+    const reqPayload: any = {
+      x402Version: 2,
+      error: "Payment required",
+      network: "eip155:5042002",
+      scheme: "exact",
+      payTo: "0x3333333333333333333333333333333333333333",
+      maxAmount: "10000",
+      amountUsdc: "0.01",
+    };
+
+    const encodedReq = encodePaymentRequiredHeader(reqPayload);
+    const decodedReq = decodePaymentRequiredHeader(encodedReq);
+    assert.equal(decodedReq.x402Version, 2);
+    assert.equal((decodedReq as any).network, "eip155:5042002");
+
+    const respPayload: any = {
+      success: true,
+      transaction: "0xabcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890",
+      network: "eip155:5042002",
+    };
+    const encodedResp = encodePaymentResponseHeader(respPayload);
+    const decodedResp = decodePaymentResponseHeader(encodedResp);
+    assert.equal(decodedResp.success, true);
+    assert.equal(decodedResp.transaction, respPayload.transaction);
+
+    console.log("✅ x402 V2 official HTTP header encoding and decoding verified.");
   }
 
   console.log("\n🎉 ALL P6.1 Execution Module Unit Tests Passed Successfully!");

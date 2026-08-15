@@ -15,6 +15,7 @@ export const ALLOWED_TRANSITIONS: Record<ExecutionState, ExecutionState[]> = {
     "SETTLING",
     "EVIDENCE_PENDING",
     "COMPLETED_UNPROVEN",
+    "SETTLED_SERVICE_FAILED",
     "COMPLETED",
     "FAILED",
     "SETTLEMENT_FAILED",
@@ -25,6 +26,7 @@ export const ALLOWED_TRANSITIONS: Record<ExecutionState, ExecutionState[]> = {
     "SETTLING",
     "EVIDENCE_PENDING",
     "COMPLETED_UNPROVEN",
+    "SETTLED_SERVICE_FAILED",
     "COMPLETED",
     "FAILED",
     "SETTLEMENT_FAILED",
@@ -34,6 +36,7 @@ export const ALLOWED_TRANSITIONS: Record<ExecutionState, ExecutionState[]> = {
     "SETTLING",
     "EVIDENCE_PENDING",
     "COMPLETED_UNPROVEN",
+    "SETTLED_SERVICE_FAILED",
     "COMPLETED",
     "FAILED",
     "SETTLEMENT_FAILED",
@@ -42,12 +45,14 @@ export const ALLOWED_TRANSITIONS: Record<ExecutionState, ExecutionState[]> = {
   SETTLING: [
     "EVIDENCE_PENDING",
     "COMPLETED_UNPROVEN",
+    "SETTLED_SERVICE_FAILED",
     "COMPLETED",
     "SETTLEMENT_FAILED",
     "FAILED",
   ],
-  EVIDENCE_PENDING: ["COMPLETED", "COMPLETED_UNPROVEN", "FAILED"],
+  EVIDENCE_PENDING: ["COMPLETED", "COMPLETED_UNPROVEN", "SETTLED_SERVICE_FAILED", "FAILED"],
   COMPLETED_UNPROVEN: ["COMPLETED"],
+  SETTLED_SERVICE_FAILED: [], // Terminal
   COMPLETED: [], // Terminal
   REJECTED: [], // Terminal
   EXPIRED: [], // Terminal
@@ -60,6 +65,7 @@ export const ALLOWED_TRANSITIONS: Record<ExecutionState, ExecutionState[]> = {
 export const TERMINAL_STATES: Set<ExecutionState> = new Set([
   "COMPLETED",
   "COMPLETED_UNPROVEN",
+  "SETTLED_SERVICE_FAILED",
   "REJECTED",
   "EXPIRED",
   "CANCELLED",

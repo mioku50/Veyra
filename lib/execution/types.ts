@@ -17,6 +17,7 @@ export type ExecutionState =
   | "SETTLING"
   | "EVIDENCE_PENDING"
   | "COMPLETED_UNPROVEN"
+  | "SETTLED_SERVICE_FAILED"
   | "COMPLETED"
   | "REJECTED"
   | "EXPIRED"
@@ -108,6 +109,11 @@ export interface ExecutionAttempt {
   evaluationId?: string | null;
   selectionHash: string;
   clearanceDigest?: string | null;
+  clearancePayload?: {
+    message: any;
+    signature: `0x${string}`;
+    digest: `0x${string}`;
+  } | null;
   evidenceHash?: string | null;
   idempotencyKey?: string | null;
   canonicalHash: string;
@@ -127,7 +133,11 @@ export interface PreparedExecution {
   requestedAmountUsdc: number;
   authorizedAmountUsdc: number;
   requiredEvaluator?: string | null;
-  clearance?: any | null;
+  clearance?: {
+    message: any;
+    signature: `0x${string}`;
+    digest: `0x${string}`;
+  } | null;
   preparedPayload?: any;
   canonicalHash: string;
   expiresAt: string;
@@ -144,7 +154,7 @@ export interface ExecutionResult {
   requestedAmountUsdc: number;
   authorizedAmountUsdc: number;
   actualSettledAmountUsdc: number;
-  status: "COMPLETED" | "COMPLETED_UNPROVEN" | "REJECTED" | "FAILED";
+  status: "COMPLETED" | "COMPLETED_UNPROVEN" | "SETTLED_SERVICE_FAILED" | "REJECTED" | "FAILED";
   failureCode?: string | null;
   createTx?: string | null;
   completeTx?: string | null;
