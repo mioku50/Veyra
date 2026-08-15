@@ -110,6 +110,10 @@ runStep("Trust-Routed Execution Negative & Security Tests", () => {
   execSync("npm run execution:negative-test", { cwd: root, stdio: "inherit" });
 });
 
+runStep("Trust-Routed Execution Product & Anti-Cheat V4 Tests", () => {
+  execSync("npm run execution:product-test", { cwd: root, stdio: "inherit" });
+});
+
 // 7. Foundry Smart Contract Test Suite
 runStep("Foundry Smart Contract Tests (forge test)", () => {
   execSync("forge test", { cwd: resolve(root, "contracts"), stdio: "inherit" });

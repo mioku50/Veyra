@@ -213,9 +213,54 @@ async function runProductTests() {
   });
   assert.equal(replayResult.status, execResult.status);
   assert.equal(replayResult.actualSettledAmountUsdc, 2.0);
-  console.log("✅ Idempotent replay returned cached result cleanly.");
+  // 4. Anti-Cheat V4 Static Analysis Regression Checks
+  console.log("\n--- Anti-Cheat V4 Static Analysis Regression Checks ---");
+  const { readFileSync } = await import("node:fs");
+  const x402Source = readFileSync("lib/execution/adapters/x402.ts", "utf8");
+  const erc8183Source = readFileSync("lib/execution/adapters/erc8183.ts", "utf8");
+  const executorSource = readFileSync("lib/execution/executor.ts", "utf8");
+  const engineSource = readFileSync("lib/reputation/engine.ts", "utf8");
+  const liveTestSource = readFileSync("scripts/execution-live-acceptance.mts", "utf8");
 
-  console.log("\n🎉 ALL P6.1 Execution Product Acceptance Tests Passed Successfully!");
+  // 1. No synthetic x402 transaction hashes
+  assert.ok(!x402Source.includes("createHash('sha256')"), "x402 must not generate synthetic tx hashes");
+  assert.ok(!x402Source.includes('createHash("sha256")'), "x402 must not generate synthetic tx hashes");
+
+  // 2. No PAYMENT-RESPONSE synthetic fallbacks
+  assert.ok(!x402Source.match(/paymentTx\s*=\s*`0x\$\{/), "x402 must not fallback to synthetic paymentTx");
+
+  // 3. Cryptographic payment authorization
+  assert.ok(
+    x402Source.includes("createPaymentPayload") && x402Source.includes("ExactEvmScheme"),
+    "x402 must use official ExactEvmScheme for cryptographic payment signing"
+  );
+
+  // 4. Must parse accepts[] from PAYMENT-REQUIRED
+  assert.ok(x402Source.includes("accepts"), "x402 must parse accepts[] from payment requirements");
+
+  // 5. No fake ERC-8183 IPFS URI from executionId
+  assert.ok(!erc8183Source.includes("veyra://execution/"), "ERC-8183 must not fabricate provider deliverable URI");
+
+  // 6. No fake deliverableHash derived from executionId
+  assert.ok(!erc8183Source.match(/keccak256\(toBytes\(.*executionId/), "ERC-8183 must not derive deliverableHash from executionId");
+
+  // 7. No actualSettledAmountUsdc = requestedAmount assumption
+  assert.ok(!erc8183Source.includes("? requestedAmountUsdc : 0"), "ERC-8183 must derive settlement from chain, not request");
+
+  // 8. No Math.random snapshot mutation in reputation engine
+  assert.ok(!engineSource.includes("Math.random()"), "Reputation engine must not use Math.random() for snapshot IDs");
+
+  // 9. No fake 0.01 economic proof values
+  assert.ok(!executorSource.includes("0.01"), "Executor must not use fake 0.01 proof values");
+
+  // 10. Live acceptance Scenario C must use real x402 adapter or be explicitly SKIPPED
+  assert.ok(
+    liveTestSource.includes("SKIPPED") || liveTestSource.includes("X402ExecutionAdapter"),
+    "Live acceptance Scenario C must use real x402 adapter or be explicitly SKIPPED"
+  );
+  console.log("✅ All Anti-Cheat V4 static analysis regression checks passed.");
+
+  console.log("\n🎉 ALL P6.1 Execution Product Acceptance & Anti-Cheat Tests Passed Successfully!");
 }
 
 runProductTests().catch((err) => {

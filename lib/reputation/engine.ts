@@ -255,7 +255,7 @@ export function computeAgentReputation(
   else if (coverage >= 30) confidence = "Medium";
 
   // Determine Status Label via deterministic trust display logic
-  const statusLabel = getTrustDisplayLabel(trustScore, confidence, totalEvidenceCount);
+  const statusLabel = getTrustDisplayLabel(trustScore, confidence, uniqueEvidenceList.length);
 
   // Build top positive explanations
   if (identity.verifiedOnchain) topPositiveEvidence.push("ERC-8004 Identity verified onchain");
