@@ -403,10 +403,10 @@ async function runNegativeTests() {
     assert.strictEqual(getTrustDisplayLabel(95, "High", 5), "Highly Trusted");
     assert.strictEqual(getTrustDisplayLabel(95, "Low", 1), "High Score · Limited Evidence");
     assert.notStrictEqual(getTrustDisplayLabel(95, "Medium", 5), "Highly Trusted");
-    assert.strictEqual(getTrustDisplayLabel(75, "High", 3), "Trusted");
-    assert.strictEqual(getTrustDisplayLabel(60, "Medium", 2), "Strong");
-    assert.strictEqual(getTrustDisplayLabel(40, "Low", 1), "Mixed Signals");
-    assert.strictEqual(getTrustDisplayLabel(20, "Low", 0), "Elevated Risk");
+    assert.strictEqual(getTrustDisplayLabel(75, "High", 3), "Strong");
+    assert.strictEqual(getTrustDisplayLabel(60, "Medium", 2), "Mixed Signals");
+    assert.strictEqual(getTrustDisplayLabel(40, "Low", 1), "High Attention");
+    assert.strictEqual(getTrustDisplayLabel(20, "Low", 0), "Limited Evidence");
     console.log("✅ Deterministic Trust Display Labels verified.");
   }
 

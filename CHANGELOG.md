@@ -5,6 +5,20 @@ All notable changes to the Veyra platform will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.0-beta.4] - 2026-08-15
+
+### Security, Integrity & UX
+- **P6.1.3 Real Rail Verification & Execution UX Closure**:
+  - **Official x402 V2 Protocol Compliance**: Integrated `@x402/core` (`x402Client`, `x402HTTPClient`) and `@x402/evm` (`ExactEvmScheme`) for cryptographic payment authorization on Arc Testnet; parsed `accepts[]` payment options; removed synthetic fallback transaction hashes (`PAYMENT_SETTLEMENT_UNVERIFIED` fail-closed when payment-response header is missing).
+  - **Real ERC-8183 Provider Lifecycle**: Introduced `WAITING_FOR_PROVIDER` execution state; eliminated provider deliverable impersonation; created `POST /api/execution/v1/[executionId]/provider-submission` endpoint with cryptographic provider wallet signature verification; derived settlement amounts from verified chain event logs.
+  - **Deterministic Reputation Snapshots & Real Proof Values**: Replaced `Math.random()` and `Date.now()` snapshot ID mutations with deterministic keccak256 computation; eliminated fake 0.01 economic proof value fallbacks; added onchain `ProofRegistry.isRegistered` receipt status verification.
+  - **Strict Live Acceptance Suite**: Measured before/after balance and spend deltas across Scenarios A through E; verified real provider lifecycle in Scenario B; invoked real `X402ExecutionAdapter` in Scenario C when configured; verified zero economic side-effects on policy violations.
+  - **Execution UX & Navigation**: Added dedicated "Execute" sidebar section; created `/executions` public audit explorer with status badges and search; updated `/trust/mandates` copy to canonical specification; added "Authorize & Execute" card to homepage.
+  - **Trust UX Semantics & Label Accuracy**: Implemented deterministic `getTrustDisplayLabel` function preventing misleading "Highly Trusted" claims when evidence or confidence is insufficient; improved Trust Gate CTA contrast and added "Try Example" demo button; replaced "Featured Production Evaluator" with "Veyra Arc Testnet Evaluator"; updated x402 badge to "x402 Enabled".
+  - **Anti-Cheat V4 & Extended Test Suite**: Added automated static analysis and regression checks in `execution:product-test` verifying zero synthetic hashes, fake deliverables, or fabricated values; updated public beta release gate.
+
+---
+
 ## [0.2.0-beta.3] - 2026-08-15
 
 ### Security & Integrity

@@ -60,6 +60,8 @@ export type AgentReputationDimensions = {
   reputation: number;
 };
 
+export type ReputationConfidenceLevel = "Low" | "Medium" | "High" | "Very High";
+
 export type ReputationStatusLabel =
   | "Highly Trusted"
   | "High Score"
@@ -76,15 +78,16 @@ export function getTrustDisplayLabel(
   confidence: ReputationConfidenceLevel,
   evidenceCount: number
 ): ReputationStatusLabel {
+  if (evidenceCount === 0) return "Limited Evidence";
   const hasSufficientCoverage = evidenceCount >= 3;
   if (score >= 90) {
     if ((confidence === "High" || confidence === "Very High") && hasSufficientCoverage) return "Highly Trusted";
     if (confidence === "Medium") return "High Score";
     return "High Score · Limited Evidence";
   }
-  if (score >= 70) return "Trusted";
-  if (score >= 50) return "Strong";
-  if (score >= 35) return "Mixed Signals";
+  if (score >= 70) return "Strong";
+  if (score >= 50) return "Mixed Signals";
+  if (score >= 35) return "High Attention";
   return "Elevated Risk";
 }
 
