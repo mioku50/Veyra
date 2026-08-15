@@ -50,12 +50,16 @@ export async function POST(
 
     // Client input may ONLY provide an optional non-authoritative lookup hint
     const body = await req.json().catch(() => ({}));
-    const hint =
-      typeof body.hint === "string"
-        ? body.hint
-        : typeof body.facilitatorRef === "string"
-        ? body.facilitatorRef
-        : undefined;
+    let hint: string | undefined;
+    const rawHint = body.hint || body.facilitatorRef;
+    if (typeof rawHint === "string" && rawHint.trim().length > 0) {
+      const sanitized = rawHint.trim();
+      if (/^0x[0-9a-fA-F]{64}$/.test(sanitized)) {
+        hint = sanitized;
+      } else if (sanitized.length <= 128) {
+        hint = sanitized;
+      }
+    }
 
     const result = await reconcileExecutionSettlement(executionId, { hint });
 

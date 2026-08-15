@@ -270,9 +270,18 @@ async function runProductTests() {
   assert.ok(!reconcileRouteSource.includes("const { settled"), "Reconcile route must not accept client-declared 'settled'");
   assert.ok(!reconcileRouteSource.includes("actualSettledAmountUsdc"), "Reconcile route must not accept client-declared 'actualSettledAmountUsdc'");
 
-  console.log("✅ All Anti-Cheat V4 static analysis regression checks passed.");
+  // 13. Zero magic test settlement strings in production executor
+  assert.ok(!executorSource.includes("0xsettled_canonical"), "Executor must not contain magic 0xsettled_canonical string");
+  assert.ok(!executorSource.includes("0xsettled_tx_hash"), "Executor must not contain magic 0xsettled_tx_hash string");
+  assert.ok(!executorSource.includes("0xreverted_tx"), "Executor must not contain magic 0xreverted_tx string");
+  assert.ok(!executorSource.includes("0x1111111111111111111111111111111111111111"), "Executor must not contain placeholder payer address");
 
-  console.log("\n🎉 ALL P6.1 Execution Product Acceptance & Anti-Cheat Tests Passed Successfully!");
+  // 14. Zero arbitrary time-based failure release
+  assert.ok(!executorSource.match(/createdAt.*15\s*\*\s*60/), "Executor must not release budget purely based on 15m expiration");
+
+  console.log("✅ All Anti-Cheat V5 static analysis regression checks passed.");
+
+  console.log("\n🎉 ALL P6.1 Execution Product Acceptance & Anti-Cheat V5 Tests Passed Successfully!");
 }
 
 runProductTests().catch((err) => {

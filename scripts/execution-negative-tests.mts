@@ -419,6 +419,7 @@ async function runNegativeTests() {
   {
     const { saveExecutionAttempt, getExecutionAttempt, saveExecutionMandate, getExecutionMandateUsage, reserveBudgetAtomic } = await import("../lib/execution/db.ts");
     const { reconcileExecutionSettlement } = await import("../lib/execution/executor.ts");
+    const { MockSettlementResolver, RealArcSettlementResolver } = await import("../lib/execution/settlement-resolver.ts");
     const { getCurrentDailyPeriod } = await import("../lib/execution/budget.ts");
 
     const dailyPeriod = getCurrentDailyPeriod();
@@ -487,35 +488,58 @@ async function runNegativeTests() {
       updatedAt: new Date().toISOString(),
     });
 
-    // Test 1: Fake hint / no canonical settlement -> remains SETTLEMENT_UNVERIFIED
-    const unverifiedAttempt1 = await reconcileExecutionSettlement(unverifiedExecId, { hint: "0xfake_unknown_tx_hash_123456789012345678901234567890123456789012" });
-    assert.strictEqual(unverifiedAttempt1.status, "SETTLEMENT_UNVERIFIED", "Unverified hint must NOT complete execution");
-    const usagePending = await getExecutionMandateUsage(testMandateId, dailyPeriod.periodStart);
-    assert.strictEqual(usagePending.reservedUsdc, 5.0, "Budget must remain reserved when unverified");
-    assert.strictEqual(usagePending.usedUsdc, 0, "Used budget must remain 0");
+    // Test 1: Fake magic string hint ("0xsettled_canonical...") against Real resolver does NOT settle
+    const fakeMagicHint = "0xsettled_canonical_magic_string_fake";
+    const unverifiedAttempt1 = await reconcileExecutionSettlement(unverifiedExecId, { hint: fakeMagicHint });
+    assert.strictEqual(unverifiedAttempt1.status, "SETTLEMENT_UNVERIFIED", "Magic string must NOT complete execution without onchain proof");
+    const usagePending1 = await getExecutionMandateUsage(testMandateId, dailyPeriod.periodStart);
+    assert.strictEqual(usagePending1.reservedUsdc, 5.0, "Budget must remain reserved when unverified");
+    assert.strictEqual(usagePending1.usedUsdc, 0, "Used budget must remain 0");
 
-    // Test 2: Server-derived canonical settlement -> COMPLETED
-    const canonicalTx = "0xsettled_canonical_tx_hash_1234567890123456789012345678901234567890";
+    // Test 2: Invalid tx hash format ignored
+    const invalidHashAttempt = await reconcileExecutionSettlement(unverifiedExecId, { hint: "not-a-valid-hex-hash" });
+    assert.strictEqual(invalidHashAttempt.status, "SETTLEMENT_UNVERIFIED");
+
+    // Test 3: Mocked resolver with wrong payer -> remains SETTLEMENT_UNVERIFIED
+    const mockWrongPayer = new MockSettlementResolver(() => ({
+      resolved: false,
+      settled: false,
+      failed: false,
+    }));
+    const wrongPayerAttempt = await reconcileExecutionSettlement(unverifiedExecId, { resolver: mockWrongPayer });
+    assert.strictEqual(wrongPayerAttempt.status, "SETTLEMENT_UNVERIFIED");
+
+    // Test 4: Mocked resolver with canonical verified settlement -> COMPLETED
+    const validTxHash = "0x" + "a".repeat(64);
+    const mockSuccessResolver = new MockSettlementResolver(() => ({
+      resolved: true,
+      settled: true,
+      failed: false,
+      txHash: validTxHash,
+      settledAmountUsdc: 5.0,
+      payer: "0x1111111111111111111111111111111111111111",
+      payTo: "0x3333333333333333333333333333333333333333",
+    }));
     const reconcileResult = await reconcileExecutionSettlement(unverifiedExecId, {
-      hint: canonicalTx,
+      resolver: mockSuccessResolver,
     });
 
     assert.strictEqual(reconcileResult.status, "COMPLETED");
     assert.strictEqual(reconcileResult.actualSettledAmountUsdc, 5.0);
-    assert.strictEqual(reconcileResult.paymentTx, canonicalTx);
+    assert.strictEqual(reconcileResult.paymentTx, validTxHash);
 
     const usageAfter = await getExecutionMandateUsage(testMandateId, dailyPeriod.periodStart);
     assert.strictEqual(usageAfter.reservedUsdc, 0, "Reserved budget must be 0 after settlement");
     assert.strictEqual(usageAfter.usedUsdc, 5.0, "Used budget must be 5.0 after settlement");
 
-    // Test 3: Idempotent exact-once reconciliation (calling again does not double-spend)
+    // Test 5: Idempotent exact-once reconciliation
     const idempotentResult = await reconcileExecutionSettlement(unverifiedExecId);
     assert.strictEqual(idempotentResult.status, "COMPLETED");
     const usageIdempotent = await getExecutionMandateUsage(testMandateId, dailyPeriod.periodStart);
     assert.strictEqual(usageIdempotent.usedUsdc, 5.0, "Duplicate reconciliation must not double-settle budget");
 
-    // Test 4: Reverted / expired authorization canonically releases reservation
-    const unverifiedExecId2 = "vexec_unverified_fail_test";
+    // Test 6: Expired authorization alone does NOT release budget
+    const unverifiedExecId2 = "vexec_unverified_expire_test";
     await reserveBudgetAtomic(testMandateId, 3.0, dailyPeriod);
     await saveExecutionAttempt({
       executionId: unverifiedExecId2,
@@ -538,23 +562,44 @@ async function runNegativeTests() {
         asset: "0x3600000000000000000000000000000000000000",
         network: "eip155:5042002",
         authorizedAmountUsdc: 3.0,
-        authorizationValidBefore: Math.floor(Date.now() / 1000) - 60, // expired 1 minute ago
+        authorizationValidBefore: Math.floor(Date.now() / 1000) - 300, // expired 5 minutes ago
         requestTimestamp: new Date(Date.now() - 3600000).toISOString(),
       },
       createdAt: new Date(Date.now() - 3600000).toISOString(),
       updatedAt: new Date(Date.now() - 3600000).toISOString(),
     });
 
-    const reconcileFailResult = await reconcileExecutionSettlement(unverifiedExecId2);
+    // Unresolved check without canonical failure -> remains SETTLEMENT_UNVERIFIED
+    const mockUnresolvedResolver = new MockSettlementResolver(() => ({
+      resolved: false,
+      settled: false,
+      failed: false,
+    }));
+    const expireAttempt = await reconcileExecutionSettlement(unverifiedExecId2, { resolver: mockUnresolvedResolver });
+    assert.strictEqual(expireAttempt.status, "SETTLEMENT_UNVERIFIED", "Expired authorization alone must NOT release budget without canonical proof");
+    const usageExpired = await getExecutionMandateUsage(testMandateId, dailyPeriod.periodStart);
+    assert.strictEqual(usageExpired.reservedUsdc, 3.0, "Budget must stay reserved when settlement is unverified");
+
+    // Test 7: Canonical failure (reverted tx or facilitator confirmed failed) -> FAILED + release reservation
+    const mockFailedResolver = new MockSettlementResolver(() => ({
+      resolved: true,
+      settled: false,
+      failed: true,
+      failureReason: "ONCHAIN_PAYMENT_TX_REVERTED",
+      txHash: "0x" + "b".repeat(64),
+    }));
+    const reconcileFailResult = await reconcileExecutionSettlement(unverifiedExecId2, {
+      resolver: mockFailedResolver,
+    });
 
     assert.strictEqual(reconcileFailResult.status, "FAILED");
     assert.strictEqual(reconcileFailResult.actualSettledAmountUsdc, 0);
 
     const usageFinal = await getExecutionMandateUsage(testMandateId, dailyPeriod.periodStart);
-    assert.strictEqual(usageFinal.reservedUsdc, 0, "Reservation released on verified expired authorization");
+    assert.strictEqual(usageFinal.reservedUsdc, 0, "Reservation released only upon verified canonical negative evidence");
     assert.strictEqual(usageFinal.usedUsdc, 5.0, "Used budget unchanged from first settled execution");
 
-    console.log("✅ Canonical SETTLEMENT_UNVERIFIED and server-derived reconciliation lifecycle verified.");
+    console.log("✅ Canonical SETTLEMENT_UNVERIFIED, MockSettlementResolver, and Zero Synthetic Reconciliation verified.");
   }
 
   console.log("\n🎉 ALL P6.1 Negative & Adversarial Security Tests Passed Successfully!");

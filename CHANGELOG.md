@@ -5,6 +5,18 @@ All notable changes to the Veyra platform will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.0-beta.7] - 2026-08-15
+
+### Security, Settlement Certainty & Decoupled Resolver
+- **P6.1.3c Zero Synthetic Reconciliation & Settlement Certainty Closure**:
+  - **Zero Magic Test Strings**: Completely eliminated all synthetic transaction string handling (`0xsettled_canonical`, `0xsettled_tx_hash`, `0xreverted_tx`) and placeholder addresses (`0x111111...`) from production reconciliation.
+  - **Decoupled `SettlementResolver` Interface**: Introduced `SettlementResolver`, `RealArcSettlementResolver`, and `MockSettlementResolver` in `lib/execution/settlement-resolver.ts` for clean dependency injection in tests without `NODE_ENV` branches in production code.
+  - **Strict Transaction Hash Validation**: Validated candidate transaction hashes against `/^0x[0-9a-fA-F]{64}$/` in both resolver and public reconcile API route.
+  - **Eliminated Arbitrary Expiry Budget Release**: Removed time-based budget release (`Date.now() - createdAt > 15m`); budget reservations are held until canonical positive or negative proof is established.
+  - **Anti-Cheat V5**: Added static analysis regression checks ensuring zero magic strings and zero arbitrary time-based failure releases in execution code.
+
+---
+
 ## [0.2.0-beta.6] - 2026-08-15
 
 ### Security, Protocol Integrity & Economic Provenance
