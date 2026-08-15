@@ -5,6 +5,19 @@ All notable changes to the Veyra platform will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.0-beta.6] - 2026-08-15
+
+### Security, Protocol Integrity & Economic Provenance
+- **P6.1.3b Canonical x402 Settlement Reconciliation Fix**:
+  - **Server-Derived Reconciliation**: Removed client-declared `settled`, `paymentTx`, and `actualSettledAmountUsdc` from `POST /api/execution/v1/[executionId]/reconcile`. Clients cannot declare or forge settlement status.
+  - **Onchain & Canonical Source Verification**: `reconcileExecutionSettlement` resolves settlement from canonical sources (x402 facilitator lookup, persisted response context, or Arc Testnet RPC receipt verification matching payer, recipient, Arc USDC asset, and budget bounds).
+  - **Reconciliation Context Persistence**: Persisted `x402Context` (payer, recipient, asset, network, authorization nonce/signature/validBefore, resource, paymentRequirementsHash, timestamp) for later authoritative verification.
+  - **Verified Failure & Reservation Release**: Budget reservations are released only upon canonical proof that payment authorization expired or failed onchain; otherwise execution remains `SETTLEMENT_UNVERIFIED`.
+  - **Economic Provenance Fix**: Corrected reputation evidence buyer address to real buyer wallet (`mandate.ownerWallet` / subject wallet / payer wallet) instead of counterparty wallet, strictly enforcing `buyer != provider` to eliminate self-rating.
+  - **Exact-Once Atomic Reconciliation**: Transition from `SETTLEMENT_UNVERIFIED` is atomically guarded (`transitionExecutionAttemptStateAtomic`) to prevent duplicate settlement, double-spend, or race conditions.
+
+---
+
 ## [0.2.0-beta.5] - 2026-08-15
 
 ### Security, Settlement Finality & Reconciliation

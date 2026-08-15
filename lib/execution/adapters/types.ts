@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { ExecutionRail } from "../types.ts";
+import type { ExecutionRail, X402ReconciliationContext } from "../types.ts";
 
 export interface RailExecutionParams {
   executionId: string;
@@ -40,6 +40,7 @@ export interface NormalizedRailResult {
   evaluationId?: string | null;
   evaluationVerdict?: "Complete" | "Reject" | null;
   evidenceType: string;
+  x402Context?: X402ReconciliationContext | null;
   rawResult?: any;
 }
 

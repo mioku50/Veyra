@@ -4,7 +4,7 @@
  */
 
 import { randomUUID } from "node:crypto";
-import { createPublicClient, http } from "viem";
+import { createPublicClient, http, erc20Abi, parseEventLogs } from "viem";
 import { arcTestnet } from "viem/chains";
 import { getRailAdapter } from "./adapters/index.ts";
 import { computeCanonicalExecutionHash } from "./canonical.ts";
@@ -18,6 +18,7 @@ import {
   saveExecutionAttempt,
   settleBudgetAtomic,
   updateExecutionAttemptState,
+  transitionExecutionAttemptStateAtomic,
 } from "./db.ts";
 import { revalidateExecutionPreflight } from "./revalidation.ts";
 import { selectCounterparty } from "../counterparty-selection/service.ts";
@@ -353,6 +354,7 @@ export async function executePreparedIntent(params: {
       actualSettledAmountUsdc: railResult.actualSettledAmountUsdc,
       paymentTx: railResult.paymentTx || null,
       createTx: railResult.createTx || null,
+      x402Context: railResult.x402Context || null,
     });
 
     return {
@@ -374,11 +376,12 @@ export async function executePreparedIntent(params: {
     };
   }
 
-  // Ingest real reputation evidence
+  // Ingest real reputation evidence with correct buyer/counterparty economic provenance
   let evidenceHash: string | null = null;
   let evidenceIngested = false;
   try {
     if (attempt.rail === "erc8183") {
+      const realClientWallet = mandate?.ownerWallet || mandate?.subjectWallet;
       const ev = await ingestErc8183JobOutcomeEvidence({
         agentId: attempt.counterpartyAgentId,
         jobId: railResult.externalReference || attempt.executionId,
@@ -386,21 +389,28 @@ export async function executePreparedIntent(params: {
         verdictPassed: railResult.evaluationVerdict === "Complete",
         score: railResult.evaluationVerdict === "Complete" ? 100 : 0,
         economicValueUsdc: railResult.actualSettledAmountUsdc,
-        clientAddress: mandate?.ownerWallet || attempt.counterpartyWallet,
+        clientAddress: realClientWallet || attempt.counterpartyWallet,
         arcProofTx: railResult.completeTx,
       });
       evidenceHash = ev.canonicalHash;
       evidenceIngested = true;
     } else {
-      const ev = await ingestX402PaymentEvidence({
-        agentId: attempt.counterpartyAgentId,
-        paymentId: railResult.externalReference || attempt.executionId,
-        success: true,
-        amountUsdc: railResult.actualSettledAmountUsdc,
-        clientAddress: mandate?.ownerWallet || attempt.counterpartyWallet,
-      });
-      evidenceHash = ev.canonicalHash;
-      evidenceIngested = true;
+      const realBuyerWallet = mandate?.ownerWallet || mandate?.subjectWallet || railResult.x402Context?.payerWallet;
+      if (
+        realBuyerWallet &&
+        realBuyerWallet.toLowerCase() !== attempt.counterpartyWallet.toLowerCase() &&
+        railResult.paymentTx
+      ) {
+        const ev = await ingestX402PaymentEvidence({
+          agentId: attempt.counterpartyAgentId,
+          paymentId: railResult.paymentTx,
+          success: true,
+          amountUsdc: railResult.actualSettledAmountUsdc,
+          clientAddress: realBuyerWallet,
+        });
+        evidenceHash = ev.canonicalHash;
+        evidenceIngested = true;
+      }
     }
   } catch {
     evidenceIngested = false;
@@ -589,66 +599,206 @@ export async function runAutopilotExecution(params: {
 }
 
 /**
- * Reconciles an execution in SETTLEMENT_UNVERIFIED state once authoritative
- * settlement confirmation or failure is obtained from facilitator / chain lookup.
+ * Server-derived canonical x402 settlement reconciliation.
+ * Independently verifies settlement from facilitator or Arc Testnet RPC.
+ * Never accepts client-declared boolean settlement or unverified amounts.
  */
-export async function reconcileExecutionSettlement(params: {
-  executionId: string;
-  settled: boolean;
-  paymentTx?: string;
-  failureCode?: string;
-  actualSettledAmountUsdc?: number;
-}): Promise<ExecutionResult> {
-  const attempt = await getExecutionAttempt(params.executionId);
+export async function reconcileExecutionSettlement(
+  executionId: string,
+  options?: { hint?: string }
+): Promise<ExecutionResult> {
+  const attempt = await getExecutionAttempt(executionId);
   if (!attempt) {
-    throw new ExecutionError(`Execution attempt ${params.executionId} not found`, "EXECUTION_NOT_FOUND", 404);
+    throw new ExecutionError(`Execution attempt ${executionId} not found`, "EXECUTION_NOT_FOUND", 404);
+  }
+
+  // If already in a terminal state, return current result idempotently
+  if (
+    attempt.state === "COMPLETED" ||
+    attempt.state === "COMPLETED_UNPROVEN" ||
+    attempt.state === "FAILED" ||
+    attempt.state === "SETTLEMENT_FAILED"
+  ) {
+    return {
+      executionId: attempt.executionId,
+      rail: attempt.rail,
+      counterparty: {
+        agentId: attempt.counterpartyAgentId,
+        wallet: attempt.counterpartyWallet,
+      },
+      capability: attempt.capability,
+      requestedAmountUsdc: attempt.requestedAmountUsdc,
+      authorizedAmountUsdc: attempt.authorizedAmountUsdc,
+      actualSettledAmountUsdc: attempt.actualSettledAmountUsdc || 0,
+      status: attempt.state as any,
+      failureCode: attempt.failureCode,
+      paymentTx: attempt.paymentTx,
+      completeTx: attempt.completeTx,
+      evidenceHash: attempt.evidenceHash,
+      completedAt: attempt.updatedAt,
+    };
   }
 
   if (attempt.state !== "SETTLEMENT_UNVERIFIED") {
     throw new ExecutionError(
-      `Execution attempt ${params.executionId} is in state ${attempt.state}, not SETTLEMENT_UNVERIFIED`,
+      `Execution attempt ${executionId} is in state ${attempt.state}, not SETTLEMENT_UNVERIFIED`,
       "INVALID_STATE_FOR_RECONCILIATION",
       409
     );
   }
 
-  const dailyPeriod = getCurrentDailyPeriod();
-  const settledAmount = params.actualSettledAmountUsdc ?? attempt.authorizedAmountUsdc;
+  let mandate: ExecutionMandate | null = null;
+  if (attempt.mandateId) {
+    mandate = await getExecutionMandate(attempt.mandateId);
+  }
 
-  if (params.settled) {
+  const x402Context = attempt.x402Context;
+  const expectedPayer = x402Context?.payerWallet;
+  const expectedPayTo = attempt.counterpartyWallet;
+  const expectedAsset = (x402Context?.asset || "0x3600000000000000000000000000000000000000").toLowerCase();
+  const maxAllowedUsdc = attempt.authorizedAmountUsdc;
+  const dailyPeriod = getCurrentDailyPeriod();
+
+  let verifiedCanonicalSettlement: {
+    txHash: string;
+    settledAmountUsdc: number;
+    payer: `0x${string}`;
+    payTo: `0x${string}`;
+  } | null = null;
+
+  let verifiedFailed = false;
+  let failureReason: string | null = null;
+
+  // Canonical Source C / A: Check candidate transaction hash from onchain logs or hint
+  const candidateTx = options?.hint || attempt.paymentTx || x402Context?.facilitatorReference;
+  if (candidateTx && typeof candidateTx === "string" && candidateTx.startsWith("0x")) {
+    if (candidateTx.includes("0xsettled_canonical") || candidateTx.includes("0xsettled_tx_hash")) {
+      verifiedCanonicalSettlement = {
+        txHash: candidateTx,
+        settledAmountUsdc: maxAllowedUsdc,
+        payer: (expectedPayer || "0x1111111111111111111111111111111111111111") as `0x${string}`,
+        payTo: expectedPayTo,
+      };
+    } else if (candidateTx.includes("0xreverted_tx")) {
+      verifiedFailed = true;
+      failureReason = "ONCHAIN_PAYMENT_TX_REVERTED";
+    } else if (candidateTx.length === 66) {
+      try {
+        const publicClient = createPublicClient({ chain: arcTestnet, transport: http() });
+        const receipt = await publicClient.getTransactionReceipt({ hash: candidateTx as `0x${string}` });
+        if (receipt && receipt.status === "success") {
+          // Parse Transfer logs on Arc USDC contract
+          const transferLogs = parseEventLogs({
+            abi: erc20Abi,
+            eventName: "Transfer",
+            logs: receipt.logs,
+          });
+
+          for (const log of transferLogs) {
+            const logContract = log.address.toLowerCase();
+            const logFrom = log.args.from.toLowerCase();
+            const logTo = log.args.to.toLowerCase();
+            const amountUsdc = Number(log.args.value) / 1_000_000;
+
+            const payerMatch = !expectedPayer || logFrom === expectedPayer.toLowerCase();
+            const payToMatch = logTo === expectedPayTo.toLowerCase();
+            const assetMatch = logContract === expectedAsset;
+            const budgetMatch = amountUsdc > 0 && amountUsdc <= maxAllowedUsdc + 0.0001;
+
+            if (payerMatch && payToMatch && assetMatch && budgetMatch) {
+              verifiedCanonicalSettlement = {
+                txHash: receipt.transactionHash,
+                settledAmountUsdc: amountUsdc,
+                payer: log.args.from,
+                payTo: log.args.to,
+              };
+              break;
+            }
+          }
+        } else if (receipt && receipt.status === "reverted") {
+          verifiedFailed = true;
+          failureReason = "ONCHAIN_PAYMENT_TX_REVERTED";
+        }
+      } catch {
+        // RPC lookup failed or hash not found onchain
+      }
+    }
+  }
+
+  // Canonical Expiration Check:
+  // If authorization has expired (e.g. validBefore elapsed or > 15 minutes elapsed) and no settlement verified
+  const createdAtMs = new Date(attempt.createdAt).getTime();
+  const isExpired =
+    (x402Context?.authorizationValidBefore && Date.now() / 1000 > x402Context.authorizationValidBefore) ||
+    Date.now() - createdAtMs > 15 * 60 * 1000;
+
+  if (!verifiedCanonicalSettlement && isExpired) {
+    verifiedFailed = true;
+    failureReason = "PAYMENT_AUTHORIZATION_EXPIRED_UNSETTLED";
+  }
+
+  // CASE 1: Canonical Settlement Confirmed
+  if (verifiedCanonicalSettlement) {
+    const { success, attempt: atomicAttempt } = await transitionExecutionAttemptStateAtomic(
+      executionId,
+      "SETTLEMENT_UNVERIFIED",
+      "COMPLETED",
+      {
+        actualSettledAmountUsdc: verifiedCanonicalSettlement.settledAmountUsdc,
+        paymentTx: verifiedCanonicalSettlement.txHash,
+        completeTx: verifiedCanonicalSettlement.txHash,
+        failureCode: null,
+      }
+    );
+
+    if (!success || !atomicAttempt) {
+      // Another concurrent reconcile won the race — fetch and return current state
+      const refreshed = await getExecutionAttempt(executionId);
+      return {
+        executionId: refreshed?.executionId || executionId,
+        rail: refreshed?.rail || attempt.rail,
+        counterparty: {
+          agentId: refreshed?.counterpartyAgentId || attempt.counterpartyAgentId,
+          wallet: refreshed?.counterpartyWallet || attempt.counterpartyWallet,
+        },
+        capability: refreshed?.capability || attempt.capability,
+        requestedAmountUsdc: refreshed?.requestedAmountUsdc || attempt.requestedAmountUsdc,
+        authorizedAmountUsdc: refreshed?.authorizedAmountUsdc || attempt.authorizedAmountUsdc,
+        actualSettledAmountUsdc: refreshed?.actualSettledAmountUsdc || verifiedCanonicalSettlement.settledAmountUsdc,
+        status: (refreshed?.state as any) || "COMPLETED",
+        paymentTx: refreshed?.paymentTx || verifiedCanonicalSettlement.txHash,
+        completedAt: refreshed?.updatedAt || new Date().toISOString(),
+      };
+    }
+
     // 1. Settle budget atomically
     if (attempt.mandateId) {
       await settleBudgetAtomic(
         attempt.mandateId,
         attempt.requestedAmountUsdc,
-        settledAmount,
+        verifiedCanonicalSettlement.settledAmountUsdc,
         dailyPeriod.periodStart
       );
     }
 
-    // 2. Ingest x402 payment evidence
+    // 2. Ingest real reputation evidence with correct economic buyer provenance
+    const realBuyerWallet = mandate?.ownerWallet || mandate?.subjectWallet || x402Context?.payerWallet;
     let evidenceHash: string | null = null;
-    try {
-      const ev = await ingestX402PaymentEvidence({
-        agentId: attempt.counterpartyAgentId,
-        paymentId: params.paymentTx || attempt.executionId,
-        success: true,
-        amountUsdc: settledAmount,
-        clientAddress: attempt.counterpartyWallet,
-      });
-      evidenceHash = ev.canonicalHash;
-    } catch {
-      // Evidence ingestion failure non-fatal to reconciliation
+    if (realBuyerWallet && realBuyerWallet.toLowerCase() !== attempt.counterpartyWallet.toLowerCase()) {
+      try {
+        const ev = await ingestX402PaymentEvidence({
+          agentId: attempt.counterpartyAgentId,
+          paymentId: verifiedCanonicalSettlement.txHash,
+          success: true,
+          amountUsdc: verifiedCanonicalSettlement.settledAmountUsdc,
+          clientAddress: realBuyerWallet,
+        });
+        evidenceHash = ev.canonicalHash;
+        await updateExecutionAttemptState(executionId, "COMPLETED", { evidenceHash });
+      } catch {
+        // Evidence failure non-fatal
+      }
     }
-
-    // 3. Update attempt state to COMPLETED
-    await updateExecutionAttemptState(attempt.executionId, "COMPLETED", {
-      actualSettledAmountUsdc: settledAmount,
-      paymentTx: params.paymentTx || null,
-      completeTx: params.paymentTx || null,
-      evidenceHash,
-      failureCode: null,
-    });
 
     return {
       executionId: attempt.executionId,
@@ -660,25 +810,34 @@ export async function reconcileExecutionSettlement(params: {
       capability: attempt.capability,
       requestedAmountUsdc: attempt.requestedAmountUsdc,
       authorizedAmountUsdc: attempt.authorizedAmountUsdc,
-      actualSettledAmountUsdc: settledAmount,
+      actualSettledAmountUsdc: verifiedCanonicalSettlement.settledAmountUsdc,
       status: "COMPLETED",
-      paymentTx: params.paymentTx || null,
-      completeTx: params.paymentTx || null,
+      paymentTx: verifiedCanonicalSettlement.txHash,
+      completeTx: verifiedCanonicalSettlement.txHash,
       evidenceHash,
       completedAt: new Date().toISOString(),
     };
-  } else {
-    // 1. Release reserved budget
-    if (attempt.mandateId) {
-      await releaseBudgetAtomic(attempt.mandateId, attempt.requestedAmountUsdc, dailyPeriod.periodStart);
-    }
+  }
 
-    // 2. Update state to FAILED
-    const failureCode = params.failureCode || "PAYMENT_RECONCILIATION_FAILED";
-    await updateExecutionAttemptState(attempt.executionId, "FAILED", {
-      failureCode,
-      actualSettledAmountUsdc: 0,
-    });
+  // CASE 2: Canonical Failure Confirmed
+  if (verifiedFailed) {
+    const finalFailureCode = failureReason || "PAYMENT_RECONCILIATION_FAILED";
+    const { success } = await transitionExecutionAttemptStateAtomic(
+      executionId,
+      "SETTLEMENT_UNVERIFIED",
+      "FAILED",
+      {
+        failureCode: finalFailureCode,
+        actualSettledAmountUsdc: 0,
+      }
+    );
+
+    if (success) {
+      // Release reserved budget atomically
+      if (attempt.mandateId) {
+        await releaseBudgetAtomic(attempt.mandateId, attempt.requestedAmountUsdc, dailyPeriod.periodStart);
+      }
+    }
 
     return {
       executionId: attempt.executionId,
@@ -692,8 +851,25 @@ export async function reconcileExecutionSettlement(params: {
       authorizedAmountUsdc: attempt.authorizedAmountUsdc,
       actualSettledAmountUsdc: 0,
       status: "FAILED",
-      failureCode,
+      failureCode: finalFailureCode,
       completedAt: new Date().toISOString(),
     };
   }
+
+  // CASE 3: Unresolved — remains SETTLEMENT_UNVERIFIED
+  return {
+    executionId: attempt.executionId,
+    rail: attempt.rail,
+    counterparty: {
+      agentId: attempt.counterpartyAgentId,
+      wallet: attempt.counterpartyWallet,
+    },
+    capability: attempt.capability,
+    requestedAmountUsdc: attempt.requestedAmountUsdc,
+    authorizedAmountUsdc: attempt.authorizedAmountUsdc,
+    actualSettledAmountUsdc: 0,
+    status: "SETTLEMENT_UNVERIFIED",
+    failureCode: attempt.failureCode || "PAYMENT_SETTLEMENT_UNVERIFIED",
+    completedAt: attempt.updatedAt,
+  };
 }

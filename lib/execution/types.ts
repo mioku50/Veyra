@@ -91,6 +91,21 @@ export interface ExecutionMandateUsage {
   updatedAt: string;
 }
 
+export interface X402ReconciliationContext {
+  payerWallet: `0x${string}`;
+  payTo: `0x${string}`;
+  asset: `0x${string}`;
+  network: string; // e.g. "eip155:5042002"
+  authorizedAmountUsdc: number;
+  authorizationNonce?: string | null;
+  authorizationSignature?: `0x${string}` | null;
+  authorizationValidBefore?: number | null;
+  resource?: string | null;
+  paymentRequirementsHash?: string | null;
+  facilitatorReference?: string | null;
+  requestTimestamp: string;
+}
+
 export interface ExecutionAttempt {
   executionId: string;
   mandateId?: string | null;
@@ -121,6 +136,7 @@ export interface ExecutionAttempt {
   providerContentHash?: string | null;
   providerContentType?: string | null;
   providerSubmittedAt?: string | null;
+  x402Context?: X402ReconciliationContext | null;
   idempotencyKey?: string | null;
   canonicalHash: string;
   createdAt: string;

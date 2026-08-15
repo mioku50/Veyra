@@ -264,6 +264,12 @@ async function runProductTests() {
     x402Source.includes('failureCode: "PAYMENT_SETTLEMENT_UNVERIFIED"') && x402Source.includes("economicSettled: false"),
     "x402 must record failureCode PAYMENT_SETTLEMENT_UNVERIFIED and economicSettled: false"
   );
+
+  // 12. Reconcile route must not trust client-declared settlement
+  const reconcileRouteSource = readFileSync("app/api/execution/v1/[executionId]/reconcile/route.ts", "utf8");
+  assert.ok(!reconcileRouteSource.includes("const { settled"), "Reconcile route must not accept client-declared 'settled'");
+  assert.ok(!reconcileRouteSource.includes("actualSettledAmountUsdc"), "Reconcile route must not accept client-declared 'actualSettledAmountUsdc'");
+
   console.log("✅ All Anti-Cheat V4 static analysis regression checks passed.");
 
   console.log("\n🎉 ALL P6.1 Execution Product Acceptance & Anti-Cheat Tests Passed Successfully!");

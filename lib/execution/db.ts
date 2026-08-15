@@ -213,6 +213,7 @@ export async function saveExecutionAttempt(attempt: ExecutionAttempt): Promise<v
     provider_content_hash: attempt.providerContentHash || null,
     provider_content_type: attempt.providerContentType || null,
     provider_submitted_at: attempt.providerSubmittedAt || null,
+    x402_context: attempt.x402Context || null,
     idempotency_key: attempt.idempotencyKey || null,
     canonical_hash: attempt.canonicalHash,
     created_at: attempt.createdAt,
@@ -270,6 +271,7 @@ export async function getExecutionAttempt(executionId: string): Promise<Executio
     providerContentHash: data.provider_content_hash,
     providerContentType: data.provider_content_type,
     providerSubmittedAt: data.provider_submitted_at,
+    x402Context: data.x402_context || data.x402Context || null,
     idempotencyKey: data.idempotency_key,
     canonicalHash: data.canonical_hash,
     createdAt: data.created_at,
@@ -342,6 +344,7 @@ export async function listExecutionAttempts(options?: {
     providerContentHash: d.provider_content_hash,
     providerContentType: d.provider_content_type,
     providerSubmittedAt: d.provider_submitted_at,
+    x402Context: d.x402_context || d.x402Context || null,
     idempotencyKey: d.idempotency_key,
     canonicalHash: d.canonical_hash,
     createdAt: d.created_at,
@@ -401,6 +404,7 @@ export async function getExecutionAttemptByIdempotency(
     providerContentHash: data.provider_content_hash,
     providerContentType: data.provider_content_type,
     providerSubmittedAt: data.provider_submitted_at,
+    x402Context: data.x402_context || data.x402Context || null,
     idempotencyKey: data.idempotency_key,
     canonicalHash: data.canonical_hash,
     createdAt: data.created_at,
@@ -475,6 +479,9 @@ export async function updateExecutionAttemptState(
   if (patch.providerSubmittedAt !== undefined) {
     updatePayload.provider_submitted_at = patch.providerSubmittedAt;
   }
+  if (patch.x402Context !== undefined) {
+    updatePayload.x402_context = patch.x402Context;
+  }
 
   const { error } = await supabase
     .from("execution_attempts")
@@ -484,6 +491,99 @@ export async function updateExecutionAttemptState(
   if (error) {
     throw new Error(`Database error updating execution attempt state: ${error.message}`);
   }
+}
+
+/**
+ * Atomically transitions an execution attempt from an expected state to a target state.
+ * Returns success: false if the attempt was not in the expected state (prevents concurrent race conditions).
+ */
+export async function transitionExecutionAttemptStateAtomic(
+  executionId: string,
+  expectedCurrentState: ExecutionState,
+  targetState: ExecutionState,
+  patch: Partial<ExecutionAttempt> = {}
+): Promise<{ success: boolean; attempt: ExecutionAttempt | null }> {
+  if (isMemoryStoreAllowed()) {
+    const current = memoryAttemptStore.get(executionId);
+    if (!current) {
+      return { success: false, attempt: null };
+    }
+    if (current.state !== expectedCurrentState) {
+      return { success: false, attempt: current };
+    }
+    validateStateTransition(current.state, targetState, executionId);
+    const updated: ExecutionAttempt = {
+      ...current,
+      ...patch,
+      state: targetState,
+      updatedAt: new Date().toISOString(),
+    };
+    memoryAttemptStore.set(executionId, updated);
+    return { success: true, attempt: updated };
+  }
+
+  const supabase = getByoaClient();
+  const current = await getExecutionAttempt(executionId);
+  if (!current) {
+    return { success: false, attempt: null };
+  }
+  if (current.state !== expectedCurrentState) {
+    return { success: false, attempt: current };
+  }
+
+  validateStateTransition(current.state, targetState, executionId);
+
+  const updated: ExecutionAttempt = {
+    ...current,
+    ...patch,
+    state: targetState,
+    updatedAt: new Date().toISOString(),
+  };
+
+  const updatePayload: Record<string, any> = {
+    state: targetState,
+    updated_at: updated.updatedAt,
+  };
+
+  if (patch.actualSettledAmountUsdc !== undefined) {
+    updatePayload.actual_settled_amount_usdc = patch.actualSettledAmountUsdc;
+  }
+  if (patch.failureCode !== undefined) {
+    updatePayload.failure_code = patch.failureCode;
+  }
+  if (patch.createTx !== undefined) {
+    updatePayload.create_tx = patch.createTx;
+  }
+  if (patch.completeTx !== undefined) {
+    updatePayload.complete_tx = patch.completeTx;
+  }
+  if (patch.paymentTx !== undefined) {
+    updatePayload.payment_tx = patch.paymentTx;
+  }
+  if (patch.evidenceHash !== undefined) {
+    updatePayload.evidence_hash = patch.evidenceHash;
+  }
+  if (patch.x402Context !== undefined) {
+    updatePayload.x402_context = patch.x402Context;
+  }
+
+  const { data, error } = await supabase
+    .from("execution_attempts")
+    .update(updatePayload)
+    .eq("execution_id", executionId)
+    .eq("state", expectedCurrentState)
+    .select();
+
+  if (error) {
+    throw new Error(`Database error conditionally updating execution attempt state: ${error.message}`);
+  }
+
+  if (!data || data.length === 0) {
+    const refreshed = await getExecutionAttempt(executionId);
+    return { success: false, attempt: refreshed };
+  }
+
+  return { success: true, attempt: updated };
 }
 
 /**

@@ -9,7 +9,7 @@ import {
 } from "@x402/core/http";
 import { x402Client, x402HTTPClient } from "@x402/core/client";
 import { ExactEvmScheme, toClientEvmSigner } from "@x402/evm";
-import { getAddress, isAddress, parseUnits, createPublicClient, http } from "viem";
+import { getAddress, isAddress, parseUnits, createPublicClient, http, keccak256, stringToBytes } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { arcTestnet } from "viem/chains";
 import { getArcPublicClient } from "../../erc8183/client.ts";
@@ -237,6 +237,21 @@ export class X402ExecutionAdapter implements ExecutionRailAdapter {
           const paymentPayload = await httpClient.createPaymentPayload(paymentRequired);
           const signatureHeader = httpClient.encodePaymentSignatureHeader(paymentPayload);
 
+          const x402Context = {
+            payerWallet: payerAccount.address,
+            payTo: requiredRecipient as `0x${string}`,
+            asset: (requiredAsset || ARC_USDC) as `0x${string}`,
+            network: selectedOption.network,
+            authorizedAmountUsdc: requiredAmountUsdc,
+            authorizationNonce: (paymentPayload as any)?.payload?.authorization?.nonce || null,
+            authorizationSignature: (paymentPayload as any)?.payload?.signature || null,
+            authorizationValidBefore: (paymentPayload as any)?.payload?.authorization?.validBefore ? Number((paymentPayload as any).payload.authorization.validBefore) : null,
+            resource: endpointUrl,
+            paymentRequirementsHash: paymentRequiredHeader ? keccak256(stringToBytes(paymentRequiredHeader)) : null,
+            facilitatorReference: null,
+            requestTimestamp: new Date().toISOString(),
+          };
+
           // Step 4: Retry with standard x402 V2 payment-signature header
           const paidRes = await fetch(endpointUrl, {
             method: "POST",
@@ -267,6 +282,7 @@ export class X402ExecutionAdapter implements ExecutionRailAdapter {
               failureCode: "PAYMENT_SETTLEMENT_UNVERIFIED",
               paymentTx: undefined, // NO SYNTHETIC HASH
               evidenceType: "x402_settlement_unverified",
+              x402Context,
               rawResult: responseData,
             };
           }
@@ -292,6 +308,7 @@ export class X402ExecutionAdapter implements ExecutionRailAdapter {
               failureCode: "PAYMENT_SETTLEMENT_UNVERIFIED",
               paymentTx: undefined,
               evidenceType: "x402_settlement_unverified",
+              x402Context,
               rawResult: responseData,
             };
           }
@@ -309,6 +326,7 @@ export class X402ExecutionAdapter implements ExecutionRailAdapter {
               serviceSucceeded: false,
               paymentTx: paymentTxHash,
               evidenceType: "x402_execution_failure",
+              x402Context,
               rawResult: { status: paidRes.status },
             };
           }
@@ -324,6 +342,7 @@ export class X402ExecutionAdapter implements ExecutionRailAdapter {
             externalReference: paymentTxHash,
             paymentTx: paymentTxHash,
             evidenceType: "x402_settlement_success",
+            x402Context,
             rawResult: responseData,
           };
         }

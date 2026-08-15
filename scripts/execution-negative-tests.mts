@@ -475,27 +475,46 @@ async function runNegativeTests() {
       selectionId: "sel_1",
       selectionHash: "0x",
       canonicalHash: "0x",
+      x402Context: {
+        payerWallet: "0x1111111111111111111111111111111111111111",
+        payTo: "0x3333333333333333333333333333333333333333",
+        asset: "0x3600000000000000000000000000000000000000",
+        network: "eip155:5042002",
+        authorizedAmountUsdc: 5.0,
+        requestTimestamp: new Date().toISOString(),
+      },
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     });
 
-    // Reconcile settled = true
-    const reconcileResult = await reconcileExecutionSettlement({
-      executionId: unverifiedExecId,
-      settled: true,
-      paymentTx: "0xsettled_tx_hash_12345",
-      actualSettledAmountUsdc: 5.0,
+    // Test 1: Fake hint / no canonical settlement -> remains SETTLEMENT_UNVERIFIED
+    const unverifiedAttempt1 = await reconcileExecutionSettlement(unverifiedExecId, { hint: "0xfake_unknown_tx_hash_123456789012345678901234567890123456789012" });
+    assert.strictEqual(unverifiedAttempt1.status, "SETTLEMENT_UNVERIFIED", "Unverified hint must NOT complete execution");
+    const usagePending = await getExecutionMandateUsage(testMandateId, dailyPeriod.periodStart);
+    assert.strictEqual(usagePending.reservedUsdc, 5.0, "Budget must remain reserved when unverified");
+    assert.strictEqual(usagePending.usedUsdc, 0, "Used budget must remain 0");
+
+    // Test 2: Server-derived canonical settlement -> COMPLETED
+    const canonicalTx = "0xsettled_canonical_tx_hash_1234567890123456789012345678901234567890";
+    const reconcileResult = await reconcileExecutionSettlement(unverifiedExecId, {
+      hint: canonicalTx,
     });
 
     assert.strictEqual(reconcileResult.status, "COMPLETED");
     assert.strictEqual(reconcileResult.actualSettledAmountUsdc, 5.0);
-    assert.strictEqual(reconcileResult.paymentTx, "0xsettled_tx_hash_12345");
+    assert.strictEqual(reconcileResult.paymentTx, canonicalTx);
 
     const usageAfter = await getExecutionMandateUsage(testMandateId, dailyPeriod.periodStart);
     assert.strictEqual(usageAfter.reservedUsdc, 0, "Reserved budget must be 0 after settlement");
     assert.strictEqual(usageAfter.usedUsdc, 5.0, "Used budget must be 5.0 after settlement");
 
-    // Test second execution: settled = false releases reservation
+    // Test 3: Idempotent exact-once reconciliation (calling again does not double-spend)
+    const idempotentResult = await reconcileExecutionSettlement(unverifiedExecId);
+    assert.strictEqual(idempotentResult.status, "COMPLETED");
+    const usageIdempotent = await getExecutionMandateUsage(testMandateId, dailyPeriod.periodStart);
+    assert.strictEqual(usageIdempotent.usedUsdc, 5.0, "Duplicate reconciliation must not double-settle budget");
+
+    // Test 4: Reverted / expired authorization canonically releases reservation
     const unverifiedExecId2 = "vexec_unverified_fail_test";
     await reserveBudgetAtomic(testMandateId, 3.0, dailyPeriod);
     await saveExecutionAttempt({
@@ -513,24 +532,29 @@ async function runNegativeTests() {
       selectionId: "sel_2",
       selectionHash: "0x",
       canonicalHash: "0x",
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
+      x402Context: {
+        payerWallet: "0x1111111111111111111111111111111111111111",
+        payTo: "0x3333333333333333333333333333333333333333",
+        asset: "0x3600000000000000000000000000000000000000",
+        network: "eip155:5042002",
+        authorizedAmountUsdc: 3.0,
+        authorizationValidBefore: Math.floor(Date.now() / 1000) - 60, // expired 1 minute ago
+        requestTimestamp: new Date(Date.now() - 3600000).toISOString(),
+      },
+      createdAt: new Date(Date.now() - 3600000).toISOString(),
+      updatedAt: new Date(Date.now() - 3600000).toISOString(),
     });
 
-    const reconcileFailResult = await reconcileExecutionSettlement({
-      executionId: unverifiedExecId2,
-      settled: false,
-      failureCode: "FACILITATOR_TIMEOUT",
-    });
+    const reconcileFailResult = await reconcileExecutionSettlement(unverifiedExecId2);
 
     assert.strictEqual(reconcileFailResult.status, "FAILED");
     assert.strictEqual(reconcileFailResult.actualSettledAmountUsdc, 0);
 
     const usageFinal = await getExecutionMandateUsage(testMandateId, dailyPeriod.periodStart);
-    assert.strictEqual(usageFinal.reservedUsdc, 0, "Reservation released on failed reconciliation");
+    assert.strictEqual(usageFinal.reservedUsdc, 0, "Reservation released on verified expired authorization");
     assert.strictEqual(usageFinal.usedUsdc, 5.0, "Used budget unchanged from first settled execution");
 
-    console.log("✅ SETTLEMENT_UNVERIFIED and reconciliation lifecycle verified.");
+    console.log("✅ Canonical SETTLEMENT_UNVERIFIED and server-derived reconciliation lifecycle verified.");
   }
 
   console.log("\n🎉 ALL P6.1 Negative & Adversarial Security Tests Passed Successfully!");

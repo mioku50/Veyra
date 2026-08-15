@@ -31,29 +31,33 @@ export async function POST(
     }
 
     if (attempt.state !== "SETTLEMENT_UNVERIFIED") {
+      // If already terminal (COMPLETED / FAILED), return current result idempotently
+      if (
+        attempt.state === "COMPLETED" ||
+        attempt.state === "COMPLETED_UNPROVEN" ||
+        attempt.state === "FAILED" ||
+        attempt.state === "SETTLEMENT_FAILED"
+      ) {
+        const result = await reconcileExecutionSettlement(executionId);
+        return NextResponse.json(result);
+      }
+
       return NextResponse.json(
         { error: `Execution is in ${attempt.state}, not SETTLEMENT_UNVERIFIED`, code: "INVALID_STATE" },
         { status: 409 }
       );
     }
 
+    // Client input may ONLY provide an optional non-authoritative lookup hint
     const body = await req.json().catch(() => ({}));
-    const { settled, paymentTx, failureCode, actualSettledAmountUsdc } = body;
+    const hint =
+      typeof body.hint === "string"
+        ? body.hint
+        : typeof body.facilitatorRef === "string"
+        ? body.facilitatorRef
+        : undefined;
 
-    if (typeof settled !== "boolean") {
-      return NextResponse.json(
-        { error: "'settled' boolean is required", code: "MISSING_REQUIRED_FIELDS" },
-        { status: 400 }
-      );
-    }
-
-    const result = await reconcileExecutionSettlement({
-      executionId,
-      settled,
-      paymentTx,
-      failureCode,
-      actualSettledAmountUsdc,
-    });
+    const result = await reconcileExecutionSettlement(executionId, { hint });
 
     return NextResponse.json(result);
   } catch (err: any) {
