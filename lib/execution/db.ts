@@ -209,6 +209,10 @@ export async function saveExecutionAttempt(attempt: ExecutionAttempt): Promise<v
     selection_hash: attempt.selectionHash,
     clearance_digest: attempt.clearanceDigest || null,
     evidence_hash: attempt.evidenceHash || null,
+    provider_content_uri: attempt.providerContentUri || null,
+    provider_content_hash: attempt.providerContentHash || null,
+    provider_content_type: attempt.providerContentType || null,
+    provider_submitted_at: attempt.providerSubmittedAt || null,
     idempotency_key: attempt.idempotencyKey || null,
     canonical_hash: attempt.canonicalHash,
     created_at: attempt.createdAt,
@@ -262,6 +266,10 @@ export async function getExecutionAttempt(executionId: string): Promise<Executio
     clearanceDigest: data.clearance_digest,
     clearancePayload: data.clearance_payload || null,
     evidenceHash: data.evidence_hash,
+    providerContentUri: data.provider_content_uri,
+    providerContentHash: data.provider_content_hash,
+    providerContentType: data.provider_content_type,
+    providerSubmittedAt: data.provider_submitted_at,
     idempotencyKey: data.idempotency_key,
     canonicalHash: data.canonical_hash,
     createdAt: data.created_at,
@@ -317,6 +325,10 @@ export async function getExecutionAttemptByIdempotency(
     selectionHash: data.selection_hash,
     clearanceDigest: data.clearance_digest,
     evidenceHash: data.evidence_hash,
+    providerContentUri: data.provider_content_uri,
+    providerContentHash: data.provider_content_hash,
+    providerContentType: data.provider_content_type,
+    providerSubmittedAt: data.provider_submitted_at,
     idempotencyKey: data.idempotency_key,
     canonicalHash: data.canonical_hash,
     createdAt: data.created_at,
@@ -378,6 +390,18 @@ export async function updateExecutionAttemptState(
   }
   if (patch.evidenceHash !== undefined) {
     updatePayload.evidence_hash = patch.evidenceHash;
+  }
+  if (patch.providerContentUri !== undefined) {
+    updatePayload.provider_content_uri = patch.providerContentUri;
+  }
+  if (patch.providerContentHash !== undefined) {
+    updatePayload.provider_content_hash = patch.providerContentHash;
+  }
+  if (patch.providerContentType !== undefined) {
+    updatePayload.provider_content_type = patch.providerContentType;
+  }
+  if (patch.providerSubmittedAt !== undefined) {
+    updatePayload.provider_submitted_at = patch.providerSubmittedAt;
   }
 
   const { error } = await supabase

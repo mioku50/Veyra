@@ -320,15 +320,51 @@ export class Erc8183ExecutionAdapter implements ExecutionRailAdapter {
 
         // Verify event parameters match immutable execution intent
         const jobEvent = logs[0].args;
-        if (
-          getAddress(jobEvent.provider) !== getAddress(params.counterpartyWallet) ||
-          getAddress(jobEvent.evaluator) !== getAddress(evaluatorContract)
-        ) {
+        if (jobEvent.client?.toLowerCase() !== relayerAccount.address.toLowerCase()) {
           return {
             executionId: params.executionId,
             rail: "erc8183",
             success: false,
-            failureCode: "ERC8183_EVENT_MISMATCH",
+            failureCode: "ERC8183_CLIENT_MISMATCH",
+            economicCommitted: true,
+            economicSettled: false,
+            actualSettledAmountUsdc: 0,
+            serviceSucceeded: false,
+            evidenceType: "erc8183_job_rejected",
+          };
+        }
+        if (jobEvent.provider?.toLowerCase() !== params.counterpartyWallet.toLowerCase()) {
+          return {
+            executionId: params.executionId,
+            rail: "erc8183",
+            success: false,
+            failureCode: "ERC8183_PROVIDER_MISMATCH",
+            economicCommitted: true,
+            economicSettled: false,
+            actualSettledAmountUsdc: 0,
+            serviceSucceeded: false,
+            evidenceType: "erc8183_job_rejected",
+          };
+        }
+        if (jobEvent.evaluator?.toLowerCase() !== evaluatorContract.toLowerCase()) {
+          return {
+            executionId: params.executionId,
+            rail: "erc8183",
+            success: false,
+            failureCode: "ERC8183_EVALUATOR_MISMATCH",
+            economicCommitted: true,
+            economicSettled: false,
+            actualSettledAmountUsdc: 0,
+            serviceSucceeded: false,
+            evidenceType: "erc8183_job_rejected",
+          };
+        }
+        if (jobEvent.budget == null || jobEvent.budget < parseUnits(params.amountUsdc.toFixed(6), 6)) {
+          return {
+            executionId: params.executionId,
+            rail: "erc8183",
+            success: false,
+            failureCode: "ERC8183_BUDGET_MISMATCH",
             economicCommitted: true,
             economicSettled: false,
             actualSettledAmountUsdc: 0,
@@ -337,56 +373,21 @@ export class Erc8183ExecutionAdapter implements ExecutionRailAdapter {
           };
         }
 
-        // Step 4: Submit Deliverable onchain
-        const deliverable = {
-          version: 1 as const,
-          contentUri: `ipfs://bafkreib${params.executionId.slice(0, 20)}`,
-          contentHash: `0x${Buffer.from(`del_${params.executionId}`).toString("hex").padEnd(64, "0")}` as `0x${string}`,
-          contentType: "application/json" as const,
-          schemaId: "veyra://schemas/structured-deliverable-v1" as const,
-          policyId: "structured-deliverable-v1" as const,
-        };
-
-        const submitTxHash = await walletClient.writeContract({
-          address: agenticCommerce,
-          abi: ERC8183_COMMERCE_ABI,
-          functionName: "submitJob",
-          args: [BigInt(realJobId), deliverable.contentHash],
-        });
-        await publicClient.waitForTransactionReceipt({ hash: submitTxHash });
-
-        // Step 5: Execute Offchain Independent Evaluation & Onchain Verdict Settlement
-        const evalResult = await executeOffchainJobEvaluation({
-          chainId: 5042002,
-          agenticCommerce,
-          jobId: realJobId,
-          deliverable,
-          evaluatorContract,
-          attesterPrivateKey: attesterPk,
-          relayerPrivateKey: relayerPk,
-          rpcUrl,
-        });
-
-        const success = evalResult.status === "completed" && evalResult.decision === "complete";
-        const actualSettled = success ? params.amountUsdc : 0;
-
+        // Return WAITING_FOR_PROVIDER after successful job creation
         return {
           executionId: params.executionId,
           rail: "erc8183",
-          success,
-          failureCode: success ? null : evalResult.failureCategory || "EVALUATION_REJECTED",
-          economicCommitted: true,
-          economicSettled: success,
-          actualSettledAmountUsdc: actualSettled,
-          serviceSucceeded: success,
+          success: false,  // Not yet complete — waiting for provider
+          economicCommitted: true,  // Budget reserved on-chain
+          economicSettled: false,
+          actualSettledAmountUsdc: 0,
+          serviceSucceeded: false,
+          failureCode: null,
           externalReference: realJobId,
           createTx: createTxHash,
-          completeTx: evalResult.settlementTxHash || null,
-          evaluationId: evalResult.reportHash || null,
-          evaluationVerdict: success ? "Complete" : "Reject",
-          evidenceType: success ? "erc8183_job_completed" : "erc8183_job_rejected",
-          rawResult: evalResult,
-        };
+          evidenceType: "erc8183_job_created",
+          rawResult: { jobId: realJobId, provider: params.counterpartyWallet, evaluator: evaluatorContract },
+        } as unknown as NormalizedRailResult & { state: string };
       } catch (err: any) {
         return {
           executionId: params.executionId,
@@ -413,6 +414,107 @@ export class Erc8183ExecutionAdapter implements ExecutionRailAdapter {
       actualSettledAmountUsdc: 0,
       serviceSucceeded: false,
       evidenceType: "erc8183_job_rejected",
+    };
+  }
+
+  async continueAfterProviderSubmission(
+    params: RailExecutionParams,
+    realJobId: string,
+    contentHash: `0x${string}`,
+    contentUri: string,
+    contentType: string = "application/json"
+  ): Promise<NormalizedRailResult> {
+    const evaluatorContract = (params.evaluatorAddress ||
+      process.env.NEXT_PUBLIC_VEYRA_ERC8183_EVALUATOR_ADDRESS ||
+      "0x0d2c04580e081e222bbe5bf9818af337e2633eb7") as `0x${string}`;
+    const agenticCommerce = (process.env.NEXT_PUBLIC_ERC8183_CONTRACT_ADDRESS ||
+      "0x0747EEf0706327138c69792bF28Cd525089e4583") as `0x${string}`;
+
+    const attesterPk = (process.env.ERC8183_EVALUATOR_ATTESTER_PRIVATE_KEY ||
+      process.env.VEYRA_TRUST_ATTESTER_PRIVATE_KEY) as `0x${string}` | undefined;
+    const relayerPk = (process.env.ERC8183_EVALUATOR_RELAYER_PRIVATE_KEY ||
+      process.env.CANARY_DEPLOYER_PRIVATE_KEY) as `0x${string}` | undefined;
+    const rpcUrl = process.env.ARC_TESTNET_RPC_URL;
+
+    if (!attesterPk || !relayerPk || !rpcUrl) {
+      throw new Error("ERC8183_KEYS_OR_RPC_UNAVAILABLE");
+    }
+
+    const publicClient = getArcPublicClient(rpcUrl);
+    const relayerAccount = privateKeyToAccount(relayerPk);
+    const walletClient = createWalletClient({
+      account: relayerAccount,
+      chain: arcTestnet,
+      transport: http(rpcUrl),
+    });
+
+    const deliverable = {
+      version: 1 as const,
+      contentUri,
+      contentHash,
+      contentType: contentType as any,
+      schemaId: "veyra://schemas/structured-deliverable-v1" as const,
+      policyId: "structured-deliverable-v1" as const,
+    };
+
+    const submitTxHash = await walletClient.writeContract({
+      address: agenticCommerce,
+      abi: ERC8183_COMMERCE_ABI,
+      functionName: "submitJob",
+      args: [BigInt(realJobId), deliverable.contentHash],
+    });
+    await publicClient.waitForTransactionReceipt({ hash: submitTxHash });
+
+    const evalResult = await executeOffchainJobEvaluation({
+      chainId: 5042002,
+      agenticCommerce,
+      jobId: realJobId,
+      deliverable,
+      evaluatorContract,
+      attesterPrivateKey: attesterPk,
+      relayerPrivateKey: relayerPk,
+      rpcUrl,
+    });
+
+    const success = evalResult.status === "completed" && evalResult.decision === "complete";
+    let actualSettledAmountUsdc = 0;
+
+    if (evalResult.settlementTxHash) {
+      const settlementReceipt = await publicClient.getTransactionReceipt({ hash: evalResult.settlementTxHash as `0x${string}` });
+      const erc20Abi = [{
+        type: "event", name: "Transfer", inputs: [
+          { indexed: true, name: "from", type: "address" },
+          { indexed: true, name: "to", type: "address" },
+          { indexed: false, name: "value", type: "uint256" }
+        ]
+      }] as const;
+      
+      const settlementLogs = parseEventLogs({
+        abi: erc20Abi,
+        logs: settlementReceipt.logs,
+        eventName: "Transfer",
+      });
+      const settlementTransfer = settlementLogs.find(
+        (log) => log.args.to?.toLowerCase() === params.counterpartyWallet.toLowerCase()
+      );
+      actualSettledAmountUsdc = settlementTransfer ? Number(settlementTransfer.args.value) / 1e6 : 0;
+    }
+
+    return {
+      executionId: params.executionId,
+      rail: "erc8183",
+      success,
+      failureCode: success ? null : evalResult.failureCategory || "EVALUATION_REJECTED",
+      economicCommitted: true,
+      economicSettled: success,
+      actualSettledAmountUsdc,
+      serviceSucceeded: success,
+      externalReference: realJobId,
+      completeTx: evalResult.settlementTxHash || null,
+      evaluationId: evalResult.reportHash || null,
+      evaluationVerdict: success ? "Complete" : "Reject",
+      evidenceType: success ? "erc8183_job_completed" : "erc8183_job_rejected",
+      rawResult: evalResult,
     };
   }
 }

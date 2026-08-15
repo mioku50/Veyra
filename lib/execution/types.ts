@@ -12,6 +12,7 @@ export type ExecutionState =
   | "PREPARED"
   | "AUTHORIZED"
   | "EXECUTING"
+  | "WAITING_FOR_PROVIDER"
   | "SUBMITTED"
   | "EVALUATING"
   | "SETTLING"
@@ -115,6 +116,10 @@ export interface ExecutionAttempt {
     digest: `0x${string}`;
   } | null;
   evidenceHash?: string | null;
+  providerContentUri?: string | null;
+  providerContentHash?: string | null;
+  providerContentType?: string | null;
+  providerSubmittedAt?: string | null;
   idempotencyKey?: string | null;
   canonicalHash: string;
   createdAt: string;

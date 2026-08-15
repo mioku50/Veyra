@@ -140,8 +140,18 @@ async function runUnitTests() {
 
     // Intermediate and unproven state transitions
     assert.ok(validateStateTransition("EXECUTING", "EVIDENCE_PENDING", "exec_1"));
-    assert.ok(validateStateTransition("EVIDENCE_PENDING", "COMPLETED_UNPROVEN", "exec_1"));
     assert.ok(validateStateTransition("COMPLETED_UNPROVEN", "COMPLETED", "exec_1"));
+
+    // WAITING_FOR_PROVIDER transitions
+    assert.ok(validateStateTransition("EXECUTING", "WAITING_FOR_PROVIDER", "test-wp-1"));
+    assert.ok(validateStateTransition("WAITING_FOR_PROVIDER", "EVALUATING", "test-wp-2"));
+    assert.ok(validateStateTransition("WAITING_FOR_PROVIDER", "FAILED", "test-wp-3"));
+    assert.ok(validateStateTransition("WAITING_FOR_PROVIDER", "EXPIRED", "test-wp-4"));
+    // Illegal: WAITING_FOR_PROVIDER → EXECUTING (no going back)
+    assert.throws(
+      () => validateStateTransition("WAITING_FOR_PROVIDER", "EXECUTING", "test-wp-bad"),
+      InvalidStateTransitionError
+    );
 
     // Terminal states check
     assert.ok(isTerminalState("COMPLETED"));

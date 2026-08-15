@@ -10,6 +10,7 @@ export const ALLOWED_TRANSITIONS: Record<ExecutionState, ExecutionState[]> = {
   PREPARED: ["AUTHORIZED", "EXECUTING", "CANCELLED", "EXPIRED", "REJECTED"],
   AUTHORIZED: ["EXECUTING", "CANCELLED", "EXPIRED", "REJECTED"],
   EXECUTING: [
+    "WAITING_FOR_PROVIDER",
     "SUBMITTED",
     "EVALUATING",
     "SETTLING",
@@ -22,6 +23,7 @@ export const ALLOWED_TRANSITIONS: Record<ExecutionState, ExecutionState[]> = {
     "EVALUATION_REJECTED",
   ],
   SUBMITTED: [
+    "WAITING_FOR_PROVIDER",
     "EVALUATING",
     "SETTLING",
     "EVIDENCE_PENDING",
@@ -31,6 +33,17 @@ export const ALLOWED_TRANSITIONS: Record<ExecutionState, ExecutionState[]> = {
     "FAILED",
     "SETTLEMENT_FAILED",
     "EVALUATION_REJECTED",
+  ],
+  WAITING_FOR_PROVIDER: [
+    "EVALUATING",
+    "SETTLING",
+    "EVIDENCE_PENDING",
+    "COMPLETED_UNPROVEN",
+    "COMPLETED",
+    "SETTLED_SERVICE_FAILED",
+    "FAILED",
+    "EXPIRED",
+    "CANCELLED"
   ],
   EVALUATING: [
     "SETTLING",
