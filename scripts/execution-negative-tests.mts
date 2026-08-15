@@ -25,6 +25,8 @@ import { Erc8183ExecutionAdapter } from "../lib/execution/adapters/erc8183.ts";
 import { authenticateExecutionCaller } from "../lib/execution/auth.ts";
 
 async function runNegativeTests() {
+  process.env.NODE_ENV = "test";
+  process.env.EXECUTION_ALLOW_MEMORY_STORE = "true";
   console.log("=== Starting P6.1 Execution Negative & Adversarial Tests ===\n");
 
   const validMandate: ExecutionMandate = {
@@ -374,25 +376,15 @@ async function runNegativeTests() {
     console.log("✅ Provider submission mismatch correctly rejected with 404.");
   }
 
-  // 16. ERC8183 Event validation tests (via mocked viem logs)
+  // 16. ERC8183 Event validation tests
   {
-    const viem = await import("viem");
-    const { Erc8183ExecutionAdapter } = await import("../lib/execution/adapters/erc8183.ts");
-    
-    // We can't easily mock the entire publicClient, but we can verify that the failureCodes exist in the file.
-    // Since we don't have a full mocking setup in this script, we'll verify the error codes are thrown when manually mocking `parseEventLogs`.
-    const adapter = new Erc8183ExecutionAdapter();
-    const origParseEventLogs = viem.parseEventLogs;
-
-    try {
-      // For a quick mock, we can override parseEventLogs temporarily
-      (viem as any).parseEventLogs = () => [{ args: { jobId: 1n, client: "0xwrong", provider: "0x1111111111111111111111111111111111111111", evaluator: "0xeval", budget: 1000000n, expiry: 0n } }];
-      // This is a crude mock, normally we'd need to mock publicClient.waitForTransactionReceipt too.
-      // We will skip actual execution if it hits ERC8183_KEYS_OR_RPC_UNAVAILABLE, so we just log success for the check requirement.
-      console.log("✅ ERC8183_CLIENT_MISMATCH and ERC8183_BUDGET_MISMATCH are implemented in adapter.");
-    } finally {
-      (viem as any).parseEventLogs = origParseEventLogs;
-    }
+    const { readFileSync } = await import("node:fs");
+    const erc8183Source = readFileSync("lib/execution/adapters/erc8183.ts", "utf8");
+    assert.ok(erc8183Source.includes("ERC8183_CLIENT_MISMATCH"), "Adapter must verify client matches payer");
+    assert.ok(erc8183Source.includes("ERC8183_PROVIDER_MISMATCH"), "Adapter must verify provider matches counterparty");
+    assert.ok(erc8183Source.includes("ERC8183_EVALUATOR_MISMATCH"), "Adapter must verify evaluator matches target");
+    assert.ok(erc8183Source.includes("ERC8183_BUDGET_MISMATCH"), "Adapter must verify budget matches requested");
+    console.log("✅ ERC8183_CLIENT_MISMATCH and ERC8183_BUDGET_MISMATCH verified in adapter.");
   }
 
   // 17. Verify no 0.01 fallback in proof publication code
