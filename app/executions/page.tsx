@@ -64,6 +64,13 @@ function getStatusBadge(state: ExecutionState) {
           {state}
         </Badge>
       );
+    case "SETTLEMENT_UNVERIFIED":
+      return (
+        <Badge className="bg-amber-500/15 text-amber-400 border-amber-500/30 gap-1.5 py-0.5">
+          <Clock className="size-3" />
+          SETTLEMENT UNVERIFIED
+        </Badge>
+      );
     case "SETTLED_SERVICE_FAILED":
       return (
         <Badge className="bg-orange-500/15 text-orange-400 border-orange-500/30 gap-1.5 py-0.5">

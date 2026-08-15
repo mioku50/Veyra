@@ -321,7 +321,10 @@ export async function executePreparedIntent(params: {
 
   // Irreversibility & Post-Payment Failure Accounting:
   // Budget handling depends on economic outcome, not generic success!
-  if (railResult.economicSettled || railResult.actualSettledAmountUsdc > 0) {
+  if (railResult.failureCode === "PAYMENT_SETTLEMENT_UNVERIFIED") {
+    // DO NOT release reservation and DO NOT settle spend.
+    // Keep budget reserved until settlement reconciliation.
+  } else if (railResult.economicSettled || railResult.actualSettledAmountUsdc > 0) {
     // Settle budget atomically — record actualSettledAmountUsdc as spent
     if (attempt.mandateId) {
       await settleBudgetAtomic(
@@ -339,7 +342,9 @@ export async function executePreparedIntent(params: {
   }
 
   if (!railResult.success) {
-    const terminalState = (railResult.economicSettled || railResult.actualSettledAmountUsdc > 0)
+    const terminalState = railResult.failureCode === "PAYMENT_SETTLEMENT_UNVERIFIED"
+      ? "SETTLEMENT_UNVERIFIED"
+      : (railResult.economicSettled || railResult.actualSettledAmountUsdc > 0)
       ? "SETTLED_SERVICE_FAILED"
       : "FAILED";
 
@@ -581,4 +586,114 @@ export async function runAutopilotExecution(params: {
     idempotencyKey: params.idempotencyKey,
     taskPayload: params.task,
   });
+}
+
+/**
+ * Reconciles an execution in SETTLEMENT_UNVERIFIED state once authoritative
+ * settlement confirmation or failure is obtained from facilitator / chain lookup.
+ */
+export async function reconcileExecutionSettlement(params: {
+  executionId: string;
+  settled: boolean;
+  paymentTx?: string;
+  failureCode?: string;
+  actualSettledAmountUsdc?: number;
+}): Promise<ExecutionResult> {
+  const attempt = await getExecutionAttempt(params.executionId);
+  if (!attempt) {
+    throw new ExecutionError(`Execution attempt ${params.executionId} not found`, "EXECUTION_NOT_FOUND", 404);
+  }
+
+  if (attempt.state !== "SETTLEMENT_UNVERIFIED") {
+    throw new ExecutionError(
+      `Execution attempt ${params.executionId} is in state ${attempt.state}, not SETTLEMENT_UNVERIFIED`,
+      "INVALID_STATE_FOR_RECONCILIATION",
+      409
+    );
+  }
+
+  const dailyPeriod = getCurrentDailyPeriod();
+  const settledAmount = params.actualSettledAmountUsdc ?? attempt.authorizedAmountUsdc;
+
+  if (params.settled) {
+    // 1. Settle budget atomically
+    if (attempt.mandateId) {
+      await settleBudgetAtomic(
+        attempt.mandateId,
+        attempt.requestedAmountUsdc,
+        settledAmount,
+        dailyPeriod.periodStart
+      );
+    }
+
+    // 2. Ingest x402 payment evidence
+    let evidenceHash: string | null = null;
+    try {
+      const ev = await ingestX402PaymentEvidence({
+        agentId: attempt.counterpartyAgentId,
+        paymentId: params.paymentTx || attempt.executionId,
+        success: true,
+        amountUsdc: settledAmount,
+        clientAddress: attempt.counterpartyWallet,
+      });
+      evidenceHash = ev.canonicalHash;
+    } catch {
+      // Evidence ingestion failure non-fatal to reconciliation
+    }
+
+    // 3. Update attempt state to COMPLETED
+    await updateExecutionAttemptState(attempt.executionId, "COMPLETED", {
+      actualSettledAmountUsdc: settledAmount,
+      paymentTx: params.paymentTx || null,
+      completeTx: params.paymentTx || null,
+      evidenceHash,
+      failureCode: null,
+    });
+
+    return {
+      executionId: attempt.executionId,
+      rail: attempt.rail,
+      counterparty: {
+        agentId: attempt.counterpartyAgentId,
+        wallet: attempt.counterpartyWallet,
+      },
+      capability: attempt.capability,
+      requestedAmountUsdc: attempt.requestedAmountUsdc,
+      authorizedAmountUsdc: attempt.authorizedAmountUsdc,
+      actualSettledAmountUsdc: settledAmount,
+      status: "COMPLETED",
+      paymentTx: params.paymentTx || null,
+      completeTx: params.paymentTx || null,
+      evidenceHash,
+      completedAt: new Date().toISOString(),
+    };
+  } else {
+    // 1. Release reserved budget
+    if (attempt.mandateId) {
+      await releaseBudgetAtomic(attempt.mandateId, attempt.requestedAmountUsdc, dailyPeriod.periodStart);
+    }
+
+    // 2. Update state to FAILED
+    const failureCode = params.failureCode || "PAYMENT_RECONCILIATION_FAILED";
+    await updateExecutionAttemptState(attempt.executionId, "FAILED", {
+      failureCode,
+      actualSettledAmountUsdc: 0,
+    });
+
+    return {
+      executionId: attempt.executionId,
+      rail: attempt.rail,
+      counterparty: {
+        agentId: attempt.counterpartyAgentId,
+        wallet: attempt.counterpartyWallet,
+      },
+      capability: attempt.capability,
+      requestedAmountUsdc: attempt.requestedAmountUsdc,
+      authorizedAmountUsdc: attempt.authorizedAmountUsdc,
+      actualSettledAmountUsdc: 0,
+      status: "FAILED",
+      failureCode,
+      completedAt: new Date().toISOString(),
+    };
+  }
 }

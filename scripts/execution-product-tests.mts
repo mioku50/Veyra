@@ -258,6 +258,12 @@ async function runProductTests() {
     liveTestSource.includes("SKIPPED") || liveTestSource.includes("X402ExecutionAdapter"),
     "Live acceptance Scenario C must use real x402 adapter or be explicitly SKIPPED"
   );
+
+  // 11. x402 unverified settlement must return failureCode and unverified economic settlement
+  assert.ok(
+    x402Source.includes('failureCode: "PAYMENT_SETTLEMENT_UNVERIFIED"') && x402Source.includes("economicSettled: false"),
+    "x402 must record failureCode PAYMENT_SETTLEMENT_UNVERIFIED and economicSettled: false"
+  );
   console.log("✅ All Anti-Cheat V4 static analysis regression checks passed.");
 
   console.log("\n🎉 ALL P6.1 Execution Product Acceptance & Anti-Cheat Tests Passed Successfully!");

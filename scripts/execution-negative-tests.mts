@@ -337,8 +337,13 @@ async function runNegativeTests() {
     const resUnverified = await adapter.execute({
       executionId: "vexec_x402_5", selectionId: "sel", selectionHash: "0x", counterpartyAgentId: "agent", counterpartyWallet: "0x1111111111111111111111111111111111111111", capability: "cap", amountUsdc: 1.0, taskPayload: { endpointUrl: "http://test" }
     });
+    assert.equal(resUnverified.success, false, "Unverified settlement must NOT return success: true");
+    assert.equal(resUnverified.economicCommitted, true, "Unverified settlement must have economicCommitted: true");
+    assert.equal(resUnverified.economicSettled, false, "Unverified settlement must have economicSettled: false");
+    assert.equal(resUnverified.serviceSucceeded, true, "Unverified settlement has serviceSucceeded: true");
+    assert.equal(resUnverified.actualSettledAmountUsdc, 0, "Unverified settlement confirmed spend must be 0");
     assert.equal(resUnverified.failureCode, "PAYMENT_SETTLEMENT_UNVERIFIED");
-    assert.equal(resUnverified.economicSettled, false);
+    assert.equal(resUnverified.paymentTx, undefined, "Unverified settlement must not fabricate paymentTx");
 
     global.fetch = originalFetch;
     
@@ -408,6 +413,124 @@ async function runNegativeTests() {
     assert.strictEqual(getTrustDisplayLabel(40, "Low", 1), "High Attention");
     assert.strictEqual(getTrustDisplayLabel(20, "Low", 0), "Limited Evidence");
     console.log("✅ Deterministic Trust Display Labels verified.");
+  }
+
+  // 19. Unverified Settlement & Reconciliation Lifecycle Tests
+  {
+    const { saveExecutionAttempt, getExecutionAttempt, saveExecutionMandate, getExecutionMandateUsage, reserveBudgetAtomic } = await import("../lib/execution/db.ts");
+    const { reconcileExecutionSettlement } = await import("../lib/execution/executor.ts");
+    const { getCurrentDailyPeriod } = await import("../lib/execution/budget.ts");
+
+    const dailyPeriod = getCurrentDailyPeriod();
+    const testMandateId = "vman_unverified_test";
+
+    // Setup mandate
+    await saveExecutionMandate({
+      mandateId: testMandateId,
+      ownerWallet: "0x1111111111111111111111111111111111111111",
+      subjectAgentId: "agent_auto",
+      subjectWallet: "0x2222222222222222222222222222222222222222",
+      mode: "AUTOPILOT",
+      network: "eip155:5042002",
+      allowedCapabilities: ["web_search"],
+      allowedRails: ["x402"],
+      maxPerTransactionUsdc: 10,
+      maxPerDayUsdc: 50,
+      maxTotalUsdc: 200,
+      minimumTrustScore: 50,
+      minimumConfidence: 50,
+      requireVerifiedIdentity: true,
+      evaluatorThresholdUsdc: 5,
+      canonicalHash: "0x",
+      signature: "0x",
+      nonce: 1,
+      version: "1.0",
+      issuedAt: new Date().toISOString(),
+      expiresAt: new Date(Date.now() + 86400000).toISOString(),
+      createdAt: new Date().toISOString(),
+    });
+
+    // Reserve 5 USDC
+    const res = await reserveBudgetAtomic(testMandateId, 5.0, dailyPeriod);
+    assert.ok(res.success, "Budget reservation must succeed");
+
+    const usageBefore = await getExecutionMandateUsage(testMandateId, dailyPeriod.periodStart);
+    assert.strictEqual(usageBefore.reservedUsdc, 5.0, "Reserved budget must be 5.0 USDC");
+    assert.strictEqual(usageBefore.usedUsdc, 0, "Used budget must be 0 before settlement");
+
+    // Create execution attempt in SETTLEMENT_UNVERIFIED
+    const unverifiedExecId = "vexec_unverified_reconcile_test";
+    await saveExecutionAttempt({
+      executionId: unverifiedExecId,
+      mandateId: testMandateId,
+      state: "SETTLEMENT_UNVERIFIED",
+      rail: "x402",
+      counterpartyAgentId: "agent_seller_1",
+      counterpartyWallet: "0x3333333333333333333333333333333333333333",
+      capability: "web_search",
+      requestedAmountUsdc: 5.0,
+      authorizedAmountUsdc: 5.0,
+      actualSettledAmountUsdc: 0,
+      failureCode: "PAYMENT_SETTLEMENT_UNVERIFIED",
+      selectionId: "sel_1",
+      selectionHash: "0x",
+      canonicalHash: "0x",
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    });
+
+    // Reconcile settled = true
+    const reconcileResult = await reconcileExecutionSettlement({
+      executionId: unverifiedExecId,
+      settled: true,
+      paymentTx: "0xsettled_tx_hash_12345",
+      actualSettledAmountUsdc: 5.0,
+    });
+
+    assert.strictEqual(reconcileResult.status, "COMPLETED");
+    assert.strictEqual(reconcileResult.actualSettledAmountUsdc, 5.0);
+    assert.strictEqual(reconcileResult.paymentTx, "0xsettled_tx_hash_12345");
+
+    const usageAfter = await getExecutionMandateUsage(testMandateId, dailyPeriod.periodStart);
+    assert.strictEqual(usageAfter.reservedUsdc, 0, "Reserved budget must be 0 after settlement");
+    assert.strictEqual(usageAfter.usedUsdc, 5.0, "Used budget must be 5.0 after settlement");
+
+    // Test second execution: settled = false releases reservation
+    const unverifiedExecId2 = "vexec_unverified_fail_test";
+    await reserveBudgetAtomic(testMandateId, 3.0, dailyPeriod);
+    await saveExecutionAttempt({
+      executionId: unverifiedExecId2,
+      mandateId: testMandateId,
+      state: "SETTLEMENT_UNVERIFIED",
+      rail: "x402",
+      counterpartyAgentId: "agent_seller_1",
+      counterpartyWallet: "0x3333333333333333333333333333333333333333",
+      capability: "web_search",
+      requestedAmountUsdc: 3.0,
+      authorizedAmountUsdc: 3.0,
+      actualSettledAmountUsdc: 0,
+      failureCode: "PAYMENT_SETTLEMENT_UNVERIFIED",
+      selectionId: "sel_2",
+      selectionHash: "0x",
+      canonicalHash: "0x",
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    });
+
+    const reconcileFailResult = await reconcileExecutionSettlement({
+      executionId: unverifiedExecId2,
+      settled: false,
+      failureCode: "FACILITATOR_TIMEOUT",
+    });
+
+    assert.strictEqual(reconcileFailResult.status, "FAILED");
+    assert.strictEqual(reconcileFailResult.actualSettledAmountUsdc, 0);
+
+    const usageFinal = await getExecutionMandateUsage(testMandateId, dailyPeriod.periodStart);
+    assert.strictEqual(usageFinal.reservedUsdc, 0, "Reservation released on failed reconciliation");
+    assert.strictEqual(usageFinal.usedUsdc, 5.0, "Used budget unchanged from first settled execution");
+
+    console.log("✅ SETTLEMENT_UNVERIFIED and reconciliation lifecycle verified.");
   }
 
   console.log("\n🎉 ALL P6.1 Negative & Adversarial Security Tests Passed Successfully!");

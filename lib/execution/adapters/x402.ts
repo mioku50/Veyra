@@ -255,18 +255,18 @@ export class X402ExecutionAdapter implements ExecutionRailAdapter {
           const responseData = await paidRes.json().catch(() => ({}));
 
           if (!paymentResponseHeader) {
-            // Payment succeeded (HTTP 200) but settlement cannot be independently verified
+            // Payment authorization was sent (HTTP 200) but settlement cannot be independently verified yet
             return {
               executionId: params.executionId,
               rail: "x402",
-              success: true,
+              success: false,
               economicCommitted: true,
-              economicSettled: false,  // Cannot verify without PAYMENT-RESPONSE
-              actualSettledAmountUsdc: requiredAmountUsdc,
+              economicSettled: false,
+              actualSettledAmountUsdc: 0,
               serviceSucceeded: true,
               failureCode: "PAYMENT_SETTLEMENT_UNVERIFIED",
-              paymentTx: undefined,  // NO SYNTHETIC HASH
-              evidenceType: "x402_execution_failure",
+              paymentTx: undefined, // NO SYNTHETIC HASH
+              evidenceType: "x402_settlement_unverified",
               rawResult: responseData,
             };
           }
@@ -284,14 +284,14 @@ export class X402ExecutionAdapter implements ExecutionRailAdapter {
             return {
               executionId: params.executionId,
               rail: "x402",
-              success: true,
+              success: false,
               economicCommitted: true,
               economicSettled: false,
-              actualSettledAmountUsdc: requiredAmountUsdc,
+              actualSettledAmountUsdc: 0,
               serviceSucceeded: true,
               failureCode: "PAYMENT_SETTLEMENT_UNVERIFIED",
               paymentTx: undefined,
-              evidenceType: "x402_execution_failure",
+              evidenceType: "x402_settlement_unverified",
               rawResult: responseData,
             };
           }

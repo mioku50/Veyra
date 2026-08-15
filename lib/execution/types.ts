@@ -16,6 +16,7 @@ export type ExecutionState =
   | "SUBMITTED"
   | "EVALUATING"
   | "SETTLING"
+  | "SETTLEMENT_UNVERIFIED"
   | "EVIDENCE_PENDING"
   | "COMPLETED_UNPROVEN"
   | "SETTLED_SERVICE_FAILED"
@@ -159,7 +160,7 @@ export interface ExecutionResult {
   requestedAmountUsdc: number;
   authorizedAmountUsdc: number;
   actualSettledAmountUsdc: number;
-  status: "COMPLETED" | "COMPLETED_UNPROVEN" | "SETTLED_SERVICE_FAILED" | "REJECTED" | "FAILED";
+  status: "COMPLETED" | "COMPLETED_UNPROVEN" | "SETTLED_SERVICE_FAILED" | "SETTLEMENT_UNVERIFIED" | "REJECTED" | "FAILED";
   failureCode?: string | null;
   createTx?: string | null;
   completeTx?: string | null;

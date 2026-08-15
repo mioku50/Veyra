@@ -153,11 +153,23 @@ async function runUnitTests() {
       InvalidStateTransitionError
     );
 
+    // SETTLEMENT_UNVERIFIED transitions
+    assert.ok(validateStateTransition("EXECUTING", "SETTLEMENT_UNVERIFIED", "test-su-1"));
+    assert.ok(validateStateTransition("SETTLEMENT_UNVERIFIED", "COMPLETED", "test-su-2"));
+    assert.ok(validateStateTransition("SETTLEMENT_UNVERIFIED", "FAILED", "test-su-3"));
+    assert.ok(validateStateTransition("SETTLEMENT_UNVERIFIED", "CANCELLED", "test-su-4"));
+    // Illegal: SETTLEMENT_UNVERIFIED → PREPARED
+    assert.throws(
+      () => validateStateTransition("SETTLEMENT_UNVERIFIED", "PREPARED", "test-su-bad"),
+      InvalidStateTransitionError
+    );
+
     // Terminal states check
     assert.ok(isTerminalState("COMPLETED"));
     assert.ok(isTerminalState("COMPLETED_UNPROVEN"));
     assert.ok(isTerminalState("SETTLED_SERVICE_FAILED"));
     assert.ok(isTerminalState("FAILED"));
+    assert.ok(!isTerminalState("SETTLEMENT_UNVERIFIED"));
     assert.ok(isTerminalState("REJECTED"));
     assert.ok(isTerminalState("CANCELLED"));
     assert.ok(isTerminalState("EXPIRED"));

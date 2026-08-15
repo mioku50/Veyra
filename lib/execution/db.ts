@@ -618,3 +618,40 @@ export async function settleBudgetAtomic(
 
   return Boolean((data as any)?.success);
 }
+
+/**
+ * Retrieves current budget usage for a mandate in memory or database.
+ */
+export async function getExecutionMandateUsage(
+  mandateId: string,
+  periodStart?: string
+): Promise<{ usedUsdc: number; reservedUsdc: number; totalUsedUsdc: number; totalReservedUsdc: number }> {
+  if (isMemoryStoreAllowed()) {
+    const usage = memoryUsageStore.get(mandateId) || { used: 0, reserved: 0, totalUsed: 0, totalReserved: 0 };
+    return {
+      usedUsdc: usage.used,
+      reservedUsdc: usage.reserved,
+      totalUsedUsdc: usage.totalUsed,
+      totalReservedUsdc: usage.totalReserved,
+    };
+  }
+
+  const supabase = getByoaClient();
+  const { data, error } = await supabase
+    .from("execution_mandate_daily_usage")
+    .select("used_usdc, reserved_usdc")
+    .eq("mandate_id", mandateId)
+    .eq("period_start", periodStart || new Date().toISOString().slice(0, 10))
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(`Database error fetching mandate usage: ${error.message}`);
+  }
+
+  return {
+    usedUsdc: Number(data?.used_usdc || 0),
+    reservedUsdc: Number(data?.reserved_usdc || 0),
+    totalUsedUsdc: Number(data?.used_usdc || 0),
+    totalReservedUsdc: Number(data?.reserved_usdc || 0),
+  };
+}

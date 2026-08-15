@@ -5,6 +5,19 @@ All notable changes to the Veyra platform will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.0-beta.5] - 2026-08-15
+
+### Security, Settlement Finality & Reconciliation
+- **P6.1.3a x402 Unverified Settlement Finality Fix**:
+  - **Non-Success Unverified Settlement**: When `PAYMENT-RESPONSE` is missing or cannot be decoded, `X402ExecutionAdapter` strictly returns `success: false`, `economicCommitted: true`, `economicSettled: false`, `actualSettledAmountUsdc: 0`, and `failureCode: PAYMENT_SETTLEMENT_UNVERIFIED`.
+  - **Explicit `SETTLEMENT_UNVERIFIED` State**: Added dedicated non-terminal execution state `SETTLEMENT_UNVERIFIED` to prevent premature completion or improper failure mapping when service succeeds before settlement proof arrives.
+  - **Conservative Budget Accounting**: Budget reservations are strictly held and never released automatically or marked as confirmed spent while settlement is unverified.
+  - **Reputation Evidence Guard**: Guaranteed zero positive or negative reputation feedback ingestion until settlement outcome is authoritatively verified.
+  - **Settlement Reconciliation**: Added `reconcileExecutionSettlement` engine logic and authenticated `POST /api/execution/v1/[executionId]/reconcile` endpoint supporting exact-once budget settlement or reservation release upon canonical confirmation.
+  - **UI Status Badge**: Added dedicated amber `SETTLEMENT UNVERIFIED` badge in `/executions` audit log.
+
+---
+
 ## [0.2.0-beta.4] - 2026-08-15
 
 ### Security, Integrity & UX
