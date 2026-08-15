@@ -6,9 +6,10 @@
 import {
   decodePaymentRequiredHeader,
   decodePaymentResponseHeader,
-  encodePaymentSignatureHeader,
 } from "@x402/core/http";
-import { getAddress, isAddress, parseUnits } from "viem";
+import { x402Client, x402HTTPClient } from "@x402/core/client";
+import { ExactEvmScheme, toClientEvmSigner } from "@x402/evm";
+import { getAddress, isAddress, parseUnits, createPublicClient, http } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { arcTestnet } from "viem/chains";
 import { getArcPublicClient } from "../../erc8183/client.ts";
@@ -79,6 +80,12 @@ export class X402ExecutionAdapter implements ExecutionRailAdapter {
     if (endpointUrl && payerPk && rpcUrl) {
       try {
         const payerAccount = privateKeyToAccount(payerPk);
+        const publicClient = createPublicClient({ chain: arcTestnet, transport: http(rpcUrl) });
+        const evmSigner = toClientEvmSigner(payerAccount, publicClient);
+
+        const client = new x402Client()
+          ._registerScheme(2, "eip155:5042002", new ExactEvmScheme(evmSigner));
+        const httpClient = new x402HTTPClient(client);
 
         // Step 1: Initial request to endpoint
         const initialRes = await fetch(endpointUrl, {
@@ -125,7 +132,7 @@ export class X402ExecutionAdapter implements ExecutionRailAdapter {
             paymentRequired = body.paymentRequired || body;
           }
 
-          if (!paymentRequired) {
+          if (!paymentRequired || Object.keys(paymentRequired).length === 0) {
             return {
               executionId: params.executionId,
               rail: "x402",
@@ -139,16 +146,85 @@ export class X402ExecutionAdapter implements ExecutionRailAdapter {
             };
           }
 
-          // Verify x402 V2 payment parameters
-          const requiredAmountUsdc = Number(paymentRequired.amountUsdc || paymentRequired.maxAmount || params.amountUsdc);
-          const requiredRecipient = (paymentRequired.payTo || paymentRequired.recipient || params.counterpartyWallet) as `0x${string}`;
+          // Select supported payment option from accepts[]
+          const accepts = paymentRequired.accepts ?? [paymentRequired]; // backward compat
+          const selectedOption = accepts.find(
+            (opt: { scheme?: string; network?: string }) =>
+              opt.scheme === "exact" && opt.network === "eip155:5042002"
+          );
+          
+          if (!selectedOption) {
+            return {
+              executionId: params.executionId,
+              rail: "x402",
+              success: false,
+              failureCode: "X402_NO_SUPPORTED_PAYMENT_OPTION",
+              economicCommitted: false,
+              economicSettled: false,
+              actualSettledAmountUsdc: 0,
+              serviceSucceeded: false,
+              evidenceType: "x402_execution_failure",
+            };
+          }
 
+          // Extract from selected option
+          const requiredAmountUsdc = Number(selectedOption.maxAmountRequired ?? selectedOption.amount ?? 0) / 1_000_000;
+          const requiredRecipient = selectedOption.payTo ?? selectedOption.recipient;
+          const requiredAsset = selectedOption.asset;
+
+          // Validate network
+          if (selectedOption.network !== "eip155:5042002") {
+            return {
+              executionId: params.executionId,
+              rail: "x402",
+              success: false,
+              failureCode: "X402_WRONG_NETWORK",
+              economicCommitted: false,
+              economicSettled: false,
+              actualSettledAmountUsdc: 0,
+              serviceSucceeded: false,
+              evidenceType: "x402_execution_failure",
+            };
+          }
+
+          // Validate recipient matches counterparty
+          if (!requiredRecipient || requiredRecipient.toLowerCase() !== params.counterpartyWallet.toLowerCase()) {
+            return {
+              executionId: params.executionId,
+              rail: "x402",
+              success: false,
+              failureCode: "X402_RECIPIENT_MISMATCH",
+              economicCommitted: false,
+              economicSettled: false,
+              actualSettledAmountUsdc: 0,
+              serviceSucceeded: false,
+              evidenceType: "x402_execution_failure",
+            };
+          }
+
+          // Validate asset is USDC
+          const ARC_USDC = "0x3600000000000000000000000000000000000000";
+          if (requiredAsset && requiredAsset.toLowerCase() !== ARC_USDC.toLowerCase()) {
+            return {
+              executionId: params.executionId,
+              rail: "x402",
+              success: false,
+              failureCode: "X402_WRONG_ASSET",
+              economicCommitted: false,
+              economicSettled: false,
+              actualSettledAmountUsdc: 0,
+              serviceSucceeded: false,
+              evidenceType: "x402_execution_failure",
+            };
+          }
+
+          // Validate amount within budget bounds
           if (requiredAmountUsdc > params.amountUsdc) {
             return {
               executionId: params.executionId,
               rail: "x402",
               success: false,
-              failureCode: `X402_AMOUNT_EXCEEDS_MANDATE: ${requiredAmountUsdc} > ${params.amountUsdc}`,
+              failureCode: "X402_AMOUNT_EXCEEDS_MANDATE",
               economicCommitted: false,
               economicSettled: false,
               actualSettledAmountUsdc: 0,
@@ -157,38 +233,9 @@ export class X402ExecutionAdapter implements ExecutionRailAdapter {
             };
           }
 
-          if (getAddress(requiredRecipient) !== getAddress(params.counterpartyWallet)) {
-            return {
-              executionId: params.executionId,
-              rail: "x402",
-              success: false,
-              failureCode: `X402_RECIPIENT_MISMATCH: ${requiredRecipient} !== ${params.counterpartyWallet}`,
-              economicCommitted: false,
-              economicSettled: false,
-              actualSettledAmountUsdc: 0,
-              serviceSucceeded: false,
-              evidenceType: "x402_execution_failure",
-            };
-          }
-
-          // Step 3: Construct signed x402 V2 payment payload
-          const paymentPayload: any = {
-            x402Version: 2,
-            scheme: "exact",
-            network: "eip155:5042002",
-            payload: {
-              authorization: {
-                from: payerAccount.address,
-                to: requiredRecipient,
-                value: parseUnits(requiredAmountUsdc.toFixed(6), 6).toString(),
-                validAfter: "0",
-                validBefore: Math.floor(Date.now() / 1000 + 3600).toString(),
-                nonce: `0x${Buffer.from(`x402_${params.executionId}`).toString("hex").padEnd(64, "0")}`,
-              },
-            },
-          };
-
-          const signatureHeader = encodePaymentSignatureHeader(paymentPayload);
+          // Step 3: Construct signed x402 V2 payment payload using SDK
+          const paymentPayload = await httpClient.createPaymentPayload(paymentRequired);
+          const signatureHeader = httpClient.encodePaymentSignatureHeader(paymentPayload);
 
           // Step 4: Retry with standard x402 V2 payment-signature header
           const paidRes = await fetch(endpointUrl, {
@@ -205,16 +252,49 @@ export class X402ExecutionAdapter implements ExecutionRailAdapter {
             paidRes.headers.get("payment-response") ||
             paidRes.headers.get("PAYMENT-RESPONSE");
 
-          let settleResponse: any = null;
-          if (paymentResponseHeader) {
-            try {
-              settleResponse = decodePaymentResponseHeader(paymentResponseHeader);
-            } catch {
-              settleResponse = null;
-            }
+          const responseData = await paidRes.json().catch(() => ({}));
+
+          if (!paymentResponseHeader) {
+            // Payment succeeded (HTTP 200) but settlement cannot be independently verified
+            return {
+              executionId: params.executionId,
+              rail: "x402",
+              success: true,
+              economicCommitted: true,
+              economicSettled: false,  // Cannot verify without PAYMENT-RESPONSE
+              actualSettledAmountUsdc: requiredAmountUsdc,
+              serviceSucceeded: true,
+              failureCode: "PAYMENT_SETTLEMENT_UNVERIFIED",
+              paymentTx: undefined,  // NO SYNTHETIC HASH
+              evidenceType: "x402_execution_failure",
+              rawResult: responseData,
+            };
           }
 
-          const paymentTxHash = settleResponse?.transaction || `0x${Buffer.from(`x402_${params.executionId}`).toString("hex").padEnd(64, "0")}`;
+          let settleResponse: any = null;
+          try {
+            settleResponse = decodePaymentResponseHeader(paymentResponseHeader);
+          } catch {
+            settleResponse = null;
+          }
+
+          const paymentTxHash = settleResponse?.transaction ?? settleResponse?.txHash;
+
+          if (!paymentTxHash) {
+            return {
+              executionId: params.executionId,
+              rail: "x402",
+              success: true,
+              economicCommitted: true,
+              economicSettled: false,
+              actualSettledAmountUsdc: requiredAmountUsdc,
+              serviceSucceeded: true,
+              failureCode: "PAYMENT_SETTLEMENT_UNVERIFIED",
+              paymentTx: undefined,
+              evidenceType: "x402_execution_failure",
+              rawResult: responseData,
+            };
+          }
 
           if (!paidRes.ok) {
             // Money was committed/settled by the resource server, but service delivery failed
@@ -222,17 +302,16 @@ export class X402ExecutionAdapter implements ExecutionRailAdapter {
               executionId: params.executionId,
               rail: "x402",
               success: false,
-              failureCode: `X402_PAID_RETRY_FAILED_HTTP_${paidRes.status}`,
+              failureCode: "X402_SERVICE_DELIVERY_FAILED",
               economicCommitted: true,
               economicSettled: true,
               actualSettledAmountUsdc: requiredAmountUsdc,
               serviceSucceeded: false,
               paymentTx: paymentTxHash,
               evidenceType: "x402_execution_failure",
+              rawResult: { status: paidRes.status },
             };
           }
-
-          const responseData = await paidRes.json().catch(() => ({}));
 
           return {
             executionId: params.executionId,

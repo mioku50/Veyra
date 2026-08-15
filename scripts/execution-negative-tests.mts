@@ -276,6 +276,78 @@ async function runNegativeTests() {
     console.log("✅ Authentication challenge replay strictly rejected.");
   }
 
+  // 14. x402 Protocol violations
+  {
+    const { X402ExecutionAdapter } = await import("../lib/execution/adapters/x402.ts");
+    const { encodePaymentRequiredHeader } = await import("@x402/core/http");
+    const adapter = new X402ExecutionAdapter();
+
+    const originalFetch = global.fetch;
+    
+    // Set up dummy environment variables for tests
+    const oldEndpoint = process.env.LIVE_X402_TARGET_URL;
+    const oldPayerPk = process.env.CANARY_DEPLOYER_PRIVATE_KEY;
+    const oldRpcUrl = process.env.ARC_TESTNET_RPC_URL;
+    
+    process.env.LIVE_X402_TARGET_URL = "http://test";
+    process.env.CANARY_DEPLOYER_PRIVATE_KEY = "0x0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+    process.env.ARC_TESTNET_RPC_URL = "http://rpc-test";
+
+    // a) Missing payment required header
+    global.fetch = async () => new Response("Payment Required", { status: 402 });
+    const resNoHeader = await adapter.execute({
+      executionId: "vexec_x402_1", selectionId: "sel", selectionHash: "0x", counterpartyAgentId: "agent", counterpartyWallet: "0x1111111111111111111111111111111111111111", capability: "cap", amountUsdc: 1.0, taskPayload: { endpointUrl: "http://test" }
+    });
+    assert.equal(resNoHeader.failureCode, "X402_INVALID_PAYMENT_REQUIRED_HEADER");
+
+    // b) Wrong Asset
+    const prWrongAsset = encodePaymentRequiredHeader({ x402Version: 2, resource: { path: "/x", description: "d" }, accepts: [{ scheme: "exact", network: "eip155:5042002", asset: "0xwrong", amount: "1000000", payTo: "0x1111111111111111111111111111111111111111", maxTimeoutSeconds: 60, extra: {} }] } as any);
+    global.fetch = async () => new Response("{}", { status: 402, headers: { "payment-required": prWrongAsset } });
+    const resWrongAsset = await adapter.execute({
+      executionId: "vexec_x402_2", selectionId: "sel", selectionHash: "0x", counterpartyAgentId: "agent", counterpartyWallet: "0x1111111111111111111111111111111111111111", capability: "cap", amountUsdc: 1.0, taskPayload: { endpointUrl: "http://test" }
+    });
+    assert.equal(resWrongAsset.failureCode, "X402_WRONG_ASSET");
+
+    // c) Amount exceeds mandate
+    const prAmountExceeds = encodePaymentRequiredHeader({ x402Version: 2, resource: { path: "/x", description: "d" }, accepts: [{ scheme: "exact", network: "eip155:5042002", asset: "0x3600000000000000000000000000000000000000", amount: "5000000", payTo: "0x1111111111111111111111111111111111111111", maxTimeoutSeconds: 60, extra: {} }] } as any);
+    global.fetch = async () => new Response("{}", { status: 402, headers: { "payment-required": prAmountExceeds } });
+    const resAmountExceeds = await adapter.execute({
+      executionId: "vexec_x402_3", selectionId: "sel", selectionHash: "0x", counterpartyAgentId: "agent", counterpartyWallet: "0x1111111111111111111111111111111111111111", capability: "cap", amountUsdc: 1.0, taskPayload: { endpointUrl: "http://test" }
+    });
+    assert.equal(resAmountExceeds.failureCode, "X402_AMOUNT_EXCEEDS_MANDATE");
+
+    // d) Recipient mismatch
+    const prWrongRecipient = encodePaymentRequiredHeader({ x402Version: 2, resource: { path: "/x", description: "d" }, accepts: [{ scheme: "exact", network: "eip155:5042002", asset: "0x3600000000000000000000000000000000000000", amount: "1000000", payTo: "0x2222222222222222222222222222222222222222", maxTimeoutSeconds: 60, extra: {} }] } as any);
+    global.fetch = async () => new Response("{}", { status: 402, headers: { "payment-required": prWrongRecipient } });
+    const resWrongRecipient = await adapter.execute({
+      executionId: "vexec_x402_4", selectionId: "sel", selectionHash: "0x", counterpartyAgentId: "agent", counterpartyWallet: "0x1111111111111111111111111111111111111111", capability: "cap", amountUsdc: 1.0, taskPayload: { endpointUrl: "http://test" }
+    });
+    assert.equal(resWrongRecipient.failureCode, "X402_RECIPIENT_MISMATCH");
+
+    // e) Unverified Settlement
+    let callCount = 0;
+    const prValid = encodePaymentRequiredHeader({ x402Version: 2, resource: { path: "/x", description: "d" }, accepts: [{ scheme: "exact", network: "eip155:5042002", asset: "0x3600000000000000000000000000000000000000", amount: "1000000", payTo: "0x1111111111111111111111111111111111111111", maxTimeoutSeconds: 60, extra: { name: "USD Coin", version: "2" } }] } as any);
+    global.fetch = async (input, init) => {
+      callCount++;
+      if (callCount === 1) return new Response("{}", { status: 402, headers: { "payment-required": prValid } });
+      return new Response("{}", { status: 200 }); // missing payment-response header
+    };
+    const resUnverified = await adapter.execute({
+      executionId: "vexec_x402_5", selectionId: "sel", selectionHash: "0x", counterpartyAgentId: "agent", counterpartyWallet: "0x1111111111111111111111111111111111111111", capability: "cap", amountUsdc: 1.0, taskPayload: { endpointUrl: "http://test" }
+    });
+    assert.equal(resUnverified.failureCode, "PAYMENT_SETTLEMENT_UNVERIFIED");
+    assert.equal(resUnverified.economicSettled, false);
+
+    global.fetch = originalFetch;
+    
+    // Restore environment variables
+    if (oldEndpoint !== undefined) process.env.LIVE_X402_TARGET_URL = oldEndpoint; else delete process.env.LIVE_X402_TARGET_URL;
+    if (oldPayerPk !== undefined) process.env.CANARY_DEPLOYER_PRIVATE_KEY = oldPayerPk; else delete process.env.CANARY_DEPLOYER_PRIVATE_KEY;
+    if (oldRpcUrl !== undefined) process.env.ARC_TESTNET_RPC_URL = oldRpcUrl; else delete process.env.ARC_TESTNET_RPC_URL;
+    
+    console.log("✅ x402 Protocol violations correctly handled.");
+  }
+
   console.log("\n🎉 ALL P6.1 Negative & Adversarial Security Tests Passed Successfully!");
 }
 
