@@ -41,6 +41,23 @@ const PUBLIC_MESSAGES: Record<string, { code: MachineErrorCode; message: string;
     code: "idempotency_key_missing",
     message: "A valid Idempotency-Key header is required.",
   },
+  marketplace_discovery_unavailable: {
+    code: "counterparty_registry_unavailable",
+    message: "The Circle x402 service catalog is temporarily unavailable.",
+    retryable: true,
+  },
+  marketplace_network_unsupported: {
+    code: "counterparty_candidate_invalid",
+    message: "The Circle x402 catalog publishes no services on the requested network.",
+  },
+  marketplace_limit_invalid: {
+    code: "counterparty_candidate_invalid",
+    message: "The requested candidate limit is out of range.",
+  },
+  marketplace_max_price_invalid: {
+    code: "counterparty_candidate_invalid",
+    message: "The requested maximum price is out of range.",
+  },
 };
 
 export function counterpartyErrorResponse(error: unknown) {

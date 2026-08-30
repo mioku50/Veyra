@@ -3,7 +3,7 @@
   "info": {
     "title": "Veyra Agent API",
     "version": "0.1.0-beta.2",
-    "description": "Machine API for Veyra on Arc Testnet — verified workflows, evidence-weighted agent reputation, Trust Gate policy decisions, counterparty selection, ERC-8183 independent evaluation, continuous trust monitoring, and Project 360.",
+    "description": "Machine API for Veyra on Arc Testnet \u2014 verified workflows, evidence-weighted agent reputation, Trust Gate policy decisions, counterparty selection, ERC-8183 independent evaluation, continuous trust monitoring, and Project 360.",
     "contact": {
       "name": "Veyra Team",
       "url": "https://github.com/mioku50/Veyra"
@@ -1578,6 +1578,222 @@
                       "type": "string"
                     }
                   }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/trust/v1/marketplace/select": {
+      "post": {
+        "summary": "Pre-Payment Trust Gate for Circle x402 Marketplace Endpoints",
+        "description": "Discovers x402 endpoints from Circle's public service catalog, probes each candidate's live HTTP 402 challenge without paying, compares it against the catalog entry to detect price or payee drift, ranks the survivors through the Veyra counterparty engine, and returns an EIP-712 clearance bounding the caller's maximum exposure. Read-only: this endpoint never authorizes, quotes, or settles a payment. Marketplace settlement happens off-Arc (Circle publishes no Arc resources), while the clearance is signed against the Arc Trust Gate. Requires a Machine API credential with the quotes:create scope or a verified owner-wallet session.",
+        "operationId": "selectMarketplaceCounterparty",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "capability",
+                  "budgetUsdc"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "capability": {
+                    "type": "string",
+                    "example": "market_research"
+                  },
+                  "query": {
+                    "type": "string",
+                    "maxLength": 120,
+                    "description": "Free-text catalog search. Defaults to the capability."
+                  },
+                  "task": {
+                    "type": "string",
+                    "maxLength": 1000,
+                    "description": "Optional task context. Rejected if it contains credentials."
+                  },
+                  "budgetUsdc": {
+                    "type": "number",
+                    "example": 0.02
+                  },
+                  "maxPriceUsdc": {
+                    "type": "number",
+                    "example": 0.02,
+                    "description": "Per-call price ceiling applied at discovery time."
+                  },
+                  "network": {
+                    "type": "string",
+                    "example": "eip155:8453",
+                    "description": "CAIP-2 settlement network. Arc is rejected: the Circle catalog publishes zero Arc resources."
+                  },
+                  "limit": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 25,
+                    "default": 10
+                  },
+                  "requireExactCapability": {
+                    "type": "boolean"
+                  },
+                  "requireCircleGateway": {
+                    "type": "boolean"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Ranked marketplace candidates with a signed clearance for the winner.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "selection": {
+                      "type": "object",
+                      "properties": {
+                        "selectionId": {
+                          "type": "string"
+                        },
+                        "capability": {
+                          "type": "string"
+                        },
+                        "network": {
+                          "type": "string"
+                        },
+                        "settlementNetworkIsArc": {
+                          "type": "boolean",
+                          "enum": [
+                            false
+                          ]
+                        },
+                        "catalogTotal": {
+                          "type": "integer"
+                        },
+                        "discovered": {
+                          "type": "integer"
+                        },
+                        "probed": {
+                          "type": "integer"
+                        },
+                        "candidates": {
+                          "type": "array",
+                          "items": {
+                            "type": "object"
+                          }
+                        },
+                        "recommendation": {
+                          "type": "object",
+                          "properties": {
+                            "granted": {
+                              "type": "boolean",
+                              "description": "False means do not pay. Fail closed."
+                            },
+                            "reason": {
+                              "type": "string"
+                            },
+                            "resource": {
+                              "type": "string",
+                              "nullable": true
+                            },
+                            "payTo": {
+                              "type": "string",
+                              "nullable": true
+                            },
+                            "priceUsdc": {
+                              "type": "number",
+                              "nullable": true
+                            },
+                            "decision": {
+                              "type": "string",
+                              "nullable": true,
+                              "description": "A first-contact marketplace endpoint cannot reach ALLOW."
+                            },
+                            "maxExposureUsdc": {
+                              "type": "number"
+                            },
+                            "postCallVerificationRequired": {
+                              "type": "boolean"
+                            },
+                            "explanation": {
+                              "type": "string"
+                            }
+                          }
+                        },
+                        "clearance": {
+                          "type": "object",
+                          "nullable": true,
+                          "description": "EIP-712 TrustClearance bound to the winning resource, verified against the Arc Trust Gate."
+                        },
+                        "canonicalHash": {
+                          "type": "string"
+                        },
+                        "expiresAt": {
+                          "type": "string",
+                          "format": "date-time"
+                        }
+                      }
+                    },
+                    "readOnly": {
+                      "type": "boolean",
+                      "enum": [
+                        true
+                      ]
+                    },
+                    "paymentCreated": {
+                      "type": "boolean",
+                      "enum": [
+                        false
+                      ]
+                    },
+                    "jobCreated": {
+                      "type": "boolean",
+                      "enum": [
+                        false
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Machine credential or owner session required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MachineError"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid capability, budget, price ceiling, or unsupported network.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MachineError"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "The Circle x402 catalog is temporarily unavailable.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MachineError"
                 }
               }
             }

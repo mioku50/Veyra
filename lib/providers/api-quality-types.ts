@@ -23,7 +23,12 @@ export type ErrorCategory =
 export type ObservationSource =
   | "real_paid_execution"
   | "scheduled_probe"
-  | "historical_execution";
+  | "historical_execution"
+  // Free x402 challenge probe against an externally discovered endpoint. It is
+  // a real network observation (unlike the retired synthetic `scheduled_probe`),
+  // but it never involves a payment, so it must never be persisted into the
+  // seller quality store - `recordApiQualityObservation` rejects it.
+  | "x402_discovery_probe";
 
 export type ConfidenceLevel = "high" | "medium" | "low";
 

@@ -57,6 +57,7 @@ function eligibilityFor(input: CandidateRankingInput): {
 
 export function rankCounterpartyCandidate(input: CandidateRankingInput): RankedCandidate {
   const policy = COUNTERPARTY_SELECTION_POLICY;
+  const weights = input.weights ?? policy.weights;
   const sources = input.evidence.sources;
   const source = (name: string) => sources.find((item) => item.source === name);
   const overallFreshness = worstFreshness(sources.map((item) => item.freshness));
@@ -126,7 +127,7 @@ export function rankCounterpartyCandidate(input: CandidateRankingInput): RankedC
   const dimensions = dimensionInputs.map((dimension) => ({
     ...dimension,
     score: rounded(dimension.evidenceCount === 0 ? 0 : dimension.score),
-    weight: policy.weights[dimension.name],
+    weight: weights[dimension.name],
     confidence: dimension.evidenceCount === 0 ? 0 : confidence,
   }));
   const rawQuality = dimensions.reduce(

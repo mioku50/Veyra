@@ -247,6 +247,14 @@ export function observationToRowInput(
 export async function recordApiQualityObservation(
   input: ApiQualityObservationInput,
 ): Promise<ApiQualityObservation> {
+  // Discovery probes measure third-party endpoints that no seller owns. Writing
+  // them into the seller quality store would attribute unpaid, unowned traffic
+  // to a Veyra service and inflate its score. Reject at the only write path.
+  if (input.source === "x402_discovery_probe") {
+    throw new Error(
+      "x402_discovery_probe observations are request-scoped evidence and cannot be persisted",
+    );
+  }
   const nowIso = new Date().toISOString();
   const observationId =
     input.observationId ||

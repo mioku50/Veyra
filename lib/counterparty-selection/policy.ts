@@ -52,6 +52,27 @@ export const COUNTERPARTY_SELECTION_POLICY = {
   },
 } as const;
 
+/**
+ * Weight profile for externally discovered x402 endpoints.
+ *
+ * A Circle-marketplace seller has no Veyra reputation snapshot, no ERC-8183
+ * job history and no evaluator verdicts - and cannot acquire them before the
+ * first call. Scoring it on those dimensions would hand every candidate the
+ * same near-zero number and destroy the ranking. Instead the weight sits on
+ * the evidence that a free probe genuinely produces: protocol and catalog
+ * integrity (mapped onto serviceQuality) plus freshness/coverage of that
+ * evidence. The zeroed dimensions stay visible in the response with
+ * `evidenceCount: 0`, so the absence is reported rather than hidden.
+ */
+export const MARKETPLACE_RANKING_WEIGHTS = {
+  reputationQuality: 0,
+  executionReliability: 0,
+  evaluatorSuccess: 0,
+  economicReliability: 0,
+  serviceQuality: 0.75,
+  evidenceFreshnessCoverage: 0.25,
+} satisfies Record<RankingDimensionName, number>;
+
 export function arcUsdcBlocklistHardExclusion(
   status: ArcUsdcBlocklistStatus,
 ) {

@@ -98,6 +98,10 @@ runStep("Counterparty Selection Engine Tests", () => {
   execSync("npm run counterparty:test", { cwd: root, stdio: "inherit" });
 });
 
+runStep("Marketplace Candidate Source & x402 Probe Tests", () => {
+  execSync("npm run marketplace:test", { cwd: root, stdio: "inherit" });
+});
+
 runStep("Project 360 Deterministic Tests", () => {
   execSync("npm run project-360:test", { cwd: root, stdio: "inherit" });
 });

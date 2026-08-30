@@ -29,8 +29,9 @@ export type CanonicalCandidateIdentity = {
   registryAddress: `0x${string}`;
   metadataUri: string;
   serviceIds: string[];
-  source: "erc8004" | "seller_registry" | "observed_service";
-  verifiedOnchain: true;
+  source: "erc8004" | "seller_registry" | "observed_service" | "circle_marketplace";
+  /** False for externally discovered counterparties that hold no Arc identity. */
+  verifiedOnchain: boolean;
 };
 
 export type CandidateService = {
@@ -92,6 +93,8 @@ export type RankingDimensionName =
   | "serviceQuality"
   | "evidenceFreshnessCoverage";
 
+export type RankingWeights = Record<RankingDimensionName, number>;
+
 export type RankingDimension = {
   name: RankingDimensionName;
   score: number;
@@ -114,6 +117,13 @@ export type CandidateRankingInput = {
   priceKind: PriceKind;
   hardExclusions?: string[];
   arcUsdcBlocklistStatus?: ArcUsdcBlocklistStatus;
+  /**
+   * Optional weight profile. Candidate sources that legitimately carry a
+   * different evidence shape (an externally discovered x402 endpoint has no
+   * ERC-8183 execution history and never will) rank through the same engine
+   * with weights matched to the evidence they actually have.
+   */
+  weights?: RankingWeights;
 };
 
 export type RankedCandidate = {
