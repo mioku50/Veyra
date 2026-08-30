@@ -7,7 +7,8 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { useArcWallet } from "@/components/wallet/use-arc-wallet";
+import { getProvider, useArcWallet } from "@/components/wallet/use-arc-wallet";
+import { stringToHex, type Hex } from "viem";
 import { AlertCircle, CheckCircle2, KeyRound, Loader2, Shield, XCircle } from "lucide-react";
 
 export default function ExecutionMandatesPage() {
@@ -15,6 +16,10 @@ export default function ExecutionMandatesPage() {
   const isConnected = Boolean(address);
   const [mandates, setMandates] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
+  // A connected wallet is not proof of ownership to the server. Mandate routes
+  // require an owner session established by signing a server challenge.
+  const [authenticated, setAuthenticated] = useState<boolean | null>(null);
+  const [authenticating, setAuthenticating] = useState(false);
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
@@ -30,20 +35,75 @@ export default function ExecutionMandatesPage() {
   const [minTrustScore, setMinTrustScore] = useState("75");
 
   useEffect(() => {
-    if (address) {
-      setSubjectWallet((prev) => prev || address);
-      fetchMandates(address);
-    }
+    if (!address) return;
+    setSubjectWallet((prev) => prev || address);
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch("/api/byoa/management/session", { cache: "no-store" });
+        const data = await res.json();
+        const ok = Boolean(data?.authenticated)
+          && String(data?.ownerWallet || "").toLowerCase() === address.toLowerCase();
+        if (cancelled) return;
+        setAuthenticated(ok);
+        if (ok) await fetchMandates();
+      } catch {
+        if (!cancelled) setAuthenticated(false);
+      }
+    })();
+    return () => { cancelled = true; };
   }, [address]);
 
-  async function fetchMandates(owner: string) {
+  async function authenticate() {
+    if (!address) {
+      setError("Connect your wallet first.");
+      return;
+    }
+    setAuthenticating(true);
+    setError(null);
+    try {
+      const provider = getProvider();
+      if (!provider) throw new Error("No web3 wallet provider detected.");
+      const createRes = await fetch("/api/byoa/management/challenges", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ wallet: address }),
+      });
+      const created = await createRes.json();
+      if (!createRes.ok) throw new Error(created.error || "Could not start wallet verification.");
+      const challenge = created.challenge as { id: string; message: string };
+      const signature = await provider.request<Hex>({
+        method: "personal_sign",
+        params: [stringToHex(challenge.message), address],
+      });
+      const sessionRes = await fetch("/api/byoa/management/session", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ challengeId: challenge.id, message: challenge.message, signature }),
+      });
+      const session = await sessionRes.json();
+      if (!sessionRes.ok) throw new Error(session.error || "Wallet verification failed.");
+      setAuthenticated(true);
+      await fetchMandates();
+    } catch (err: any) {
+      setError(err?.message || "Wallet verification failed.");
+    } finally {
+      setAuthenticating(false);
+    }
+  }
+
+  async function fetchMandates() {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`/api/execution/v1/mandates?ownerWallet=${encodeURIComponent(owner)}`);
+      // The server derives the owner from the verified session; a wallet passed
+      // in the query string would be an unauthenticated claim.
+      const res = await fetch("/api/execution/v1/mandates", { cache: "no-store" });
       const data = await res.json();
       if (res.ok) {
         setMandates(data.mandates || []);
+      } else if (res.status === 401) {
+        setAuthenticated(false);
       } else {
         setError(data.error || "Failed to load mandates");
       }
@@ -131,7 +191,7 @@ export default function ExecutionMandatesPage() {
       }
 
       setSuccess(`Mandate ${challenge.mandateId} activated successfully!`);
-      await fetchMandates(address);
+      await fetchMandates();
     } catch (err: any) {
       setError(err.message);
     } finally {
@@ -152,7 +212,7 @@ export default function ExecutionMandatesPage() {
       const data = await res.json();
       if (res.ok) {
         setSuccess(`Mandate ${mandateId} revoked.`);
-        await fetchMandates(address);
+        await fetchMandates();
       } else {
         setError(data.error || "Failed to revoke mandate");
       }
@@ -183,6 +243,22 @@ export default function ExecutionMandatesPage() {
           )}
         </div>
       </div>
+
+      {isConnected && authenticated === false && (
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 p-4 bg-amber-500/10 text-amber-600 dark:text-amber-400 rounded-lg border border-amber-500/20 text-sm">
+          <div className="flex items-center gap-2">
+            <AlertCircle className="h-4 w-4 shrink-0" />
+            <span>
+              Connecting a wallet does not prove ownership to the server. Sign a one-time
+              message to verify this wallet and load its mandates.
+            </span>
+          </div>
+          <Button onClick={authenticate} disabled={authenticating} className="gap-2 shrink-0">
+            {authenticating ? <Loader2 className="h-4 w-4 animate-spin" /> : <KeyRound className="h-4 w-4" />}
+            Verify wallet
+          </Button>
+        </div>
+      )}
 
       {error && (
         <div className="flex items-center gap-2 p-4 bg-destructive/10 text-destructive rounded-lg border border-destructive/20 text-sm">
@@ -319,7 +395,7 @@ export default function ExecutionMandatesPage() {
           <div className="flex items-center justify-between">
             <h2 className="text-xl font-semibold">Active & Historical Mandates</h2>
             {address && (
-              <Button variant="ghost" size="sm" onClick={() => fetchMandates(address)}>
+              <Button variant="ghost" size="sm" onClick={() => fetchMandates()}>
                 Refresh
               </Button>
             )}

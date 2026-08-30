@@ -43,9 +43,32 @@ export interface Erc8004MintRecord {
   blockNumber: bigint;
 }
 
+/**
+ * Why a canonical identity could not be established.
+ *
+ * `chain_history_unavailable` is deliberately distinct from the `*_mismatch`
+ * codes: it means the chain could not answer, not that it contradicted the
+ * stored record. Both keep the identity unverified - the difference exists so
+ * an operator can tell an Arc Testnet history reset apart from tampering.
+ */
+export type Erc8004VerificationFailureCode =
+  | "storage_unavailable"
+  | "record_mismatch"
+  | "owner_mismatch"
+  | "metadata_mismatch"
+  | "registration_tx_invalid"
+  | "registration_not_canonical"
+  | "mint_event_missing"
+  | "chain_history_unavailable"
+  | "onchain_verification_failed";
+
 export class Erc8004IdentityVerificationError extends Error {
-  constructor(message: string) {
-    super(message);
+  constructor(
+    message: string,
+    readonly code: Erc8004VerificationFailureCode = "onchain_verification_failed",
+    options?: { cause?: unknown },
+  ) {
+    super(message, options);
     this.name = "Erc8004IdentityVerificationError";
   }
 }
@@ -73,7 +96,9 @@ export async function getAgentIdentityRecord(
 
   if (error) {
     throw new Erc8004IdentityVerificationError(
-      `ERC-8004 identity storage unavailable (${error.code || "query_failed"})`
+      `ERC-8004 identity storage unavailable (${error.code || "query_failed"})`,
+      "storage_unavailable",
+      { cause: error },
     );
   }
 
@@ -98,23 +123,23 @@ export async function getCanonicalAgentIdentity(
   }
 
   if (dbRecord.agent_id !== agentId) {
-    throw new Erc8004IdentityVerificationError("Stored ERC-8004 agent identity does not match request");
+    throw new Erc8004IdentityVerificationError("Stored ERC-8004 agent identity does not match request", "record_mismatch");
   }
   if (dbRecord.chain_id !== arcTestnet.id) {
-    throw new Erc8004IdentityVerificationError("Stored ERC-8004 identity has an unexpected chain ID");
+    throw new Erc8004IdentityVerificationError("Stored ERC-8004 identity has an unexpected chain ID", "record_mismatch");
   }
   if (dbRecord.registry_address.toLowerCase() !== ARC_ERC8004_IDENTITY_REGISTRY.toLowerCase()) {
-    throw new Erc8004IdentityVerificationError("Stored ERC-8004 identity uses a non-canonical registry");
+    throw new Erc8004IdentityVerificationError("Stored ERC-8004 identity uses a non-canonical registry", "record_mismatch");
   }
   if (!isAddress(dbRecord.owner_address)) {
-    throw new Erc8004IdentityVerificationError("Stored ERC-8004 identity owner is invalid");
+    throw new Erc8004IdentityVerificationError("Stored ERC-8004 identity owner is invalid", "record_mismatch");
   }
   if (
     !isHex(dbRecord.registration_tx) ||
     dbRecord.registration_tx.length !== 66 ||
     /^0x0{64}$/i.test(dbRecord.registration_tx)
   ) {
-    throw new Erc8004IdentityVerificationError("Stored ERC-8004 identity has no real registration transaction");
+    throw new Erc8004IdentityVerificationError("Stored ERC-8004 identity has no real registration transaction", "registration_tx_invalid");
   }
 
   try {
@@ -125,10 +150,10 @@ export async function getCanonicalAgentIdentity(
       publicClient
     );
     if (onchain.owner.toLowerCase() !== dbRecord.owner_address.toLowerCase()) {
-      throw new Erc8004IdentityVerificationError("ERC-8004 ownerOf does not match the stored owner");
+      throw new Erc8004IdentityVerificationError("ERC-8004 ownerOf does not match the stored owner", "owner_mismatch");
     }
     if (onchain.tokenURI !== dbRecord.metadata_uri) {
-      throw new Erc8004IdentityVerificationError("ERC-8004 tokenURI does not match stored metadata");
+      throw new Erc8004IdentityVerificationError("ERC-8004 tokenURI does not match stored metadata", "metadata_mismatch");
     }
 
     const receipt = await publicClient.getTransactionReceipt({
@@ -138,7 +163,7 @@ export async function getCanonicalAgentIdentity(
       receipt.status !== "success" ||
       receipt.to?.toLowerCase() !== ARC_ERC8004_IDENTITY_REGISTRY.toLowerCase()
     ) {
-      throw new Erc8004IdentityVerificationError("ERC-8004 registration transaction is not canonical");
+      throw new Erc8004IdentityVerificationError("ERC-8004 registration transaction is not canonical", "registration_not_canonical");
     }
 
     const mintLogs = parseEventLogs({
@@ -156,12 +181,27 @@ export async function getCanonicalAgentIdentity(
     );
     if (!exactMint) {
       throw new Erc8004IdentityVerificationError(
-        "ERC-8004 registration receipt does not contain the exact mint event"
+        "ERC-8004 registration receipt does not contain the exact mint event",
+        "mint_event_missing",
       );
     }
   } catch (error) {
     if (error instanceof Erc8004IdentityVerificationError) throw error;
-    throw new Erc8004IdentityVerificationError("ERC-8004 onchain identity verification failed");
+    // Arc Testnet has dropped historical transactions before while keeping
+    // contract state intact. Losing the receipt is an availability failure, not
+    // evidence of tampering, and collapsing both into one opaque message made
+    // the difference impossible to see in production logs.
+    const name = error instanceof Error ? error.name : "";
+    const unavailable = name === "TransactionReceiptNotFoundError"
+      || name === "TransactionNotFoundError"
+      || name === "BlockNotFoundError";
+    throw new Erc8004IdentityVerificationError(
+      unavailable
+        ? "ERC-8004 registration history is not available from the Arc RPC"
+        : `ERC-8004 onchain identity verification failed (${name || "unknown_error"})`,
+      unavailable ? "chain_history_unavailable" : "onchain_verification_failed",
+      { cause: error },
+    );
   }
 
   return dbRecord;

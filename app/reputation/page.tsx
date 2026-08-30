@@ -20,16 +20,81 @@ import {
   ArrowRight,
   TrendingUp,
 } from "lucide-react";
-import { getArcPublicClient, getCanonicalVeyraAgentIdentity } from "@/lib/erc8004/client.ts";
+import { Erc8004IdentityVerificationError, getArcPublicClient, getCanonicalVeyraAgentIdentity } from "@/lib/erc8004/client.ts";
 import { fetchLatestReputationSnapshot, fetchReputationEvidenceForAgent, fetchReputationSnapshotHistory } from "@/lib/reputation/db.ts";
 import { computeAgentReputation, createReputationSnapshot, sanitizeEvidenceForPublic } from "@/lib/reputation/engine.ts";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 30;
 
+/**
+ * Rendered when ERC-8004 identity cannot be canonically verified.
+ *
+ * The page stays fail-closed - no score, no evidence, nothing that implies
+ * verified trust - but it says what happened instead of throwing an opaque
+ * 500 at the global error boundary.
+ */
+function IdentityUnverifiablePanel({ failure }: { failure: Erc8004IdentityVerificationError }) {
+  const historyUnavailable = failure.code === "chain_history_unavailable";
+  return (
+    <div className="min-h-screen bg-slate-950 text-slate-100 p-6 md:p-12 font-sans">
+      <div className="max-w-3xl mx-auto space-y-6">
+        <div className="flex items-center gap-3 border-b border-slate-800 pb-6">
+          <AlertTriangle className="w-9 h-9 text-amber-400" />
+          <div>
+            <h1 className="text-2xl font-bold">Onchain identity could not be verified</h1>
+            <p className="text-sm text-slate-400">
+              Reputation is withheld until ERC-8004 identity verifies against Arc.
+            </p>
+          </div>
+        </div>
+
+        <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-5 space-y-3">
+          <p className="text-sm text-slate-200">
+            {historyUnavailable
+              ? "The Arc Testnet RPC no longer returns the registration transaction for this agent, so the registration receipt cannot be re-checked. Contract state (ownerOf, tokenURI) still resolves, but Veyra requires the full canonical chain of evidence before publishing a trust score."
+              : "A canonical ERC-8004 identity check did not pass, so no reputation is shown."}
+          </p>
+          <p className="font-mono text-xs text-amber-300">reason: {failure.code}</p>
+        </div>
+
+        <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-5 space-y-2 text-sm text-slate-400">
+          <p className="text-slate-200 font-semibold">Why nothing is shown here</p>
+          <p>
+            Publishing a score without verified identity would be exactly the unbacked
+            claim this page exists to prevent. An unverifiable identity yields no score
+            rather than a provisional one.
+          </p>
+        </div>
+
+        <div className="flex flex-wrap gap-3">
+          <Link href="/trust" className="text-sky-400 hover:text-sky-300 text-sm inline-flex items-center gap-1">
+            Trust Overview <ArrowRight className="w-4 h-4" />
+          </Link>
+          <Link href="/agents" className="text-sky-400 hover:text-sky-300 text-sm inline-flex items-center gap-1">
+            Browse agents <ArrowRight className="w-4 h-4" />
+          </Link>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default async function PublicAgentReputationPage() {
   const publicClient = getArcPublicClient();
-  const canonicalIdentity = await getCanonicalVeyraAgentIdentity(publicClient);
+  let canonicalIdentity;
+  try {
+    canonicalIdentity = await getCanonicalVeyraAgentIdentity(publicClient);
+  } catch (error) {
+    if (error instanceof Erc8004IdentityVerificationError) {
+      console.error("reputation_identity_verification_failed", {
+        code: error.code,
+        cause: error.cause instanceof Error ? error.cause.name : undefined,
+      });
+      return <IdentityUnverifiablePanel failure={error} />;
+    }
+    throw error;
+  }
   if (!canonicalIdentity) notFound();
   const agentId = canonicalIdentity.agent_id;
 
