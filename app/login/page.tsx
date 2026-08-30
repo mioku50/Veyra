@@ -67,15 +67,15 @@ export default function LoginPage() {
             Sign in to manage API commerce.
           </h1>
           <p className="mt-4 max-w-2xl leading-7 text-muted-foreground">
-            Seller Dashboard keeps revenue, Gateway balance, withdrawals,
-            service creation, and analytics behind a simple protected entrypoint
-            while the Store, Runs, Agents, and Receipts remain public.
+            Seller Dashboard keeps revenue, withdrawals, service creation, and
+            analytics behind a simple protected entrypoint while the Store, Runs,
+            Agents, and Receipts remain public.
           </p>
           <div className="mt-8 grid gap-3 sm:grid-cols-3">
             {[
               ["Revenue", "Track API purchases and estimated USDC revenue."],
               ["Services", "Create and edit safe seller-created listings."],
-              ["Gateway", "Monitor balance and withdraw earnings."],
+              ["Withdrawals", "Track settled balance and move earnings out."],
             ].map(([title, body]) => (
               <div key={title} className="rounded-lg border bg-card/80 p-4">
                 <p className="font-semibold">{title}</p>

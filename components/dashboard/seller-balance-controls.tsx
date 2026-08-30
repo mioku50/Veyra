@@ -21,7 +21,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { BRAND } from "@/lib/brand";
 import { GatewayBalanceDialog, type GatewayBalances } from "./gateway-balance-dialog";
 import { WithdrawDialog } from "./withdraw-dialog";
 import { Info, Loader2 } from "lucide-react";
@@ -29,7 +28,7 @@ import { createClient } from "@/lib/supabase/client";
 import { toast } from "sonner";
 import type { RealtimeChannel } from "@supabase/supabase-js";
 
-export function TopBarGatewayControls() {
+export function SellerBalanceControls() {
   const [balances, setBalances] = useState<GatewayBalances | null>(null);
   const [loading, setLoading] = useState(false);
   const channelRef = useRef<RealtimeChannel | null>(null);
@@ -92,15 +91,7 @@ export function TopBarGatewayControls() {
   }, [fetchBalances]);
 
   return (
-    <div className="flex flex-1 items-center justify-between gap-3 min-w-0">
-      <div className="flex items-center gap-4 min-w-0">
-        <span className="font-semibold text-sm truncate">{BRAND.name}</span>
-        <WithdrawDialog
-          maxAvailable={balances?.gateway.available ?? "0"}
-          onWithdraw={fetchBalances}
-        />
-      </div>
-
+    <div className="flex flex-wrap items-center gap-2">
       <div className="flex items-center gap-2 shrink-0">
         <Badge variant="outline" className="gap-1.5 text-xs pr-1.5">
           <span className="text-muted-foreground font-sans">Gateway:</span>
@@ -124,8 +115,12 @@ export function TopBarGatewayControls() {
             }
           />
         </Badge>
-
       </div>
+
+      <WithdrawDialog
+        maxAvailable={balances?.gateway.available ?? "0"}
+        onWithdraw={fetchBalances}
+      />
     </div>
   );
 }

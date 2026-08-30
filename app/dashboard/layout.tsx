@@ -16,8 +16,6 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { TopBarGatewayControls } from "@/components/dashboard/top-bar-gateway-controls";
-
 export default function DashboardLayout({
   children,
 }: {
@@ -25,11 +23,6 @@ export default function DashboardLayout({
 }) {
   return (
     <div className="flex min-h-screen flex-col">
-      <section className="border-b bg-secondary/30">
-        <div className="mx-auto flex w-full max-w-7xl items-center justify-end gap-3 px-4 py-3 sm:px-6">
-          <TopBarGatewayControls />
-        </div>
-      </section>
       <main className="mx-auto w-full max-w-7xl flex-1 p-4 sm:p-6">{children}</main>
     </div>
   );

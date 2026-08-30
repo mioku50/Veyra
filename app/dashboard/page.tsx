@@ -56,6 +56,7 @@ import {
   PlusCircle,
 } from "lucide-react";
 import { shortenHash } from "@/lib/utils";
+import { SellerBalanceControls } from "@/components/dashboard/seller-balance-controls";
 import { usePaymentEvents } from "@/hooks/use-transactions";
 import { useWithdrawals } from "@/hooks/use-withdrawals";
 import { getServiceByEndpoint } from "@/lib/services/registry";
@@ -270,11 +271,12 @@ export default function Dashboard() {
         <div>
           <h1 className="text-2xl font-bold">Seller Dashboard</h1>
           <p className="text-muted-foreground text-sm">
-            Monitor API revenue, agent purchases, Gateway balance, and withdraw
+            Monitor API revenue, agent purchases, settled balance, and withdraw
             earnings.
           </p>
         </div>
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <SellerBalanceControls />
           <Button asChild variant="outline" size="sm">
             <Link href="/seller">
               <PlusCircle />
