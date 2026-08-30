@@ -98,7 +98,7 @@ function sellerPlan(
     maxPaidCalls: 1,
     budgetCapUsdc: Math.max(0.001, price),
     aggregationMode: "deterministic_execution_optional_llm",
-    aggregationLabel: "Deterministic paid execution with optional OpenRouter synthesis",
+    aggregationLabel: "Deterministic paid execution with optional StepFun synthesis",
     inputPreview: input.preview,
     inputSha256: input.sha256,
     marketSymbol: null,

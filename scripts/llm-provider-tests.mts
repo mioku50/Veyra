@@ -16,11 +16,11 @@ import type { BuyerAgentServiceResult } from "../lib/agent/execution.ts";
 import { serviceRegistry } from "../lib/services/registry.ts";
 
 const config: OpenAiCompatibleConfig = {
-  provider: "OpenRouter",
+  provider: "StepFun",
   protocol: "openai-compatible",
   baseUrl: "https://openrouter.ai/api/v1",
   apiKey: "test-sensitive-openrouter-key",
-  model: "nvidia/nemotron-3-super-120b-a12b:free",
+  model: "step-3.7-flash",
 };
 
 const successPayload = JSON.stringify({
@@ -45,7 +45,7 @@ const successFetch: typeof fetch = async (url, init) => {
   const headers = new Headers(init?.headers);
   capturedAuthorization = headers.get("authorization") ?? "";
   capturedReferer = headers.get("HTTP-Referer") ?? "";
-  capturedTitle = headers.get("X-OpenRouter-Title") ?? "";
+  capturedTitle = headers.get("X-Title") ?? "";
   return new Response(successPayload, {
     status: 200,
     headers: { "content-type": "application/json" },
@@ -137,7 +137,7 @@ assert.deepEqual(resolveLlmConfig({
 assert.deepEqual(resolveLlmConfig({
   LLM_PROVIDER: "anthropic",
   LLM_BASE_URL: "https://example.invalid/v1",
-  OPENROUTER_API_KEY: "secret",
+  LLM_API_KEY: "secret",
   LLM_MODEL: "some-model",
 } as NodeJS.ProcessEnv), {
   configured: false,
@@ -208,9 +208,9 @@ const aiReport = await synthesizeHostedFinalReport({
     synthesisPrompt = input.userPrompt;
     return {
       ok: true,
-      provider: "OpenRouter",
+      provider: "StepFun",
       protocol: "openai-compatible",
-      model: "nvidia/nemotron-3-super-120b-a12b:free",
+      model: "step-3.7-flash",
       text: JSON.stringify({
         summary: "AI synthesis for person@example.com uses the successful paid response.",
         keyFindings: ["The paid quote supports the report.", "The failed service did not erase useful work."],
@@ -221,8 +221,8 @@ const aiReport = await synthesizeHostedFinalReport({
 });
 assert.equal(aiReport.aggregationMode, "ai_generated_synthesis");
 assert.equal(aiReport.aggregationLabel, "AI-generated synthesis");
-assert.equal(aiReport.synthesis.provider, "OpenRouter");
-assert.equal(aiReport.synthesis.model, "nvidia/nemotron-3-super-120b-a12b:free");
+assert.equal(aiReport.synthesis.provider, "StepFun");
+assert.equal(aiReport.synthesis.model, "step-3.7-flash");
 assert.equal(aiReport.synthesis.usedPaidApiResponses.length, 1);
 assert.equal(aiReport.synthesis.usedPaidApiResponses[0]?.serviceSlug, "premium-quote");
 assert.equal(aiReport.completedWithWarnings, true, "Partial failure warning was lost after synthesis.");
@@ -237,9 +237,9 @@ const fallback = await synthesizeHostedFinalReport({
   serviceResults,
   generateText: async (): Promise<LlmGenerationResult> => ({
     ok: false,
-    provider: "OpenRouter",
+    provider: "StepFun",
     protocol: "openai-compatible",
-    model: "nvidia/nemotron-3-super-120b-a12b:free",
+    model: "step-3.7-flash",
     reason: "rate_limited",
     attempted: true,
     attempts: 2,
@@ -258,9 +258,9 @@ const inputLeakFallback = await synthesizeHostedFinalReport({
   serviceResults,
   generateText: async (): Promise<LlmGenerationResult> => ({
     ok: true,
-    provider: "OpenRouter",
+    provider: "StepFun",
     protocol: "openai-compatible",
-    model: "nvidia/nemotron-3-super-120b-a12b:free",
+    model: "step-3.7-flash",
     text: JSON.stringify({
       summary: request.inputText,
       keyFindings: ["This output improperly repeated the private workflow input."],
@@ -275,17 +275,19 @@ assert(!inputLeakFallback.keyFindings.some((finding) => finding.includes(request
 
 if (process.argv.includes("--live")) {
   const diagnostic = getLlmSynthesisDiagnostic();
-  assert.equal(diagnostic.configured, true, "Live OpenRouter configuration is incomplete.");
-  assert.equal(diagnostic.model, "nvidia/nemotron-3-super-120b-a12b:free", "Live smoke must use nvidia/nemotron-3-super-120b-a12b:free.");
+  assert.equal(diagnostic.configured, true, "Live StepFun configuration is incomplete.");
+  const expectedLiveModel = process.env.LLM_MODEL?.trim();
+  assert.ok(expectedLiveModel, "LLM_MODEL must be set for the live smoke.");
+  assert.equal(diagnostic.model, expectedLiveModel, `Live smoke must use the configured ${expectedLiveModel}.`);
   const liveReport = await synthesizeHostedFinalReport({
     request,
     report: deterministic,
     serviceResults: serviceResults.slice(0, 1),
   });
-  assert.equal(liveReport.synthesis.status, "ai_generated", `Live OpenRouter synthesis fell back: ${liveReport.synthesis.fallbackReason ?? "unknown"}`);
-  assert.equal(liveReport.synthesis.provider, "OpenRouter");
-  assert.equal(liveReport.synthesis.model, "nvidia/nemotron-3-super-120b-a12b:free");
-  console.log(`[llm-live-smoke] passed: provider=OpenRouter model=nvidia/nemotron-3-super-120b-a12b:free summaryChars=${liveReport.summary.length} findings=${liveReport.keyFindings.length}`);
+  assert.equal(liveReport.synthesis.status, "ai_generated", `Live StepFun synthesis fell back: ${liveReport.synthesis.fallbackReason ?? "unknown"}`);
+  assert.equal(liveReport.synthesis.provider, "StepFun");
+  assert.equal(liveReport.synthesis.model, expectedLiveModel);
+  console.log(`[llm-live-smoke] passed: provider=StepFun model=${liveReport.synthesis.model} summaryChars=${liveReport.summary.length} findings=${liveReport.keyFindings.length}`);
 }
 
-console.log("[llm-provider-test] passed: OpenAI-compatible request boundary, nvidia/nemotron-3-super-120b-a12b:free config, timeout, 429 retry, response bounds, malformed output, legacy-key rejection, secret-safe prompt, input-leak fallback, AI metadata, deterministic fallback, and partial failure");
+console.log("[llm-provider-test] passed: OpenAI-compatible request boundary, step-3.7-flash config, timeout, 429 retry, response bounds, malformed output, legacy-key rejection, secret-safe prompt, input-leak fallback, AI metadata, deterministic fallback, and partial failure");

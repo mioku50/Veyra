@@ -145,7 +145,7 @@ function fallbackReport(
     ...report,
     aggregationMode: "deterministic_structured",
     aggregationLabel: configuredFallback
-      ? "Structured workflow result (OpenRouter fallback)"
+      ? "Structured workflow result (StepFun fallback)"
       : "Structured workflow result (no LLM configured)",
     synthesis,
   };

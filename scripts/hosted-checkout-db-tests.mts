@@ -48,7 +48,7 @@ function plannerSnapshot(inputText: string) {
     maxPaidCalls: 3,
     budgetCapUsdc: 0.005,
     aggregationMode: "deterministic_execution_optional_llm",
-    aggregationLabel: "Deterministic paid execution with optional OpenRouter synthesis",
+    aggregationLabel: "Deterministic paid execution with optional StepFun synthesis",
     inputPreview: inputText,
     inputSha256: digest(inputText),
     marketSymbol: null,

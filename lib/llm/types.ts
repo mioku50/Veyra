@@ -16,7 +16,7 @@ export type LlmPaidApiReference = {
 
 export type HostedReportSynthesis = {
   status: "ai_generated" | "deterministic_fallback";
-  provider: "OpenRouter" | null;
+  provider: "StepFun" | null;
   protocol: "openai-compatible" | null;
   model: string | null;
   attempted: boolean;

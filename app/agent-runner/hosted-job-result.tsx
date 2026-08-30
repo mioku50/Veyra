@@ -160,14 +160,14 @@ function fallbackReasonLabel(
     NonNullable<HostedJobView["job"]["structuredResult"]>["synthesis"]
   >["fallbackReason"],
 ) {
-  if (value === "not_configured") return "OpenRouter is not configured";
+  if (value === "not_configured") return "StepFun is not configured";
   if (value === "unsupported_provider") return "Unsupported LLM provider configuration";
   if (value === "no_paid_api_results") return "No successful paid API response was available";
-  if (value === "timeout") return "OpenRouter timed out";
-  if (value === "rate_limited") return "OpenRouter rate limit";
-  if (value === "response_too_large") return "OpenRouter response exceeded the safe limit";
-  if (value === "invalid_response") return "OpenRouter returned an invalid response";
-  if (value === "upstream_error") return "OpenRouter was unavailable";
+  if (value === "timeout") return "StepFun timed out";
+  if (value === "rate_limited") return "StepFun rate limit";
+  if (value === "response_too_large") return "StepFun response exceeded the safe limit";
+  if (value === "invalid_response") return "StepFun returned an invalid response";
+  if (value === "upstream_error") return "StepFun was unavailable";
   return "Deterministic report selected";
 }
 

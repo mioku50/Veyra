@@ -70,7 +70,7 @@ const plan: HostedPlannerSnapshot = {
   maxPaidCalls: 3,
   budgetCapUsdc: 0.005,
   aggregationMode: "deterministic_execution_optional_llm",
-  aggregationLabel: "Deterministic paid execution with optional OpenRouter synthesis",
+  aggregationLabel: "Deterministic paid execution with optional StepFun synthesis",
   inputPreview: "A sufficiently long workflow checkout test input.",
   inputSha256: "a".repeat(64),
   marketSymbol: "ETH/USD",

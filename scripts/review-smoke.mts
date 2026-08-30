@@ -413,11 +413,11 @@ async function checkReviewStatus(baseUrl: string) {
       detail: `configured=${json.provider?.configured === true ? "yes" : "no"} endpoint=${json.provider?.paidEndpoint ?? "missing"} freshness=${json.provider?.maxPriceAgeSeconds ?? "missing"}s`,
     },
     {
-      name: "review status exposes OpenRouter synthesis without credentials or endpoint",
+      name: "review status exposes StepFun synthesis without credentials or endpoint",
       ok:
         json.checks?.llmSynthesisConfigured === true &&
         json.llm?.configured === true &&
-        json.llm.provider === "OpenRouter" &&
+        json.llm.provider === "StepFun" &&
         json.llm.protocol === "openai-compatible" &&
         json.llm.model === "nvidia/nemotron-3-super-120b-a12b:free" &&
         json.llm.externalProcessing === true &&

@@ -97,7 +97,7 @@ export type HostedPlannerSnapshot = {
   maxPaidCalls: number;
   budgetCapUsdc: number;
   aggregationMode: "deterministic_execution_optional_llm";
-  aggregationLabel: "Deterministic paid execution with optional OpenRouter synthesis";
+  aggregationLabel: "Deterministic paid execution with optional StepFun synthesis";
   inputPreview: string;
   inputSha256: string;
   marketSymbol: PythMarketSymbol | null;
@@ -626,7 +626,7 @@ export function createHostedWorkflowPlan(input: {
         : HOSTED_WORKFLOW_MAX_PAID_CALLS,
     budgetCapUsdc: input.request.budgetUsdc,
     aggregationMode: "deterministic_execution_optional_llm",
-    aggregationLabel: "Deterministic paid execution with optional OpenRouter synthesis",
+    aggregationLabel: "Deterministic paid execution with optional StepFun synthesis",
     inputPreview: inputMetadata.preview,
     inputSha256: inputMetadata.sha256,
     marketSymbol: input.request.marketSymbol,

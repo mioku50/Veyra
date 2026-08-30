@@ -1,12 +1,16 @@
 import type { LlmFailureReason } from "./types.ts";
 import { BRAND } from "../brand.ts";
 
-export const LLM_PROVIDER_NAME = "OpenRouter" as const;
+export const LLM_PROVIDER_NAME = "StepFun" as const;
 export const LLM_PROVIDER_PROTOCOL = "openai-compatible" as const;
 export const LLM_REQUEST_TIMEOUT_MS = 30_000;
 export const LLM_MAX_ATTEMPTS = 2;
 export const LLM_MAX_RESPONSE_BYTES = 24_000;
-export const LLM_MAX_COMPLETION_TOKENS = 900;
+// StepFun's step-3.7-flash is a reasoning model: tokens spent on its internal
+// reasoning trace count against this budget before any content is emitted. A
+// 900-token cap truncated short answers to empty content, which the caller
+// could only report as `invalid_response`. Budget for reasoning plus answer.
+export const LLM_MAX_COMPLETION_TOKENS = 2_400;
 
 export type OpenAiCompatibleConfig = {
   provider: typeof LLM_PROVIDER_NAME;
@@ -65,7 +69,10 @@ export function resolveLlmConfig(
 ): LlmConfigResolution {
   const provider = normalizedEnvironmentValue(environment.LLM_PROVIDER);
   const baseUrl = normalizedEnvironmentValue(environment.LLM_BASE_URL);
-  const apiKey = normalizedEnvironmentValue(environment.OPENROUTER_API_KEY);
+  // `LLM_API_KEY` is the provider-neutral name. `OPENROUTER_API_KEY` stays as a
+  // fallback so an environment that has not been migrated yet keeps working.
+  const apiKey = normalizedEnvironmentValue(environment.LLM_API_KEY)
+    ?? normalizedEnvironmentValue(environment.OPENROUTER_API_KEY);
   const model = normalizedEnvironmentValue(environment.LLM_MODEL);
 
   if (provider && provider !== LLM_PROVIDER_PROTOCOL) {
@@ -218,7 +225,7 @@ export async function generateOpenAiCompatibleText(input: {
           "content-type": "application/json",
           authorization: `Bearer ${config.apiKey}`,
           "HTTP-Referer": "https://agent-commerce-six.vercel.app",
-          "X-OpenRouter-Title": BRAND.name,
+          "X-Title": BRAND.name,
         },
         body: JSON.stringify({
           model: config.model,
