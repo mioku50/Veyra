@@ -88,7 +88,7 @@ export function CandidateCard({ candidate, selected, index, onSelect }: {
               {selected ? <Pill tone="good">Selected</Pill> : null}
             </div>
             {candidate.subtitle ? (
-              <div className="mt-1 truncate text-[12px] text-[var(--run-text-faint)]">
+              <div className="run-num mt-1 truncate text-[11px] text-[var(--run-text-faint)]">
                 {candidate.subtitle}
               </div>
             ) : null}

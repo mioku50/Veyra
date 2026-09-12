@@ -153,8 +153,7 @@ export function DecisionPanel({ decision, busy, onAuthorize }: {
               type="button"
               onClick={onAuthorize}
               disabled={busy || ttl === 0}
-              className="run-focus inline-flex h-11 items-center gap-2 rounded-[var(--run-radius-sm)] px-5 text-[14px] font-semibold text-[#04130c] transition-opacity disabled:opacity-40"
-              style={{ background: "var(--run-mint)" }}
+              className="run-cta run-focus inline-flex h-11 items-center gap-2 rounded-[var(--run-radius-sm)] px-5 text-[14px] font-semibold"
             >
               {busy ? "Authorizing…" : ttl === 0 ? "Decision expired" : "Authorize & pay"}
             </button>
