@@ -66,3 +66,10 @@ docs/superpowers/plans/
 
 screen/
 diff.patch
+
+# local working artifacts (not part of the public repository)
+/.backup/
+/docs/ai-context/
+/screen/
+/diff.patch
+/arc-agent-commerce@0.1.0/
