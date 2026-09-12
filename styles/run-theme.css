@@ -4,29 +4,34 @@
  */
 
 /*
- * Design tokens for the Run surface.
+ * The product's design tokens.
  *
- * Scoped to [data-surface="run"] so the new visual language can land on one
- * screen without destabilising the pages still on the legacy palette. The
- * canvas is a cool near-black rather than navy, money and hashes are always
- * monospaced and tabular, and the accent carries meaning: mint for a cleared
- * decision, amber for a bounded one, red for a refusal. Nothing is decorative.
+ * These live at :root rather than on one surface: a second palette on a second
+ * screen is visible the instant anyone follows a link, and that seam is what
+ * made the redesign read as a skin. The canvas is a cool near-black rather than
+ * navy, money and hashes are always monospaced and tabular, and the accent
+ * carries meaning: mint for a cleared decision, amber for a bounded one, red
+ * for a refusal. Nothing is decorative.
+ *
+ * Surfaces sit a measurable step above the ground and borders are crisp enough
+ * to survive a dim panel. The earlier values were separated by two or three
+ * points of luminance, which reads as a flat black rectangle on real hardware.
  */
 
-[data-surface="run"] {
-  --run-canvas: #06080b;
-  --run-canvas-raised: #0a0d12;
-  --run-surface: #0e1217;
-  --run-surface-hover: #12171e;
-  --run-surface-active: #181e26;
+:root {
+  --run-canvas: #05070a;
+  --run-canvas-raised: #090c11;
+  --run-surface: #0f141a;
+  --run-surface-hover: #141a22;
+  --run-surface-active: #1b232c;
 
-  --run-line: #1a1f28;
-  --run-line-strong: #262d38;
-  --run-line-accent: #1d4435;
+  --run-line: #212834;
+  --run-line-strong: #303a48;
+  --run-line-accent: #21513e;
 
   --run-text: #f4f7fa;
-  --run-text-muted: #8f9bad;
-  --run-text-faint: #5a6575;
+  --run-text-muted: #97a3b4;
+  --run-text-faint: #626e7f;
 
   --run-mint: #34e39b;
   --run-mint-deep: #17b87a;
@@ -52,6 +57,9 @@
      sits on the page from a rectangle painted on it. */
   --run-edge: inset 0 1px 0 rgba(255, 255, 255, 0.045);
 
+}
+
+[data-surface="run"] {
   color: var(--run-text);
   font-feature-settings: "cv02", "cv03", "cv04", "cv11";
   -webkit-font-smoothing: antialiased;
@@ -70,20 +78,20 @@
 /* Technical values - money, scores, latencies, hashes - are monospaced and
    tabular. Digits stop jittering while a value polls, columns align, and the
    screen reads as an instrument rather than a form. */
-[data-surface="run"] .run-num {
+.run-num {
   font-family: var(--font-jetbrains-mono), ui-monospace, monospace;
   font-variant-numeric: tabular-nums;
   font-feature-settings: "tnum";
   letter-spacing: -0.015em;
 }
 
-[data-surface="run"] .run-display {
+.run-display {
   letter-spacing: -0.04em;
   line-height: 1.02;
   font-weight: 600;
 }
 
-[data-surface="run"] .run-eyebrow {
+.run-eyebrow {
   font-size: 10.5px;
   font-weight: 600;
   letter-spacing: 0.16em;
@@ -91,14 +99,14 @@
   color: var(--run-text-faint);
 }
 
-[data-surface="run"] .run-panel {
+.run-panel {
   background: var(--run-surface);
   border: 1px solid var(--run-line);
   border-radius: var(--run-radius);
   box-shadow: var(--run-edge);
 }
 
-[data-surface="run"] .run-panel-raised {
+.run-panel-raised {
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.018) 0%, transparent 40%),
     var(--run-surface);
@@ -108,18 +116,18 @@
 }
 
 /* The decision panel earns the only glow on the screen. */
-[data-surface="run"] .run-verdict-allow {
+.run-verdict-allow {
   border-color: var(--run-line-accent);
   box-shadow: var(--run-shadow-lift), inset 0 1px 0 rgba(52, 227, 155, 0.16);
 }
 
-[data-surface="run"] .run-verdict-deny {
+.run-verdict-deny {
   border-color: rgba(255, 97, 114, 0.26);
   box-shadow: var(--run-shadow-lift), inset 0 1px 0 rgba(255, 97, 114, 0.13);
 }
 
 /* Inputs read as recessed wells, not as raised boxes. */
-[data-surface="run"] .run-field {
+.run-field {
   background: var(--run-canvas);
   border: 1px solid var(--run-line);
   border-radius: var(--run-radius-sm);
@@ -127,19 +135,19 @@
   transition: border-color 140ms ease, box-shadow 140ms ease;
 }
 
-[data-surface="run"] .run-field:focus-within {
+.run-field:focus-within {
   border-color: var(--run-mint-dim);
   box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.45), 0 0 0 3px rgba(52, 227, 155, 0.1);
 }
 
-[data-surface="run"] .run-focus:focus-visible {
+.run-focus:focus-visible {
   outline: 2px solid var(--run-mint);
   outline-offset: 2px;
 }
 
 /* Primary action: weight from a vertical gradient and a contact shadow, not
    from a flat fill. */
-[data-surface="run"] .run-cta {
+.run-cta {
   background: linear-gradient(180deg, var(--run-mint) 0%, var(--run-mint-deep) 100%);
   color: #04160e;
   border: 1px solid rgba(0, 0, 0, 0.25);
@@ -150,7 +158,7 @@
   transition: transform 120ms ease, box-shadow 140ms ease, filter 140ms ease;
 }
 
-[data-surface="run"] .run-cta:hover:not(:disabled) {
+.run-cta:hover:not(:disabled) {
   filter: brightness(1.06);
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.3),
@@ -158,17 +166,17 @@
     0 12px 28px -10px rgba(52, 227, 155, 0.7);
 }
 
-[data-surface="run"] .run-cta:active:not(:disabled) {
+.run-cta:active:not(:disabled) {
   transform: translateY(1px);
 }
 
-[data-surface="run"] .run-cta:disabled {
+.run-cta:disabled {
   filter: saturate(0.3) brightness(0.7);
   box-shadow: none;
 }
 
 /* Segmented control: the active cell is a raised chip inside a recessed track. */
-[data-surface="run"] .run-track {
+.run-track {
   background: var(--run-canvas);
   border: 1px solid var(--run-line);
   border-radius: var(--run-radius-sm);
@@ -176,12 +184,12 @@
   padding: 3px;
 }
 
-[data-surface="run"] .run-seg {
+.run-seg {
   border-radius: 6px;
   transition: background 140ms ease, color 140ms ease, box-shadow 140ms ease;
 }
 
-[data-surface="run"] .run-seg[data-active="true"] {
+.run-seg[data-active="true"] {
   background: var(--run-surface-active);
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.06);
 }
@@ -191,7 +199,7 @@
   to { opacity: 1; transform: none; }
 }
 
-[data-surface="run"] .run-rise {
+.run-rise {
   animation: run-rise 380ms cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
@@ -200,23 +208,23 @@
   50% { opacity: 0.4; }
 }
 
-[data-surface="run"] .run-pulse { animation: run-pulse 1.5s ease-in-out infinite; }
+.run-pulse { animation: run-pulse 1.5s ease-in-out infinite; }
 
 @media (prefers-reduced-motion: reduce) {
-  [data-surface="run"] .run-rise,
-  [data-surface="run"] .run-pulse { animation: none; }
+  .run-rise,
+  .run-pulse { animation: none; }
 }
 
 /* Score meter: a hairline bar filled to the score. Reads at a glance without
    becoming a chart. */
-[data-surface="run"] .run-meter {
+.run-meter {
   height: 3px;
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.06);
   overflow: hidden;
 }
 
-[data-surface="run"] .run-meter > span {
+.run-meter > span {
   display: block;
   height: 100%;
   border-radius: inherit;
@@ -225,12 +233,12 @@
 
 /* Flow rail: dots on a hairline, so progress is a position rather than a list
    of words. */
-[data-surface="run"] .run-rail-line {
+.run-rail-line {
   height: 1px;
   background: linear-gradient(90deg, var(--run-line) 0%, var(--run-line) 100%);
 }
 
-[data-surface="run"] .run-dot {
+.run-dot {
   width: 7px;
   height: 7px;
   border-radius: 999px;
@@ -239,13 +247,72 @@
   transition: background 200ms ease, border-color 200ms ease, box-shadow 200ms ease;
 }
 
-[data-surface="run"] .run-dot[data-state="done"] {
+.run-dot[data-state="done"] {
   background: var(--run-mint-dim);
   border-color: var(--run-mint-dim);
 }
 
-[data-surface="run"] .run-dot[data-state="active"] {
+.run-dot[data-state="active"] {
   background: var(--run-mint);
   border-color: var(--run-mint);
   box-shadow: 0 0 0 4px rgba(52, 227, 155, 0.14);
+}
+
+/* Progress as a filled track. The earlier version was dots on a hairline both
+   of which fell below the visible threshold on a dark panel, so six words
+   floated in space. The track now carries a mint fill to the current step. */
+.run-rail-track {
+  position: relative;
+  height: 2px;
+  border-radius: 999px;
+  background: var(--run-line);
+  overflow: hidden;
+}
+
+.run-rail-fill {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--run-mint-dim), var(--run-mint));
+  transition: width 520ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* A number worth reading: the proof card beside the hero. */
+.run-proof {
+  background:
+    linear-gradient(180deg, rgba(52, 227, 155, 0.05) 0%, transparent 46%),
+    var(--run-surface);
+  border: 1px solid var(--run-line);
+  border-radius: var(--run-radius);
+  box-shadow: var(--run-shadow), var(--run-edge);
+}
+
+/* Small capsule for a standard or a status. Reads as a component, not as text
+   that happens to have a border. */
+.run-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 22px;
+  padding: 0 9px;
+  border-radius: 999px;
+  border: 1px solid var(--run-line-strong);
+  background: var(--run-canvas-raised);
+  font-size: 10.5px;
+  letter-spacing: 0.01em;
+  color: var(--run-text-muted);
+  white-space: nowrap;
+}
+
+.run-chip[data-tone="mint"] {
+  border-color: var(--run-line-accent);
+  background: var(--run-mint-wash);
+  color: var(--run-mint);
+}
+
+/* Section rule with a short accented head, so a heading owns its band without
+   needing a heavier weight or a bigger size. */
+.run-rule {
+  height: 1px;
+  background: linear-gradient(90deg, var(--run-line-strong) 0 56px, var(--run-line) 56px);
 }

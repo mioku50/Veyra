@@ -34,7 +34,7 @@ function getStatusBadge(state: ExecutionState) {
       );
     case "COMPLETED_UNPROVEN":
       return (
-        <Badge className="bg-cyan-500/15 text-cyan-400 border-cyan-500/30 gap-1.5 py-0.5">
+        <Badge className="bg-teal-500/15 text-teal-300 border-teal-500/30 gap-1.5 py-0.5">
           <CheckCircle2 className="size-3" />
           COMPLETED (UNPROVEN)
         </Badge>
@@ -51,7 +51,7 @@ function getStatusBadge(state: ExecutionState) {
     case "SETTLING":
     case "SUBMITTED":
       return (
-        <Badge className="bg-blue-500/15 text-blue-400 border-blue-500/30 gap-1.5 py-0.5">
+        <Badge className="bg-violet-500/15 text-violet-300 border-violet-500/30 gap-1.5 py-0.5">
           <Loader2 className="size-3 animate-spin" />
           {state}
         </Badge>
@@ -59,7 +59,7 @@ function getStatusBadge(state: ExecutionState) {
     case "PREPARED":
     case "AUTHORIZED":
       return (
-        <Badge className="bg-purple-500/15 text-purple-400 border-purple-500/30 gap-1.5 py-0.5">
+        <Badge className="bg-slate-500/15 text-slate-300 border-slate-500/30 gap-1.5 py-0.5">
           <Clock className="size-3" />
           {state}
         </Badge>

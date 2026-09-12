@@ -94,7 +94,7 @@ export default function TrustHubPage() {
           </p>
 
           <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
-            <Button asChild size="lg" className="rounded-xl bg-primary hover:bg-blue-600 font-semibold shadow-[0_0_20px_rgba(61,126,255,0.3)]">
+            <Button asChild size="lg" className="rounded-xl bg-primary hover:bg-blue-600 font-semibold shadow-[0_0_20px_rgba(52,227,155,0.3)]">
               <Link href="/trust/select">
                 <SlidersHorizontal className="size-4 mr-2" />
                 Select Counterparty

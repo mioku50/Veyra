@@ -487,7 +487,7 @@ export function HostedAgentRunner({
                       onClick={() => selectWorkflow(workflow.value as HostedWorkflowType)}
                       className={`group flex min-h-[44px] items-start gap-3.5 rounded-xl border p-4 text-left transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary ${
                         isSelected
-                          ? "border-primary bg-primary/10 shadow-[0_0_20px_rgba(61,126,255,0.2)]"
+                          ? "border-primary bg-primary/10 shadow-[0_0_20px_rgba(52,227,155,0.2)]"
                           : "border-white/10 bg-white/5 hover:border-white/20 hover:bg-white/10"
                       }`}
                     >
@@ -670,7 +670,7 @@ export function HostedAgentRunner({
                 <Button
                   onClick={preview}
                   disabled={!isInputValid || previewing || !wallet.address}
-                  className="mt-2 h-12 w-full rounded-xl bg-gradient-to-r from-primary to-blue-600 font-bold text-white shadow-[0_0_20px_rgba(61,126,255,0.3)] transition-all hover:scale-[1.01]"
+                  className="mt-2 h-12 w-full rounded-xl bg-gradient-to-r from-primary to-blue-600 font-bold text-white shadow-[0_0_20px_rgba(52,227,155,0.3)] transition-all hover:scale-[1.01]"
                 >
                   {previewing ? (
                     <>

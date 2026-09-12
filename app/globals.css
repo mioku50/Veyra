@@ -21,31 +21,39 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 
+/* One palette for the whole product.
+ *
+ * These were navy with a blue primary, which put every page that uses the
+ * command-centre shell in a different visual language from the decision
+ * screen. A product cannot have two palettes: the seam is visible the moment
+ * anyone follows a link. The ground is now a neutral cool near-black and the
+ * accent is Veyra mint, so the shell, the tables and the decision surface all
+ * read as one thing. */
 :root {
-  --background: 222 47% 4.5%;
-  --foreground: 225 32% 96%;
-  --card: 220 35% 7%;
-  --card-foreground: 225 32% 96%;
-  --popover: 220 35% 7%;
-  --popover-foreground: 225 32% 96%;
-  --primary: 220 100% 64%;
-  --primary-foreground: 0 0% 100%;
-  --secondary: 222 30% 12%;
-  --secondary-foreground: 225 32% 96%;
-  --muted: 222 30% 11%;
-  --muted-foreground: 225 16% 72%; /* Enhanced contrast for WCAG AA */
-  --accent: 222 30% 13%;
-  --accent-foreground: 225 32% 96%;
-  --destructive: 354 100% 64%;
+  --background: 220 24% 4%;
+  --foreground: 210 30% 96%;
+  --card: 218 20% 7%;
+  --card-foreground: 210 30% 96%;
+  --popover: 218 20% 8%;
+  --popover-foreground: 210 30% 96%;
+  --primary: 155 76% 55%;
+  --primary-foreground: 158 72% 6%;
+  --secondary: 218 18% 12%;
+  --secondary-foreground: 210 30% 96%;
+  --muted: 218 18% 11%;
+  --muted-foreground: 215 14% 66%;
+  --accent: 218 18% 14%;
+  --accent-foreground: 210 30% 96%;
+  --destructive: 353 100% 69%;
   --destructive-foreground: 0 0% 100%;
-  --border: 222 20% 16%;
-  --input: 222 20% 16%;
-  --ring: 220 100% 64%;
-  --chart-1: 220 100% 64%;
+  --border: 218 16% 16%;
+  --input: 218 16% 16%;
+  --ring: 155 76% 55%;
+  --chart-1: 155 76% 55%;
   --chart-2: 174 57% 68%;
-  --chart-3: 158 100% 41%;
-  --chart-4: 38 92% 50%;
-  --chart-5: 260 74% 62%;
+  --chart-3: 38 92% 60%;
+  --chart-4: 252 90% 76%;
+  --chart-5: 353 100% 69%;
   --radius: 0.75rem;
 }
 
@@ -88,10 +96,9 @@
     color-scheme: dark;
     font-family: var(--font-sans);
     background-image:
-      radial-gradient(circle at 15% -10%, rgba(61, 126, 255, 0.22), transparent 32rem),
-      radial-gradient(circle at 85% 15%, rgba(0, 208, 132, 0.12), transparent 30rem),
-      radial-gradient(circle at 50% 60%, rgba(168, 85, 247, 0.06), transparent 40rem),
-      linear-gradient(180deg, #07090e 0%, #0a0d14 50%, #07090e 100%);
+      radial-gradient(120rem 60rem at 8% -12%, rgba(41, 74, 104, 0.16), transparent 62%),
+      radial-gradient(70rem 40rem at 92% 0%, rgba(52, 227, 155, 0.05), transparent 60%),
+      linear-gradient(180deg, #05070a 0%, #070a0e 50%, #05070a 100%);
     background-attachment: fixed;
     overflow-x: hidden;
   }
@@ -103,7 +110,7 @@
   }
 
   ::selection {
-    background: rgba(61, 126, 255, 0.35);
+    background: rgba(52, 227, 155, 0.28);
   }
 
   /* Accessibility: Visible Focus Outline */
@@ -146,13 +153,13 @@
   }
 
   .glass-card:hover {
-    border-color: rgba(61, 126, 255, 0.3);
+    border-color: rgba(52, 227, 155, 0.3);
     box-shadow: var(--shadow-card-hover);
     transform: translateY(-2px);
   }
 
   .gradient-text {
-    background: linear-gradient(135deg, #ffffff 0%, #a5f3fc 40%, #3d7eff 100%);
+    background: linear-gradient(135deg, #ffffff 0%, #a5f3fc 40%, #34e39b 100%);
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
   }
@@ -174,8 +181,8 @@
   }
 
   .command-card:hover {
-    border-color: rgba(61, 126, 255, 0.55);
-    box-shadow: 0 4px 24px rgba(61, 126, 255, 0.12);
+    border-color: rgba(52, 227, 155, 0.55);
+    box-shadow: 0 4px 24px rgba(52, 227, 155, 0.12);
     transform: translateY(-1px);
   }
 
@@ -191,7 +198,7 @@
   }
 
   .pulse-glow-blue {
-    box-shadow: 0 0 12px rgba(61, 126, 255, 0.5);
+    box-shadow: 0 0 12px rgba(52, 227, 155, 0.5);
     animation: pulse-glow 2s ease-in-out infinite;
   }
 }

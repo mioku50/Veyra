@@ -91,7 +91,7 @@ const quickTrustActions = [
     desc: "Preflight transactions with fail-closed rules and signed clearance tickets.",
     href: "/trust-gate",
     icon: ShieldCheck,
-    color: "from-cyan-500/20 via-cyan-500/5 to-transparent border-cyan-500/30 text-cyan-400 hover:border-cyan-500/60",
+    color: "from-cyan-500/20 via-emerald-500/5 to-transparent border-cyan-500/30 text-cyan-400 hover:border-cyan-500/60",
     badge: "Trust Gate",
   },
   {
@@ -142,7 +142,7 @@ const evidenceWorkflows: Array<{
     description:
       "Understand the health, activity, engineering signals, and adoption risks of a public repository.",
     benefits: ["Repository health", "Maintainer activity", "Adoption risk signals"],
-    gradient: "from-blue-500/20 via-blue-500/5 to-transparent border-blue-500/30 hover:border-blue-500/60 shadow-[0_0_25px_rgba(61,126,255,0.15)]",
+    gradient: "from-blue-500/20 via-blue-500/5 to-transparent border-blue-500/30 hover:border-blue-500/60 shadow-[0_0_25px_rgba(52,227,155,0.15)]",
     icon: Github,
   },
   {
@@ -150,7 +150,7 @@ const evidenceWorkflows: Array<{
     description:
       "Evaluate and compare paid APIs using observed pricing, latency, availability, response validity, payment execution, and settlement history.",
     benefits: ["Quality Score (0–100)", "Uptime & P95 Latency", "Side-by-side benchmarking"],
-    gradient: "from-cyan-500/20 via-cyan-500/5 to-transparent border-cyan-500/30 hover:border-cyan-500/60 shadow-[0_0_25px_rgba(6,182,212,0.15)]",
+    gradient: "from-cyan-500/20 via-emerald-500/5 to-transparent border-cyan-500/30 hover:border-cyan-500/60 shadow-[0_0_25px_rgba(6,182,212,0.15)]",
     icon: Activity,
   },
   {
@@ -235,7 +235,7 @@ export default async function Home() {
     <main className="min-h-screen bg-background text-foreground selection:bg-primary/30">
       {/* 1. Veyra Trust Platform Hero */}
       <section className="relative overflow-hidden border-b border-white/5 bg-gradient-to-b from-[#0a0d15] via-[#080a0f] to-[#07090e] py-16 sm:py-24">
-        <div className="pointer-events-none absolute -top-40 left-1/2 -z-10 h-[500px] w-[800px] -translate-x-1/2 rounded-full bg-gradient-to-tr from-primary/20 via-cyan-500/10 to-purple-500/10 blur-[120px] opacity-70" />
+        <div className="pointer-events-none absolute -top-40 left-1/2 -z-10 h-[500px] w-[800px] -translate-x-1/2 rounded-full bg-gradient-to-tr from-primary/20 via-emerald-500/10 to-purple-500/10 blur-[120px] opacity-70" />
 
         <div className="mx-auto flex w-full max-w-7xl flex-col items-center px-4 text-center sm:px-6">
           <div className="mb-6">
@@ -260,7 +260,7 @@ export default async function Home() {
             <Button
               asChild
               size="lg"
-              className="rounded-xl bg-gradient-to-r from-primary via-blue-600 to-cyan-500 font-semibold text-white shadow-[0_0_25px_rgba(61,126,255,0.35)] transition-all duration-300 hover:scale-105 hover:shadow-[0_0_35px_rgba(61,126,255,0.5)]"
+              className="rounded-xl bg-gradient-to-r from-[var(--run-mint)] to-[var(--run-mint-deep)] font-semibold text-[#04160e] shadow-[0_0_25px_rgba(52,227,155,0.35)] transition-all duration-300 hover:scale-105 hover:shadow-[0_0_35px_rgba(52,227,155,0.5)]"
             >
               <Link href="/trust">
                 <ShieldCheck className="size-5 mr-2" />
@@ -350,7 +350,7 @@ export default async function Home() {
 
       {/* 3. Try Veyra in 30 Seconds: GitHub Due Diligence */}
       <section className="mx-auto w-full max-w-7xl px-4 py-10 sm:px-6">
-        <div className="relative overflow-hidden rounded-2xl border border-primary/30 bg-gradient-to-br from-[#0c101a] via-[#090c13] to-[#07090e] p-1 shadow-[0_0_40px_rgba(61,126,255,0.1)] transition-all duration-300 hover:border-primary/50 hover:shadow-[0_0_50px_rgba(61,126,255,0.18)]">
+        <div className="relative overflow-hidden rounded-2xl border border-primary/30 bg-gradient-to-br from-[#0c101a] via-[#090c13] to-[#07090e] p-1 shadow-[0_0_40px_rgba(52,227,155,0.1)] transition-all duration-300 hover:border-primary/50 hover:shadow-[0_0_50px_rgba(52,227,155,0.18)]">
           <div className="grid gap-0 lg:grid-cols-[minmax(0,1.1fr)_minmax(320px,0.9fr)]">
             <div className="p-6 sm:p-8 flex flex-col justify-between">
               <div>
@@ -398,7 +398,7 @@ export default async function Home() {
                   required
                   className="h-12 w-full rounded-xl border border-white/10 bg-[#06080d] px-4 py-2 text-sm placeholder:text-muted-foreground/60 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/40 transition-all"
                 />
-                <Button type="submit" size="lg" className="rounded-xl bg-primary hover:bg-blue-600 font-semibold shadow-[0_0_20px_rgba(61,126,255,0.3)]">
+                <Button type="submit" size="lg" className="rounded-xl bg-primary hover:bg-blue-600 font-semibold shadow-[0_0_20px_rgba(52,227,155,0.3)]">
                   <Bot className="size-5" />
                   Analyze Repository
                 </Button>

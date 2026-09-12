@@ -306,14 +306,13 @@ export function RunClient() {
     });
   }
 
-
   const checklist = rail === "api"
     ? [
-        ["Live endpoint", "Does it answer a valid x402 challenge right now"],
-        ["Catalog integrity", "Does the live price and payee match the listing"],
+        ["Live endpoint", "Answers a valid x402 challenge right now"],
+        ["Catalog integrity", "Live price and payee match the listing"],
         ["Observed latency", "How fast it answered, and how often"],
-        ["Settlement history", "Has anyone actually been paid by it"],
-        ["Evaluator verdicts", "Has independent verification ever run"],
+        ["Settlement history", "Whether anyone has actually been paid by it"],
+        ["Evaluator verdicts", "Whether independent verification ever ran"],
       ]
     : [
         ["Onchain identity", "Registered in the ERC-8004 registry on Arc"],
@@ -323,89 +322,141 @@ export function RunClient() {
         ["Evidence freshness", "How recently any of this was observed"],
       ];
 
+  const railPct = (step / (STEPS.length - 1)) * 100;
+
   return (
     <div data-surface="run" className="min-h-screen">
-      {/* Its own chrome. A decision screen that borrows a browsing shell
-          inherits a second palette and reads as unfinished. */}
-      <header className="sticky top-0 z-30 border-b border-[var(--run-line)] bg-[rgba(6,8,11,0.82)] backdrop-blur-xl">
-        <div className="mx-auto flex h-14 w-full max-w-[1240px] items-center justify-between px-5 sm:px-8">
+      <header className="sticky top-0 z-30 border-b border-[var(--run-line)] bg-[rgba(5,7,10,0.86)] backdrop-blur-xl">
+        <div className="mx-auto flex w-full max-w-[1180px] items-center justify-between px-5 py-2.5 sm:px-7">
           <div className="flex items-center gap-3">
             <Link href="/" className="run-focus flex items-center gap-2.5">
               <span
-                className="flex h-6 w-6 items-center justify-center rounded-[7px] text-[12px] font-bold text-[#04160e]"
+                className="flex h-[22px] w-[22px] items-center justify-center rounded-[6px] text-[11px] font-bold text-[#04160e]"
                 style={{ background: "linear-gradient(180deg,var(--run-mint),var(--run-mint-deep))" }}
               >
                 V
               </span>
-              <span className="text-[14px] font-semibold tracking-tight">Veyra</span>
+              <span className="text-[13.5px] font-semibold tracking-tight">Veyra</span>
             </Link>
-            <span aria-hidden className="h-4 w-px bg-[var(--run-line-strong)]" />
-            <span className="run-num text-[11px] text-[var(--run-text-faint)]">Arc Testnet · 5042002</span>
+            <span aria-hidden className="h-3.5 w-px bg-[var(--run-line-strong)]" />
+            <span className="run-num hidden text-[10.5px] text-[var(--run-text-faint)] sm:inline">
+              Arc Testnet · 5042002
+            </span>
           </div>
-          <nav className="flex items-center gap-1.5">
-            <Link href="/executions" className="run-focus rounded-[7px] px-3 py-1.5 text-[12.5px] text-[var(--run-text-muted)] transition-colors hover:bg-[var(--run-surface)] hover:text-[var(--run-text)]">
-              Decisions
-            </Link>
-            <Link href="/console" className="run-focus rounded-[7px] px-3 py-1.5 text-[12.5px] text-[var(--run-text-muted)] transition-colors hover:bg-[var(--run-surface)] hover:text-[var(--run-text)]">
-              Developers
-            </Link>
+          <nav className="flex items-center gap-0.5">
+            {[["/executions", "Decisions"], ["/agents", "Agents"], ["/console", "Developers"]].map(
+              ([href, text]) => (
+                <Link
+                  key={href}
+                  href={href}
+                  className="run-focus rounded-[6px] px-2.5 py-1.5 text-[12px] text-[var(--run-text-muted)] transition-colors hover:bg-[var(--run-surface)] hover:text-[var(--run-text)]"
+                >
+                  {text}
+                </Link>
+              ),
+            )}
           </nav>
         </div>
       </header>
 
-      <main className="mx-auto w-full max-w-[1240px] px-5 pb-24 pt-12 sm:px-8 sm:pt-16">
+      <main className="mx-auto w-full max-w-[1180px] px-5 pb-20 pt-9 sm:px-7 sm:pt-12">
 
-        <section className="max-w-[64ch]">
-          <h1 className="run-display text-[38px] sm:text-[50px]">
-            Veyra decides. <span style={{ color: "var(--run-mint)" }}>Circle pays.</span>
-          </h1>
-          <p className="mt-4 text-[16px] leading-[1.6] text-[var(--run-text-muted)]">
-            Before your agent spends USDC, Veyra decides whether it should pay,
-            whom, and how much.
-          </p>
-          <div className="run-num mt-5 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-[11px] text-[var(--run-text-faint)]">
-            {["ERC-8004", "ERC-8183", "x402", "Gateway", "USDC", "Arc"].map((s, i) => (
-              <span key={s} className="flex items-center gap-2.5">
-                {i > 0 ? <span aria-hidden className="text-[var(--run-line-strong)]">·</span> : null}
-                {s}
+        {/* Claim on the left, evidence for it on the right. The right half used
+            to be empty, which is the most expensive space on the page to waste
+            and the reason the screen read as a form. */}
+        <section className="grid items-start gap-7 lg:grid-cols-[minmax(0,1fr)_330px]">
+          <div>
+            {/* Two deliberate lines. Left to wrap on its own the lockup broke
+                after "Circle", which is the worst of the three options. */}
+            <h1 className="run-display text-[34px] sm:text-[44px]">
+              Veyra decides.<br />
+              <span style={{ color: "var(--run-mint)" }}>Circle pays.</span>
+            </h1>
+            <p className="mt-3.5 max-w-[46ch] text-[15px] leading-[1.55] text-[var(--run-text-muted)]">
+              Before your agent spends USDC, Veyra weighs the evidence and decides
+              whether it should pay, whom, and how much.
+            </p>
+            <div className="mt-5 flex flex-wrap gap-1.5">
+              {["ERC-8004", "ERC-8183", "x402", "Gateway", "USDC", "Arc"].map((s) => (
+                <span key={s} className="run-chip run-num">{s}</span>
+              ))}
+            </div>
+          </div>
+
+          <aside className="run-proof p-5">
+            <div className="flex items-center justify-between">
+              <span className="run-eyebrow">Proven on Arc</span>
+              <span className="run-chip" data-tone="mint">
+                <span aria-hidden className="h-1.5 w-1.5 rounded-full bg-[var(--run-mint)]" />
+                Completed
               </span>
-            ))}
+            </div>
+
+            <div className="run-num mt-3.5 text-[19px] tracking-tight">
+              Job #186207
+            </div>
+            <p className="mt-1 text-[11.5px] leading-relaxed text-[var(--run-text-faint)]">
+              A full ERC-8183 lifecycle — escrow, submission, independent verdict,
+              payout — between separate client, provider and evaluator keys.
+            </p>
+
+            <dl className="mt-4 space-y-2.5 border-t border-[var(--run-line)] pt-4">
+              {[
+                ["Escrow released", "0.05 USDC"],
+                ["Total gas", "0.0118 USDC"],
+                ["Create → payout", "19 s"],
+                ["Onchain steps", "5"],
+              ].map(([k, v]) => (
+                <div key={k} className="flex items-baseline justify-between gap-3">
+                  <dt className="text-[11.5px] text-[var(--run-text-faint)]">{k}</dt>
+                  <dd className="run-num text-[12.5px] text-[var(--run-text)]">{v}</dd>
+                </div>
+              ))}
+            </dl>
+
+            <a
+              href="https://testnet.arcscan.app/tx/0xd1d958d5014a3584a21c7e67444091af25c64940aa4759c928fa2962d0995a22"
+              target="_blank"
+              rel="noreferrer"
+              className="run-focus mt-4 inline-flex items-center gap-1.5 text-[11.5px] text-[var(--run-mint)] hover:underline"
+            >
+              Verdict transaction on Arcscan
+              <span aria-hidden>→</span>
+            </a>
+          </aside>
+        </section>
+
+        {/* Progress as a filled track. Six words on an invisible hairline read
+            as scattered text; a track that fills reads as a position. */}
+        <section className="run-panel mt-8 px-5 py-4" aria-label="Progress">
+          <div className="mb-2.5 grid grid-cols-6 gap-2">
+            {STEPS.map((s, i) => {
+              const state = i < step ? "done" : i === step && phase !== "idle" ? "active" : "idle";
+              return (
+                <span
+                  key={s}
+                  className={`text-[9.5px] font-semibold uppercase tracking-[0.15em] ${
+                    i === 0 ? "text-left" : i === STEPS.length - 1 ? "text-right" : "text-center"
+                  } ${state === "active" ? "run-pulse" : ""}`}
+                  style={{
+                    color: state === "done" ? "var(--run-mint)"
+                      : state === "active" ? "var(--run-text)"
+                      : "var(--run-text-faint)",
+                  }}
+                >
+                  {s}
+                </span>
+              );
+            })}
+          </div>
+          <div className="run-rail-track">
+            <span className="run-rail-fill" style={{ width: `${railPct}%` }} />
           </div>
         </section>
 
-        {/* Progress as a position on a line, not a row of words. */}
-        <section className="mt-12" aria-label="Progress">
-          <div className="relative">
-            <div className="run-rail-line absolute left-0 right-0 top-[3px]" />
-            <ol className="relative grid grid-cols-6 gap-2">
-              {STEPS.map((s, i) => {
-                const state = i < step ? "done" : i === step && phase !== "idle" ? "active" : "idle";
-                return (
-                  <li key={s} className="flex flex-col items-start gap-2.5">
-                    <span className="run-dot" data-state={state} />
-                    <span
-                      className={`text-[10.5px] font-semibold uppercase tracking-[0.14em] ${state === "active" ? "run-pulse" : ""}`}
-                      style={{
-                        color: state === "done" ? "var(--run-mint)"
-                          : state === "active" ? "var(--run-text)"
-                          : "var(--run-text-faint)",
-                      }}
-                    >
-                      {s}
-                    </span>
-                  </li>
-                );
-              })}
-            </ol>
-          </div>
-        </section>
-
-        {/* Composer on the left, what it will actually check on the right. The
-            right column is not decoration: it is the product's claim, stated
-            before the user commits to a run. */}
-        <div className="mt-8 grid gap-5 lg:grid-cols-[minmax(0,1.55fr)_minmax(0,1fr)]">
-          <Panel raised className="p-6 sm:p-7">
-            <div className="run-track mb-6 flex gap-1">
+        <div className="mt-4 grid gap-4 lg:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)]">
+          <Panel raised className="p-5 sm:p-6">
+            <div className="run-track mb-5 flex gap-1">
               {([["api", "API purchase", "x402 · Gateway"], ["job", "Agent job", "ERC-8004 · 8183"]] as const).map(
                 ([value, text, sub]) => (
                   <button
@@ -413,11 +464,11 @@ export function RunClient() {
                     type="button"
                     onClick={() => setRail(value)}
                     data-active={rail === value}
-                    className="run-seg run-focus flex-1 px-3 py-2.5 text-left"
+                    className="run-seg run-focus flex-1 px-3 py-2 text-left"
                     style={{ color: rail === value ? "var(--run-text)" : "var(--run-text-faint)" }}
                   >
-                    <span className="block text-[13px] font-semibold">{text}</span>
-                    <span className="run-num mt-0.5 block text-[10px] text-[var(--run-text-faint)]">{sub}</span>
+                    <span className="block text-[12.5px] font-semibold">{text}</span>
+                    <span className="run-num mt-px block text-[9.5px] text-[var(--run-text-faint)]">{sub}</span>
                   </button>
                 ),
               )}
@@ -425,24 +476,24 @@ export function RunClient() {
 
             <label className="block">
               <Eyebrow>What does your agent need?</Eyebrow>
-              <div className="run-field mt-2.5">
+              <div className="run-field mt-2">
                 <input
                   value={intent}
                   onChange={(e) => setIntent(e.target.value)}
                   placeholder="Research the latest developments in Ambient"
-                  className="w-full bg-transparent px-4 py-3.5 text-[15px] text-[var(--run-text)] outline-none placeholder:text-[var(--run-text-faint)]"
+                  className="w-full bg-transparent px-3.5 py-2.5 text-[14px] text-[var(--run-text)] outline-none placeholder:text-[var(--run-text-faint)]"
                 />
               </div>
             </label>
 
-            <div className="mt-5 grid gap-5 sm:grid-cols-2">
+            <div className="mt-4 grid gap-4 sm:grid-cols-2">
               <label className="block">
                 <Eyebrow>Capability</Eyebrow>
-                <div className="run-field mt-2.5">
+                <div className="run-field mt-2">
                   <select
                     value={capability}
                     onChange={(e) => setCapability(e.target.value)}
-                    className="h-11 w-full cursor-pointer bg-transparent px-3 text-[14px] text-[var(--run-text)] outline-none"
+                    className="h-10 w-full cursor-pointer bg-transparent px-2.5 text-[13.5px] text-[var(--run-text)] outline-none"
                   >
                     {CAPABILITIES.map((c) => (
                       <option key={c} value={c} className="bg-[var(--run-surface)]">{c.replace(/_/g, " ")}</option>
@@ -453,77 +504,77 @@ export function RunClient() {
 
               <label className="block">
                 <Eyebrow>Budget</Eyebrow>
-                <div className="run-field mt-2.5 flex h-11 items-center px-3">
-                  <span className="run-num text-[var(--run-text-faint)]">$</span>
+                <div className="run-field mt-2 flex h-10 items-center px-2.5">
+                  <span className="run-num text-[13px] text-[var(--run-text-faint)]">$</span>
                   <input
                     value={budget}
                     onChange={(e) => setBudget(e.target.value)}
                     inputMode="decimal"
-                    className="run-num w-full bg-transparent px-1.5 text-[15px] text-[var(--run-text)] outline-none"
+                    className="run-num w-full bg-transparent px-1.5 text-[14px] text-[var(--run-text)] outline-none"
                   />
-                  <span className="run-num text-[10px] text-[var(--run-text-faint)]">USDC</span>
+                  <span className="run-num text-[9.5px] text-[var(--run-text-faint)]">USDC</span>
                 </div>
               </label>
             </div>
 
-            <div className="mt-5">
+            <div className="mt-4">
               <Eyebrow>Optimize for</Eyebrow>
-              <div className="run-track mt-2.5 flex gap-1">
+              <div className="run-track mt-2 flex gap-1">
                 {(["trust", "cost", "speed"] as const).map((p) => (
                   <button
                     key={p}
                     type="button"
                     onClick={() => setPriority(p)}
                     data-active={priority === p}
-                    className="run-seg run-focus flex-1 px-3 py-2 text-[13px] font-medium capitalize"
+                    className="run-seg run-focus flex-1 px-3 py-1.5 text-[12.5px] font-medium capitalize"
                     style={{ color: priority === p ? "var(--run-text)" : "var(--run-text-faint)" }}
                   >
                     {p}
                   </button>
                 ))}
               </div>
-              <p className="mt-2 text-[11.5px] leading-relaxed text-[var(--run-text-faint)]">
+              <p className="mt-2 text-[11px] leading-relaxed text-[var(--run-text-faint)]">
                 {PRIORITY_NOTE[priority]} Ordering only — the verdict is unchanged.
               </p>
             </div>
 
-            <div className="mt-7 flex flex-wrap items-center gap-4 border-t border-[var(--run-line)] pt-6">
+            <div className="mt-5 flex flex-wrap items-center gap-3.5 border-t border-[var(--run-line)] pt-5">
               <button
                 type="button"
                 onClick={decide}
                 disabled={busy}
-                className="run-cta run-focus inline-flex h-11 items-center rounded-[var(--run-radius-sm)] px-5 text-[14px] font-semibold"
+                className="run-cta run-focus inline-flex h-10 items-center rounded-[var(--run-radius-sm)] px-4.5 text-[13.5px] font-semibold"
               >
                 {busy ? "Probing endpoints…" : "Find best route"}
               </button>
               {stats ? (
-                <span className="run-num text-[11.5px] text-[var(--run-text-faint)]">
+                <span className="run-num text-[11px] text-[var(--run-text-faint)]">
                   {stats.catalogTotal} in catalog · {stats.discovered} matched · {stats.probed} probed
                 </span>
               ) : (
-                <span className="text-[11.5px] text-[var(--run-text-faint)]">
+                <span className="text-[11px] text-[var(--run-text-faint)]">
                   Free — every candidate is probed before a cent moves.
                 </span>
               )}
             </div>
           </Panel>
 
-          <Panel className="p-6 sm:p-7">
+          <Panel className="flex flex-col p-5 sm:p-6">
             <Eyebrow>What Veyra checks</Eyebrow>
-            <ul className="mt-4 space-y-4">
+            <ul className="mt-3.5 space-y-3">
               {checklist.map(([title, detail], i) => (
-                <li key={title} className="flex gap-3.5">
-                  <span className="run-num mt-0.5 text-[10px] text-[var(--run-text-faint)]">
+                <li key={title} className="flex gap-3">
+                  <span className="run-num mt-px text-[9.5px] text-[var(--run-text-faint)]">
                     {String(i + 1).padStart(2, "0")}
                   </span>
                   <span className="min-w-0">
-                    <span className="block text-[13px] font-medium text-[var(--run-text)]">{title}</span>
-                    <span className="mt-0.5 block text-[12px] leading-relaxed text-[var(--run-text-faint)]">{detail}</span>
+                    <span className="block text-[12.5px] font-medium text-[var(--run-text)]">{title}</span>
+                    <span className="mt-0.5 block text-[11.5px] leading-[1.5] text-[var(--run-text-faint)]">{detail}</span>
                   </span>
                 </li>
               ))}
             </ul>
-            <p className="mt-6 border-t border-[var(--run-line)] pt-5 text-[12px] leading-relaxed text-[var(--run-text-muted)]">
+            <p className="mt-auto border-t border-[var(--run-line)] pt-4 text-[11.5px] leading-[1.6] text-[var(--run-text-muted)]">
               How many of these can be observed is what caps the trust tier. A
               counterparty nobody has paid yet cannot reach <span className="text-[var(--run-mint)]">Allow</span> —
               not because it is bad, but because the evidence does not exist.
@@ -532,14 +583,14 @@ export function RunClient() {
         </div>
 
         {error ? (
-          <Panel className="mt-6 border-[rgba(255,97,114,0.28)] p-5">
+          <Panel className="mt-4 border-[rgba(255,97,114,0.28)] p-5">
             <Eyebrow>Not decided</Eyebrow>
-            <p className="mt-2 text-[14px] leading-relaxed text-[var(--run-text)]">{error}</p>
+            <p className="mt-2 text-[13.5px] leading-relaxed text-[var(--run-text)]">{error}</p>
           </Panel>
         ) : null}
 
         {decision ? (
-          <div className="mt-6">
+          <div className="mt-4">
             <DecisionPanel
               decision={decision}
               busy={phase === "authorizing"}
@@ -549,18 +600,18 @@ export function RunClient() {
         ) : null}
 
         {phase === "authorized" && decision ? (
-          <Panel className="mt-6 p-6">
+          <Panel className="mt-4 p-5">
             <Eyebrow>Hand-off</Eyebrow>
-            <p className="mt-2.5 text-[13px] leading-relaxed text-[var(--run-text-muted)]">
+            <p className="mt-2 text-[12.5px] leading-relaxed text-[var(--run-text-muted)]">
               Veyra has decided and signed. Settlement is Circle&apos;s — pay the cleared
               resource, capped at the authorized exposure:
             </p>
-            <pre className="run-num mt-4 overflow-x-auto rounded-[var(--run-radius-sm)] border border-[var(--run-line)] bg-[var(--run-canvas)] p-4 text-[12px] leading-relaxed text-[var(--run-text-muted)]">
+            <pre className="run-num mt-3.5 overflow-x-auto rounded-[var(--run-radius-sm)] border border-[var(--run-line)] bg-[var(--run-canvas)] p-3.5 text-[11.5px] leading-relaxed text-[var(--run-text-muted)]">
 {`circle services pay "${decision.resource ?? ""}" \\
   --max-amount ${decision.maxExposureUsdc} \\
   --output json`}
             </pre>
-            <p className="mt-3 text-[12px] text-[var(--run-text-faint)]">
+            <p className="mt-2.5 text-[11.5px] text-[var(--run-text-faint)]">
               Paying a different resource on the strength of this verdict will not work:
               the clearance is bound to the one above.
             </p>
@@ -568,14 +619,15 @@ export function RunClient() {
         ) : null}
 
         {shown.length > 0 ? (
-          <section className="mt-10">
-            <div className="mb-4 flex items-baseline justify-between border-b border-[var(--run-line)] pb-3">
+          <section className="mt-8">
+            <div className="mb-3.5 flex items-baseline justify-between">
               <Eyebrow>Candidates</Eyebrow>
-              <span className="run-num text-[11.5px] text-[var(--run-text-faint)]">
+              <span className="run-num text-[11px] text-[var(--run-text-faint)]">
                 {shown.length} probed · budget <Money value={Number(budget)} className="text-[var(--run-text-muted)]" />
               </span>
             </div>
-            <div className="space-y-3">
+            <div className="run-rule mb-3.5" />
+            <div className="space-y-2.5">
               {shown.map((c, i) => (
                 <CandidateCard
                   key={c.id}

@@ -70,7 +70,7 @@ function onchainStatusLabel(receipt: CommerceReceipt) {
 
 function ReceiptCard({ receipt }: { receipt: CommerceReceipt }) {
   return (
-    <Card className="rounded-2xl border border-white/10 bg-[#090c13]/90 backdrop-blur-xl p-1 transition-all duration-300 hover:border-primary/40 hover:shadow-[0_0_30px_rgba(61,126,255,0.12)]">
+    <Card className="rounded-2xl border border-white/10 bg-[#090c13]/90 backdrop-blur-xl p-1 transition-all duration-300 hover:border-primary/40 hover:shadow-[0_0_30px_rgba(52,227,155,0.12)]">
       <CardContent className="grid gap-4 p-5">
         <div className="grid min-w-0 gap-4 lg:grid-cols-[1fr_auto] lg:items-center">
           <div className="min-w-0">

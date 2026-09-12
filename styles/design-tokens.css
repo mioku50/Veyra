@@ -1,18 +1,18 @@
 :root {
   /* ── Base palette ── */
-  --color-bg-base: #080a0f;
-  --color-bg-panel: #0e1117;
-  --color-bg-elevated: #141820;
-  --color-border: #1e2433;
-  --color-border-subtle: #161b27;
-  --color-primary: #3d7eff;
-  --color-primary-dim: #1e3d80;
-  --color-success: #00d084;
-  --color-warning: #f5a623;
-  --color-error: #ff4757;
-  --color-text-primary: #f0f2f8;
-  --color-text-secondary: #8b93a8;
-  --color-text-muted: #4a5166;
+  --color-bg-base: #05070a;
+  --color-bg-panel: #0e1217;
+  --color-bg-elevated: #151a21;
+  --color-border: #222834;
+  --color-border-subtle: #171c24;
+  --color-primary: #34e39b;
+  --color-primary-dim: #1a6b4c;
+  --color-success: #34e39b;
+  --color-warning: #f7b955;
+  --color-error: #ff6172;
+  --color-text-primary: #f4f7fa;
+  --color-text-secondary: #8f9bad;
+  --color-text-muted: #5a6575;
   --color-text-code: #7fdbca;
 
   /* ── Fonts ── */
@@ -28,26 +28,26 @@
   --duration-slow: 400ms;
 
   /* ── Glassmorphism ── */
-  --glass-bg: rgba(14, 17, 23, 0.6);
-  --glass-bg-solid: rgba(14, 17, 23, 0.75);
+  --glass-bg: rgba(14, 18, 23, 0.6);
+  --glass-bg-solid: rgba(14, 18, 23, 0.78);
   --glass-border: rgba(255, 255, 255, 0.06);
   --glass-border-hover: rgba(255, 255, 255, 0.1);
   --glass-blur: 16px;
   --glass-blur-heavy: 24px;
 
   /* ── Gradient accents per workflow ── */
-  --accent-github: linear-gradient(135deg, #3d7eff, #00d084);
-  --accent-trust: linear-gradient(135deg, #a855f7, #ec4899);
+  --accent-github: linear-gradient(135deg, #34e39b, #17b87a);
+  --accent-trust: linear-gradient(135deg, #a394ff, #34e39b);
   --accent-treasury: linear-gradient(135deg, #f59e0b, #ef4444);
-  --accent-quality: linear-gradient(135deg, #06b6d4, #3b82f6);
+  --accent-quality: linear-gradient(135deg, #34e39b, #3fb8cf);
   --accent-sentiment: linear-gradient(135deg, #10b981, #14b8a6);
   --accent-market: linear-gradient(135deg, #f97316, #eab308);
   --accent-custom: linear-gradient(135deg, #6366f1, #8b5cf6);
 
   /* ── Shadows & glows ── */
   --shadow-card: 0 4px 24px rgba(0, 0, 0, 0.4);
-  --shadow-card-hover: 0 8px 32px rgba(61, 126, 255, 0.12);
-  --shadow-glow-blue: 0 0 24px rgba(61, 126, 255, 0.2);
-  --shadow-glow-cyan: 0 0 24px rgba(0, 208, 132, 0.15);
-  --shadow-glow-sm: 0 0 12px rgba(61, 126, 255, 0.15);
+  --shadow-card-hover: 0 8px 32px rgba(52, 227, 155, 0.12);
+  --shadow-glow-blue: 0 0 24px rgba(52, 227, 155, 0.18);
+  --shadow-glow-cyan: 0 0 24px rgba(52, 227, 155, 0.15);
+  --shadow-glow-sm: 0 0 12px rgba(52, 227, 155, 0.15);
 }
