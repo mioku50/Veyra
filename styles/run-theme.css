@@ -1,0 +1,151 @@
+/**
+ * Copyright 2026 Veyra
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+/*
+ * Design tokens for the Run surface.
+ *
+ * Scoped to [data-surface="run"] so the new visual language can land on one
+ * screen without destabilising the thirty pages that still use the legacy
+ * palette. The canvas is a near-black neutral rather than navy, money is
+ * always tabular, and the accent carries meaning: mint for a cleared decision,
+ * amber for a bounded one, red for a refusal. Nothing is decorative.
+ */
+
+[data-surface="run"] {
+  --run-canvas: #07090c;
+  --run-canvas-raised: #0c0f14;
+  --run-surface: #11151b;
+  --run-surface-hover: #161b23;
+  --run-surface-active: #1b212a;
+
+  --run-line: #1e242e;
+  --run-line-strong: #2b323e;
+  --run-line-accent: #1f3d33;
+
+  --run-text: #f2f5f9;
+  --run-text-muted: #98a2b3;
+  --run-text-faint: #5f6b7d;
+
+  --run-mint: #3ddc97;
+  --run-mint-dim: #1f7a55;
+  --run-mint-wash: rgba(61, 220, 151, 0.08);
+
+  --run-amber: #f5b544;
+  --run-amber-wash: rgba(245, 181, 68, 0.08);
+
+  --run-red: #ff5c6c;
+  --run-red-wash: rgba(255, 92, 108, 0.08);
+
+  --run-violet: #9b8cff;
+
+  --run-radius: 14px;
+  --run-radius-sm: 9px;
+  --run-radius-lg: 20px;
+
+  --run-shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 8px 32px -12px rgba(0, 0, 0, 0.7);
+  --run-shadow-lift: 0 2px 4px rgba(0, 0, 0, 0.4), 0 20px 48px -16px rgba(0, 0, 0, 0.8);
+
+  background: var(--run-canvas);
+  color: var(--run-text);
+  font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Money, scores, latencies: always tabular so columns align and digits do not
+   jitter while a value is polling. */
+[data-surface="run"] .run-num {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum";
+  letter-spacing: -0.01em;
+}
+
+[data-surface="run"] .run-display {
+  letter-spacing: -0.035em;
+  line-height: 1.05;
+}
+
+[data-surface="run"] .run-eyebrow {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--run-text-faint);
+}
+
+/* A hairline that reads as a seam rather than a box. */
+[data-surface="run"] .run-hairline {
+  border: 1px solid var(--run-line);
+}
+
+[data-surface="run"] .run-panel {
+  background: var(--run-surface);
+  border: 1px solid var(--run-line);
+  border-radius: var(--run-radius);
+}
+
+[data-surface="run"] .run-panel-raised {
+  background: linear-gradient(180deg, var(--run-surface) 0%, var(--run-canvas-raised) 100%);
+  border: 1px solid var(--run-line);
+  border-radius: var(--run-radius-lg);
+  box-shadow: var(--run-shadow);
+}
+
+/* The decision panel earns the only glow on the screen. */
+[data-surface="run"] .run-verdict-allow {
+  border-color: var(--run-line-accent);
+  box-shadow: var(--run-shadow-lift), inset 0 1px 0 rgba(61, 220, 151, 0.12);
+}
+
+[data-surface="run"] .run-verdict-deny {
+  border-color: rgba(255, 92, 108, 0.28);
+  box-shadow: var(--run-shadow-lift), inset 0 1px 0 rgba(255, 92, 108, 0.1);
+}
+
+[data-surface="run"] .run-focus:focus-visible {
+  outline: 2px solid var(--run-mint);
+  outline-offset: 2px;
+}
+
+/* Candidate rows animate in on arrival, staggered, but only once. */
+@keyframes run-rise {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: none; }
+}
+
+[data-surface="run"] .run-rise {
+  animation: run-rise 320ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@keyframes run-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.45; }
+}
+
+[data-surface="run"] .run-pulse {
+  animation: run-pulse 1.4s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-surface="run"] .run-rise,
+  [data-surface="run"] .run-pulse {
+    animation: none;
+  }
+}
+
+/* Score meter: a single hairline bar, filled to the score. Reads at a glance
+   without becoming a chart. */
+[data-surface="run"] .run-meter {
+  height: 3px;
+  border-radius: 999px;
+  background: var(--run-line);
+  overflow: hidden;
+}
+
+[data-surface="run"] .run-meter > span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  transition: width 520ms cubic-bezier(0.16, 1, 0.3, 1);
+}

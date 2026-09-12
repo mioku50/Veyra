@@ -14,38 +14,41 @@ export type SidebarIconName =
   | "templates"
   | "tools";
 
-// Split into the two things a visitor can do, so the verification half of the
-// product is discoverable instead of living only behind report links.
+// One place to make a decision, one place to review the decisions already made,
+// and the subsystems that feed them grouped as what they are: evidence. The
+// previous five co-equal trust tools asked the visitor to know the architecture
+// before they could use the product.
 export const publicSidebarNavigation = [
   {
-    label: "Trust",
+    label: "Run",
     items: [
-      { href: "/trust", label: "Trust Overview", icon: "proof" },
+      { href: "/run", label: "New decision", icon: "activity" },
+    ],
+  },
+  {
+    label: "Decisions",
+    items: [
+      { href: "/executions", label: "Executions", icon: "activity" },
+      { href: "/trust/select", label: "Selections", icon: "proof" },
+      { href: "/trust/mandates", label: "Mandates", icon: "passport" },
+      { href: "/results", label: "Receipts", icon: "results" },
+    ],
+  },
+  {
+    label: "Agents",
+    items: [
       { href: "/reputation", label: "Agent Trust", icon: "agent" },
-      { href: "/trust/select", label: "Counterparty Selection", icon: "activity" },
       { href: "/trust-gate", label: "Trust Gate", icon: "passport" },
       { href: "/evaluators", label: "Evaluator", icon: "proof" },
     ],
   },
   {
-    label: "Execute",
-    items: [
-      { href: "/trust/mandates", label: "Mandates", icon: "passport" },
-      { href: "/executions", label: "Executions", icon: "activity" },
-    ],
-  },
-  {
-    label: "Analyze",
+    label: "Evidence",
     items: [
       { href: "/agent-runner", label: "New Report", icon: "templates" },
       { href: "/project-360", label: "Project 360", icon: "project-360" },
-    ],
-  },
-  {
-    label: "Verify",
-    items: [
       { href: "/monitoring", label: "Monitoring", icon: "monitoring" },
-      { href: "/results", label: "Reports", icon: "results" },
+      { href: "/trust", label: "Trust Overview", icon: "proof" },
     ],
   },
 ] as const satisfies ReadonlyArray<{

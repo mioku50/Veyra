@@ -1,4 +1,4 @@
--- Copyright 2026 Circle Internet Group, Inc.  All rights reserved.
+-- Copyright 2026 Veyra
 -- SPDX-License-Identifier: Apache-2.0
 
 alter table public.hosted_agent_jobs
