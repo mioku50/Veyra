@@ -6,7 +6,7 @@
  */
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { Fragment, useMemo, useState } from "react";
 import { CandidateCard, type RunCandidate } from "@/components/run/candidate-card";
 import { DecisionPanel, type RunDecision } from "@/components/run/decision-panel";
 import { Eyebrow, Money, Panel } from "@/components/run/primitives";
@@ -359,102 +359,101 @@ export function RunClient() {
         </div>
       </header>
 
-      <main className="mx-auto w-full max-w-[1180px] px-5 pb-20 pt-9 sm:px-7 sm:pt-12">
+      <main className="mx-auto w-full max-w-[1180px] px-5 pb-20 pt-7 sm:px-7 sm:pt-9">
 
-        {/* Claim on the left, evidence for it on the right. The right half used
-            to be empty, which is the most expensive space on the page to waste
-            and the reason the screen read as a form. */}
-        <section className="grid items-start gap-7 lg:grid-cols-[minmax(0,1fr)_330px]">
+        {/* Product first. The pitch gets the height it earns and no more: the
+            point of this screen is to be used, not read. */}
+        <section className="grid items-center gap-6 lg:grid-cols-[minmax(0,1fr)_300px]">
           <div>
             {/* Two deliberate lines. Left to wrap on its own the lockup broke
                 after "Circle", which is the worst of the three options. */}
-            <h1 className="run-display text-[34px] sm:text-[44px]">
+            <h1 className="run-display text-[30px] sm:text-[38px]">
               Veyra decides.<br />
               <span style={{ color: "var(--run-mint)" }}>Circle pays.</span>
             </h1>
-            <p className="mt-3.5 max-w-[46ch] text-[15px] leading-[1.55] text-[var(--run-text-muted)]">
-              Before your agent spends USDC, Veyra weighs the evidence and decides
-              whether it should pay, whom, and how much.
+            <p className="mt-3 max-w-[38ch] text-[14px] leading-[1.5] text-[var(--run-text-muted)]">
+              Evidence-based authorization for autonomous USDC spending.
             </p>
-            <div className="mt-5 flex flex-wrap gap-1.5">
+            <div className="mt-4 flex flex-wrap gap-1.5">
               {["ERC-8004", "ERC-8183", "x402", "Gateway", "USDC", "Arc"].map((s) => (
                 <span key={s} className="run-chip run-num">{s}</span>
               ))}
             </div>
           </div>
 
-          <aside className="run-proof p-5">
-            <div className="flex items-center justify-between">
-              <span className="run-eyebrow">Proven on Arc</span>
-              <span className="run-chip" data-tone="mint">
-                <span aria-hidden className="h-1.5 w-1.5 rounded-full bg-[var(--run-mint)]" />
-                Completed
-              </span>
+          {/* Not another bordered card: a lit plate, so the one piece of hard
+              evidence on the page does not look like a form field. */}
+          <aside className="run-proof px-4 py-3.5">
+            <div className="flex items-center justify-between gap-3">
+              <span className="run-eyebrow">Live proof</span>
+              <a
+                href="https://testnet.arcscan.app/tx/0xd1d958d5014a3584a21c7e67444091af25c64940aa4759c928fa2962d0995a22"
+                target="_blank"
+                rel="noreferrer"
+                className="run-focus run-num text-[11px] text-[var(--run-mint)] hover:underline"
+              >
+                Job #186207 ↗
+              </a>
             </div>
-
-            <div className="run-num mt-3.5 text-[19px] tracking-tight">
-              Job #186207
-            </div>
-            <p className="mt-1 text-[11.5px] leading-relaxed text-[var(--run-text-faint)]">
-              A full ERC-8183 lifecycle — escrow, submission, independent verdict,
-              payout — between separate client, provider and evaluator keys.
-            </p>
-
-            <dl className="mt-4 space-y-2.5 border-t border-[var(--run-line)] pt-4">
+            <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2.5">
               {[
-                ["Escrow released", "0.05 USDC"],
-                ["Total gas", "0.0118 USDC"],
+                ["Escrow paid", "0.05 USDC"],
+                ["Policy checks", "11 / 11"],
+                ["Gas", "0.0118 USDC"],
                 ["Create → payout", "19 s"],
-                ["Onchain steps", "5"],
               ].map(([k, v]) => (
-                <div key={k} className="flex items-baseline justify-between gap-3">
-                  <dt className="text-[11.5px] text-[var(--run-text-faint)]">{k}</dt>
-                  <dd className="run-num text-[12.5px] text-[var(--run-text)]">{v}</dd>
+                <div key={k}>
+                  <dt className="text-[10px] uppercase tracking-[0.12em] text-[var(--run-text-faint)]">{k}</dt>
+                  <dd className="run-num mt-0.5 text-[13px] text-[var(--run-text)]">{v}</dd>
                 </div>
               ))}
             </dl>
-
-            <a
-              href="https://testnet.arcscan.app/tx/0xd1d958d5014a3584a21c7e67444091af25c64940aa4759c928fa2962d0995a22"
-              target="_blank"
-              rel="noreferrer"
-              className="run-focus mt-4 inline-flex items-center gap-1.5 text-[11.5px] text-[var(--run-mint)] hover:underline"
-            >
-              Verdict transaction on Arcscan
-              <span aria-hidden>→</span>
-            </a>
           </aside>
         </section>
 
-        {/* Progress as a filled track. Six words on an invisible hairline read
-            as scattered text; a track that fills reads as a position. */}
-        <section className="run-panel mt-8 px-5 py-4" aria-label="Progress">
-          <div className="mb-2.5 grid grid-cols-6 gap-2">
+        {/* A row of six headings reports nothing. Nodes on filling connectors
+            report where the run actually is, and the line underneath says what
+            it is doing right now. No box: this is not a panel, it is status. */}
+        <section className="mt-7 border-t border-[var(--run-line)] pt-4" aria-label="Progress">
+          <div className="flex items-center gap-2 overflow-x-auto pb-0.5">
             {STEPS.map((s, i) => {
               const state = i < step ? "done" : i === step && phase !== "idle" ? "active" : "idle";
               return (
-                <span
-                  key={s}
-                  className={`text-[9.5px] font-semibold uppercase tracking-[0.15em] ${
-                    i === 0 ? "text-left" : i === STEPS.length - 1 ? "text-right" : "text-center"
-                  } ${state === "active" ? "run-pulse" : ""}`}
-                  style={{
-                    color: state === "done" ? "var(--run-mint)"
-                      : state === "active" ? "var(--run-text)"
-                      : "var(--run-text-faint)",
-                  }}
-                >
-                  {s}
-                </span>
+                <Fragment key={s}>
+                  {i > 0 ? (
+                    <span className="run-link min-w-[14px]">
+                      <span style={{ width: i <= step ? "100%" : "0%" }} />
+                    </span>
+                  ) : null}
+                  <span className="flex shrink-0 items-center gap-2">
+                    <span className="run-node" data-state={state} />
+                    <span
+                      className={`text-[10px] font-semibold uppercase tracking-[0.14em] ${state === "active" ? "run-pulse" : ""}`}
+                      style={{
+                        color: state === "done" ? "var(--run-mint)"
+                          : state === "active" ? "var(--run-text)"
+                          : "var(--run-text-faint)",
+                      }}
+                    >
+                      {s}
+                    </span>
+                  </span>
+                </Fragment>
               );
             })}
           </div>
-          <div className="run-rail-track">
-            <span className="run-rail-fill" style={{ width: `${railPct}%` }} />
+          <div className="run-num mt-2 h-4 text-[11px] text-[var(--run-text-faint)]">
+            {busy
+              ? rail === "api"
+                ? "probing live endpoints…"
+                : "reading ERC-8004 identity and settlement history…"
+              : stats
+                ? `${stats.catalogTotal} in catalog · ${stats.discovered} matched · ${stats.probed} probed`
+                : ""}
           </div>
         </section>
 
-        <div className="mt-4 grid gap-4 lg:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)]">
+        <div className="mt-5 grid gap-6 lg:grid-cols-[minmax(0,1.55fr)_minmax(0,1fr)]">
           <Panel raised className="p-5 sm:p-6">
             <div className="run-track mb-5 flex gap-1">
               {([["api", "API purchase", "x402 · Gateway"], ["job", "Agent job", "ERC-8004 · 8183"]] as const).map(
@@ -547,19 +546,13 @@ export function RunClient() {
               >
                 {busy ? "Probing endpoints…" : "Find best route"}
               </button>
-              {stats ? (
-                <span className="run-num text-[11px] text-[var(--run-text-faint)]">
-                  {stats.catalogTotal} in catalog · {stats.discovered} matched · {stats.probed} probed
-                </span>
-              ) : (
-                <span className="text-[11px] text-[var(--run-text-faint)]">
-                  Free — every candidate is probed before a cent moves.
-                </span>
-              )}
+              <span className="text-[11px] text-[var(--run-text-faint)]">
+                Free — every candidate is probed before a cent moves.
+              </span>
             </div>
           </Panel>
 
-          <Panel className="flex flex-col p-5 sm:p-6">
+          <aside className="run-aside flex flex-col">
             <Eyebrow>What Veyra checks</Eyebrow>
             <ul className="mt-3.5 space-y-3">
               {checklist.map(([title, detail], i) => (
@@ -579,7 +572,7 @@ export function RunClient() {
               counterparty nobody has paid yet cannot reach <span className="text-[var(--run-mint)]">Allow</span> —
               not because it is bad, but because the evidence does not exist.
             </p>
-          </Panel>
+          </aside>
         </div>
 
         {error ? (

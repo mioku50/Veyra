@@ -316,3 +316,139 @@
   height: 1px;
   background: linear-gradient(90deg, var(--run-line-strong) 0 56px, var(--run-line) 56px);
 }
+
+/* ── The Decision object ───────────────────────────────────────────────────
+ *
+ * Everything else on a Veyra screen is a panel. This is the thing the product
+ * exists to produce, so it is the only surface that gets a lit signature edge,
+ * a glow behind the verdict and a fingerprint. If three weights of surface are
+ * not distinguishable — object, panel, plain column — the screen is a grid of
+ * identical rectangles and the eye has nowhere to land.
+ */
+.run-decision {
+  position: relative;
+  border-radius: var(--run-radius-lg);
+  border: 1px solid var(--run-line-strong);
+  background:
+    radial-gradient(40rem 18rem at 6% 0%, rgba(52, 227, 155, 0.10), transparent 68%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.022), transparent 26%),
+    var(--run-surface);
+  box-shadow: var(--run-shadow-lift), var(--run-edge);
+  overflow: hidden;
+}
+
+.run-decision[data-verdict="deny"] {
+  border-color: rgba(255, 97, 114, 0.3);
+  background:
+    radial-gradient(40rem 18rem at 6% 0%, rgba(255, 97, 114, 0.09), transparent 68%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.022), transparent 26%),
+    var(--run-surface);
+}
+
+/* A decision is signed. The object says so before the text does. */
+.run-signature {
+  position: relative;
+  height: 2px;
+  background: linear-gradient(90deg, var(--run-mint-dim), var(--run-mint) 40%, var(--run-mint-dim));
+  overflow: hidden;
+}
+
+.run-signature[data-verdict="deny"] {
+  background: linear-gradient(90deg, rgba(255, 97, 114, 0.35), var(--run-red) 40%, rgba(255, 97, 114, 0.35));
+}
+
+/* The verification sweep: one pass along the signature as the verdict lands. */
+.run-signature::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.92), transparent);
+  transform: translateX(-100%);
+  animation: run-sweep 1150ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes run-sweep {
+  to { transform: translateX(105%); }
+}
+
+.run-verdict-word {
+  font-size: 44px;
+  line-height: 1;
+  font-weight: 650;
+  letter-spacing: -0.035em;
+}
+
+/* A fingerprint drawn from the clearance digest. The same digest always draws
+   the same glyph, so two decisions are visibly two objects — and it is real
+   data, not an ornament. */
+.run-fingerprint {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 18px;
+}
+
+.run-fingerprint > i {
+  display: block;
+  width: 2px;
+  border-radius: 1px;
+  background: var(--run-mint-dim);
+}
+
+.run-fingerprint[data-verdict="deny"] > i { background: rgba(255, 97, 114, 0.45); }
+
+/* Third surface weight: no box at all. A column that sits directly on the
+   canvas behind a hairline, so supporting material stops competing with the
+   panel beside it. */
+.run-aside {
+  border-left: 1px solid var(--run-line);
+  padding-left: 22px;
+}
+
+@media (max-width: 1023px) {
+  .run-aside {
+    border-left: 0;
+    border-top: 1px solid var(--run-line);
+    padding-left: 0;
+    padding-top: 22px;
+  }
+}
+
+/* Live timeline: a node per stage, a connector that fills as the stage clears.
+   A row of six headings reports nothing; this reports where the run is. */
+.run-node {
+  width: 9px;
+  height: 9px;
+  border-radius: 999px;
+  border: 1.5px solid var(--run-line-strong);
+  background: var(--run-canvas);
+  flex: none;
+  transition: background 200ms ease, border-color 200ms ease, box-shadow 200ms ease;
+}
+
+.run-node[data-state="done"] { background: var(--run-mint); border-color: var(--run-mint); }
+
+.run-node[data-state="active"] {
+  background: var(--run-mint);
+  border-color: var(--run-mint);
+  box-shadow: 0 0 0 4px rgba(52, 227, 155, 0.16);
+}
+
+.run-link {
+  height: 1.5px;
+  flex: 1 1 auto;
+  border-radius: 999px;
+  background: var(--run-line);
+  overflow: hidden;
+}
+
+.run-link > span {
+  display: block;
+  height: 100%;
+  background: var(--run-mint-dim);
+  transition: width 480ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .run-signature::after { animation: none; opacity: 0; }
+}

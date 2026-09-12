@@ -14,10 +14,16 @@ export type SidebarIconName =
   | "templates"
   | "tools";
 
-// One place to make a decision, one place to review the decisions already made,
-// and the subsystems that feed them grouped as what they are: evidence. The
-// previous five co-equal trust tools asked the visitor to know the architecture
-// before they could use the product.
+// Five destinations, not twelve.
+//
+// Selections, Mandates, Trust Gate, Evaluator, Monitoring and Project 360 are
+// stages and inputs of a single decision, not places to go. Listing them as
+// co-equal top-level items asked the visitor to learn the architecture before
+// they could use the product, and it is what made the shell read as an internal
+// admin panel next to a screen that says "Veyra decides. Circle pays."
+//
+// They are not orphaned: each one moves into the developer console below, and
+// each is reachable from the decision it belongs to.
 export const publicSidebarNavigation = [
   {
     label: "Run",
@@ -26,29 +32,17 @@ export const publicSidebarNavigation = [
     ],
   },
   {
-    label: "Decisions",
+    label: "Activity",
     items: [
-      { href: "/executions", label: "Executions", icon: "activity" },
-      { href: "/trust/select", label: "Selections", icon: "proof" },
-      { href: "/trust/mandates", label: "Mandates", icon: "passport" },
+      { href: "/executions", label: "Decisions", icon: "activity" },
       { href: "/results", label: "Receipts", icon: "results" },
     ],
   },
   {
-    label: "Agents",
+    label: "Network",
     items: [
-      { href: "/reputation", label: "Agent Trust", icon: "agent" },
-      { href: "/trust-gate", label: "Trust Gate", icon: "passport" },
-      { href: "/evaluators", label: "Evaluator", icon: "proof" },
-    ],
-  },
-  {
-    label: "Evidence",
-    items: [
-      { href: "/agent-runner", label: "New Report", icon: "templates" },
-      { href: "/project-360", label: "Project 360", icon: "project-360" },
-      { href: "/monitoring", label: "Monitoring", icon: "monitoring" },
-      { href: "/trust", label: "Trust Overview", icon: "proof" },
+      { href: "/agents", label: "Agents", icon: "agent" },
+      { href: "/trust", label: "Evidence", icon: "proof" },
     ],
   },
 ] as const satisfies ReadonlyArray<{
@@ -68,6 +62,26 @@ export const consoleSidebarNavigation = [
       { href: "/console/developer-tools", label: "Developer Tools", icon: "tools" },
     ],
   },
+  {
+    // The stages of a decision, kept together where an operator looks for them
+    // rather than spread across the product navigation.
+    label: "Decision internals",
+    items: [
+      { href: "/trust/select", label: "Counterparty Selection", icon: "proof" },
+      { href: "/trust-gate", label: "Trust Gate", icon: "passport" },
+      { href: "/trust/mandates", label: "Mandates", icon: "passport" },
+      { href: "/evaluators", label: "Evaluator", icon: "proof" },
+      { href: "/reputation", label: "Agent Trust", icon: "agent" },
+    ],
+  },
+  {
+    label: "Evidence tools",
+    items: [
+      { href: "/agent-runner", label: "New Report", icon: "templates" },
+      { href: "/project-360", label: "Project 360", icon: "project-360" },
+      { href: "/monitoring", label: "Monitoring", icon: "monitoring" },
+    ],
+  },
 ] as const satisfies ReadonlyArray<{
   label: string;
   items: ReadonlyArray<{ href: string; label: string; icon: SidebarIconName }>;
@@ -75,6 +89,8 @@ export const consoleSidebarNavigation = [
 
 export const sidebarNavigation = publicSidebarNavigation;
 
-export const DESKTOP_SIDEBAR_SCROLL_CLASS = "overflow-y-auto overscroll-contain";
-export const MOBILE_SIDEBAR_SCROLL_CLASS = "overflow-y-auto overscroll-contain";
+// overflow-y alone computes overflow-x to `auto`, which is why the sidebar grew
+// a horizontal scrollbar as well as a vertical one. Both axes are stated.
+export const DESKTOP_SIDEBAR_SCROLL_CLASS = "overflow-y-auto overflow-x-hidden overscroll-contain";
+export const MOBILE_SIDEBAR_SCROLL_CLASS = "overflow-y-auto overflow-x-hidden overscroll-contain";
 import { BRAND } from "../brand.ts";

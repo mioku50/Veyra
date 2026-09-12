@@ -245,15 +245,24 @@ export default async function Home() {
           <h1 className="text-xl font-extrabold uppercase tracking-[0.24em] text-white">
             {BRAND.name}
           </h1>
-          <p className="mt-2 text-sm font-semibold text-cyan-300">{BRAND.tagline}</p>
 
-          <h2 className="mt-5 max-w-4xl text-3xl font-extrabold tracking-tight sm:text-5xl lg:text-6xl leading-[1.15]">
-            <span className="text-white">Trust Infrastructure for</span>{" "}
-            <span className="gradient-text">Agentic Commerce</span>
+          {/* One thesis. "Trust Infrastructure for Agentic Commerce" named a
+              category rather than a product, and contradicted the decision
+              screen it links to. */}
+          <h2 className="run-display mt-5 max-w-4xl text-4xl sm:text-6xl lg:text-7xl">
+            <span className="text-white">Veyra decides.</span>{" "}
+            <span style={{ color: "var(--run-mint)" }}>Circle pays.</span>
           </h2>
 
-          <p className="mt-5 max-w-3xl text-base font-normal leading-relaxed text-muted-foreground sm:text-lg">
-            Verify agents. Select trusted counterparties. Enforce transaction policy. Evaluate work. Build verifiable reputation on Arc.
+          <p className="mt-5 max-w-2xl text-base font-normal leading-relaxed text-muted-foreground sm:text-lg">
+            Evidence-based authorization for autonomous USDC spending. Before your
+            agent pays an API or another agent, Veyra measures the evidence, ranks
+            the alternatives, enforces policy, and signs an authorization bound to
+            one endpoint and one amount.
+          </p>
+
+          <p className="run-num mt-5 text-[11px] tracking-wide text-muted-foreground/70">
+            ERC-8004 · ERC-8183 · x402 · Gateway · USDC · Arc Testnet 5042002
           </p>
 
           <div className="mt-8 flex flex-col gap-3.5 sm:flex-row sm:items-center">
@@ -262,9 +271,9 @@ export default async function Home() {
               size="lg"
               className="rounded-xl bg-gradient-to-r from-[var(--run-mint)] to-[var(--run-mint-deep)] font-semibold text-[#04160e] shadow-[0_0_25px_rgba(52,227,155,0.35)] transition-all duration-300 hover:scale-105 hover:shadow-[0_0_35px_rgba(52,227,155,0.5)]"
             >
-              <Link href="/trust">
+              <Link href="/run">
                 <ShieldCheck className="size-5 mr-2" />
-                Explore Agent Trust
+                Run a live decision
               </Link>
             </Button>
             <Button

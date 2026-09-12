@@ -5,7 +5,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { Eyebrow, Money, Pill, Stat, verdictFromDecision, VERDICT_TONE } from "./primitives";
+import { Money, Pill, verdictFromDecision, VERDICT_TONE } from "./primitives";
 
 export type RunDecision = {
   granted: boolean;
@@ -41,6 +41,25 @@ function secondsLeft(iso?: string) {
   return Math.max(0, Math.round(ms / 1000));
 }
 
+/** A readable handle for one decision, derived from the thing that actually
+ *  identifies it. Two decisions never share a digest, so they never share an
+ *  ID, and the ID can be checked against the clearance rather than trusted. */
+function decisionId(digest: string | undefined) {
+  if (!digest) return null;
+  return `D-${digest.replace(/^0x/, "").slice(-4).toUpperCase()}`;
+}
+
+/** Bar heights read straight out of the digest. Same clearance, same glyph;
+ *  a different decision is visibly a different object. Nothing is random. */
+function fingerprintBars(digest: string | undefined, count = 22) {
+  const hex = (digest ?? "").replace(/^0x/, "");
+  if (hex.length < count) return [];
+  return Array.from({ length: count }, (_, i) => {
+    const nibble = parseInt(hex[i % hex.length], 16);
+    return 5 + Math.round((Number.isNaN(nibble) ? 0 : nibble) / 15 * 13);
+  });
+}
+
 export function DecisionPanel({ decision, busy, onAuthorize }: {
   decision: RunDecision;
   busy: boolean;
@@ -50,60 +69,76 @@ export function DecisionPanel({ decision, busy, onAuthorize }: {
   const tone = VERDICT_TONE[verdict];
   const denied = !decision.granted;
   const ttl = secondsLeft(decision.expiresAt);
+  const id = decisionId(decision.clearance?.digest);
+  const bars = fingerprintBars(decision.clearance?.digest);
+  const mode = denied ? "deny" : "allow";
 
   return (
-    <section
-      className={`run-panel-raised ${denied ? "run-verdict-deny" : "run-verdict-allow"} overflow-hidden`}
-      aria-live="polite"
-    >
-      <div className="px-6 pt-6 pb-5">
-        <div className="flex items-start justify-between gap-6">
-          <div className="min-w-0">
-            <Eyebrow>Veyra decision</Eyebrow>
-            <div
-              className="run-display mt-2 text-[34px] font-semibold"
-              style={{ color: tone.color }}
-            >
-              {tone.label}
-            </div>
-            {decision.winnerTitle ? (
-              <div className="mt-2 truncate text-[15px] text-[var(--run-text)]">
-                {decision.winnerTitle}
-              </div>
-            ) : null}
-            {decision.resource ? (
-              <div className="mt-1 truncate font-mono text-[12px] text-[var(--run-text-faint)]">
-                {decision.resource}
-              </div>
-            ) : null}
-          </div>
+    <section className="run-decision" data-verdict={mode} aria-live="polite">
+      <div className="run-signature" data-verdict={mode} />
 
-          <div className="shrink-0 text-right">
-            <Eyebrow>Max exposure</Eyebrow>
-            <div className="run-display mt-2 text-[30px] font-semibold">
-              <Money value={decision.maxExposureUsdc} />
-            </div>
-            {decision.priceUsdc !== null && decision.priceUsdc !== decision.maxExposureUsdc ? (
-              <div className="mt-1 text-[12px] text-[var(--run-text-faint)]">
-                quoted <Money value={decision.priceUsdc} unit="" />
-              </div>
-            ) : null}
+      <div className="flex items-center justify-between gap-4 px-6 pt-4">
+        <span className="run-eyebrow">Veyra decision</span>
+        {id ? (
+          <span className="run-num text-[11px] tracking-[0.08em] text-[var(--run-text-faint)]">
+            #{id}
+          </span>
+        ) : null}
+      </div>
+
+      {/* The verdict is the largest thing on the screen, because it is the one
+          output of the product. Everything beside it is its justification. */}
+      <div className="grid gap-6 px-6 pb-6 pt-3 sm:grid-cols-[minmax(0,1fr)_auto]">
+        <div className="min-w-0">
+          <div className="run-verdict-word run-display" style={{ color: tone.color }}>
+            {tone.label}
           </div>
+          {decision.winnerTitle ? (
+            <div className="mt-3 truncate text-[15px] font-medium text-[var(--run-text)]">
+              {decision.winnerTitle}
+            </div>
+          ) : null}
+          {decision.resource ? (
+            <div className="run-num mt-1 truncate text-[11.5px] text-[var(--run-text-faint)]">
+              {decision.resource}
+            </div>
+          ) : null}
         </div>
+
+        <dl className="grid shrink-0 grid-cols-2 gap-x-8 gap-y-3 sm:grid-cols-1 sm:text-right">
+          <div>
+            <dt className="run-eyebrow">Maximum exposure</dt>
+            <dd className="run-display run-num mt-1.5 text-[26px] font-semibold">
+              <Money value={decision.maxExposureUsdc} />
+            </dd>
+          </div>
+          {decision.priceUsdc !== null && decision.priceUsdc !== decision.maxExposureUsdc ? (
+            <div>
+              <dt className="run-eyebrow">Quoted</dt>
+              <dd className="run-num mt-1.5 text-[14px] text-[var(--run-text-muted)]">
+                <Money value={decision.priceUsdc} unit="" />
+              </dd>
+            </div>
+          ) : null}
+        </dl>
       </div>
 
       {/* Why. The reasons are the product: a verdict without them is an opinion. */}
       <div className="border-t border-[var(--run-line)] px-6 py-5">
-        <Eyebrow>Why</Eyebrow>
+        <span className="run-eyebrow">Trust evidence</span>
         <p className="mt-2.5 text-[13px] leading-relaxed text-[var(--run-text-muted)]">
           {decision.explanation || decision.reason}
         </p>
         {decision.reasons.length > 0 ? (
-          <ul className="mt-3 space-y-1.5">
+          <ul className="mt-3.5 grid gap-x-8 gap-y-2 sm:grid-cols-2">
             {decision.reasons.map((r) => (
-              <li key={r} className="flex gap-2.5 text-[13px] text-[var(--run-text-muted)]">
-                <span aria-hidden style={{ color: tone.color }}>+</span>
-                <span>{r}</span>
+              <li key={r} className="flex items-start gap-2.5 text-[12.5px] text-[var(--run-text-muted)]">
+                <span
+                  aria-hidden
+                  className="mt-[6px] h-[5px] w-[5px] shrink-0 rounded-full"
+                  style={{ background: tone.color }}
+                />
+                <span className="min-w-0">{r}</span>
               </li>
             ))}
           </ul>
@@ -115,35 +150,53 @@ export function DecisionPanel({ decision, busy, onAuthorize }: {
         ) : null}
       </div>
 
-      {/* The signed authorization, stated as something bound rather than issued. */}
+      {/* The signature strip: what was signed, by whom, and the glyph that
+          identifies it. This is the line people screenshot. */}
       {decision.clearance ? (
-        <div className="border-t border-[var(--run-line)] bg-[var(--run-canvas-raised)] px-6 py-5">
-          <div className="grid grid-cols-2 gap-6 sm:grid-cols-4">
-            <Stat label="Clearance">
-              <span className="font-mono text-[13px]">{short(decision.clearance.digest)}</span>
-            </Stat>
-            <Stat label="Attester">
-              <span className="font-mono text-[13px]">{short(decision.clearance.attester, 8, 4)}</span>
-            </Stat>
-            <Stat label="Onchain">
-              {decision.clearance.onchainVerified
-                ? <Pill tone="good">Verified</Pill>
-                : <Pill tone="neutral">Not verified</Pill>}
-            </Stat>
-            <Stat label="Valid for">
-              <span className="run-num">{ttl}s</span>
-            </Stat>
+        <div className="border-t border-[var(--run-line)] bg-[var(--run-canvas-raised)] px-6 py-4">
+          <div className="flex flex-wrap items-center justify-between gap-x-8 gap-y-3">
+            <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
+              <span className="run-num text-[11.5px] text-[var(--run-text-muted)]">
+                <span className="text-[var(--run-text-faint)]">signed on Arc </span>
+                {short(decision.clearance.digest)}
+              </span>
+              <span className="run-num text-[11.5px] text-[var(--run-text-muted)]">
+                <span className="text-[var(--run-text-faint)]">attester </span>
+                {short(decision.clearance.attester, 8, 4)}
+              </span>
+              {decision.clearance.onchainVerified ? (
+                <Pill tone="good">Verified onchain</Pill>
+              ) : (
+                <Pill tone="neutral">Not verified onchain</Pill>
+              )}
+              {ttl > 0 ? (
+                <span className="run-num text-[11.5px] text-[var(--run-text-faint)]">
+                  valid {ttl}s
+                </span>
+              ) : null}
+            </div>
+            {bars.length > 0 ? (
+              <div
+                className="run-fingerprint"
+                data-verdict={mode}
+                aria-label={`Clearance fingerprint ${short(decision.clearance.digest, 8, 4)}`}
+              >
+                {bars.map((h, i) => (
+                  <i key={i} style={{ height: `${h}px` }} />
+                ))}
+              </div>
+            ) : null}
           </div>
-          <p className="mt-4 text-[12px] leading-relaxed text-[var(--run-text-faint)]">
-            The clearance is bound to this endpoint, capability and amount. It cannot be
-            replayed against a different purchase, and it expires rather than lingering.
+          <p className="mt-3 text-[11.5px] leading-relaxed text-[var(--run-text-faint)]">
+            Bound to this endpoint, capability and amount. It cannot be replayed against
+            a different purchase, and it expires rather than lingering.
           </p>
         </div>
       ) : null}
 
       <div className="border-t border-[var(--run-line)] px-6 py-5">
         {denied ? (
-          <div className="text-[13px] text-[var(--run-text-muted)]">
+          <div className="text-[13px] leading-relaxed text-[var(--run-text-muted)]">
             Nothing is authorized. Veyra will not sign for a counterparty it cannot
             justify from evidence — change the budget or priority and decide again.
           </div>
@@ -153,11 +206,11 @@ export function DecisionPanel({ decision, busy, onAuthorize }: {
               type="button"
               onClick={onAuthorize}
               disabled={busy || ttl === 0}
-              className="run-cta run-focus inline-flex h-11 items-center gap-2 rounded-[var(--run-radius-sm)] px-5 text-[14px] font-semibold"
+              className="run-cta run-focus inline-flex h-10 items-center gap-2 rounded-[var(--run-radius-sm)] px-5 text-[13.5px] font-semibold"
             >
               {busy ? "Authorizing…" : ttl === 0 ? "Decision expired" : "Authorize & pay"}
             </button>
-            <span className="text-[12px] text-[var(--run-text-faint)]">
+            <span className="text-[11.5px] text-[var(--run-text-faint)]">
               Veyra decides. Circle pays — settlement leaves your agent wallet, capped at{" "}
               <Money value={decision.maxExposureUsdc} className="text-[var(--run-text-muted)]" />.
             </span>

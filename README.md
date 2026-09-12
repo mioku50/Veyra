@@ -24,56 +24,39 @@ end in the browser
 · [Decision log](https://agent-commerce-six.vercel.app/executions), every trust-routed
 action, authorization and onchain settlement as it happened
 
----
-
 ## The one flow
 
 ```text
-        "Research the latest developments in Ambient"      ← intent
-                    budget 0.10 USDC · optimize for trust
-                              │
-                    ┌─────────▼─────────┐
-       DISCOVER     │  ERC-8004 agents  │  Circle x402 marketplace
-                    └─────────┬─────────┘
-                              │  4 candidates
-                    ┌─────────▼─────────┐
-       VERIFY       │  live endpoint probe · catalog drift  │
-                    │  latency · settlement history · identity │
-                    └─────────┬─────────┘
-                              │  evidence coverage caps the trust tier
-                    ┌─────────▼─────────┐
-       DECIDE       │  ALLOW · ALLOW_WITH_LIMITS           │
-                    │  REQUIRE_EVALUATOR · REVIEW · DENY   │   fails closed
-                    └─────────┬─────────┘
-                              │  EIP-712 clearance, bound to endpoint + amount
-                    ┌─────────▼─────────┐
-       EXECUTE      │  x402 / Nanopayments  │  ERC-8183 escrow  │
-                    └─────────┬─────────┘
-                              │
-       LEARN        │  observed outcome → reputation on Arc  │
+INTENT     "Research the latest developments in Ambient"
+           budget 0.10 USDC · optimize for trust
+              ↓
+DISCOVER   ERC-8004 agents on Arc  ·  Circle x402 marketplace        4 candidates
+              ↓
+VERIFY     live endpoint probe · catalog drift · latency
+           settlement history · onchain identity      evidence coverage caps the tier
+              ↓
+DECIDE     ALLOW · ALLOW_WITH_LIMITS · REQUIRE_EVALUATOR · REVIEW · DENY
+                                                       fails closed, never silently
+              ↓                EIP-712 clearance, bound to endpoint + amount
+EXECUTE    x402 / Gateway Nanopayments  ·  ERC-8183 escrow on Arc
+              ↓
+LEARN      observed outcome → reputation on Arc
 ```
 
 One decision core. Two ways to spend. Every score traceable to the evidence that
 produced it.
 
----
-
 ## Why this exists
 
-An autonomous agent with a funded wallet will pay whoever answers first. It has no
-way to tell a service that has settled 147 payments from one that was listed an
-hour ago, and no way to notice that the price in the catalog is not the price the
-endpoint is currently charging.
-
-Veyra answers the question that comes before "how do I pay this": **should I pay
-this endpoint at all, and for how much.**
+An autonomous agent with a funded wallet pays whoever answers first. It cannot
+tell a service that has settled 147 payments from one listed an hour ago, and it
+does not notice when the catalog price is no longer what the endpoint charges.
+Veyra answers the question that comes first: **should I pay this endpoint at all,
+and for how much.**
 
 A first-contact endpoint never reaches `ALLOW` — not because it is bad, but
 because no settlement history exists for a counterparty nobody has paid yet. Veyra
-reports the absence of evidence instead of scoring around it, and bounds the
-exposure accordingly.
-
----
+reports the absence of evidence instead of scoring around it.
 
 ## Proof it works
 
@@ -91,8 +74,6 @@ transaction hash:
 - Full transaction-by-transaction record: **[docs/PROOF_OF_LIVE_ERC8183.md](docs/PROOF_OF_LIVE_ERC8183.md)**
 - Live decision log: **[agent-commerce-six.vercel.app/executions](https://agent-commerce-six.vercel.app/executions)**
 
----
-
 ## Two rails, one decision core
 
 The same engine, policy tiers, and EIP-712 clearance serve both. What differs is
@@ -105,27 +86,15 @@ the candidate source and the shape of the evidence.
 | Execute | x402 / Gateway Nanopayments | ERC-8183 job with USDC escrow |
 | Verify | response validity, settlement | independent evaluator verdict, signed EIP-712 |
 
-Discovery may see the whole Circle marketplace. Executable policy may still
-require a Gateway-compatible route, so the payment is funded from the agent's
-Arc balance regardless of where the endpoint lives.
+Discovery may see the whole Circle marketplace; executable policy may still
+require a Gateway-compatible route, so payment is funded from the agent's Arc
+balance wherever the endpoint lives.
 
----
-
-## Evidence, not scores
-
-A trust score is worth nothing if you cannot see what produced it. Every decision
-exposes the evidence underneath it:
-
-- **Live endpoint probe** — the 402 challenge as it is *right now*, compared against what the catalog advertises. A price or payee that changed since indexing is exactly the condition an agent must not pay through blindly.
-- **Onchain settlement history** — ERC-8183 jobs completed, evaluator verdicts, USDC actually moved on Arc.
-- **Repository and project analysis** — maintainer velocity, release health, adoption risk.
-- **Treasury health** — USDC inflow/outflow, counterparty concentration, runway signals.
-- **Paid API quality** — latency distribution, uptime, response validity, payment reliability.
-- **Continuous monitoring** — drift and availability tracked over time, not sampled once.
-
-These are inputs to a decision, not separate products.
-
----
+A trust score is worth nothing if you cannot see what produced it, so every
+decision exposes its evidence: the live 402 challenge against the advertised one,
+settled ERC-8183 jobs and evaluator verdicts on Arc, observed latency and uptime
+over time, and project and treasury signals. These are inputs to a decision, not
+separate products.
 
 ## Primitives
 
@@ -143,12 +112,9 @@ The standards Veyra is built on, in the role each one actually plays:
 ### LLM forms the intent. Veyra makes the financial decision.
 
 The language model turns a request into a structured intent — capability, budget,
-priority. It does not choose who gets paid. Ranking, policy, exposure limits, and
+priority. It does not choose who gets paid. Ranking, policy, exposure limits and
 the signed authorization are deterministic and reproducible from the evidence, so
-the same inputs always produce the same decision and that decision can be audited
-after the fact.
-
----
+the same inputs always produce the same decision, and it can be audited later.
 
 ## Arc integration
 
@@ -163,14 +129,12 @@ after the fact.
 | ERC-8004 Identity | [`0x8004A818BFB912233c491871b3d84c89A494BD9e`](https://testnet.arcscan.app/address/0x8004A818BFB912233c491871b3d84c89A494BD9e) |
 | Veyra Evaluator | [`0x0d2C04580E081e222BBE5BF9818af337E2633eb7`](https://testnet.arcscan.app/address/0x0d2C04580E081e222BBE5BF9818af337E2633eb7) |
 
-Arc is where the authorization, escrow, evaluation, and reputation live, and —
-through Gateway — where the agent's USDC is funded from. Sub-second finality and
-USDC-denominated gas make a per-job escrow economically sensible at cent scale.
+Authorization, escrow, evaluation and reputation all live on Arc, and Gateway is
+where the agent's USDC comes from. Sub-second finality and USDC-denominated gas
+are what make a per-job escrow sensible at cent scale.
 
-> Smart contracts are deployed on Arc Testnet for evaluation and have **not**
-> undergone an independent third-party security audit.
-
----
+> Contracts are deployed on Arc Testnet for evaluation and have **not** had an
+> independent third-party security audit.
 
 ## Quickstart
 
@@ -193,57 +157,33 @@ curl -s -X POST "$VEYRA_BASE_URL/api/trust/v1/marketplace/select" \
   -d '{"capability":"market_research","budgetUsdc":0.02,"maxPriceUsdc":0.02,"limit":5}'
 ```
 
-`granted: false` means do not pay. `maxExposureUsdc` is the ceiling for the call.
-The clearance is cryptographically bound to one resource and is not transferable
-to another.
+`granted: false` means do not pay. `maxExposureUsdc` is the ceiling for the call,
+and the clearance is bound to one resource — it is not transferable to another.
 
 ### TypeScript SDK
 
-```bash
-npm run machine:sdk-build
-```
-
 ```typescript
-import { VeyraClient } from "./sdk/typescript/src/index.js";
-
 const veyra = new VeyraClient({ baseUrl, token });
-
 const decision = await veyra.trustGate.evaluate({
-  subject: agentWallet,
-  counterparty: providerWallet,
-  action: "erc8183_job",
-  amountUsdc: 0.05,
+  subject: agentWallet, counterparty: providerWallet,
+  action: "erc8183_job", amountUsdc: 0.05,
 });
-
 if (!decision.granted) throw new Error(decision.reasons.join(", "));
 ```
 
-Machine-readable API: [`/openapi/veyra-agent-api-v1.json`](public/openapi/veyra-agent-api-v1.json) ·
+Build it with `npm run machine:sdk-build`. Machine-readable API: [`/openapi/veyra-agent-api-v1.json`](public/openapi/veyra-agent-api-v1.json) ·
 SDK source: [`sdk/typescript`](sdk/typescript)
-
----
 
 ## Verification
 
-The full deterministic suite runs locally with no secrets:
+The deterministic suite runs locally with no secrets — every `*:test` script in
+`package.json`, the Foundry contract tests, and the build:
 
 ```bash
-npm run lint
-npm run machine:sdk-build
-
-npm run erc8004:test
-npm run erc8183:test
-npm run reputation:test
-npm run trust-gate:test
-npm run counterparty:test
-npm run project-360:test
-npm run monitoring:test
-
-cd contracts && forge test && cd ..
-npm run build
+npm run lint && npm run build
+npm run erc8004:test && npm run erc8183:test && npm run trust-gate:test
+(cd contracts && forge test)
 ```
-
----
 
 ## Documentation
 
@@ -255,26 +195,21 @@ npm run build
 | [Contracts](docs/contracts.md) | Deployed addresses, ABIs, and verification |
 | [Agent API](docs/agent-api.md) · [Webhooks](docs/webhooks.md) | Machine surface for autonomous callers |
 | [Operations](docs/operations.md) | Running and monitoring a deployment |
-
----
+| [Benchmarks](benchmarks/README.md) | Decision accuracy against ground truth fixed before the run |
 
 ## Security
 
-- **Testnet only.** Veyra runs on Arc Testnet. Never use keys that control real assets.
+- **Testnet only.** Never use keys that control real assets.
 - **Unaudited.** Contracts and protocol implementations are experimental.
-- **Disclosure.** See [SECURITY.md](SECURITY.md). Do not open public issues for active vulnerabilities.
-
----
+- **Disclosure.** See [SECURITY.md](SECURITY.md) — no public issues for active vulnerabilities.
+- **Scope.** External seller commerce remains an internal capability. It is not the
+  primary catalog or product positioning.
 
 ## License
 
-Licensed under the [Apache License 2.0](LICENSE).
-
-Portions of this codebase are derived from or incorporate open-source materials
-created by Circle Internet Group, Inc., also under Apache-2.0. See [NOTICE](NOTICE)
-for third-party attribution.
-
-Veyra is an independent project and is not affiliated with or endorsed by Circle
-Internet Group, Inc. or Arc.
+Licensed under the [Apache License 2.0](LICENSE). Portions derive from
+open-source material by Circle Internet Group, Inc., also Apache-2.0 — see
+[NOTICE](NOTICE). Veyra is independent and is not affiliated with or endorsed by
+Circle Internet Group, Inc. or Arc.
 
 Copyright © 2026 Veyra Contributors.

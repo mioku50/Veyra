@@ -71,8 +71,11 @@ assert(!/FreeModel|Phase\s+\d+|Canary deployment|treasury address|HMAC implement
 assert(readme.includes(BRAND.tagline));
 assert(readme.includes("External seller commerce remains an internal capability"));
 assert(readme.includes("docs/agent-api.md"));
-assert(readme.includes("public/openapi/agent-commerce-v1.json"));
+// The published document carries the product's own name since the rebrand; the
+// pre-rebrand copy is kept on disk so older integrations do not 404.
+assert(readme.includes("public/openapi/veyra-agent-api-v1.json"));
 assert(existsSync(new URL("../docs/agent-api.md", import.meta.url)));
+assert(existsSync(new URL("../public/openapi/veyra-agent-api-v1.json", import.meta.url)));
 assert(existsSync(new URL("../public/openapi/agent-commerce-v1.json", import.meta.url)));
 
 const homeSource = readFileSync(new URL("../app/page.tsx", import.meta.url), "utf8");
@@ -81,10 +84,21 @@ const proofsSource = readFileSync(
   "utf8",
 );
 assert(homeSource.includes("BRAND.name"));
-assert(homeSource.includes("BRAND.tagline"));
 assert(homeSource.includes("BRAND.description"));
 assert(homeSource.includes("Arc Testnet"));
-assert(homeSource.includes("Built for humans and autonomous agents"));
+// The homepage must carry the product's one thesis, in the brand's own words,
+// and lead to the screen that performs it rather than to a subsystem tour. The
+// two halves are rendered separately so the second can be accented, so the
+// invariant is checked against the tagline instead of against a literal.
+assert.equal(BRAND.tagline, "Veyra decides. Circle pays.");
+for (const half of BRAND.tagline.split(" ").reduce<string[]>((acc, word) => {
+  if (acc.length === 0 || acc[acc.length - 1].endsWith(".")) acc.push(word);
+  else acc[acc.length - 1] += ` ${word}`;
+  return acc;
+}, [])) {
+  assert(homeSource.includes(half), `homepage must render "${half}"`);
+}
+assert(homeSource.includes('href="/run"'));
 assert(homeSource.includes("BRAND.agentApi"));
 // Report cards must route their title through the shared subject formatter so a
 // JSON-encoded workflow input can never render as a raw object on a public card.
@@ -227,22 +241,39 @@ assert.deepEqual(
   },
 );
 
-assert.deepEqual(publicSidebarNavigation.map(({ label }) => label), ["Run", "Verify"]);
-assert.deepEqual(
-  publicSidebarNavigation.flatMap(({ items }) =>
-    items.map(({ label, href }) => ({ label, href })),
-  ),
-  [
-    { label: "Home", href: "/" },
-    { label: "New Report", href: "/agent-runner" },
-    { label: "Project 360", href: "/project-360" },
-    { label: "Monitoring", href: "/monitoring" },
-    { label: "Reports", href: "/results" },
-  ],
+// Five destinations. The product navigation is not where the architecture is
+// explained: a stage of a decision belongs to the decision, not to the shell.
+assert.deepEqual(publicSidebarNavigation.map(({ label }) => label), ["Run", "Activity", "Network"]);
+const publicItems = publicSidebarNavigation.flatMap(({ items }) =>
+  items.map(({ label, href }) => ({ label, href })),
 );
+assert.deepEqual(publicItems, [
+  { label: "New decision", href: "/run" },
+  { label: "Decisions", href: "/executions" },
+  { label: "Receipts", href: "/results" },
+  { label: "Agents", href: "/agents" },
+  { label: "Evidence", href: "/trust" },
+]);
+assert(publicItems.length <= 6, "product navigation must stay under seven destinations");
 assert.deepEqual(sidebarNavigation, publicSidebarNavigation);
 
-assert.deepEqual(consoleSidebarNavigation.map(({ label }) => label), [BRAND.developerConsole]);
+assert.deepEqual(
+  consoleSidebarNavigation.map(({ label }) => label),
+  [BRAND.developerConsole, "Decision internals", "Evidence tools"],
+);
+// Nothing demoted out of the product navigation may be orphaned.
+{
+  const reachable = new Set([
+    ...publicItems.map(({ href }) => href),
+    ...consoleSidebarNavigation.flatMap(({ items }) => items.map(({ href }) => href)),
+  ]);
+  for (const href of [
+    "/trust/select", "/trust-gate", "/trust/mandates", "/evaluators",
+    "/reputation", "/agent-runner", "/project-360", "/monitoring",
+  ]) {
+    assert(reachable.has(href), `${href} must remain reachable from a sidebar`);
+  }
+}
 assert.deepEqual(
   consoleSidebarNavigation[0].items.map(({ label, href }) => ({ label, href })),
   [
@@ -257,6 +288,10 @@ assert.deepEqual(
 
 assert(DESKTOP_SIDEBAR_SCROLL_CLASS.includes("overflow-y-auto"));
 assert(MOBILE_SIDEBAR_SCROLL_CLASS.includes("overflow-y-auto"));
+// overflow-y alone computes overflow-x to `auto`, which put a horizontal
+// scrollbar inside the sidebar. Both axes must be stated.
+assert(DESKTOP_SIDEBAR_SCROLL_CLASS.includes("overflow-x-hidden"));
+assert(MOBILE_SIDEBAR_SCROLL_CLASS.includes("overflow-x-hidden"));
 
 assert.deepEqual(humanizeError("wallet_already_registered"), {
   title: "Wallet already connected",
