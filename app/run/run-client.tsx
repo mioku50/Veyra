@@ -6,7 +6,8 @@
  */
 
 import Link from "next/link";
-import { Fragment, useMemo, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
+import { useArcWallet } from "@/components/wallet/use-arc-wallet";
 import { CandidateCard, type RunCandidate } from "@/components/run/candidate-card";
 import { DecisionPanel, type RunDecision } from "@/components/run/decision-panel";
 import { Eyebrow, Money, Panel } from "@/components/run/primitives";
@@ -51,6 +52,62 @@ export function RunClient() {
   const [decision, setDecision] = useState<RunDecision | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [stats, setStats] = useState<{ catalogTotal: number; discovered: number; probed: number } | null>(null);
+
+  /* Veyra signs its verdicts to a wallet, so a decision needs a verified owner
+     session. The screen used to call the API without one and print the raw
+     `credential_missing` back at the visitor, which made the product's main
+     screen look broken to anyone who had not been through the owner flow on
+     some other page. The flow now lives here, where it is needed. */
+  const wallet = useArcWallet();
+  const [authenticated, setAuthenticated] = useState<boolean | null>(null);
+  const [verifying, setVerifying] = useState(false);
+
+  const checkSession = useCallback(async () => {
+    try {
+      const response = await fetch("/api/byoa/management/session", { cache: "no-store" });
+      const payload = await response.json().catch(() => null);
+      setAuthenticated(payload?.authenticated === true);
+    } catch {
+      setAuthenticated(false);
+    }
+  }, []);
+
+  useEffect(() => { void checkSession(); }, [checkSession]);
+
+  /* Two steps on purpose. `connect()` resolves before React has the address, so
+     signing in the same handler would sign with a stale one; and a visitor who
+     has not connected yet should be asked for that first, not for a signature. */
+  async function verifyOwner() {
+    setVerifying(true);
+    setError(null);
+    try {
+      if (!wallet.providerAvailable) {
+        throw new Error("No browser wallet was detected. Install one, or call the Agent API with a machine credential.");
+      }
+      const address = wallet.address;
+      if (!address) throw new Error("Connect a wallet to continue.");
+      if (!wallet.isArcTestnet) await wallet.switchToArc();
+
+      const created = await post("/api/byoa/management/challenges", { wallet: address });
+      if (!created.response.ok) throw new Error(failureText(created.payload, created.response.status));
+      const challenge = created.payload?.challenge as { id: string; message: string };
+      const signature = await wallet.signMessage(challenge.message);
+
+      const opened = await post("/api/byoa/management/session", {
+        challengeId: challenge.id,
+        message: challenge.message,
+        signature,
+      });
+      if (!opened.response.ok) throw new Error(failureText(opened.payload, opened.response.status));
+      setAuthenticated(true);
+      setPhase("idle");
+    } catch (caught: any) {
+      setError(caught?.message || "Wallet verification failed.");
+      setPhase("error");
+    } finally {
+      setVerifying(false);
+    }
+  }
 
   const busy = phase === "discovering" || phase === "verifying" || phase === "authorizing";
   const step = PHASE_STEP[phase];
@@ -108,7 +165,12 @@ export function RunClient() {
       }
       setPhase("decided");
     } catch (err: any) {
-      setError(err?.message || "Something went wrong.");
+      if (err?.status === 401 || /credential|session/i.test(String(err?.message ?? ""))) {
+        setAuthenticated(false);
+        setError("This session is no longer verified. Verify your wallet again to decide.");
+      } else {
+        setError(err?.message || "Something went wrong.");
+      }
       setPhase("error");
     }
   }
@@ -538,17 +600,42 @@ export function RunClient() {
             </div>
 
             <div className="mt-5 flex flex-wrap items-center gap-3.5 border-t border-[var(--run-line)] pt-5">
-              <button
-                type="button"
-                onClick={decide}
-                disabled={busy}
-                className="run-cta run-focus inline-flex h-10 items-center rounded-[var(--run-radius-sm)] px-4.5 text-[13.5px] font-semibold"
-              >
-                {busy ? "Probing endpoints…" : "Find best route"}
-              </button>
-              <span className="text-[11px] text-[var(--run-text-faint)]">
-                Free — every candidate is probed before a cent moves.
-              </span>
+              {authenticated === false ? (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => (wallet.address ? void verifyOwner() : void wallet.connect())}
+                    disabled={verifying || wallet.connecting}
+                    className="run-cta run-focus inline-flex h-10 items-center rounded-[var(--run-radius-sm)] px-4.5 text-[13.5px] font-semibold"
+                  >
+                    {wallet.connecting
+                      ? "Opening wallet…"
+                      : verifying
+                        ? "Waiting for signature…"
+                        : wallet.address
+                          ? "Verify wallet to decide"
+                          : "Connect wallet"}
+                  </button>
+                  <span className="max-w-[44ch] text-[11px] leading-relaxed text-[var(--run-text-faint)]">
+                    A verdict is signed to a wallet, so Veyra needs to know whose it is.
+                    One signature, no transaction, nothing spent.
+                  </span>
+                </>
+              ) : (
+                <>
+                  <button
+                    type="button"
+                    onClick={decide}
+                    disabled={busy || authenticated === null}
+                    className="run-cta run-focus inline-flex h-10 items-center rounded-[var(--run-radius-sm)] px-4.5 text-[13.5px] font-semibold"
+                  >
+                    {busy ? "Probing endpoints…" : "Find best route"}
+                  </button>
+                  <span className="text-[11px] text-[var(--run-text-faint)]">
+                    Free — every candidate is probed before a cent moves.
+                  </span>
+                </>
+              )}
             </div>
           </Panel>
 

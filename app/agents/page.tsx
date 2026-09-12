@@ -149,9 +149,6 @@ async function AgentsList() {
 
   try {
     profiles = await listAgentProfiles(30);
-    proofCounts = await countVerifiedAgentProofs(
-      profiles.map((profile) => profile.wallet),
-    );
   } catch (caught) {
     /* The driver's message ("permission denied for table payment_events") is a
        server-side fact, not something a visitor can act on, and printing it
@@ -159,6 +156,16 @@ async function AgentsList() {
        needs to know, which is that the list is unavailable, not why. */
     console.error("[agents] failed to load passports", caught);
     error = "unavailable";
+  }
+
+  /* Proof counts decorate a passport; they never gate one. Kept in its own
+     try so a missing grant on the payments table cannot hide the agents. */
+  if (profiles.length > 0) {
+    try {
+      proofCounts = await countVerifiedAgentProofs(profiles.map((profile) => profile.wallet));
+    } catch (caught) {
+      console.warn("[agents] proof counts unavailable", caught);
+    }
   }
 
   return (

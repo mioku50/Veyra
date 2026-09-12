@@ -811,7 +811,15 @@ export async function countVerifiedAgentProofs(wallets: string[]) {
     .select("payer,onchain_status")
     .eq("onchain_status", "verified")
     .limit(5_000);
-  if (error) throw new Error(error.message);
+  if (error) {
+    /* This is a supplementary badge on a passport, not the passport. The public
+       role has no grant on payment_events in some deployments, and throwing here
+       took the whole listing down with it — the live site showed no passports at
+       all because a counter could not be read. Absent counts are reported as
+       zero verified proofs, which is what "we cannot see any" honestly means. */
+    console.warn("[agent-passport] verified proof counts unavailable:", error.message);
+    return counts;
+  }
 
   for (const row of (data ?? []) as Array<{ payer: string | null }>) {
     if (!row.payer) continue;
