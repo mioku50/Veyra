@@ -1,0 +1,271 @@
+{
+  "schemaVersion": "veyra.benchmark.ground-truth.v1",
+  "definedAt": "2026-09-12",
+  "note": "Expected outcomes are fixed here BEFORE the benchmark runs. The runner asserts against this file; it never derives expectations from observed behaviour. Changing an expectation is a deliberate edit with its own commit, not a side effect of a run.",
+
+  "probeCases": [
+    {
+      "id": "dead_endpoint_refused",
+      "condition": "dead_endpoint",
+      "description": "The endpoint in the catalog no longer accepts connections.",
+      "behaviour": { "kind": "throw", "message": "connect ECONNREFUSED 203.0.113.7:443" },
+      "expect": {
+        "reachable": false,
+        "respondedWith402": false,
+        "criticalFailureNotNull": true,
+        "errorCategory": "network",
+        "maxIntegrityScore": 0.5
+      }
+    },
+    {
+      "id": "dead_endpoint_timeout",
+      "condition": "dead_endpoint",
+      "description": "The endpoint accepts the connection but never answers within the probe budget.",
+      "behaviour": { "kind": "throw", "message": "request timed out after 8000ms" },
+      "expect": {
+        "reachable": false,
+        "respondedWith402": false,
+        "criticalFailureNotNull": true,
+        "errorCategory": "timeout",
+        "maxIntegrityScore": 0.5
+      }
+    },
+    {
+      "id": "not_402_success",
+      "condition": "protocol_violation",
+      "description": "A listed paid endpoint answers 200 instead of demanding payment.",
+      "behaviour": { "kind": "respond", "status": 200, "body": "{\"ok\":true}" },
+      "expect": {
+        "reachable": true,
+        "respondedWith402": false,
+        "criticalFailureNotNull": true
+      }
+    },
+    {
+      "id": "not_402_server_error",
+      "condition": "protocol_violation",
+      "description": "The endpoint is up but failing.",
+      "behaviour": { "kind": "respond", "status": 503, "body": "upstream unavailable" },
+      "expect": {
+        "reachable": true,
+        "respondedWith402": false,
+        "criticalFailureNotNull": true
+      }
+    },
+    {
+      "id": "malformed_challenge",
+      "condition": "protocol_violation",
+      "description": "A 402 whose challenge cannot be parsed as an x402 payment requirement.",
+      "behaviour": { "kind": "respond", "status": 402, "body": "payment required, contact sales" },
+      "expect": {
+        "reachable": true,
+        "respondedWith402": true,
+        "challengeParseable": false,
+        "criticalFailureNotNull": true
+      }
+    },
+    {
+      "id": "price_drift_upward",
+      "condition": "price_drift",
+      "description": "The live challenge charges five times the catalogued price.",
+      "behaviour": {
+        "kind": "challenge",
+        "status": 402,
+        "transport": "body",
+        "accepts": [{ "network": "eip155:8453", "payTo": "CATALOG_PAYTO", "asset": "CATALOG_ASSET", "amount": "50000" }]
+      },
+      "expect": {
+        "reachable": true,
+        "respondedWith402": true,
+        "challengeParseable": true,
+        "driftIncludes": ["price_changed"]
+      }
+    },
+    {
+      "id": "payee_drift",
+      "condition": "payee_drift",
+      "description": "The live challenge directs payment to an address the catalog never advertised.",
+      "behaviour": {
+        "kind": "challenge",
+        "status": 402,
+        "transport": "body",
+        "accepts": [{ "network": "eip155:8453", "payTo": "0x000000000000000000000000000000000000dEaD", "asset": "CATALOG_ASSET", "amount": "CATALOG_AMOUNT" }]
+      },
+      "expect": {
+        "reachable": true,
+        "respondedWith402": true,
+        "driftIncludes": ["payto_changed"]
+      }
+    },
+    {
+      "id": "asset_drift",
+      "condition": "asset_drift",
+      "description": "The live challenge asks for a different token than the catalogued asset.",
+      "behaviour": {
+        "kind": "challenge",
+        "status": 402,
+        "transport": "body",
+        "accepts": [{ "network": "eip155:8453", "payTo": "CATALOG_PAYTO", "asset": "0x4200000000000000000000000000000000000006", "amount": "CATALOG_AMOUNT" }]
+      },
+      "expect": {
+        "reachable": true,
+        "respondedWith402": true,
+        "driftIncludes": ["asset_changed"]
+      }
+    },
+    {
+      "id": "network_absent",
+      "condition": "network_drift",
+      "description": "The live challenge does not offer the network the catalog listed.",
+      "behaviour": {
+        "kind": "challenge",
+        "status": 402,
+        "transport": "body",
+        "accepts": [{ "network": "eip155:137", "payTo": "CATALOG_PAYTO", "asset": "CATALOG_ASSET", "amount": "CATALOG_AMOUNT" }]
+      },
+      "expect": {
+        "reachable": true,
+        "respondedWith402": true,
+        "driftIncludes": ["network_absent_from_challenge"]
+      }
+    },
+    {
+      "id": "conformant_body_transport",
+      "condition": "conformant",
+      "description": "A well-behaved seller whose challenge matches the catalog, delivered in the response body.",
+      "behaviour": {
+        "kind": "challenge",
+        "status": 402,
+        "transport": "body",
+        "accepts": [{ "network": "eip155:8453", "payTo": "CATALOG_PAYTO", "asset": "CATALOG_ASSET", "amount": "CATALOG_AMOUNT" }]
+      },
+      "expect": {
+        "reachable": true,
+        "respondedWith402": true,
+        "challengeParseable": true,
+        "driftEmpty": true,
+        "criticalFailureNotNull": false
+      }
+    },
+    {
+      "id": "conformant_header_transport",
+      "condition": "conformant",
+      "description": "The same seller answering over the payment-required header, which is where x402 v2 servers put the challenge.",
+      "behaviour": {
+        "kind": "challenge",
+        "status": 402,
+        "transport": "header",
+        "accepts": [{ "network": "eip155:8453", "payTo": "CATALOG_PAYTO", "asset": "CATALOG_ASSET", "amount": "CATALOG_AMOUNT" }]
+      },
+      "expect": {
+        "reachable": true,
+        "respondedWith402": true,
+        "challengeParseable": true,
+        "driftEmpty": true,
+        "criticalFailureNotNull": false
+      }
+    }
+  ],
+
+  "policyCases": [
+    {
+      "id": "first_contact_marketplace",
+      "description": "A reachable, conformant endpoint nobody has paid yet. Two of six evidence dimensions are observable: protocol integrity and catalog integrity. No settlement history exists.",
+      "input": { "score": 92, "confidence": 0.95, "coverage": 0.3333, "freshnessSeconds": 0, "riskFlags": [] },
+      "expect": { "decision": "REQUIRE_EVALUATOR", "notDecision": ["ALLOW", "ALLOW_WITH_LIMITS"], "evaluatorRequired": true, "maxValueUsdc": 10 },
+      "rationale": "A perfect probe score cannot buy trust that only settlement history can establish. Coverage, not score, is the binding constraint."
+    },
+    {
+      "id": "established_counterparty",
+      "description": "Four of six dimensions observed, including settled executions.",
+      "input": { "score": 88, "confidence": 0.7, "coverage": 0.6667, "freshnessSeconds": 600, "riskFlags": [] },
+      "expect": { "decision": "ALLOW_WITH_LIMITS", "evaluatorRequired": false, "maxValueUsdc": 25 },
+      "rationale": "Confidence 0.7 is below the 0.8 ALLOW threshold, so the tier below it is correct."
+    },
+    {
+      "id": "fully_evidenced_counterparty",
+      "description": "Five of six dimensions observed with high confidence and fresh evidence.",
+      "input": { "score": 90, "confidence": 0.85, "coverage": 0.8333, "freshnessSeconds": 300, "riskFlags": [] },
+      "expect": { "decision": "ALLOW", "evaluatorRequired": false, "maxValueUsdc": 100 },
+      "rationale": "The only path to ALLOW is evidence across most dimensions."
+    },
+    {
+      "id": "critical_risk_overrides_score",
+      "description": "An otherwise excellent counterparty carrying a critical risk flag.",
+      "input": { "score": 95, "confidence": 0.95, "coverage": 0.9, "freshnessSeconds": 0, "riskFlags": ["SYBIL_RISK"] },
+      "expect": { "decision": "DENY", "maxValueUsdc": 0 },
+      "rationale": "A critical flag is not a penalty on the score; it closes the gate."
+    },
+    {
+      "id": "unverified_arc_proof",
+      "description": "Reputation claims that are not backed by an onchain Arc proof.",
+      "input": { "score": 80, "confidence": 0.8, "coverage": 0.7, "freshnessSeconds": 0, "riskFlags": ["ARC_PROOF_UNVERIFIED"] },
+      "expect": { "decision": "DENY", "maxValueUsdc": 0 },
+      "rationale": "Unverifiable history is treated as absent history, not as weak history."
+    },
+    {
+      "id": "stale_evidence",
+      "description": "Strong evidence that is four hours old.",
+      "input": { "score": 90, "confidence": 0.9, "coverage": 0.8, "freshnessSeconds": 14000, "riskFlags": [] },
+      "expect": { "decision": "REQUIRE_EVALUATOR", "notDecision": ["ALLOW", "ALLOW_WITH_LIMITS"] },
+      "rationale": "Freshness gates the tier independently of score: what was true an hour ago is not a claim about now."
+    },
+    {
+      "id": "weak_everything",
+      "description": "Low score, low confidence, little coverage.",
+      "input": { "score": 35, "confidence": 0.15, "coverage": 0.1, "freshnessSeconds": 0, "riskFlags": [] },
+      "expect": { "decision": "REVIEW_REQUIRED", "maxValueUsdc": 0 },
+      "rationale": "Nothing is authorized, but the case is routed to a human rather than silently dropped."
+    },
+    {
+      "id": "below_every_floor",
+      "description": "A counterparty that clears no tier at all.",
+      "input": { "score": 12, "confidence": 0.05, "coverage": 0.0, "freshnessSeconds": 99999, "riskFlags": [] },
+      "expect": { "decision": "DENY", "maxValueUsdc": 0 },
+      "rationale": "Fail closed is the default, not the exception."
+    }
+  ],
+
+  "budgetCases": [
+    {
+      "note": "maxExposureUsdc is a ceiling on what may be spent, derived from min(budget, tier ceiling). It is deliberately not the quoted price: the price is what the seller asks, the exposure is what Veyra authorises. A caller whose quoted price exceeds the returned exposure must not pay - that rule belongs to the caller, and the engine does not silently raise the ceiling to accommodate a price."
+    },
+    {
+      "id": "price_within_budget",
+      "description": "Quoted price sits under the caller's budget, well under the tier ceiling.",
+      "input": { "priceUsdc": 0.012, "budgetUsdc": 0.1, "tierMaxValueUsdc": 10 },
+      "expect": { "eligible": true, "maxExposureUsdc": 0.1 }
+    },
+    {
+      "id": "price_over_budget",
+      "description": "The endpoint costs more than the caller authorised.",
+      "input": { "priceUsdc": 0.25, "budgetUsdc": 0.1, "tierMaxValueUsdc": 10 },
+      "expect": { "eligible": false, "reason": "budget_exceeded", "maxExposureUsdc": 0 }
+    },
+    {
+      "id": "exposure_capped_by_tier",
+      "description": "Budget is generous; the trust tier is what binds.",
+      "input": { "priceUsdc": 8.0, "budgetUsdc": 50.0, "tierMaxValueUsdc": 10 },
+      "expect": { "eligible": true, "maxExposureUsdc": 10 }
+    },
+    {
+      "id": "exposure_capped_by_budget",
+      "description": "Tier is generous; the caller's budget is what binds.",
+      "input": { "priceUsdc": 3.0, "budgetUsdc": 5.0, "tierMaxValueUsdc": 100 },
+      "expect": { "eligible": true, "maxExposureUsdc": 5 }
+    },
+    {
+      "id": "denied_tier_yields_zero_exposure",
+      "description": "A denied counterparty is authorised for nothing at all, whatever the budget says.",
+      "input": { "priceUsdc": 0.01, "budgetUsdc": 50.0, "tierMaxValueUsdc": 0, "decision": "DENY" },
+      "expect": { "eligible": false, "maxExposureUsdc": 0 }
+    }
+  ],
+
+  "latency": {
+    "note": "Three timings are reported separately because they are paid by different parties and have different orders of magnitude. Collapsing them into one number would hide which part is slow.",
+    "probe": "Wall-clock time of one live x402 challenge fetch, measured on a monotonic clock inside probeX402Resource. Network-bound; dominated by the seller.",
+    "decision": "Time to rank the probed candidates and resolve the policy tier. Pure computation over evidence already gathered; this is the part Veyra is responsible for.",
+    "execution": "Time from the first settlement transaction to funds landing with the counterparty. Chain-bound; measured from the live ERC-8183 runs, not simulated."
+  }
+}

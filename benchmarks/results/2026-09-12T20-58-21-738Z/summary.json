@@ -1,0 +1,102 @@
+{
+  "schemaVersion": "veyra.benchmark.summary.v1",
+  "groundTruthVersion": "veyra.benchmark.ground-truth.v1",
+  "groundTruthDefinedAt": "2026-09-12",
+  "startedAt": "2026-09-12T20:58:21.738Z",
+  "finishedAt": "2026-09-12T20:58:21.925Z",
+  "node": "v22.22.2",
+  "totals": {
+    "cases": 24,
+    "passed": 24,
+    "failed": 0
+  },
+  "byPart": {
+    "probe": {
+      "total": 11,
+      "passed": 11
+    },
+    "policy": {
+      "total": 8,
+      "passed": 8
+    },
+    "budget": {
+      "total": 5,
+      "passed": 5
+    }
+  },
+  "probeByCondition": {
+    "dead_endpoint": {
+      "total": 2,
+      "passed": 2
+    },
+    "protocol_violation": {
+      "total": 3,
+      "passed": 3
+    },
+    "price_drift": {
+      "total": 1,
+      "passed": 1
+    },
+    "payee_drift": {
+      "total": 1,
+      "passed": 1
+    },
+    "asset_drift": {
+      "total": 1,
+      "passed": 1
+    },
+    "network_drift": {
+      "total": 1,
+      "passed": 1
+    },
+    "conformant": {
+      "total": 2,
+      "passed": 2
+    }
+  },
+  "unsafeConditionsCaught": {
+    "note": "Conditions that must never reach an agent's wallet unflagged.",
+    "deadEndpoints": 2,
+    "protocolViolations": 3,
+    "priceDrift": 1,
+    "payeeDrift": 1,
+    "assetDrift": 1,
+    "networkDrift": 1
+  },
+  "latency": {
+    "decision": [
+      {
+        "candidateCount": 2,
+        "iterations": 2000,
+        "unit": "ms",
+        "p50": 0.009,
+        "p95": 0.021,
+        "p99": 0.054,
+        "min": 0.007,
+        "max": 5.477
+      },
+      {
+        "candidateCount": 6,
+        "iterations": 2000,
+        "unit": "ms",
+        "p50": 0.017,
+        "p95": 0.048,
+        "p99": 0.093,
+        "min": 0.015,
+        "max": 0.588
+      },
+      {
+        "candidateCount": 25,
+        "iterations": 2000,
+        "unit": "ms",
+        "p50": 0.023,
+        "p95": 0.087,
+        "p99": 0.172,
+        "min": 0.02,
+        "max": 1.005
+      }
+    ],
+    "probe": "Not measured here: the probe is driven by a scripted seller, so its latency describes the harness, not a network. Use --live for observed probe latency.",
+    "execution": "Measured onchain, not in this harness. See docs/PROOF_OF_LIVE_ERC8183.md - job #186207 settled in 19 s across five transactions."
+  }
+}
