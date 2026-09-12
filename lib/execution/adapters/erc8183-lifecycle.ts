@@ -394,7 +394,13 @@ export class Erc8183JobLifecycle {
       args: [jobId, amount, "0x"],
     } as any);
 
-    const { phase: phaseAfter } = await this.readPhase(jobId);
+    const { phase: phaseAfter, job } = await this.readPhase(jobId);
+    if (job.budget !== amount) {
+      throw new Erc8183LifecycleError(
+        "ERC8183_BUDGET_MISMATCH",
+        `Job ${jobId} priced at ${job.budget} base units, expected ${amount}.`,
+      );
+    }
     return { ...step, phaseAfter };
   }
 
@@ -405,11 +411,24 @@ export class Erc8183JobLifecycle {
    * the one the previous adapter never performed, which is why no job it opened
    * could ever pay out.
    */
-  async fundEscrow(input: { jobId: bigint | string }): Promise<Erc8183StepResult & { escrowedUsdc: number }> {
+  async fundEscrow(input: {
+    jobId: bigint | string;
+    /** Ceiling from the clearance. The provider prices the job independently, so
+     *  the budget it set is untrusted input until it is checked against this. */
+    authorizedAmountUsdc: number;
+  }): Promise<Erc8183StepResult & { escrowedUsdc: number }> {
     const jobId = BigInt(input.jobId);
     const { phase, job } = await this.guard("fund", jobId);
 
     if (job.budget <= BigInt(0)) throw new Erc8183LifecycleError("ERC8183_BUDGET_NOT_SET");
+
+    const authorized = parseUnits(input.authorizedAmountUsdc.toFixed(6), 6);
+    if (job.budget > authorized) {
+      throw new Erc8183LifecycleError(
+        "ERC8183_BUDGET_MISMATCH",
+        `Job ${jobId} demands ${job.budget} base units, authorized ceiling is ${authorized}.`,
+      );
+    }
 
     const { account } = this.walletFor("client");
     if (job.client.toLowerCase() !== account.address.toLowerCase()) {

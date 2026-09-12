@@ -108,6 +108,24 @@ requires `ERC8183_ALLOW_PROVIDER_SIMULATION=true` and is flagged
 mistaken for an arm's-length one. Job #186207 above was such a run: steps 2 and 4
 carry that flag.
 
+## The provider prices the job; Veyra caps what it will escrow
+
+In the canonical contract the *provider* calls `setBudget`, so between `createJob`
+and `fund` the counterparty can name any price. The budget is therefore untrusted
+input, and `fundEscrow` refuses to escrow above the ceiling carried by the
+clearance — job **#186209**, provider asking 0.05 USDC against a 0.02 authorization:
+
+```
+provider priced at:  0.05 USDC
+client authorized :  0.02 USDC
+refused: ERC8183_BUDGET_MISMATCH - Job 186209 demands 50000 base units,
+         authorized ceiling is 20000.
+phase after refusal: BUDGETED_AWAITING_FUNDING   (no USDC escrowed)
+```
+
+The job stays open at the funding phase and no money moves. `setBudget` separately
+verifies that the price written on chain is the one that was requested.
+
 ## Defects this run found and fixed
 
 The lifecycle was rebuilt because a live run proved the previous adapter could not

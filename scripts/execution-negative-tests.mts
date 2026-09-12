@@ -384,7 +384,12 @@ async function runNegativeTests() {
   // 16. ERC8183 Event validation tests
   {
     const { readFileSync } = await import("node:fs");
-    const erc8183Source = readFileSync("lib/execution/adapters/erc8183.ts", "utf8");
+    // The rail is the adapter plus the lifecycle state machine it drives; the
+    // party and amount guards live with the transitions they protect.
+    const erc8183Source = [
+      "lib/execution/adapters/erc8183.ts",
+      "lib/execution/adapters/erc8183-lifecycle.ts",
+    ].map((path) => readFileSync(path, "utf8")).join("\n");
     assert.ok(erc8183Source.includes("ERC8183_CLIENT_MISMATCH"), "Adapter must verify client matches payer");
     assert.ok(erc8183Source.includes("ERC8183_PROVIDER_MISMATCH"), "Adapter must verify provider matches counterparty");
     assert.ok(erc8183Source.includes("ERC8183_EVALUATOR_MISMATCH"), "Adapter must verify evaluator matches target");

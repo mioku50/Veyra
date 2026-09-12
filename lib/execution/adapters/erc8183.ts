@@ -265,7 +265,11 @@ export class Erc8183ExecutionAdapter implements ExecutionRailAdapter {
       }
 
       if (phase === "BUDGETED_AWAITING_FUNDING") {
-        trace.steps.push(await lifecycle.fundEscrow({ jobId }));
+        // The clearance amount is the ceiling: whatever the provider priced the
+        // job at, Veyra escrows nothing above what it authorized.
+        trace.steps.push(await lifecycle.fundEscrow({
+          jobId, authorizedAmountUsdc: params.amountUsdc,
+        }));
         continue;
       }
 
