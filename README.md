@@ -4,6 +4,7 @@
 [![CI](https://github.com/mioku50/Veyra/actions/workflows/release-gate.yml/badge.svg)](https://github.com/mioku50/Veyra/actions/workflows/release-gate.yml)
 [![Network](https://img.shields.io/badge/network-Arc%20Testnet%20(5042002)-emerald.svg)](https://testnet.arcscan.app)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
+[![Live](https://img.shields.io/badge/live-agent--commerce--six.vercel.app-34e39b.svg)](https://agent-commerce-six.vercel.app)
 
 > ## Veyra decides. Circle pays.
 >
@@ -16,6 +17,12 @@ a signed authorization bound to one endpoint and one amount. After execution, th
 observed outcome becomes new reputation on Arc.
 
 `ERC-8004` · `ERC-8183` · `x402` · `Gateway Nanopayments` · `USDC` · `Arc`
+
+**Live on Arc Testnet — [agent-commerce-six.vercel.app](https://agent-commerce-six.vercel.app)**
+· [Run a decision](https://agent-commerce-six.vercel.app/run), the flow below end to
+end in the browser
+· [Decision log](https://agent-commerce-six.vercel.app/executions), every trust-routed
+action, authorization and onchain settlement as it happened
 
 ---
 
@@ -81,7 +88,8 @@ transaction hash:
 | Time to payout | **19 seconds**, createJob → USDC in the provider's wallet |
 | Policy checks | 11 of 11 passed, deliverable re-fetched and re-hashed by the evaluator |
 
-Full transaction-by-transaction record: **[docs/PROOF_OF_LIVE_ERC8183.md](docs/PROOF_OF_LIVE_ERC8183.md)**
+- Full transaction-by-transaction record: **[docs/PROOF_OF_LIVE_ERC8183.md](docs/PROOF_OF_LIVE_ERC8183.md)**
+- Live decision log: **[agent-commerce-six.vercel.app/executions](https://agent-commerce-six.vercel.app/executions)**
 
 ---
 
