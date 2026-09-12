@@ -153,7 +153,12 @@ async function AgentsList() {
       profiles.map((profile) => profile.wallet),
     );
   } catch (caught) {
-    error = caught instanceof Error ? caught.message : String(caught);
+    /* The driver's message ("permission denied for table payment_events") is a
+       server-side fact, not something a visitor can act on, and printing it
+       leaks the schema. It belongs in the logs; the page says what the reader
+       needs to know, which is that the list is unavailable, not why. */
+    console.error("[agents] failed to load passports", caught);
+    error = "unavailable";
   }
 
   return (
@@ -161,8 +166,11 @@ async function AgentsList() {
       {error ? (
         <Card className="rounded-lg">
           <CardContent className="p-6">
-            <p className="font-medium">Agent passports are not available yet.</p>
-            <p className="mt-2 text-sm text-muted-foreground">{error}</p>
+            <p className="font-medium">Agent passports are temporarily unavailable.</p>
+            <p className="mt-2 text-sm text-muted-foreground">
+              The passport index could not be read. Onchain identity and settlement
+              records on Arc are unaffected — only this listing is.
+            </p>
           </CardContent>
         </Card>
       ) : profiles.length === 0 ? (
@@ -247,7 +255,7 @@ export default function AgentsPage() {
 
       <section className="mx-auto grid w-full max-w-6xl gap-4 px-4 pt-8 sm:px-6 md:grid-cols-3">
         {[
-          ["Trust score", "Deterministic demo score from activity"],
+          ["Trust score", "Computed deterministically from observed activity"],
           ["Workflow history", "Reports, paid calls, spend, and success rate"],
           ["Arc verification", "Registry proofs linked to successful receipts"],
         ].map(([title, body]) => (

@@ -97,7 +97,7 @@ function TrustScore({ profile }: { profile: PublicAgentProfile }) {
     <Card className="rounded-lg shadow-sm">
       <CardHeader>
         <div className="mb-3 flex flex-wrap items-center gap-2">
-          <Badge variant="secondary">Demo trust score</Badge>
+          <Badge variant="secondary">Deterministic trust score</Badge>
           <Badge variant={profile.trust_score >= 60 ? "default" : "outline"}>
             {profile.trust_score}/100
           </Badge>
@@ -124,9 +124,9 @@ function TrustScore({ profile }: { profile: PublicAgentProfile }) {
           />
         </div>
         <p className="text-sm leading-6 text-muted-foreground">
-          Score is deterministic for the demo: completed workflows, successful
-          paid calls, and budget-respected execution raise it; failed calls and
-          failed workflows reduce it.
+          The score is deterministic, not a model output: completed workflows,
+          successful paid calls, and budget-respected execution raise it; failed
+          calls and failed workflows reduce it.
         </p>
       </CardContent>
     </Card>

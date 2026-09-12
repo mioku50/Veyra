@@ -63,7 +63,8 @@ export default async function ResultsPage({ searchParams }: ResultsPageProps) {
   try {
     allReports = await listHostedFinalReports(50);
   } catch (error) {
-    warning = error instanceof Error ? error.message : String(error);
+    console.error("[results] failed to load hosted reports", error);
+    warning = "Reports are temporarily unavailable.";
   }
   const reports = filterAndSortResults(allReports, filters);
   const filtersActive = hasActiveResultsFilters(filters);

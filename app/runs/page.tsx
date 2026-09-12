@@ -46,7 +46,10 @@ async function RunsList() {
   try {
     runs = await fetchRecentAgentRuns(50);
   } catch (caught) {
-    error = caught instanceof Error ? caught.message : String(caught);
+    /* Same rule as the passport index: a driver message is a server-side fact
+       that leaks the schema and tells the reader nothing they can act on. */
+    console.error("[runs] failed to load agent runs", caught);
+    error = "Agent runs are temporarily unavailable.";
   }
 
   return <RunsListClient initialRuns={runs} error={error} />;
