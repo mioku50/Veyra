@@ -101,7 +101,7 @@ export async function generateMetadata({ params }: RouteContext): Promise<Metada
 
 function ChangeIcon({ change }: { change: TrustDeltaChange }) {
   if (change.kind === "new_risk") return <AlertTriangle className="size-4 text-red-400" />;
-  if (change.kind === "improved") return <ArrowUpRight className="size-4 text-emerald-400" />;
+  if (change.kind === "improved") return <ArrowUpRight className="size-4 text-sky-400" />;
   return <Activity className="size-4 text-blue-400" />;
 }
 
@@ -145,7 +145,7 @@ export default async function PublicTrustProfilePage({ params }: RouteContext) {
               <Badge>Veyra Trust Profile</Badge>
               <Badge variant="outline">{objectTypeLabel(data.profile.objectType)}</Badge>
               {current?.verifiedOnArc ? (
-                <Badge className="border border-emerald-500/30 bg-emerald-500/10 text-emerald-400">
+                <Badge className="border border-sky-500/30 bg-sky-500/10 text-sky-400">
                   <BadgeCheck className="mr-1 size-3.5" />
                   Arc verified
                 </Badge>
@@ -200,7 +200,7 @@ export default async function PublicTrustProfilePage({ params }: RouteContext) {
               <Badge
                 className={
                   data.profile.scoreChange > 0
-                    ? "bg-emerald-500/10 text-emerald-400"
+                    ? "bg-sky-500/10 text-sky-400"
                     : data.profile.scoreChange < 0
                       ? "bg-red-500/10 text-red-400"
                       : ""
@@ -262,7 +262,7 @@ export default async function PublicTrustProfilePage({ params }: RouteContext) {
               </div>
             </div>
             <div>
-              <p className="text-sm font-semibold text-emerald-400">Resolved risks</p>
+              <p className="text-sm font-semibold text-sky-400">Resolved risks</p>
               <div className="mt-3 grid gap-2">
                 {resolvedRisks.length ? resolvedRisks.map((risk) => (
                   <p key={risk.code} className="text-sm">{risk.title}</p>
@@ -342,7 +342,7 @@ export default async function PublicTrustProfilePage({ params }: RouteContext) {
                   )}
                   <div className="flex items-center gap-2 text-sm text-muted-foreground">
                     {snapshot.verifiedOnArc ? (
-                      <CheckCircle2 className="size-4 text-emerald-400" />
+                      <CheckCircle2 className="size-4 text-sky-400" />
                     ) : (
                       <Fingerprint className="size-4" />
                     )}

@@ -134,8 +134,8 @@ export default async function PublicAgentReputationPage() {
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
-              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" /> {explanation.statusLabel}
+            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-sky-500/20 text-sky-300 border border-sky-500/40">
+              <CheckCircle2 className="w-3.5 h-3.5 text-sky-400" /> {explanation.statusLabel}
             </span>
             <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-sky-500/20 text-sky-300 border border-sky-500/40">
               <BadgeCheck className="w-4 h-4 text-sky-400" /> {explanation.confidence} Confidence ({explanation.coverage}%)
@@ -151,8 +151,8 @@ export default async function PublicAgentReputationPage() {
                 <span className="text-xs font-bold text-sky-400 uppercase tracking-wider bg-sky-950/60 border border-sky-800/60 px-2.5 py-1 rounded-md">
                   Evidence-Weighted Trust Score
                 </span>
-                <span className="text-xs text-emerald-400 font-semibold bg-emerald-950/60 border border-emerald-800/60 px-2.5 py-1 rounded-md flex items-center gap-1">
-                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" /> Arc Testnet (5042002)
+                <span className="text-xs text-sky-400 font-semibold bg-sky-950/60 border border-sky-800/60 px-2.5 py-1 rounded-md flex items-center gap-1">
+                  <span className="w-2 h-2 rounded-full bg-sky-400 animate-pulse" /> Arc Testnet (5042002)
                 </span>
               </div>
               <div className="flex items-baseline gap-3">
@@ -177,20 +177,20 @@ export default async function PublicAgentReputationPage() {
 
         {/* Compact Badges */}
         <div className="grid grid-cols-2 md:grid-cols-6 gap-3 text-2xs font-semibold">
-          <div className="bg-slate-900/90 border border-emerald-500/30 p-2.5 rounded-xl flex items-center gap-2 text-emerald-300">
-            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" /> ERC-8004 Identity
+          <div className="bg-slate-900/90 border border-sky-500/30 p-2.5 rounded-xl flex items-center gap-2 text-sky-300">
+            <CheckCircle2 className="w-3.5 h-3.5 text-sky-400" /> ERC-8004 Identity
           </div>
-          <div className="bg-slate-900/90 border border-emerald-500/30 p-2.5 rounded-xl flex items-center gap-2 text-emerald-300">
-            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" /> ERC-8183 Evaluator
+          <div className="bg-slate-900/90 border border-sky-500/30 p-2.5 rounded-xl flex items-center gap-2 text-sky-300">
+            <CheckCircle2 className="w-3.5 h-3.5 text-sky-400" /> ERC-8183 Evaluator
           </div>
-          <div className="bg-slate-900/90 border border-emerald-500/30 p-2.5 rounded-xl flex items-center gap-2 text-emerald-300">
-            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" /> Verified Execution
+          <div className="bg-slate-900/90 border border-sky-500/30 p-2.5 rounded-xl flex items-center gap-2 text-sky-300">
+            <CheckCircle2 className="w-3.5 h-3.5 text-sky-400" /> Verified Execution
           </div>
-          <div className="bg-slate-900/90 border border-emerald-500/30 p-2.5 rounded-xl flex items-center gap-2 text-emerald-300">
-            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" /> Economic History
+          <div className="bg-slate-900/90 border border-sky-500/30 p-2.5 rounded-xl flex items-center gap-2 text-sky-300">
+            <CheckCircle2 className="w-3.5 h-3.5 text-sky-400" /> Economic History
           </div>
-          <div className="bg-slate-900/90 border border-emerald-500/30 p-2.5 rounded-xl flex items-center gap-2 text-emerald-300">
-            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" /> Arc Verified
+          <div className="bg-slate-900/90 border border-sky-500/30 p-2.5 rounded-xl flex items-center gap-2 text-sky-300">
+            <CheckCircle2 className="w-3.5 h-3.5 text-sky-400" /> Arc Verified
           </div>
           <div className="bg-slate-900/90 border border-sky-500/30 p-2.5 rounded-xl flex items-center gap-2 text-sky-300">
             <Cpu className="w-3.5 h-3.5 text-sky-400" /> x402 Active
@@ -214,8 +214,8 @@ export default async function PublicAgentReputationPage() {
               <div className="text-3xs text-slate-500 font-sans">ERC-8183 Completed Jobs</div>
             </div>
             <div className="bg-slate-900/80 border border-slate-800 p-5 rounded-xl space-y-1">
-              <div className="text-xs font-semibold text-emerald-400 uppercase tracking-wider">Validation</div>
-              <div className="text-3xl font-extrabold text-emerald-400">{explanation.dimensions.validation}</div>
+              <div className="text-xs font-semibold text-sky-400 uppercase tracking-wider">Validation</div>
+              <div className="text-3xl font-extrabold text-sky-400">{explanation.dimensions.validation}</div>
               <div className="text-3xs text-slate-500 font-sans">Veyra & ERC-8004 Verdicts</div>
             </div>
             <div className="bg-slate-900/80 border border-slate-800 p-5 rounded-xl space-y-1">
@@ -239,13 +239,13 @@ export default async function PublicAgentReputationPage() {
         {/* Positive Explanations & Risk Signals */}
         <section className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-6 space-y-3">
-            <h4 className="text-base font-bold text-emerald-400 flex items-center gap-2">
-              <CheckCircle2 className="w-4 h-4 text-emerald-400" /> Top Positive Evidence
+            <h4 className="text-base font-bold text-sky-400 flex items-center gap-2">
+              <CheckCircle2 className="w-4 h-4 text-sky-400" /> Top Positive Evidence
             </h4>
             <ul className="space-y-2 text-xs text-slate-300">
               {explanation.topPositiveEvidence.map((item, idx) => (
                 <li key={idx} className="flex items-start gap-2">
-                  <span className="text-emerald-400 font-bold">•</span>
+                  <span className="text-sky-400 font-bold">•</span>
                   <span>{item}</span>
                 </li>
               ))}
@@ -280,7 +280,7 @@ export default async function PublicAgentReputationPage() {
                   <div key={item.evidenceId} className="pt-3 flex flex-col md:flex-row md:items-center justify-between gap-2">
                     <div className="space-y-1">
                       <div className="flex items-center gap-2">
-                        <span className={`px-2 py-0.5 rounded text-3xs font-bold uppercase ${item.positive ? "bg-emerald-950 text-emerald-400 border border-emerald-800" : "bg-rose-950 text-rose-400 border border-rose-800"}`}>
+                        <span className={`px-2 py-0.5 rounded text-3xs font-bold uppercase ${item.positive ? "bg-sky-950 text-sky-400 border border-sky-800" : "bg-rose-950 text-rose-400 border border-rose-800"}`}>
                           {item.type}
                         </span>
                         <span className="text-slate-400 text-3xs">Tier {item.tier}</span>

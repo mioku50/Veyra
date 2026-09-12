@@ -6,57 +6,63 @@
 /*
  * The product's design tokens.
  *
- * These live at :root rather than on one surface: a second palette on a second
- * screen is visible the instant anyone follows a link, and that seam is what
- * made the redesign read as a skin. The canvas is a cool near-black rather than
- * navy, money and hashes are always monospaced and tabular, and the accent
- * carries meaning: mint for a cleared decision, amber for a bounded one, red
- * for a refusal. Nothing is decorative.
+ * The ground is blue-violet, not black and not navy: a deep indigo that carries
+ * a visible hue at every elevation, so surfaces read as lit rather than as
+ * rectangles cut out of nothing. Green is gone entirely — a single mint accent
+ * on black is the look of several thousand other dashboards, and it made every
+ * state on the screen the same colour.
  *
- * Surfaces sit a measurable step above the ground and borders are crisp enough
- * to survive a dim panel. The earlier values were separated by two or three
- * points of luminance, which reads as a flat black rectangle on real hardware.
+ * Two accents, and they mean different things:
+ *   accent (violet)  — Veyra itself: brand, primary action, focus, selection.
+ *   azure            — verified: a cleared decision, a passing check, a node
+ *                      the run has already gone through.
+ * Amber bounds, rose refuses, lavender carries neutral emphasis. Nothing here
+ * is decorative.
  */
 
 :root {
-  --run-canvas: #05070a;
-  --run-canvas-raised: #090c11;
-  --run-surface: #0f141a;
-  --run-surface-hover: #141a22;
-  --run-surface-active: #1b232c;
+  --run-canvas: #080a18;
+  --run-canvas-raised: #0d1024;
+  --run-surface: #13162e;
+  --run-surface-hover: #191d39;
+  --run-surface-active: #232a4d;
 
-  --run-line: #212834;
-  --run-line-strong: #303a48;
-  --run-line-accent: #21513e;
+  --run-line: #242a49;
+  --run-line-strong: #363e6b;
+  --run-line-accent: #4a3fa8;
 
-  --run-text: #f4f7fa;
-  --run-text-muted: #97a3b4;
-  --run-text-faint: #626e7f;
+  --run-text: #f1f2fb;
+  --run-text-muted: #a3a8c8;
+  --run-text-faint: #6d7299;
 
-  --run-mint: #34e39b;
-  --run-mint-deep: #17b87a;
-  --run-mint-dim: #1a6b4c;
-  --run-mint-wash: rgba(52, 227, 155, 0.07);
+  --run-accent: #7b6cff;
+  --run-accent-deep: #5b46e5;
+  --run-accent-dim: #3a2f8a;
+  --run-accent-wash: rgba(123, 108, 255, 0.11);
 
-  --run-amber: #f7b955;
-  --run-amber-wash: rgba(247, 185, 85, 0.07);
+  --run-azure: #4dd0ff;
+  --run-azure-deep: #1f9fd4;
+  --run-azure-dim: #1d5074;
+  --run-azure-wash: rgba(77, 208, 255, 0.10);
 
-  --run-red: #ff6172;
-  --run-red-wash: rgba(255, 97, 114, 0.07);
+  --run-amber: #ffb340;
+  --run-amber-wash: rgba(255, 179, 64, 0.09);
 
-  --run-violet: #a394ff;
+  --run-red: #ff5c7a;
+  --run-red-wash: rgba(255, 92, 122, 0.09);
+
+  --run-lavender: #b3a8ff;
 
   --run-radius: 12px;
   --run-radius-sm: 8px;
   --run-radius-lg: 18px;
 
-  --run-shadow: 0 1px 1px rgba(0, 0, 0, 0.5), 0 10px 30px -14px rgba(0, 0, 0, 0.9);
-  --run-shadow-lift: 0 1px 1px rgba(0, 0, 0, 0.5), 0 28px 60px -22px rgba(0, 0, 0, 1);
+  --run-shadow: 0 1px 1px rgba(0, 0, 0, 0.5), 0 12px 32px -14px rgba(4, 4, 18, 0.95);
+  --run-shadow-lift: 0 1px 1px rgba(0, 0, 0, 0.5), 0 30px 64px -24px rgba(4, 4, 18, 1);
 
   /* A hairline of light along the top edge is what separates a surface that
      sits on the page from a rectangle painted on it. */
-  --run-edge: inset 0 1px 0 rgba(255, 255, 255, 0.045);
-
+  --run-edge: inset 0 1px 0 rgba(255, 255, 255, 0.055);
 }
 
 [data-surface="run"] {
@@ -65,12 +71,13 @@
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
 
-  /* Not flat black: one cool wash from the top-left where the eye lands first,
-     and a faint mint bloom behind the decision. Both are far below the
-     threshold of "gradient", which is the point. */
+  /* Not flat black: a violet wash from the top-left where the eye lands first,
+     a blue wash where the eye lands, and an indigo bloom under the fold. The
+     ground has a hue at every elevation; flat black was the problem. */
   background:
-    radial-gradient(120rem 60rem at 8% -12%, rgba(41, 74, 104, 0.16), transparent 62%),
-    radial-gradient(70rem 40rem at 92% 0%, rgba(52, 227, 155, 0.05), transparent 60%),
+    radial-gradient(90rem 50rem at 12% -10%, rgba(104, 84, 232, 0.20), transparent 60%),
+    radial-gradient(70rem 44rem at 88% 4%, rgba(46, 108, 190, 0.14), transparent 62%),
+    radial-gradient(90rem 60rem at 50% 108%, rgba(72, 56, 170, 0.14), transparent 66%),
     var(--run-canvas);
   background-attachment: fixed;
 }
@@ -118,7 +125,7 @@
 /* The decision panel earns the only glow on the screen. */
 .run-verdict-allow {
   border-color: var(--run-line-accent);
-  box-shadow: var(--run-shadow-lift), inset 0 1px 0 rgba(52, 227, 155, 0.16);
+  box-shadow: var(--run-shadow-lift), inset 0 1px 0 rgba(123, 108, 255, 0.16);
 }
 
 .run-verdict-deny {
@@ -136,25 +143,25 @@
 }
 
 .run-field:focus-within {
-  border-color: var(--run-mint-dim);
-  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.45), 0 0 0 3px rgba(52, 227, 155, 0.1);
+  border-color: var(--run-accent-dim);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.45), 0 0 0 3px rgba(123, 108, 255, 0.1);
 }
 
 .run-focus:focus-visible {
-  outline: 2px solid var(--run-mint);
+  outline: 2px solid var(--run-accent);
   outline-offset: 2px;
 }
 
 /* Primary action: weight from a vertical gradient and a contact shadow, not
    from a flat fill. */
 .run-cta {
-  background: linear-gradient(180deg, var(--run-mint) 0%, var(--run-mint-deep) 100%);
-  color: #04160e;
+  background: linear-gradient(180deg, var(--run-accent) 0%, var(--run-accent-deep) 100%);
+  color: #ffffff;
   border: 1px solid rgba(0, 0, 0, 0.25);
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.28),
     0 1px 2px rgba(0, 0, 0, 0.5),
-    0 8px 22px -10px rgba(52, 227, 155, 0.55);
+    0 8px 22px -10px rgba(123, 108, 255, 0.55);
   transition: transform 120ms ease, box-shadow 140ms ease, filter 140ms ease;
 }
 
@@ -163,7 +170,7 @@
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.3),
     0 1px 2px rgba(0, 0, 0, 0.5),
-    0 12px 28px -10px rgba(52, 227, 155, 0.7);
+    0 12px 28px -10px rgba(123, 108, 255, 0.7);
 }
 
 .run-cta:active:not(:disabled) {
@@ -248,19 +255,19 @@
 }
 
 .run-dot[data-state="done"] {
-  background: var(--run-mint-dim);
-  border-color: var(--run-mint-dim);
+  background: var(--run-azure-dim);
+  border-color: var(--run-azure-dim);
 }
 
 .run-dot[data-state="active"] {
-  background: var(--run-mint);
-  border-color: var(--run-mint);
-  box-shadow: 0 0 0 4px rgba(52, 227, 155, 0.14);
+  background: var(--run-accent);
+  border-color: var(--run-accent);
+  box-shadow: 0 0 0 4px rgba(123, 108, 255, 0.14);
 }
 
 /* Progress as a filled track. The earlier version was dots on a hairline both
    of which fell below the visible threshold on a dark panel, so six words
-   floated in space. The track now carries a mint fill to the current step. */
+   floated in space. The track now carries an azure fill to the current step. */
 .run-rail-track {
   position: relative;
   height: 2px;
@@ -273,14 +280,14 @@
   display: block;
   height: 100%;
   border-radius: inherit;
-  background: linear-gradient(90deg, var(--run-mint-dim), var(--run-mint));
+  background: linear-gradient(90deg, var(--run-azure-dim), var(--run-azure));
   transition: width 520ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 /* A number worth reading: the proof card beside the hero. */
 .run-proof {
   background:
-    linear-gradient(180deg, rgba(52, 227, 155, 0.05) 0%, transparent 46%),
+    linear-gradient(180deg, rgba(123, 108, 255, 0.05) 0%, transparent 46%),
     var(--run-surface);
   border: 1px solid var(--run-line);
   border-radius: var(--run-radius);
@@ -304,10 +311,10 @@
   white-space: nowrap;
 }
 
-.run-chip[data-tone="mint"] {
-  border-color: var(--run-line-accent);
-  background: var(--run-mint-wash);
-  color: var(--run-mint);
+.run-chip[data-tone="verified"] {
+  border-color: rgba(77, 208, 255, 0.28);
+  background: var(--run-azure-wash);
+  color: var(--run-azure);
 }
 
 /* Section rule with a short accented head, so a heading owns its band without
@@ -330,7 +337,7 @@
   border-radius: var(--run-radius-lg);
   border: 1px solid var(--run-line-strong);
   background:
-    radial-gradient(40rem 18rem at 6% 0%, rgba(52, 227, 155, 0.10), transparent 68%),
+    radial-gradient(40rem 18rem at 6% 0%, rgba(123, 108, 255, 0.10), transparent 68%),
     linear-gradient(180deg, rgba(255, 255, 255, 0.022), transparent 26%),
     var(--run-surface);
   box-shadow: var(--run-shadow-lift), var(--run-edge);
@@ -349,7 +356,7 @@
 .run-signature {
   position: relative;
   height: 2px;
-  background: linear-gradient(90deg, var(--run-mint-dim), var(--run-mint) 40%, var(--run-mint-dim));
+  background: linear-gradient(90deg, var(--run-accent-deep), var(--run-accent) 38%, var(--run-azure));
   overflow: hidden;
 }
 
@@ -392,7 +399,7 @@
   display: block;
   width: 2px;
   border-radius: 1px;
-  background: var(--run-mint-dim);
+  background: var(--run-azure-dim);
 }
 
 .run-fingerprint[data-verdict="deny"] > i { background: rgba(255, 97, 114, 0.45); }
@@ -426,12 +433,12 @@
   transition: background 200ms ease, border-color 200ms ease, box-shadow 200ms ease;
 }
 
-.run-node[data-state="done"] { background: var(--run-mint); border-color: var(--run-mint); }
+.run-node[data-state="done"] { background: var(--run-azure); border-color: var(--run-azure); }
 
 .run-node[data-state="active"] {
-  background: var(--run-mint);
-  border-color: var(--run-mint);
-  box-shadow: 0 0 0 4px rgba(52, 227, 155, 0.16);
+  background: var(--run-azure);
+  border-color: var(--run-azure);
+  box-shadow: 0 0 0 4px rgba(77, 208, 255, 0.18);
 }
 
 .run-link {
@@ -445,7 +452,7 @@
 .run-link > span {
   display: block;
   height: 100%;
-  background: var(--run-mint-dim);
+  background: var(--run-azure-dim);
   transition: width 480ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 

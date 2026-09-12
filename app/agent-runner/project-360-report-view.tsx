@@ -11,7 +11,7 @@ import { PROJECT_360_MODULE_LABELS } from "@/lib/project-360/types";
 import { BRAND } from "@/lib/brand";
 
 function statusClass(status: Project360Report["coverage"]["status"]) {
-  if (status === "complete") return "border-emerald-500/30 bg-emerald-500/10 text-emerald-300";
+  if (status === "complete") return "border-sky-500/30 bg-sky-500/10 text-sky-300";
   if (status === "partial") return "border-cyan-500/30 bg-cyan-500/10 text-cyan-300";
   if (status === "limited") return "border-amber-500/30 bg-amber-500/10 text-amber-300";
   return "border-red-500/30 bg-red-500/10 text-red-300";
@@ -98,7 +98,7 @@ export function Project360ReportView({
               <Badge variant="outline">{report.score.confidencePercent}% confidence</Badge>
               <Badge
                 className={report.verification.status === "verified"
-                  ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-300"
+                  ? "border-sky-500/30 bg-sky-500/10 text-sky-300"
                   : "border-amber-500/30 bg-amber-500/10 text-amber-300"}
               >
                 <ShieldCheck className="mr-1 size-3" />
@@ -121,7 +121,7 @@ export function Project360ReportView({
               </Button>
             )}
             <Button variant="outline" size="sm" onClick={() => void share()}>
-              {copied ? <Check className="size-4 text-emerald-400" /> : <Share2 className="size-4" />}
+              {copied ? <Check className="size-4 text-sky-400" /> : <Share2 className="size-4" />}
               {copied ? "Copied" : "Share"}
             </Button>
             <Button variant="outline" size="sm" onClick={download}>

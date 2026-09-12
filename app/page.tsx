@@ -91,7 +91,7 @@ const quickTrustActions = [
     desc: "Preflight transactions with fail-closed rules and signed clearance tickets.",
     href: "/trust-gate",
     icon: ShieldCheck,
-    color: "from-cyan-500/20 via-emerald-500/5 to-transparent border-cyan-500/30 text-cyan-400 hover:border-cyan-500/60",
+    color: "from-cyan-500/20 via-sky-500/5 to-transparent border-cyan-500/30 text-cyan-400 hover:border-cyan-500/60",
     badge: "Trust Gate",
   },
   {
@@ -109,7 +109,7 @@ const quickTrustActions = [
     desc: "Verify ERC-8183 deliverables on Arc before funds settle.",
     href: "/evaluators",
     icon: BadgeCheck,
-    color: "from-emerald-500/20 via-emerald-500/5 to-transparent border-emerald-500/30 text-emerald-400 hover:border-emerald-500/60",
+    color: "from-sky-500/20 via-sky-500/5 to-transparent border-sky-500/30 text-sky-400 hover:border-sky-500/60",
     badge: "ERC-8183",
   },
 ] as const;
@@ -150,7 +150,7 @@ const evidenceWorkflows: Array<{
     description:
       "Evaluate and compare paid APIs using observed pricing, latency, availability, response validity, payment execution, and settlement history.",
     benefits: ["Quality Score (0–100)", "Uptime & P95 Latency", "Side-by-side benchmarking"],
-    gradient: "from-cyan-500/20 via-emerald-500/5 to-transparent border-cyan-500/30 hover:border-cyan-500/60 shadow-[0_0_25px_rgba(6,182,212,0.15)]",
+    gradient: "from-cyan-500/20 via-sky-500/5 to-transparent border-cyan-500/30 hover:border-cyan-500/60 shadow-[0_0_25px_rgba(6,182,212,0.15)]",
     icon: Activity,
   },
   {
@@ -158,7 +158,7 @@ const evidenceWorkflows: Array<{
     description:
       "Receive a current market snapshot using live provider-backed asset data.",
     benefits: ["Current asset data", "Market context", "Structured evidence"],
-    gradient: "from-emerald-500/20 via-emerald-500/5 to-transparent border-emerald-500/30 hover:border-emerald-500/60 shadow-[0_0_25px_rgba(16,185,129,0.15)]",
+    gradient: "from-sky-500/20 via-sky-500/5 to-transparent border-sky-500/30 hover:border-sky-500/60 shadow-[0_0_25px_rgba(16,185,129,0.15)]",
     icon: BarChart3,
   },
   {
@@ -235,7 +235,7 @@ export default async function Home() {
     <main className="min-h-screen bg-background text-foreground selection:bg-primary/30">
       {/* 1. Veyra Trust Platform Hero */}
       <section className="relative overflow-hidden border-b border-white/5 bg-gradient-to-b from-[#0a0d15] via-[#080a0f] to-[#07090e] py-16 sm:py-24">
-        <div className="pointer-events-none absolute -top-40 left-1/2 -z-10 h-[500px] w-[800px] -translate-x-1/2 rounded-full bg-gradient-to-tr from-primary/20 via-emerald-500/10 to-purple-500/10 blur-[120px] opacity-70" />
+        <div className="pointer-events-none absolute -top-40 left-1/2 -z-10 h-[500px] w-[800px] -translate-x-1/2 rounded-full bg-gradient-to-tr from-primary/20 via-sky-500/10 to-purple-500/10 blur-[120px] opacity-70" />
 
         <div className="mx-auto flex w-full max-w-7xl flex-col items-center px-4 text-center sm:px-6">
           <div className="mb-6">
@@ -251,7 +251,7 @@ export default async function Home() {
               screen it links to. */}
           <h2 className="run-display mt-5 max-w-4xl text-4xl sm:text-6xl lg:text-7xl">
             <span className="text-white">Veyra decides.</span>{" "}
-            <span style={{ color: "var(--run-mint)" }}>Circle pays.</span>
+            <span style={{ color: "var(--run-accent)" }}>Circle pays.</span>
           </h2>
 
           <p className="mt-5 max-w-2xl text-base font-normal leading-relaxed text-muted-foreground sm:text-lg">
@@ -269,7 +269,7 @@ export default async function Home() {
             <Button
               asChild
               size="lg"
-              className="rounded-xl bg-gradient-to-r from-[var(--run-mint)] to-[var(--run-mint-deep)] font-semibold text-[#04160e] shadow-[0_0_25px_rgba(52,227,155,0.35)] transition-all duration-300 hover:scale-105 hover:shadow-[0_0_35px_rgba(52,227,155,0.5)]"
+              className="rounded-xl bg-gradient-to-r from-[var(--run-accent)] to-[var(--run-accent-deep)] font-semibold text-white shadow-[0_0_25px_rgba(52,227,155,0.35)] transition-all duration-300 hover:scale-105 hover:shadow-[0_0_35px_rgba(52,227,155,0.5)]"
             >
               <Link href="/run">
                 <ShieldCheck className="size-5 mr-2" />
@@ -303,57 +303,67 @@ export default async function Home() {
       </section>
 
       {/* 2. Quick Trust Actions Block */}
-      <section className="mx-auto w-full max-w-7xl px-4 py-12 sm:px-6">
-        <div className="mb-6 flex flex-col sm:flex-row sm:items-end sm:justify-between gap-2">
-          <div>
-            <Badge variant="outline" className="border-primary/30 text-primary bg-primary/5 text-xs">
-              Trust Stack
-            </Badge>
-            <h2 className="mt-2 text-2xl font-bold tracking-tight sm:text-3xl text-foreground">
-              Core Trust Primitives
-            </h2>
-          </div>
-          <Button asChild variant="ghost" size="sm" className="w-fit text-cyan-400 hover:text-cyan-300 p-0 text-xs">
-            <Link href="/trust">
-              View full trust overview <ArrowRight className="size-3.5 ml-1" />
-            </Link>
-          </Button>
+      {/* One flow, not five co-equal tools.
+          The row of Verify / Select / Preflight / Authorize / Evaluate asked the
+          visitor to understand the architecture before they could use anything,
+          and none of the five was the product. These are the stages of a single
+          decision, and the only call to action is to run one. */}
+      <section className="mx-auto w-full max-w-6xl px-4 py-14 sm:px-6">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+          <h2 className="run-display text-2xl tracking-tight sm:text-3xl">
+            One decision, start to finish
+          </h2>
+          <Link
+            href="/executions"
+            className="run-focus text-xs font-semibold text-[var(--run-azure)] hover:underline"
+          >
+            See the decisions already made →
+          </Link>
         </div>
 
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
-          {quickTrustActions.map((action) => {
-            const Icon = action.icon;
-            return (
-              <Link
-                key={action.title}
-                href={action.href}
-                className={`group relative flex flex-col justify-between rounded-2xl border bg-gradient-to-b p-5 backdrop-blur-xl transition-all duration-300 hover:-translate-y-1 ${action.color}`}
-              >
-                <div>
-                  <div className="flex items-center justify-between gap-2 mb-3">
-                    <div className="flex size-9 items-center justify-center rounded-xl bg-white/10 border border-white/10 text-foreground group-hover:scale-110 transition-transform">
-                      <Icon className="size-4.5" />
-                    </div>
-                    <span className="rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-[10px] font-semibold text-muted-foreground">
-                      {action.badge}
-                    </span>
-                  </div>
-                  <h3 className="text-base font-bold text-foreground group-hover:text-primary transition-colors">
-                    {action.title}
-                  </h3>
-                  <p className="text-[11px] font-medium text-cyan-300/80 mb-2">
-                    {action.tagline}
-                  </p>
-                  <p className="text-xs leading-relaxed text-muted-foreground">
-                    {action.desc}
-                  </p>
-                </div>
-                <div className="mt-4 flex items-center text-xs font-semibold text-primary pt-2 border-t border-white/5">
-                  Launch <ArrowRight className="size-3.5 ml-1 group-hover:translate-x-1 transition-transform" />
-                </div>
-              </Link>
-            );
-          })}
+        <ol className="mt-8 grid gap-px overflow-hidden rounded-[var(--run-radius)] border border-[var(--run-line)] bg-[var(--run-line)] sm:grid-cols-3 lg:grid-cols-6">
+          {[
+            ["Intent", "Capability, budget, priority — structured from the request."],
+            ["Discover", "ERC-8004 agents on Arc and the Circle x402 marketplace."],
+            ["Verify", "Live 402 probe, catalog drift, latency, settlement history."],
+            ["Decide", "Allow, bound, escalate or refuse — deterministically."],
+            ["Execute", "x402 / Gateway Nanopayments, or ERC-8183 escrow on Arc."],
+            ["Learn", "The observed outcome becomes reputation on Arc."],
+          ].map(([title, body], i) => (
+            <li key={title} className="bg-[var(--run-surface)] p-5">
+              <span className="run-num text-[10px] text-[var(--run-text-faint)]">
+                {String(i + 1).padStart(2, "0")}
+              </span>
+              <h3 className="mt-2 text-[13.5px] font-semibold text-[var(--run-text)]">{title}</h3>
+              <p className="mt-1.5 text-[11.5px] leading-relaxed text-[var(--run-text-faint)]">{body}</p>
+            </li>
+          ))}
+        </ol>
+
+        {/* Evidence, immediately under the claim. */}
+        <div className="mt-5 flex flex-wrap items-center justify-between gap-4 rounded-[var(--run-radius)] border border-[var(--run-line)] bg-[var(--run-canvas-raised)] px-5 py-4">
+          <div className="flex flex-wrap items-center gap-x-7 gap-y-3">
+            {[
+              ["Proven on Arc", "Job #186207"],
+              ["Escrow paid", "0.05 USDC"],
+              ["Policy checks", "11 / 11"],
+              ["Create → payout", "19 s"],
+              ["Gas", "0.0118 USDC"],
+            ].map(([k, v]) => (
+              <div key={k}>
+                <div className="text-[9.5px] uppercase tracking-[0.13em] text-[var(--run-text-faint)]">{k}</div>
+                <div className="run-num mt-0.5 text-[13px] text-[var(--run-text)]">{v}</div>
+              </div>
+            ))}
+          </div>
+          <a
+            href="https://testnet.arcscan.app/tx/0xd1d958d5014a3584a21c7e67444091af25c64940aa4759c928fa2962d0995a22"
+            target="_blank"
+            rel="noreferrer"
+            className="run-focus run-num text-[11.5px] text-[var(--run-azure)] hover:underline"
+          >
+            Verdict transaction ↗
+          </a>
         </div>
       </section>
 
@@ -554,7 +564,7 @@ export default async function Home() {
                       <Badge variant="secondary" className="border-primary/20 bg-primary/10 text-primary text-xs font-semibold">
                         {report.workflowLabel}
                       </Badge>
-                      <Badge variant={report.completedWithWarnings ? "outline" : "default"} className={report.completedWithWarnings ? "border-amber-500/30 bg-amber-500/10 text-amber-300 text-[11px]" : "bg-emerald-500/10 border-emerald-500/30 text-emerald-300 text-[11px]"}>
+                      <Badge variant={report.completedWithWarnings ? "outline" : "default"} className={report.completedWithWarnings ? "border-amber-500/30 bg-amber-500/10 text-amber-300 text-[11px]" : "bg-sky-500/10 border-sky-500/30 text-sky-300 text-[11px]"}>
                         {report.completedWithWarnings ? "Completed with warnings" : "Arc Verified"}
                       </Badge>
                     </div>

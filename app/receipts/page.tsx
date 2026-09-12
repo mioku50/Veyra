@@ -95,7 +95,7 @@ function ReceiptCard({ receipt }: { receipt: CommerceReceipt }) {
                       ? "destructive"
                       : "outline"
                 }
-                className={receipt.onchainProof?.status === "verified" ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-300 text-xs" : "text-xs"}
+                className={receipt.onchainProof?.status === "verified" ? "bg-sky-500/10 border-sky-500/30 text-sky-300 text-xs" : "text-xs"}
               >
                 {onchainStatusLabel(receipt)}
               </Badge>
@@ -137,7 +137,7 @@ function ReceiptCard({ receipt }: { receipt: CommerceReceipt }) {
         {receipt.onchainProof?.transactionHash ? (
           <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-white/5 bg-white/5 p-3 text-xs">
             <div className="flex items-center gap-2">
-              <BadgeCheck className="size-4 text-emerald-400" />
+              <BadgeCheck className="size-4 text-sky-400" />
               <span className="font-mono text-muted-foreground">
                 Tx: {shortenHash(receipt.onchainProof.transactionHash)}
               </span>

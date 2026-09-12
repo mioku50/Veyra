@@ -37,7 +37,7 @@ export function Topbar({
             <span
               aria-label={`${BRAND.name} logo`}
               data-testid="brand-monogram"
-              className="flex size-9 shrink-0 items-center justify-center rounded-xl from-[var(--run-mint)] to-[var(--run-mint-deep)] bg-gradient-to-b text-sm font-bold text-[#04160e] shadow-[0_0_24px_rgba(52,227,155,0.35)] transition-transform duration-200 group-hover:scale-105"
+              className="flex size-9 shrink-0 items-center justify-center rounded-xl from-[var(--run-accent)] to-[var(--run-accent-deep)] bg-gradient-to-b text-sm font-bold text-white shadow-[0_0_24px_rgba(52,227,155,0.35)] transition-transform duration-200 group-hover:scale-105"
             >
               {BRAND.monogram}
             </span>
@@ -55,8 +55,8 @@ export function Topbar({
                     Developer Mode
                   </span>
                 ) : (
-                  <span className="hidden rounded-full border border-emerald-400/30 bg-emerald-400/10 px-2 py-0.5 font-medium text-emerald-300 sm:inline-flex items-center text-[10px]">
-                    <span className="mr-1.5 size-1.5 rounded-full bg-emerald-400 animate-pulse shadow-[0_0_8px_rgba(0,208,132,0.8)]" />
+                  <span className="hidden rounded-full border border-sky-400/30 bg-sky-400/10 px-2 py-0.5 font-medium text-sky-300 sm:inline-flex items-center text-[10px]">
+                    <span className="mr-1.5 size-1.5 rounded-full bg-sky-400 animate-pulse shadow-[0_0_8px_rgba(0,208,132,0.8)]" />
                     Arc Testnet
                   </span>
                 )}

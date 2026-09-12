@@ -457,7 +457,7 @@ export function Project360Client({
                           <span className="shrink-0 font-mono">{item.priceUsdc.toFixed(4)} USDC</span>
                         </div>
                         <p className="mt-1 break-all text-muted-foreground">{item.serviceSlugs.join(" + ")}</p>
-                        {item.sharedEvidence ? <p className="mt-1 text-emerald-400">Shared GitHub evidence is not charged twice.</p> : null}
+                        {item.sharedEvidence ? <p className="mt-1 text-sky-400">Shared GitHub evidence is not charged twice.</p> : null}
                       </div>
                     ))}
                   </div>
@@ -466,7 +466,7 @@ export function Project360Client({
                     <div className="flex justify-between"><span className="text-muted-foreground">Platform fee</span><span>{quote.pricing.platformFeeUsdc.toFixed(4)} USDC</span></div>
                     <div className="flex justify-between text-lg font-bold"><span>Total quote price</span><span>{quote.pricing.listPriceUsdc.toFixed(4)} USDC</span></div>
                     <div className="flex justify-between"><span className="text-muted-foreground">Amount due now</span><span>{quote.pricing.amountDueUsdc.toFixed(4)} USDC</span></div>
-                    {quote.paymentMode === "sponsored" ? <Badge className="w-fit bg-emerald-500/15 text-emerald-300">Sponsored quota · amount due 0</Badge> : null}
+                    {quote.paymentMode === "sponsored" ? <Badge className="w-fit bg-sky-500/15 text-sky-300">Sponsored quota · amount due 0</Badge> : null}
                   </div>
                   {projectQuote.warnings.length ? (
                     <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 p-3 text-xs text-amber-200">
@@ -476,7 +476,7 @@ export function Project360Client({
                       </ul>
                     </div>
                   ) : null}
-                  <Button onClick={() => void confirmAndRun()} disabled={busy === "confirm"} className="h-12 bg-gradient-to-r from-emerald-500 to-teal-600 font-bold text-white">
+                  <Button onClick={() => void confirmAndRun()} disabled={busy === "confirm"} className="h-12 bg-gradient-to-r from-sky-500 to-sky-600 font-bold text-white">
                     {busy === "confirm" ? <LoaderCircle className="size-4 animate-spin" /> : <CheckCircle2 className="size-4" />}
                     {quote.paymentMode === "sponsored" ? "Confirm once and run" : `Pay ${quote.pricing.amountDueUsdc.toFixed(4)} USDC and run`}
                     <ArrowRight className="size-4" />

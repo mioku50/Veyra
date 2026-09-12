@@ -11,8 +11,8 @@ import type { ReactNode } from "react";
 export type Verdict = "allow" | "limited" | "review" | "deny" | "unknown";
 
 export const VERDICT_TONE: Record<Verdict, { label: string; color: string; wash: string }> = {
-  allow: { label: "Allow", color: "var(--run-mint)", wash: "var(--run-mint-wash)" },
-  limited: { label: "Allow with limits", color: "var(--run-mint)", wash: "var(--run-mint-wash)" },
+  allow: { label: "Allow", color: "var(--run-azure)", wash: "var(--run-azure-wash)" },
+  limited: { label: "Allow with limits", color: "var(--run-azure)", wash: "var(--run-azure-wash)" },
   review: { label: "Needs evaluator", color: "var(--run-amber)", wash: "var(--run-amber-wash)" },
   deny: { label: "Deny", color: "var(--run-red)", wash: "var(--run-red-wash)" },
   unknown: { label: "Undecided", color: "var(--run-text-faint)", wash: "transparent" },
@@ -58,7 +58,7 @@ export function Money({ value, unit = "USDC", className = "" }: {
 export function Meter({ score }: { score: number }) {
   const clamped = Math.max(0, Math.min(100, Math.round(score)));
   const color =
-    clamped >= 75 ? "var(--run-mint)" : clamped >= 45 ? "var(--run-amber)" : "var(--run-red)";
+    clamped >= 75 ? "var(--run-azure)" : clamped >= 45 ? "var(--run-amber)" : "var(--run-red)";
   return (
     <div className="run-meter" role="presentation">
       <span style={{ width: `${clamped}%`, background: color }} />
@@ -86,10 +86,10 @@ export function Pill({ tone = "neutral", children }: {
 }) {
   const tones = {
     neutral: "border-[var(--run-line-strong)] text-[var(--run-text-muted)]",
-    good: "border-[var(--run-line-accent)] text-[var(--run-mint)] bg-[var(--run-mint-wash)]",
-    warn: "border-[rgba(245,181,68,0.3)] text-[var(--run-amber)] bg-[var(--run-amber-wash)]",
-    bad: "border-[rgba(255,92,108,0.3)] text-[var(--run-red)] bg-[var(--run-red-wash)]",
-    info: "border-[rgba(155,140,255,0.3)] text-[var(--run-violet)]",
+    good: "border-[rgba(77,208,255,0.28)] text-[var(--run-azure)] bg-[var(--run-azure-wash)]",
+    warn: "border-[rgba(255,179,64,0.3)] text-[var(--run-amber)] bg-[var(--run-amber-wash)]",
+    bad: "border-[rgba(255,92,122,0.32)] text-[var(--run-red)] bg-[var(--run-red-wash)]",
+    info: "border-[rgba(179,168,255,0.32)] text-[var(--run-lavender)]",
   } as const;
   return (
     <span className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-medium ${tones[tone]}`}>
@@ -104,7 +104,7 @@ export function CheckLine({ ok, children }: { ok: boolean | null; children: Reac
   const mark = ok === null ? "–" : ok ? "✓" : "!";
   const color = ok === null
     ? "var(--run-text-faint)"
-    : ok ? "var(--run-mint)" : "var(--run-amber)";
+    : ok ? "var(--run-azure)" : "var(--run-amber)";
   return (
     <li className="flex items-start gap-2.5 text-[13px] leading-relaxed">
       <span aria-hidden className="run-num mt-px w-3 shrink-0 text-center" style={{ color }}>{mark}</span>

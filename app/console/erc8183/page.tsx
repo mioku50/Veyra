@@ -99,19 +99,19 @@ export default function Erc8183ConsolePage() {
           <div>
             <Link
               href="/console"
-              className="inline-flex items-center text-xs font-semibold text-emerald-400 hover:text-emerald-300 mb-2 transition-colors"
+              className="inline-flex items-center text-xs font-semibold text-sky-400 hover:text-sky-300 mb-2 transition-colors"
             >
               <ArrowLeft className="w-3.5 h-3.5 mr-1" /> Back to Console
             </Link>
             <h1 className="text-2xl md:text-3xl font-bold tracking-tight text-white flex items-center gap-3">
-              <ShieldCheck className="w-8 h-8 text-emerald-400" />
+              <ShieldCheck className="w-8 h-8 text-sky-400" />
               ERC-8183 Job Evaluator Canary
             </h1>
             <p className="text-sm text-slate-400 mt-1">
               Veyra production-ready offchain EIP-712 evaluator for ERC-8183 agentic jobs on Arc Testnet (5042002).
             </p>
           </div>
-          <span className="bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 text-xs px-3 py-1 rounded-full font-mono">
+          <span className="bg-sky-500/10 text-sky-400 border border-sky-500/20 text-xs px-3 py-1 rounded-full font-mono">
             Canary Mode
           </span>
         </div>
@@ -121,7 +121,7 @@ export default function Erc8183ConsolePage() {
           {/* Card 1: Job Target */}
           <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-6 space-y-4 backdrop-blur">
             <h2 className="text-base font-semibold text-white flex items-center gap-2 border-b border-slate-800 pb-3">
-              <FileJson className="w-4 h-4 text-emerald-400" /> ERC-8183 Target Job
+              <FileJson className="w-4 h-4 text-sky-400" /> ERC-8183 Target Job
             </h2>
             <div>
               <label className="block text-xs font-medium text-slate-300 mb-1">
@@ -131,7 +131,7 @@ export default function Erc8183ConsolePage() {
                 type="text"
                 value={commerceAddress}
                 onChange={(e) => setCommerceAddress(e.target.value)}
-                className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs font-mono text-slate-200 focus:outline-none focus:border-emerald-500"
+                className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs font-mono text-slate-200 focus:outline-none focus:border-sky-500"
               />
             </div>
             <div>
@@ -140,7 +140,7 @@ export default function Erc8183ConsolePage() {
                 type="text"
                 value={jobId}
                 onChange={(e) => setJobId(e.target.value)}
-                className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs font-mono text-slate-200 focus:outline-none focus:border-emerald-500"
+                className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs font-mono text-slate-200 focus:outline-none focus:border-sky-500"
               />
             </div>
             <div className="pt-2">
@@ -154,7 +154,7 @@ export default function Erc8183ConsolePage() {
           {/* Card 2: Deliverable Commitment */}
           <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-6 space-y-4 backdrop-blur">
             <h2 className="text-base font-semibold text-white flex items-center gap-2 border-b border-slate-800 pb-3">
-              <FileJson className="w-4 h-4 text-emerald-400" /> Deliverable Commitment V1
+              <FileJson className="w-4 h-4 text-sky-400" /> Deliverable Commitment V1
             </h2>
             <div>
               <label className="block text-xs font-medium text-slate-300 mb-1">Content URI (HTTPS)</label>
@@ -162,7 +162,7 @@ export default function Erc8183ConsolePage() {
                 type="text"
                 value={contentUri}
                 onChange={(e) => setContentUri(e.target.value)}
-                className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs font-mono text-slate-200 focus:outline-none focus:border-emerald-500"
+                className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs font-mono text-slate-200 focus:outline-none focus:border-sky-500"
               />
             </div>
             <div>
@@ -173,7 +173,7 @@ export default function Erc8183ConsolePage() {
                 type="text"
                 value={contentHash}
                 onChange={(e) => setContentHash(e.target.value)}
-                className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs font-mono text-slate-200 focus:outline-none focus:border-emerald-500"
+                className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs font-mono text-slate-200 focus:outline-none focus:border-sky-500"
               />
             </div>
             <div className="flex gap-3 pt-2">
@@ -187,7 +187,7 @@ export default function Erc8183ConsolePage() {
               <button
                 onClick={handleEvaluate}
                 disabled={evaluating}
-                className="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-medium py-2.5 px-4 rounded-lg transition-colors flex items-center justify-center gap-2 shadow-lg shadow-emerald-950 disabled:opacity-50"
+                className="flex-1 bg-sky-600 hover:bg-sky-500 text-white text-xs font-medium py-2.5 px-4 rounded-lg transition-colors flex items-center justify-center gap-2 shadow-lg shadow-sky-950 disabled:opacity-50"
               >
                 {evaluating ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Play className="w-3.5 h-3.5 fill-current" />}
                 Evaluate Job
@@ -214,7 +214,7 @@ export default function Erc8183ConsolePage() {
             {result.prepared && (
               <div className="space-y-2">
                 <div className="text-xs font-semibold text-slate-400">Deliverable Commitment V1:</div>
-                <pre className="bg-slate-950 p-4 rounded-lg text-xs font-mono text-emerald-300 border border-slate-800 overflow-x-auto">
+                <pre className="bg-slate-950 p-4 rounded-lg text-xs font-mono text-sky-300 border border-slate-800 overflow-x-auto">
                   {JSON.stringify(result.prepared, null, 2)}
                 </pre>
               </div>
@@ -224,7 +224,7 @@ export default function Erc8183ConsolePage() {
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-semibold text-slate-400">Result Status:</span>
-                  <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                  <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium bg-sky-500/10 text-sky-400 border border-sky-500/20">
                     <CheckCircle2 className="w-3.5 h-3.5" />
                     {result.evaluation.status}
                   </span>
@@ -237,7 +237,7 @@ export default function Erc8183ConsolePage() {
                   <Link
                     href={`/evaluations/${result.evaluation.evaluationId}`}
                     target="_blank"
-                    className="inline-flex items-center gap-1.5 text-xs text-emerald-400 hover:text-emerald-300 font-medium"
+                    className="inline-flex items-center gap-1.5 text-xs text-sky-400 hover:text-sky-300 font-medium"
                   >
                     View Public Evaluation Report Page <ExternalLink className="w-3.5 h-3.5" />
                   </Link>

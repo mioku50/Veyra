@@ -268,7 +268,7 @@ export default function ExecutionMandatesPage() {
       )}
 
       {success && (
-        <div className="flex items-center gap-2 p-4 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 rounded-lg border border-emerald-500/20 text-sm">
+        <div className="flex items-center gap-2 p-4 bg-sky-500/10 text-sky-600 dark:text-sky-400 rounded-lg border border-sky-500/20 text-sm">
           <CheckCircle2 className="h-4 w-4 shrink-0" />
           <span>{success}</span>
         </div>

@@ -46,7 +46,7 @@ export default async function SelectionReceiptPage({ params }: Context) {
             <Badge>Veyra Selection Receipt</Badge>
             <Badge variant="outline">Arc Testnet</Badge>
             <Badge variant="outline">{data.rankingVersion}</Badge>
-            {data.proof?.proofStatus === "verified" ? <Badge className="bg-emerald-500/10 text-emerald-400"><BadgeCheck className="mr-1 size-3.5" />Arc verified</Badge> : null}
+            {data.proof?.proofStatus === "verified" ? <Badge className="bg-sky-500/10 text-sky-400"><BadgeCheck className="mr-1 size-3.5" />Arc verified</Badge> : null}
           </div>
           <h1 className="mt-5 max-w-4xl text-3xl font-bold sm:text-5xl">Deterministic counterparty recommendation</h1>
           <p className="mt-4 max-w-3xl text-muted-foreground">An immutable, evidence-backed decision receipt. It records selection only; it is not a payment, execution, endorsement, or guarantee.</p>

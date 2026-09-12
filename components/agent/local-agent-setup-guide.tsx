@@ -152,10 +152,10 @@ export function LocalAgentSetupGuide({ compact = false }: { compact?: boolean })
                 </Card>
 
                 <div className="grid gap-4">
-                  <Card className="rounded-lg border-emerald-400/20 bg-emerald-400/5">
+                  <Card className="rounded-lg border-sky-400/20 bg-sky-400/5">
                     <CardHeader>
                       <CardTitle className="flex items-center gap-2 text-lg">
-                        <ShieldCheck className="size-5 text-emerald-300" />
+                        <ShieldCheck className="size-5 text-sky-300" />
                         Security boundary
                       </CardTitle>
                     </CardHeader>

@@ -55,8 +55,8 @@ export default function EvaluatorsLandingPage() {
             <h3 className="text-xl font-bold text-white flex items-center gap-2">
               <Cpu className="w-5 h-5 text-sky-400" /> Veyra Arc Testnet Evaluator
             </h3>
-            <span className="flex items-center gap-1.5 text-xs font-medium text-emerald-400 bg-emerald-950/60 border border-emerald-800/60 px-3 py-1 rounded-full">
-              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+            <span className="flex items-center gap-1.5 text-xs font-medium text-sky-400 bg-sky-950/60 border border-sky-800/60 px-3 py-1 rounded-full">
+              <span className="w-2 h-2 rounded-full bg-sky-400 animate-pulse" />
               Active Capability
             </span>
           </div>
@@ -96,7 +96,7 @@ export default function EvaluatorsLandingPage() {
               </div>
               <div className="bg-slate-950/60 border border-slate-800 p-4 rounded-xl">
                 <div className="text-slate-500 font-sans text-2xs uppercase tracking-wider mb-1">Settlement Mode</div>
-                <div className="text-emerald-400 font-bold">EIP-712 Complete/Reject</div>
+                <div className="text-sky-400 font-bold">EIP-712 Complete/Reject</div>
               </div>
             </div>
 
@@ -150,7 +150,7 @@ export default function EvaluatorsLandingPage() {
             </p>
           </div>
           <div className="bg-slate-900/40 border border-slate-800 p-6 rounded-2xl space-y-3">
-            <ShieldCheck className="w-8 h-8 text-emerald-400" />
+            <ShieldCheck className="w-8 h-8 text-sky-400" />
             <h4 className="font-bold text-white text-base">Cryptographic Proof Trail</h4>
             <p className="text-xs text-slate-400 leading-relaxed">
               Attester EIP-712 signatures authorization guarantees tamper-proof verdicts submitted directly on Arc Testnet via relayers.

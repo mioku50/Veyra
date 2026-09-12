@@ -96,7 +96,7 @@ function formatDate(value?: string | null) {
 function qualityStatusBadge(status?: QualityStatus) {
   switch (status) {
     case "Excellent":
-      return { label: "Excellent", color: "bg-emerald-500/10 text-emerald-500 border-emerald-500/20" };
+      return { label: "Excellent", color: "bg-sky-500/10 text-sky-500 border-sky-500/20" };
     case "Reliable":
       return { label: "Reliable", color: "bg-blue-500/10 text-blue-500 border-blue-500/20" };
     case "Mixed signals":
@@ -112,7 +112,7 @@ function qualityStatusBadge(status?: QualityStatus) {
 function overallStatusBadge(status?: DueDiligenceOverallStatus) {
   switch (status) {
     case "healthy_signals":
-      return { label: "Healthy signals", color: "bg-emerald-500/10 text-emerald-500 border-emerald-500/20" };
+      return { label: "Healthy signals", color: "bg-sky-500/10 text-sky-500 border-sky-500/20" };
     case "review_needed":
       return { label: "Review recommended", color: "bg-amber-500/10 text-amber-500 border-amber-500/20" };
     case "high_attention":
@@ -140,7 +140,7 @@ function riskSeverityBadge(severity: RiskSeverity) {
 function categoryStatusBadge(status?: AssessmentStatus) {
   switch (status) {
     case "strong":
-      return { label: "Strong", color: "bg-emerald-500/10 text-emerald-500 border-emerald-500/20" };
+      return { label: "Strong", color: "bg-sky-500/10 text-sky-500 border-sky-500/20" };
     case "moderate":
       return { label: "Moderate", color: "bg-amber-500/10 text-amber-500 border-amber-500/20" };
     case "weak":
@@ -180,7 +180,7 @@ function renderEvidenceBadge(
 ) {
   if (state === "present") {
     return (
-      <span className="flex items-center gap-1 font-semibold text-emerald-500">
+      <span className="flex items-center gap-1 font-semibold text-sky-500">
         <Check className="size-4" /> {presentLabel}
       </span>
     );
@@ -252,7 +252,7 @@ function ArcVerificationBadge({
 
   if (result.variant === "verified") {
     return (
-      <Badge variant="outline" className="gap-1 border-emerald-500/30 text-emerald-500 bg-emerald-500/10">
+      <Badge variant="outline" className="gap-1 border-sky-500/30 text-sky-500 bg-sky-500/10">
         <BadgeCheck className="size-3.5" />
         {result.label}
       </Badge>
@@ -588,7 +588,7 @@ export function HostedJobResult({ initialView }: { initialView: HostedJobView })
               />
               {!isGithubWorkflow && !isAgentTrustWorkflow && view.job.status === "completed" ? (
                 <Button variant="outline" onClick={copyShareLink}>
-                  {copied ? <Check className="size-4 text-emerald-500" /> : <Share2 className="size-4" />}
+                  {copied ? <Check className="size-4 text-sky-500" /> : <Share2 className="size-4" />}
                   {copied ? "Copied!" : "Share Report"}
                 </Button>
               ) : null}
@@ -614,7 +614,7 @@ export function HostedJobResult({ initialView }: { initialView: HostedJobView })
           <div className="rounded-lg border p-4 bg-card flex flex-col gap-3">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div className="flex items-center gap-2.5">
-                <div className="flex size-7 items-center justify-center rounded-full bg-emerald-500/10 text-emerald-500">
+                <div className="flex size-7 items-center justify-center rounded-full bg-sky-500/10 text-sky-500">
                   <Check className="size-4" />
                 </div>
                 <div>
@@ -659,7 +659,7 @@ export function HostedJobResult({ initialView }: { initialView: HostedJobView })
               </summary>
               <div className="mt-2 grid gap-1.5 font-mono text-[11px] sm:grid-cols-2">
                 {consumerStages.map((stageItem) => (
-                  <div key={stageItem.id} className="flex items-center gap-2 text-emerald-500">
+                  <div key={stageItem.id} className="flex items-center gap-2 text-sky-500">
                     <Check className="size-3.5 shrink-0" />
                     <span>{stageItem.label}</span>
                   </div>
@@ -777,7 +777,7 @@ export function HostedJobResult({ initialView }: { initialView: HostedJobView })
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
                     <Button variant="outline" size="sm" onClick={copyShareLink} className="gap-1.5">
-                      {copied ? <Check className="size-4 text-emerald-500" /> : <Share2 className="size-4" />}
+                      {copied ? <Check className="size-4 text-sky-500" /> : <Share2 className="size-4" />}
                       {copied ? "Copied!" : "Share Report"}
                     </Button>
                     {view.job.status === "completed" ? (
@@ -1015,11 +1015,11 @@ export function HostedJobResult({ initialView }: { initialView: HostedJobView })
                     Evidence-Backed Strengths
                   </h3>
                   {apiQualityReport.strengths?.length ? (
-                    <div className="rounded-md border border-emerald-500/20 bg-emerald-500/5 p-4 text-xs">
+                    <div className="rounded-md border border-sky-500/20 bg-sky-500/5 p-4 text-xs">
                       <ul className="grid gap-2 text-muted-foreground">
                         {apiQualityReport.strengths.map((s, i) => (
                           <li key={i} className="flex items-start gap-2">
-                            <Check className="size-4 text-emerald-500 shrink-0 mt-0.5" />
+                            <Check className="size-4 text-sky-500 shrink-0 mt-0.5" />
                             <span>{s}</span>
                           </li>
                         ))}
@@ -1166,7 +1166,7 @@ export function HostedJobResult({ initialView }: { initialView: HostedJobView })
                       </Button>
                     ) : null}
                     <Button variant="outline" size="sm" onClick={copyShareLink} className="gap-1.5">
-                      {copied ? <Check className="size-4 text-emerald-500" /> : <Share2 className="size-4" />}
+                      {copied ? <Check className="size-4 text-sky-500" /> : <Share2 className="size-4" />}
                       {copied ? "Copied!" : "Share Report"}
                     </Button>
                     {view.job.status === "completed" ? (
@@ -1557,11 +1557,11 @@ export function HostedJobResult({ initialView }: { initialView: HostedJobView })
                   <div className="border-t pt-6">
                     <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3">8. Evidence-Backed Strengths</h3>
                     {assessment.strengths?.length ? (
-                      <div className="rounded-md border border-emerald-500/20 bg-emerald-500/5 p-4 text-xs">
+                      <div className="rounded-md border border-sky-500/20 bg-sky-500/5 p-4 text-xs">
                         <ul className="grid gap-2 text-muted-foreground">
                           {assessment.strengths.map((s, i) => (
                             <li key={i} className="flex items-start gap-2">
-                              <Check className="size-4 text-emerald-500 shrink-0 mt-0.5" />
+                              <Check className="size-4 text-sky-500 shrink-0 mt-0.5" />
                               <span>{s}</span>
                             </li>
                           ))}

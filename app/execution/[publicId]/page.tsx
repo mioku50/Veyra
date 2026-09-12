@@ -77,7 +77,7 @@ export default async function ExecutionReceiptPage({ params }: RouteContext) {
             </CardTitle>
           </CardHeader>
           <CardContent className="py-2">
-            <div className="text-2xl font-bold font-mono text-emerald-600 dark:text-emerald-400">
+            <div className="text-2xl font-bold font-mono text-sky-600 dark:text-sky-400">
               ${(execution.actualSettledAmountUsdc ?? 0).toFixed(2)}
               <span className="text-xs text-muted-foreground ml-1">USDC</span>
             </div>
@@ -152,7 +152,7 @@ export default async function ExecutionReceiptPage({ params }: RouteContext) {
               )}
 
               {execution.completeTx && (
-                <div className="p-3 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 rounded-lg flex items-center justify-between">
+                <div className="p-3 bg-sky-500/10 text-sky-700 dark:text-sky-300 rounded-lg flex items-center justify-between">
                   <span className="font-semibold">Arc Settlement Tx:</span>
                   <a
                     href={`https://explorer.testnet.arc.network/tx/${execution.completeTx}`}

@@ -4,8 +4,8 @@ import { cn } from "@/lib/utils";
 
 const statusClass: Record<string, string> = {
   completed:
-    "border-emerald-400/25 bg-emerald-400/10 text-emerald-300 before:bg-emerald-300",
-  paid: "border-emerald-400/25 bg-emerald-400/10 text-emerald-300 before:bg-emerald-300",
+    "border-sky-400/25 bg-sky-400/10 text-sky-300 before:bg-sky-300",
+  paid: "border-sky-400/25 bg-sky-400/10 text-sky-300 before:bg-sky-300",
   failed: "border-red-400/25 bg-red-400/10 text-red-300 before:bg-red-300",
   running:
     "border-blue-400/25 bg-blue-400/10 text-blue-300 before:bg-blue-300 before:animate-pulse",

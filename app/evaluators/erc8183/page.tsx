@@ -80,8 +80,8 @@ export default async function Erc8183EvaluatorProfilePage() {
             </div>
           </div>
           <div className="flex items-center gap-3">
-            <span className="flex items-center gap-1.5 text-xs font-semibold text-emerald-400 bg-emerald-950/60 border border-emerald-800/60 px-3 py-1.5 rounded-full">
-              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+            <span className="flex items-center gap-1.5 text-xs font-semibold text-sky-400 bg-sky-950/60 border border-sky-800/60 px-3 py-1.5 rounded-full">
+              <span className="w-2 h-2 rounded-full bg-sky-400 animate-pulse" />
               Verified Canary
             </span>
           </div>
@@ -96,7 +96,7 @@ export default async function Erc8183EvaluatorProfilePage() {
             The <strong>Veyra ERC-8183 Evaluator</strong> acts as an independent, non-custodial verification layer for AI agent jobs on Arc Testnet. When a client instantiates an ERC-8183 job, it configures Veyra&apos;s evaluator contract address as its designated evaluator.
           </p>
           <p className="text-sm text-slate-400 leading-relaxed">
-            Upon provider submission of job deliverables, Veyra fetches the committed artifact, runs an isolated deterministic evaluation policy engine, constructs a canonical report digest, and signs an EIP-712 structured verdict. A relayer then submits this verdict onchain to invoke settlement (<code className="text-emerald-300 font-mono">complete()</code> or <code className="text-rose-300 font-mono">reject()</code>).
+            Upon provider submission of job deliverables, Veyra fetches the committed artifact, runs an isolated deterministic evaluation policy engine, constructs a canonical report digest, and signs an EIP-712 structured verdict. A relayer then submits this verdict onchain to invoke settlement (<code className="text-sky-300 font-mono">complete()</code> or <code className="text-rose-300 font-mono">reject()</code>).
           </p>
         </section>
 
@@ -119,8 +119,8 @@ export default async function Erc8183EvaluatorProfilePage() {
               <div className="text-3xl font-extrabold text-white">{totalEvaluations}</div>
             </div>
             <div className="bg-slate-900/80 border border-slate-800 p-5 rounded-xl space-y-1">
-              <div className="text-xs font-semibold text-emerald-400 uppercase tracking-wider">Completed</div>
-              <div className="text-3xl font-extrabold text-emerald-400">{completedCount}</div>
+              <div className="text-xs font-semibold text-sky-400 uppercase tracking-wider">Completed</div>
+              <div className="text-3xl font-extrabold text-sky-400">{completedCount}</div>
             </div>
             <div className="bg-slate-900/80 border border-slate-800 p-5 rounded-xl space-y-1">
               <div className="text-xs font-semibold text-rose-400 uppercase tracking-wider">Rejected</div>
@@ -190,7 +190,7 @@ export default async function Erc8183EvaluatorProfilePage() {
               { id: "10", title: "Deterministic Policy Outcome", desc: "Calculates canonical report hash for complete/reject decision." },
             ].map((rule) => (
               <div key={rule.id} className="flex items-start gap-3 p-3 bg-slate-950/60 border border-slate-800/80 rounded-xl">
-                <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0 mt-0.5" />
+                <CheckCircle2 className="w-5 h-5 text-sky-400 shrink-0 mt-0.5" />
                 <div>
                   <div className="text-sm font-semibold text-white">{rule.id}. {rule.title}</div>
                   <div className="text-xs text-slate-400 mt-0.5">{rule.desc}</div>
@@ -233,8 +233,8 @@ export default async function Erc8183EvaluatorProfilePage() {
               <ArrowRight className="w-4 h-4 text-slate-600 hidden sm:block" />
               <div className="bg-slate-950 border border-slate-800 px-4 py-3 rounded-xl">
                 <div className="text-slate-400 font-sans text-2xs uppercase">Step 5</div>
-                <div className="text-emerald-400 font-bold mt-1">Settlement</div>
-                <div className="text-emerald-300 text-3xs mt-0.5">complete()</div>
+                <div className="text-sky-400 font-bold mt-1">Settlement</div>
+                <div className="text-sky-300 text-3xs mt-0.5">complete()</div>
               </div>
             </div>
           </div>

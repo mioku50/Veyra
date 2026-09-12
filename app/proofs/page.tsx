@@ -98,7 +98,7 @@ export default async function ProofsPage() {
 
       <section className="mx-auto grid w-full max-w-7xl gap-4 px-4 pt-8 sm:grid-cols-3 sm:px-6">
         {[
-          ["Verified on Arc", counts.verified, "text-emerald-300"],
+          ["Verified on Arc", counts.verified, "text-sky-300"],
           ["Pending", counts.pending, "text-amber-300"],
           ["Failed", counts.failed, "text-red-300"],
         ].map(([label, value, color]) => (

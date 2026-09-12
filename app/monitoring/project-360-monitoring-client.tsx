@@ -286,7 +286,7 @@ export function Project360MonitoringClient({ initialJobId = "" }: { initialJobId
             <Card key={monitor.id} className="min-w-0 rounded-2xl border-white/10 bg-[#090c13]">
               <CardContent className="grid min-w-0 gap-5 p-5 sm:p-6">
                 <div className="flex flex-wrap items-start justify-between gap-4">
-                  <div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><h3 className="truncate text-lg font-bold">{monitor.label}</h3><Badge variant="outline">{monitor.coverage ?? "baseline"}</Badge><Badge variant="outline">{monitor.currentScore ?? "N/A"}/100</Badge>{monitor.verificationStatus === "verified" ? <Badge className="border-emerald-500/30 bg-emerald-500/10 text-emerald-300">Arc verified</Badge> : null}</div><p className="mt-2 text-xs text-muted-foreground">Next: {date(monitor.nextRecheckAt)} · confidence {monitor.confidence ?? "N/A"}%</p></div>
+                  <div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><h3 className="truncate text-lg font-bold">{monitor.label}</h3><Badge variant="outline">{monitor.coverage ?? "baseline"}</Badge><Badge variant="outline">{monitor.currentScore ?? "N/A"}/100</Badge>{monitor.verificationStatus === "verified" ? <Badge className="border-sky-500/30 bg-sky-500/10 text-sky-300">Arc verified</Badge> : null}</div><p className="mt-2 text-xs text-muted-foreground">Next: {date(monitor.nextRecheckAt)} · confidence {monitor.confidence ?? "N/A"}%</p></div>
                   <div className="flex flex-wrap gap-2"><Button size="sm" onClick={() => void runRecheck(monitor)} disabled={busy !== null}>{busy === `run:${monitor.id}` ? <LoaderCircle className="size-4 animate-spin" /> : <RefreshCw className="size-4" />} Run fresh check</Button><Button asChild size="sm" variant="outline"><Link href={monitor.publicHistoryUrl}>Trust Profile <ExternalLink className="size-4" /></Link></Button></div>
                 </div>
                 <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">{monitor.modules.map((module) => <div key={module} className="min-w-0 rounded-xl border border-white/10 p-3"><p className="truncate text-xs font-semibold">{PROJECT_360_MODULE_LABELS[module]}</p><p className="mt-1 text-[11px] text-muted-foreground">Fixed selection</p></div>)}</div>
@@ -298,7 +298,7 @@ export function Project360MonitoringClient({ initialJobId = "" }: { initialJobId
           {!monitors.length ? <Card className="rounded-2xl border-dashed border-white/10 bg-transparent"><CardContent className="p-8 text-center text-sm text-muted-foreground">No Project 360 monitor yet. Save a completed, Aggregate Arc-verified report above.</CardContent></Card> : null}
         </div>
       )}
-      {notice ? <p className="mt-4 text-sm text-emerald-400">{notice}</p> : null}
+      {notice ? <p className="mt-4 text-sm text-sky-400">{notice}</p> : null}
       {error ? <p className="mt-4 text-sm text-destructive">{error}</p> : null}
     </section>
   );

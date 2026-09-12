@@ -114,7 +114,7 @@ export default function ConsoleAuditPage() {
                   <p className="text-muted-foreground leading-relaxed">
                     {service.longDescription || service.shortDescription}
                   </p>
-                  <div className="flex items-center gap-2 text-xs font-medium text-emerald-600 dark:text-emerald-400">
+                  <div className="flex items-center gap-2 text-xs font-medium text-sky-600 dark:text-sky-400">
                     <CheckCircle2 className="size-4" />
                     <span>Audit scope: Receipts · Activity timelines · Arc proof registry</span>
                   </div>

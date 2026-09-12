@@ -31,7 +31,7 @@ const CATEGORY_LABELS = {
 
 function scoreTone(score: number | null) {
   if (score === null) return "border-muted bg-muted/20";
-  if (score >= 75) return "border-emerald-500/30 bg-emerald-500/5";
+  if (score >= 75) return "border-sky-500/30 bg-sky-500/5";
   if (score >= 50) return "border-amber-500/30 bg-amber-500/5";
   return "border-red-500/30 bg-red-500/5";
 }
@@ -123,7 +123,7 @@ export function AgentTrustReportView({
             <div className="mb-2 flex flex-wrap items-center gap-2">
               <Badge variant="secondary">Veyra flagship workflow</Badge>
               {report.verification.verifiedOnArc ? (
-                <Badge className="gap-1 border border-emerald-500/30 bg-emerald-500/10 text-emerald-500">
+                <Badge className="gap-1 border border-sky-500/30 bg-sky-500/10 text-sky-500">
                   <BadgeCheck className="size-3.5" />
                   Verified on Arc
                 </Badge>
@@ -153,7 +153,7 @@ export function AgentTrustReportView({
               </Link>
             </Button>
             <Button variant="outline" size="sm" onClick={onShare}>
-              {copied ? <Check className="size-4 text-emerald-500" /> : <Share2 className="size-4" />}
+              {copied ? <Check className="size-4 text-sky-500" /> : <Share2 className="size-4" />}
               {copied ? "Copied!" : "Share"}
             </Button>
             <Button variant="outline" size="sm" onClick={() => downloadReport(report, "json")}>
@@ -300,11 +300,11 @@ export function AgentTrustReportView({
 
         <section className="grid gap-4 md:grid-cols-2">
           <div>
-            <h3 className="flex items-center gap-2 font-semibold"><Check className="size-4 text-emerald-500" /> Evidence-backed strengths</h3>
+            <h3 className="flex items-center gap-2 font-semibold"><Check className="size-4 text-sky-500" /> Evidence-backed strengths</h3>
             <ul className="mt-3 grid gap-2 text-sm">
               {report.evidenceBackedStrengths.length
                 ? report.evidenceBackedStrengths.map((item) => (
-                    <li key={item.id} className="rounded-md bg-emerald-500/5 p-3">{item.detail}</li>
+                    <li key={item.id} className="rounded-md bg-sky-500/5 p-3">{item.detail}</li>
                   ))
                 : <li className="text-muted-foreground">No positive signal is shown without evidence.</li>}
             </ul>

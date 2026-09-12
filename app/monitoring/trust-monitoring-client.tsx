@@ -470,8 +470,8 @@ export function TrustMonitoringClient({
         </Card>
       ) : null}
       {notice ? (
-        <Card className="border-emerald-500/30 bg-emerald-500/5">
-          <CardContent className="flex items-center gap-2 p-4 text-sm text-emerald-400">
+        <Card className="border-sky-500/30 bg-sky-500/5">
+          <CardContent className="flex items-center gap-2 p-4 text-sm text-sky-400">
             <CheckCircle2 className="size-4" />
             {notice}
           </CardContent>
@@ -529,7 +529,7 @@ export function TrustMonitoringClient({
                         {watchlist.visibility}
                       </Badge>
                       {watchlist.verificationStatus === "verified" ? (
-                        <Badge className="border border-emerald-500/30 bg-emerald-500/10 text-emerald-400">
+                        <Badge className="border border-sky-500/30 bg-sky-500/10 text-sky-400">
                           Arc verified
                         </Badge>
                       ) : null}

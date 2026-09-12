@@ -90,7 +90,7 @@ function SidebarLink({ item, collapsed }: { item: NavItem; collapsed?: boolean }
       )}
     >
       {active && (
-        <span className="absolute left-0 top-1/2 -translate-y-1/2 h-5 w-1 rounded-r-full bg-gradient-to-b from-primary to-[var(--run-mint-deep)] shadow-[0_0_8px_rgba(52,227,155,0.8)]" />
+        <span className="absolute left-0 top-1/2 -translate-y-1/2 h-5 w-1 rounded-r-full bg-gradient-to-b from-primary to-[var(--run-accent-deep)] shadow-[0_0_8px_rgba(52,227,155,0.8)]" />
       )}
       <Icon
         className={cn(
@@ -161,13 +161,13 @@ export function Sidebar({ collapsed = false }: { collapsed?: boolean }) {
           </Link>
           <div
             className={cn(
-              "flex items-center gap-2.5 rounded-lg border border-emerald-500/20 bg-emerald-500/10 px-3 py-2.5 text-xs text-emerald-300 backdrop-blur-md shadow-[0_0_15px_rgba(0,208,132,0.1)]",
+              "flex items-center gap-2.5 rounded-lg border border-sky-500/20 bg-sky-500/10 px-3 py-2.5 text-xs text-sky-300 backdrop-blur-md shadow-[0_0_15px_rgba(0,208,132,0.1)]",
               collapsed && "justify-center px-2",
             )}
             title={collapsed ? "v0.2.0-beta.8 · System Operational" : undefined}
           >
             <div className="flex h-2 w-2 items-center justify-center">
-              <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-500" />
+              <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-sky-500" />
             </div>
             {!collapsed && (
               <span className="truncate">
@@ -220,7 +220,7 @@ export function MobileSidebar({
           <span
             aria-label={`${BRAND.name} logo`}
             data-testid="brand-monogram"
-            className="flex size-10 items-center justify-center rounded-xl from-[var(--run-mint)] to-[var(--run-mint-deep)] bg-gradient-to-b text-sm font-bold text-[#04160e] shadow-[0_0_20px_rgba(52,227,155,0.4)]"
+            className="flex size-10 items-center justify-center rounded-xl from-[var(--run-accent)] to-[var(--run-accent-deep)] bg-gradient-to-b text-sm font-bold text-white shadow-[0_0_20px_rgba(52,227,155,0.4)]"
           >
             {BRAND.monogram}
           </span>

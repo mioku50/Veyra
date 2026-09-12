@@ -77,7 +77,7 @@ export function WalletWidget({ compact = false }: { compact?: boolean }) {
           <span
             className={cn(
               "size-2 rounded-full",
-              isArcTestnet ? "bg-emerald-400 shadow-[0_0_16px_rgb(0_208_132/0.6)]" : "bg-amber-400",
+              isArcTestnet ? "bg-sky-400 shadow-[0_0_16px_rgb(0_208_132/0.6)]" : "bg-amber-400",
             )}
           />
           <span className="min-w-0 truncate font-mono">
@@ -102,7 +102,7 @@ export function WalletWidget({ compact = false }: { compact?: boolean }) {
             <span
               className={cn(
                 "size-2 rounded-full",
-                isArcTestnet ? "bg-emerald-400" : "bg-amber-400",
+                isArcTestnet ? "bg-sky-400" : "bg-amber-400",
               )}
             />
             {isArcTestnet ? "Arc Testnet" : `Chain ${chainId ?? "?"}`}

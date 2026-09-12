@@ -62,7 +62,7 @@ function ProfileCard({
 }) {
   const trustColor =
     profile.trust_score >= 67
-      ? "bg-emerald-400"
+      ? "bg-sky-400"
       : profile.trust_score >= 34
         ? "bg-amber-400"
         : "bg-red-400";

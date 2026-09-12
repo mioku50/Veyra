@@ -140,7 +140,7 @@ export function AgentApiInteractiveClient() {
         </div>
 
         <Button size="sm" variant="ghost" onClick={copyActiveSnippet} className="gap-2 text-xs">
-          {copied ? <Check className="size-3.5 text-emerald-500" /> : <Copy className="size-3.5" />}
+          {copied ? <Check className="size-3.5 text-sky-500" /> : <Copy className="size-3.5" />}
           {copied ? "Copied" : "Copy"}
         </Button>
       </div>

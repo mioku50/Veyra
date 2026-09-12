@@ -431,8 +431,8 @@ export function HostedAgentRunner({
       {/* Header Banner */}
       <section className="border-b border-white/5 bg-gradient-to-b from-[#0a0d15] to-[#07090e] py-10 sm:py-14">
         <div className="mx-auto w-full max-w-6xl px-4 sm:px-6">
-          <Badge className="mb-4 rounded-full border-emerald-500/30 bg-emerald-500/10 px-3.5 py-1 text-xs font-semibold text-emerald-300">
-            <span className="mr-2 inline-block size-2 rounded-full bg-emerald-400 animate-pulse" />
+          <Badge className="mb-4 rounded-full border-sky-500/30 bg-sky-500/10 px-3.5 py-1 text-xs font-semibold text-sky-300">
+            <span className="mr-2 inline-block size-2 rounded-full bg-sky-400 animate-pulse" />
             Arc Testnet Hosted Runner
           </Badge>
           <h1 className="text-3xl font-extrabold tracking-tight sm:text-5xl gradient-text">
@@ -699,7 +699,7 @@ export function HostedAgentRunner({
                   Workflow Quote
                 </span>
                 {quote && (
-                  <Badge variant={quote.paymentMode === "sponsored" ? "secondary" : "default"} className={quote.paymentMode === "sponsored" ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-300" : "bg-primary text-white"}>
+                  <Badge variant={quote.paymentMode === "sponsored" ? "secondary" : "default"} className={quote.paymentMode === "sponsored" ? "border-sky-500/30 bg-sky-500/10 text-sky-300" : "bg-primary text-white"}>
                     {quote.paymentMode === "sponsored" ? "Sponsored (Free)" : "USDC Payment"}
                   </Badge>
                 )}
@@ -758,7 +758,7 @@ export function HostedAgentRunner({
                   <Button
                     onClick={launch}
                     disabled={launching}
-                    className="h-12 w-full rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 font-bold text-white shadow-[0_0_20px_rgba(0,208,132,0.3)] transition-all hover:scale-[1.01]"
+                    className="h-12 w-full rounded-xl bg-gradient-to-r from-sky-500 to-sky-600 font-bold text-white shadow-[0_0_20px_rgba(0,208,132,0.3)] transition-all hover:scale-[1.01]"
                   >
                     {launching ? (
                       <>

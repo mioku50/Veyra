@@ -331,8 +331,8 @@ export function RunClient() {
           <div className="flex items-center gap-3">
             <Link href="/" className="run-focus flex items-center gap-2.5">
               <span
-                className="flex h-[22px] w-[22px] items-center justify-center rounded-[6px] text-[11px] font-bold text-[#04160e]"
-                style={{ background: "linear-gradient(180deg,var(--run-mint),var(--run-mint-deep))" }}
+                className="flex h-[22px] w-[22px] items-center justify-center rounded-[6px] text-[11px] font-bold text-white"
+                style={{ background: "linear-gradient(180deg,var(--run-accent),var(--run-accent-deep))" }}
               >
                 V
               </span>
@@ -369,7 +369,7 @@ export function RunClient() {
                 after "Circle", which is the worst of the three options. */}
             <h1 className="run-display text-[30px] sm:text-[38px]">
               Veyra decides.<br />
-              <span style={{ color: "var(--run-mint)" }}>Circle pays.</span>
+              <span style={{ color: "var(--run-accent)" }}>Circle pays.</span>
             </h1>
             <p className="mt-3 max-w-[38ch] text-[14px] leading-[1.5] text-[var(--run-text-muted)]">
               Evidence-based authorization for autonomous USDC spending.
@@ -390,7 +390,7 @@ export function RunClient() {
                 href="https://testnet.arcscan.app/tx/0xd1d958d5014a3584a21c7e67444091af25c64940aa4759c928fa2962d0995a22"
                 target="_blank"
                 rel="noreferrer"
-                className="run-focus run-num text-[11px] text-[var(--run-mint)] hover:underline"
+                className="run-focus run-num text-[11px] text-[var(--run-azure)] hover:underline"
               >
                 Job #186207 ↗
               </a>
@@ -430,7 +430,7 @@ export function RunClient() {
                     <span
                       className={`text-[10px] font-semibold uppercase tracking-[0.14em] ${state === "active" ? "run-pulse" : ""}`}
                       style={{
-                        color: state === "done" ? "var(--run-mint)"
+                        color: state === "done" ? "var(--run-azure)"
                           : state === "active" ? "var(--run-text)"
                           : "var(--run-text-faint)",
                       }}
@@ -569,7 +569,7 @@ export function RunClient() {
             </ul>
             <p className="mt-auto border-t border-[var(--run-line)] pt-4 text-[11.5px] leading-[1.6] text-[var(--run-text-muted)]">
               How many of these can be observed is what caps the trust tier. A
-              counterparty nobody has paid yet cannot reach <span className="text-[var(--run-mint)]">Allow</span> —
+              counterparty nobody has paid yet cannot reach <span className="text-[var(--run-azure)]">Allow</span> —
               not because it is bad, but because the evidence does not exist.
             </p>
           </aside>

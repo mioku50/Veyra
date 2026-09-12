@@ -47,7 +47,7 @@ export default function TrustGatePage() {
 
   const getDecisionColor = (level: string) => {
     switch (level) {
-      case "ALLOW": return "text-emerald-400 bg-emerald-500/10 border-emerald-500/20";
+      case "ALLOW": return "text-sky-400 bg-sky-500/10 border-sky-500/20";
       case "ALLOW_WITH_LIMITS": return "text-amber-400 bg-amber-500/10 border-amber-500/20";
       case "REQUIRE_EVALUATOR": return "text-blue-400 bg-blue-500/10 border-blue-500/20";
       case "REVIEW_REQUIRED": return "text-orange-400 bg-orange-500/10 border-orange-500/20";

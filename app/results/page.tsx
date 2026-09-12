@@ -182,7 +182,7 @@ export default async function ResultsPage({ searchParams }: ResultsPageProps) {
                   <Badge variant="secondary" className="border-primary/30 bg-primary/10 text-primary text-xs font-semibold">
                     {report.workflowLabel}
                   </Badge>
-                  <Badge variant={report.completedWithWarnings ? "outline" : "default"} className={report.completedWithWarnings ? "border-amber-500/30 bg-amber-500/10 text-amber-300 text-[11px]" : "bg-emerald-500/10 border-emerald-500/30 text-emerald-300 text-[11px]"}>
+                  <Badge variant={report.completedWithWarnings ? "outline" : "default"} className={report.completedWithWarnings ? "border-amber-500/30 bg-amber-500/10 text-amber-300 text-[11px]" : "bg-sky-500/10 border-sky-500/30 text-sky-300 text-[11px]"}>
                     {report.completedWithWarnings ? "Warnings" : "Arc Verified"}
                   </Badge>
                 </div>

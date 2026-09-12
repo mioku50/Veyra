@@ -72,64 +72,113 @@ function formatDate(value: string | null) {
   }).format(new Date(value));
 }
 
-function StatCard({
-  label,
-  value,
-  detail,
-}: {
-  label: string;
-  value: string | number;
-  detail?: string;
-}) {
-  return (
-    <Card className="rounded-lg">
-      <CardContent className="p-5">
-        <p className="text-sm text-muted-foreground">{label}</p>
-        <p className="mt-2 font-mono text-2xl font-semibold">{value}</p>
-        {detail ? <p className="mt-2 text-xs text-muted-foreground">{detail}</p> : null}
-      </CardContent>
-    </Card>
-  );
+function relativeTime(value: string | null) {
+  if (!value) return "never";
+  const seconds = Math.max(0, Math.round((Date.now() - new Date(value).getTime()) / 1000));
+  if (seconds < 60) return `${seconds}s ago`;
+  if (seconds < 3600) return `${Math.round(seconds / 60)}m ago`;
+  if (seconds < 86400) return `${Math.round(seconds / 3600)}h ago`;
+  return `${Math.round(seconds / 86400)}d ago`;
 }
 
-function TrustScore({ profile }: { profile: PublicAgentProfile }) {
+/* A passport, not three cards.
+ *
+ * The name promised an object — an identity you can hold and check — and the
+ * page delivered a grid of equal tiles that could have described anything. This
+ * is one surface: who the agent is, the score, what it has actually done, and
+ * the record each claim rests on. Nothing here is estimated; every number is
+ * read from observed activity or from Arc. */
+function Passport({
+  profile,
+  verifiedProofs,
+}: {
+  profile: PublicAgentProfile;
+  verifiedProofs: number;
+}) {
+  const score = Math.max(0, Math.min(100, Math.round(profile.trust_score)));
+  const successRate = profile.total_runs
+    ? Math.round((profile.completed_runs / profile.total_runs) * 100)
+    : 0;
+  const band =
+    score >= 75 ? "var(--run-azure)" : score >= 45 ? "var(--run-amber)" : "var(--run-red)";
+
+  const figures: Array<[string, string, string]> = [
+    ["Executions", String(profile.total_runs), `${profile.completed_runs} completed`],
+    ["Successful", `${successRate}%`, `${profile.failed_runs} failed`],
+    ["Settled", `${profile.total_usdc_spent} USDC`, `${profile.paid_requests} paid calls`],
+    ["Arc proofs", String(verifiedProofs), verifiedProofs > 0 ? "verified onchain" : "none yet"],
+  ];
+
+  const ledger: Array<[string, React.ReactNode]> = [
+    ["Identity", <span key="i" className="font-mono text-[12px]">{profile.wallet}</span>],
+    ["History", `${profile.total_runs} runs observed since ${formatDate(profile.first_seen_at)}`],
+    ["Evidence", `${verifiedProofs} settlement${verifiedProofs === 1 ? "" : "s"} carry a verified Arc proof`],
+    ["Budget", `${profile.budget_respected_runs} of ${profile.total_runs} runs stayed inside the ceiling`],
+  ];
+
   return (
-    <Card className="rounded-lg shadow-sm">
-      <CardHeader>
-        <div className="mb-3 flex flex-wrap items-center gap-2">
-          <Badge variant="secondary">Deterministic trust score</Badge>
-          <Badge variant={profile.trust_score >= 60 ? "default" : "outline"}>
-            {profile.trust_score}/100
-          </Badge>
-        </div>
-        <CardTitle className="flex items-center gap-2 text-3xl">
-          <ShieldCheck className="size-7 text-primary" />
-          Agent Passport
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="grid gap-5">
-        <div>
-          <p className="text-sm text-muted-foreground">Wallet</p>
-          <div className="mt-2 flex flex-wrap items-center gap-2">
-            <code className="break-all rounded-md bg-muted px-2 py-1 text-xs">
+    <section className="run-panel-raised overflow-hidden">
+      <div className="run-signature" />
+
+      <div className="flex flex-wrap items-start justify-between gap-4 px-6 pt-5">
+        <div className="min-w-0">
+          <span className="run-eyebrow">Agent passport</span>
+          <div className="mt-2 flex flex-wrap items-center gap-2.5">
+            <code className="run-num break-all text-[15px] text-[var(--run-text)]">
               {profile.wallet}
             </code>
             <CopyButton value={profile.wallet} label="Copy wallet" />
           </div>
         </div>
-        <div className="h-3 overflow-hidden rounded-full bg-secondary">
-          <div
-            className="h-full rounded-full bg-primary"
-            style={{ width: `${profile.trust_score}%` }}
-          />
+        <span className="run-chip" data-tone="verified">
+          <ShieldCheck className="size-3" />
+          Arc Testnet
+        </span>
+      </div>
+
+      <div className="grid gap-7 px-6 pb-6 pt-6 sm:grid-cols-[200px_minmax(0,1fr)]">
+        <div>
+          <span className="run-eyebrow">Trust</span>
+          <div className="run-display run-num mt-1.5 text-[52px] leading-none" style={{ color: band }}>
+            {score}
+            <span className="text-[18px] text-[var(--run-text-faint)]">/100</span>
+          </div>
+          <div className="run-meter mt-3">
+            <span style={{ width: `${score}%`, background: band }} />
+          </div>
+          <p className="mt-2.5 text-[11px] leading-relaxed text-[var(--run-text-faint)]">
+            Deterministic, not a model output. Completed workflows, successful paid
+            calls and budget-respected execution raise it; failures reduce it.
+          </p>
         </div>
-        <p className="text-sm leading-6 text-muted-foreground">
-          The score is deterministic, not a model output: completed workflows,
-          successful paid calls, and budget-respected execution raise it; failed
-          calls and failed workflows reduce it.
+
+        <dl className="grid grid-cols-2 gap-x-6 gap-y-5 self-start">
+          {figures.map(([label, value, detail]) => (
+            <div key={label}>
+              <dt className="run-eyebrow">{label}</dt>
+              <dd className="run-num mt-1.5 text-[21px] leading-none text-[var(--run-text)]">{value}</dd>
+              <dd className="mt-1.5 text-[11px] text-[var(--run-text-faint)]">{detail}</dd>
+            </div>
+          ))}
+        </dl>
+      </div>
+
+      <dl className="border-t border-[var(--run-line)] bg-[var(--run-canvas-raised)] px-6 py-5">
+        {ledger.map(([label, value], i) => (
+          <div
+            key={label}
+            className={`flex flex-wrap items-baseline gap-x-5 gap-y-1 py-2 ${i > 0 ? "border-t border-[var(--run-line)]" : ""}`}
+          >
+            <dt className="run-eyebrow w-[74px] shrink-0">{label}</dt>
+            <dd className="min-w-0 flex-1 text-[12.5px] text-[var(--run-text-muted)]">{value}</dd>
+          </div>
+        ))}
+        <p className="mt-3 text-[11px] text-[var(--run-text-faint)]">
+          Last active {relativeTime(profile.last_run_at)} · first seen{" "}
+          {formatDate(profile.first_seen_at)}
         </p>
-      </CardContent>
-    </Card>
+      </dl>
+    </section>
   );
 }
 
@@ -296,57 +345,17 @@ function PassportContent({
 
   return (
     <>
-      <section className="border-b bg-secondary/30">
-        <div className="mx-auto w-full max-w-6xl px-4 py-8 sm:px-6">
-          <Button asChild variant="ghost" className="mb-6 px-0">
-            <Link href="/agents">
-              <ArrowLeft />
-              Back to Agent Passports
-            </Link>
-          </Button>
-          <TrustScore profile={profile} />
-        </div>
+      <section className="mx-auto w-full max-w-5xl px-4 pt-8 sm:px-6">
+        <Button asChild variant="ghost" className="mb-5 px-0">
+          <Link href="/agents">
+            <ArrowLeft />
+            Back to Agent Passports
+          </Link>
+        </Button>
+        <Passport profile={profile} verifiedProofs={verifiedProofs} />
       </section>
 
-      <section className="mx-auto grid w-full max-w-6xl gap-4 px-4 py-8 sm:px-6">
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          <StatCard label="Workflows" value={profile.total_runs} />
-          <StatCard label="Final Reports" value={profile.completed_runs} />
-          <StatCard label="Successful calls" value={profile.paid_requests} />
-          <StatCard label="Verified Arc proofs" value={verifiedProofs} />
-          <StatCard
-            label="Spent"
-            value={`${profile.total_usdc_spent} USDC`}
-          />
-          <StatCard
-            label="Success rate"
-            value={
-              profile.total_runs
-                ? `${Math.round((profile.completed_runs / profile.total_runs) * 100)}%`
-                : "0%"
-            }
-          />
-        </div>
-
-        <Card className="rounded-lg">
-          <CardContent className="grid gap-4 p-5 text-sm sm:grid-cols-3">
-            <div>
-              <p className="text-muted-foreground">First seen</p>
-              <p className="mt-1 font-medium">{formatDate(profile.first_seen_at)}</p>
-            </div>
-            <div>
-              <p className="text-muted-foreground">Last run</p>
-              <p className="mt-1 font-medium">{formatDate(profile.last_run_at)}</p>
-            </div>
-            <div>
-              <p className="text-muted-foreground">Budget-respected runs</p>
-              <p className="mt-1 font-mono font-medium">
-                {profile.budget_respected_runs}
-              </p>
-            </div>
-          </CardContent>
-        </Card>
-
+      <section className="mx-auto grid w-full max-w-5xl gap-4 px-4 py-8 sm:px-6">
         <div className="grid gap-4 lg:grid-cols-[1.15fr_0.85fr]">
           <RunsPanel runs={detail.recentRuns} />
           <EventsPanel events={detail.recentEvents} />

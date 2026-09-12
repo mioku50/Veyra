@@ -165,7 +165,7 @@ export default async function PublicEvaluationsExplorerPage({
                         <td className="p-4 text-slate-200">{item.job_id}</td>
                         <td className="p-4">
                           {isComplete ? (
-                            <span className="inline-flex items-center gap-1 text-emerald-400 bg-emerald-950/60 border border-emerald-800/60 px-2.5 py-0.5 rounded-full font-sans font-semibold text-3xs">
+                            <span className="inline-flex items-center gap-1 text-sky-400 bg-sky-950/60 border border-sky-800/60 px-2.5 py-0.5 rounded-full font-sans font-semibold text-3xs">
                               <CheckCircle2 className="w-3 h-3" /> Completed
                             </span>
                           ) : isRejected ? (

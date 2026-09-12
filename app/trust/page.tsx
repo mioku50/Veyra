@@ -34,7 +34,7 @@ const trustGateOutcomes = [
     code: "ALLOW",
     label: "Allow",
     desc: "Unrestricted execution within standard policy",
-    color: "border-emerald-500/30 bg-emerald-500/10 text-emerald-300",
+    color: "border-sky-500/30 bg-sky-500/10 text-sky-300",
   },
   {
     code: "ALLOW_WITH_LIMITS",
@@ -221,13 +221,13 @@ export default function TrustHubPage() {
           </Card>
 
           {/* D. Verify Work */}
-          <Card className="rounded-2xl border border-white/10 bg-gradient-to-br from-[#0c101a] via-[#090c13] to-[#07090e] p-2 backdrop-blur-xl shadow-lg transition-all hover:border-emerald-500/40">
+          <Card className="rounded-2xl border border-white/10 bg-gradient-to-br from-[#0c101a] via-[#090c13] to-[#07090e] p-2 backdrop-blur-xl shadow-lg transition-all hover:border-sky-500/40">
             <CardHeader className="p-6 pb-3">
               <div className="flex items-center justify-between gap-2">
-                <div className="flex size-10 items-center justify-center rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400">
+                <div className="flex size-10 items-center justify-center rounded-xl bg-sky-500/10 border border-sky-500/20 text-sky-400">
                   <BadgeCheck className="size-5" />
                 </div>
-                <Badge variant="secondary" className="border-emerald-500/30 bg-emerald-500/10 text-emerald-300 text-xs">
+                <Badge variant="secondary" className="border-sky-500/30 bg-sky-500/10 text-sky-300 text-xs">
                   ERC-8183 Settlement
                 </Badge>
               </div>

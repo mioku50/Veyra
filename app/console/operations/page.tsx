@@ -122,7 +122,7 @@ export default async function OperationsPage() {
                   {snapshot.alerts.length > 0 ? (
                     <AlertTriangle className="size-5 text-amber-400" />
                   ) : (
-                    <CheckCircle2 className="size-5 text-emerald-400" />
+                    <CheckCircle2 className="size-5 text-sky-400" />
                   )}
                   Active alerts
                 </CardTitle>

@@ -720,7 +720,7 @@ export function MyAgentsClient({ diagnostic }: { diagnostic: Diagnostic }) {
           <div className="flex flex-wrap items-center gap-3">
             {wallet.address ? <Badge variant="outline">Connected Wallet: {shortenHash(wallet.address, 7)}</Badge> : <Badge variant="outline">No wallet connected</Badge>}
             {wallet.isArcTestnet ? <Badge variant="secondary">Arc Testnet (5042002)</Badge> : <Badge variant="destructive">Wrong network (Switch to Arc)</Badge>}
-            {ownerWallet ? <Badge className="bg-emerald-600">Verified Owner Session: {shortenHash(ownerWallet, 7)}</Badge> : <Badge variant="outline">Session unverified</Badge>}
+            {ownerWallet ? <Badge className="bg-sky-600">Verified Owner Session: {shortenHash(ownerWallet, 7)}</Badge> : <Badge variant="outline">Session unverified</Badge>}
 
             {wallet.address && ownerWallet && wallet.address.toLowerCase() === ownerWallet.toLowerCase() ? (
               <Badge className="bg-blue-600">Connected as Owner Wallet</Badge>
@@ -848,7 +848,7 @@ export function MyAgentsClient({ diagnostic }: { diagnostic: Diagnostic }) {
                 <CardHeader className="flex flex-row items-center justify-between">
                   <CardTitle>Agent Management — {selected.displayName}</CardTitle>
                   <div className="flex items-center gap-2">
-                    <Button size="sm" variant="default" className="bg-emerald-600 hover:bg-emerald-700" onClick={() => { setFundingIntent(null); setFundingResult(null); setIsFundingModalOpen(true); }}>
+                    <Button size="sm" variant="default" className="bg-sky-600 hover:bg-sky-700" onClick={() => { setFundingIntent(null); setFundingResult(null); setIsFundingModalOpen(true); }}>
                       <Coins className="mr-1.5 size-3.5" /> Fund Agent Wallet
                     </Button>
                     {selected.status === "active" ? (
@@ -892,17 +892,17 @@ export function MyAgentsClient({ diagnostic }: { diagnostic: Diagnostic }) {
 
               {/* Agent Funding Modal */}
               {isFundingModalOpen ? (
-                <Card className="border-emerald-500/50 bg-background shadow-lg">
+                <Card className="border-sky-500/50 bg-background shadow-lg">
                   <CardHeader className="flex flex-row items-center justify-between border-b pb-4">
                     <CardTitle className="text-base flex items-center gap-2">
-                      <Coins className="size-5 text-emerald-600" /> Fund Agent Wallet ({selected.displayName})
+                      <Coins className="size-5 text-sky-600" /> Fund Agent Wallet ({selected.displayName})
                     </CardTitle>
                     <Button size="sm" variant="ghost" onClick={() => setIsFundingModalOpen(false)}>Close</Button>
                   </CardHeader>
                   <CardContent className="grid gap-4 pt-4 text-xs">
                     <div className="rounded-md border bg-muted/20 p-3 flex flex-col gap-1">
                       <span className="font-semibold text-muted-foreground">Fixed Recipient (Agent Wallet):</span>
-                      <code className="font-mono text-sm break-all font-semibold text-emerald-600">{selected.agentWallet}</code>
+                      <code className="font-mono text-sm break-all font-semibold text-sky-600">{selected.agentWallet}</code>
                       <span className="text-[11px] text-muted-foreground">Recipient is hardcoded to this registered agent wallet and cannot be altered.</span>
                     </div>
 
@@ -957,8 +957,8 @@ export function MyAgentsClient({ diagnostic }: { diagnostic: Diagnostic }) {
                     {/* Pre-Signature Route Preview */}
                     {fundingIntent ? (
                       fundingIntent.supported ? (
-                        <div className="rounded-md border border-emerald-500/30 bg-emerald-500/5 p-4 grid gap-3">
-                          <span className="font-semibold text-sm text-emerald-600">Pre-Signature Route Preview</span>
+                        <div className="rounded-md border border-sky-500/30 bg-sky-500/5 p-4 grid gap-3">
+                          <span className="font-semibold text-sm text-sky-600">Pre-Signature Route Preview</span>
                           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
                             <div>
                               <span className="text-muted-foreground block">Source Chain</span>
@@ -970,7 +970,7 @@ export function MyAgentsClient({ diagnostic }: { diagnostic: Diagnostic }) {
                             </div>
                             <div>
                               <span className="text-muted-foreground block">Amount</span>
-                              <span className="font-semibold text-emerald-600">{fundingIntent.amountUsdc} USDC</span>
+                              <span className="font-semibold text-sky-600">{fundingIntent.amountUsdc} USDC</span>
                             </div>
                             <div>
                               <span className="text-muted-foreground block">Est. Fee</span>
@@ -981,7 +981,7 @@ export function MyAgentsClient({ diagnostic }: { diagnostic: Diagnostic }) {
                             <strong>Target Contract:</strong> <code className="font-mono">{fundingIntent.contractTarget}</code>
                           </div>
 
-                          <Button className="bg-emerald-600 hover:bg-emerald-700 mt-2" onClick={() => void executeFundingTransaction()} disabled={busy}>
+                          <Button className="bg-sky-600 hover:bg-sky-700 mt-2" onClick={() => void executeFundingTransaction()} disabled={busy}>
                             Confirm & Execute Transfer
                           </Button>
                         </div>
@@ -998,8 +998,8 @@ export function MyAgentsClient({ diagnostic }: { diagnostic: Diagnostic }) {
 
                     {/* Post-Transaction Result Badge */}
                     {fundingResult ? (
-                      <div className="rounded-md border border-emerald-500/50 bg-emerald-500/10 p-4 grid gap-2 text-xs">
-                        <span className="font-semibold text-emerald-600 flex items-center gap-1">
+                      <div className="rounded-md border border-sky-500/50 bg-sky-500/10 p-4 grid gap-2 text-xs">
+                        <span className="font-semibold text-sky-600 flex items-center gap-1">
                           <CheckCircle2 className="size-4" /> Agent Funding Completed!
                         </span>
                         <div className="grid grid-cols-2 gap-2 border-t pt-2">
@@ -1009,7 +1009,7 @@ export function MyAgentsClient({ diagnostic }: { diagnostic: Diagnostic }) {
                           </div>
                           <div>
                             <span className="text-muted-foreground block">Updated Agent Balance</span>
-                            <span className="font-semibold text-emerald-600">{fundingResult.updatedBalance} USDC</span>
+                            <span className="font-semibold text-sky-600">{fundingResult.updatedBalance} USDC</span>
                           </div>
                         </div>
                         <div className="mt-1">
@@ -1309,29 +1309,29 @@ export function MyAgentsClient({ diagnostic }: { diagnostic: Diagnostic }) {
 
                   {/* Empirical replay proof badges */}
                   {replayProof ? (
-                    <div className="rounded-md border border-emerald-500/40 bg-emerald-500/10 p-3 text-xs flex flex-wrap gap-3 items-center text-emerald-700 dark:text-emerald-300">
+                    <div className="rounded-md border border-sky-500/40 bg-sky-500/10 p-3 text-xs flex flex-wrap gap-3 items-center text-sky-700 dark:text-sky-300">
                       <span className="font-semibold flex items-center gap-1">
                         <CheckCircle2 className="size-4" /> Idempotency Replay Verified (Empirical Comparison):
                       </span>
-                      {replayProof.sameJobId ? <Badge variant="outline" className="border-emerald-500 text-emerald-600">Job ID identical ({shortenHash(replayProof.jobId, 5)})</Badge> : <Badge variant="destructive">Job ID mismatch</Badge>}
-                      {replayProof.noDuplicatePayment ? <Badge variant="outline" className="border-emerald-500 text-emerald-600">No duplicate payment</Badge> : <Badge variant="destructive">Duplicate payment detected</Badge>}
-                      {replayProof.noNewReceipts ? <Badge variant="outline" className="border-emerald-500 text-emerald-600">Receipts identical ({replayProof.receiptCount})</Badge> : <Badge variant="destructive">Receipt mismatch</Badge>}
-                      {replayProof.noNewProofs ? <Badge variant="outline" className="border-emerald-500 text-emerald-600">Proofs identical ({replayProof.proofCount})</Badge> : <Badge variant="destructive">Proof mismatch</Badge>}
-                      {replayProof.allowancePreserved ? <Badge variant="outline" className="border-emerald-500 text-emerald-600">Allowance preserved ({replayProof.dailySpentUsdc} USDC spent)</Badge> : <Badge variant="destructive">Allowance deducted again</Badge>}
-                      {replayProof.callCountPreserved ? <Badge variant="outline" className="border-emerald-500 text-emerald-600">Call count preserved</Badge> : <Badge variant="destructive">Call count incremented</Badge>}
+                      {replayProof.sameJobId ? <Badge variant="outline" className="border-sky-500 text-sky-600">Job ID identical ({shortenHash(replayProof.jobId, 5)})</Badge> : <Badge variant="destructive">Job ID mismatch</Badge>}
+                      {replayProof.noDuplicatePayment ? <Badge variant="outline" className="border-sky-500 text-sky-600">No duplicate payment</Badge> : <Badge variant="destructive">Duplicate payment detected</Badge>}
+                      {replayProof.noNewReceipts ? <Badge variant="outline" className="border-sky-500 text-sky-600">Receipts identical ({replayProof.receiptCount})</Badge> : <Badge variant="destructive">Receipt mismatch</Badge>}
+                      {replayProof.noNewProofs ? <Badge variant="outline" className="border-sky-500 text-sky-600">Proofs identical ({replayProof.proofCount})</Badge> : <Badge variant="destructive">Proof mismatch</Badge>}
+                      {replayProof.allowancePreserved ? <Badge variant="outline" className="border-sky-500 text-sky-600">Allowance preserved ({replayProof.dailySpentUsdc} USDC spent)</Badge> : <Badge variant="destructive">Allowance deducted again</Badge>}
+                      {replayProof.callCountPreserved ? <Badge variant="outline" className="border-sky-500 text-sky-600">Call count preserved</Badge> : <Badge variant="destructive">Call count incremented</Badge>}
                     </div>
                   ) : null}
 
 
                   {/* Unified Result Panel */}
                   {testResult ? (
-                    <Card className="border-emerald-500/30 bg-emerald-500/5">
-                      <CardHeader><CardTitle className="text-emerald-600 text-base">Execution Result & Proof Trail</CardTitle></CardHeader>
+                    <Card className="border-sky-500/30 bg-sky-500/5">
+                      <CardHeader><CardTitle className="text-sky-600 text-base">Execution Result & Proof Trail</CardTitle></CardHeader>
                       <CardContent className="grid gap-4 text-xs">
                         <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 p-3 rounded border bg-background">
                           <div>
                             <span className="text-muted-foreground block">Workflow Status</span>
-                            <span className="font-semibold capitalize text-emerald-600">{testResult.job?.status}</span>
+                            <span className="font-semibold capitalize text-sky-600">{testResult.job?.status}</span>
                           </div>
                           <div>
                             <span className="text-muted-foreground block">Job ID</span>

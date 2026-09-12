@@ -77,12 +77,12 @@ export default async function PublicEvaluationReportPage({
 
         {/* Verdict Hero Card */}
         <div className={`border rounded-2xl p-6 md:p-8 backdrop-blur flex flex-col md:flex-row items-start md:items-center justify-between gap-6 ${
-          isComplete ? "bg-emerald-950/20 border-emerald-500/30" : "bg-red-950/20 border-red-500/30"
+          isComplete ? "bg-sky-950/20 border-sky-500/30" : "bg-red-950/20 border-red-500/30"
         }`}>
           <div className="space-y-2">
             <div className="flex items-center gap-2">
               {isComplete ? (
-                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
+                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-sky-500/20 text-sky-300 border border-sky-500/40">
                   <CheckCircle2 className="w-4 h-4" /> VERDICT COMPLETE
                 </span>
               ) : (
@@ -165,7 +165,7 @@ export default async function PublicEvaluationReportPage({
                 <span
                   className={`px-2.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wider ${
                     check.passed
-                      ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"
+                      ? "bg-sky-500/10 text-sky-400 border border-sky-500/20"
                       : "bg-red-500/10 text-red-400 border border-red-500/20"
                   }`}
                 >
