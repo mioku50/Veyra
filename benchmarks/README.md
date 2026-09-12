@@ -37,7 +37,7 @@ advance.
 ## Results — 2026-09-12
 
 24 of 24 cases pass. Full output in
-[`results/2026-09-12T20-58-21-738Z/`](results/2026-09-12T20-58-21-738Z/).
+[`results/2026-09-12T21-03-41-757Z/`](results/2026-09-12T21-03-41-757Z/).
 
 ### Unsafe conditions correctly flagged
 
@@ -84,7 +84,54 @@ after warm-up:
 | 25 | 0.023 ms | 0.087 ms | 0.172 ms |
 
 Sub-millisecond at every size, and near-flat from 6 to 25 candidates. This is
-the part Veyra is responsible for; it is not where the time goes.
+the part Veyra is responsible for, and it is not where the time goes: probing a
+real endpoint takes **257 ms at p50**, roughly fifteen thousand times longer than
+deciding what to do with the result.
+
+---
+
+## Live observation — the real Circle catalog
+
+```bash
+npm run benchmark -- --live --capability=web_search --limit=12
+```
+
+Nothing is asserted here. Nobody controls these sellers, so no expectation could
+be fixed in advance; what the live pass produces is the one number the fixture
+harness cannot — how long a real x402 challenge takes — and a look at how often
+a live endpoint disagrees with the catalog advertising it.
+
+Run of 2026-09-12, capability `web_search`:
+
+| | |
+| :--- | ---: |
+| In Circle's catalog for this capability | 132 |
+| Discovered and probed | 12 |
+| Reachable | 12 |
+| Answered a valid 402 challenge | 12 |
+| **Disagreed with the catalog** | **1** |
+| Probe latency p50 / p95 | 257 ms / 1431 ms |
+
+The one that disagreed: **`https://api.exa.ai/contents`**. Circle's catalog
+advertises 0.001 USDC; the matching accept in its live challenge did not carry
+that amount — it parsed as 0 — so the entry is flagged `price_changed`, fails the
+`accepts_matches_catalog` check, and scores 0 on probe integrity. Whether the
+seller changed its price or publishes a dynamic one, the catalog no longer
+describes what the endpoint actually demands, and an agent paying on the strength
+of the listing would be paying against terms it never saw. This is the condition
+the product exists to catch, found on the first live pass.
+
+One in twelve is a single observation, not a rate. It is reported because it
+happened, not as a measurement of how common drift is.
+
+### A note on capabilities that return nothing
+
+`--capability=market_research` returns zero candidates. That is not a defect:
+Circle's discovery search is conjunctive, and the query built from the capability
+(`market research`) has to match both terms. `market` alone returns 50, `research`
+alone returns 50, `web search` returns 50, `crypto market data` returns 9 — but
+nothing in the catalog matches `market` *and* `research`. Pick a capability the
+catalog actually carries.
 
 ---
 
@@ -96,8 +143,8 @@ let a network-bound number be presented as an engine-bound one.
 
 | | Bound by | Measured where |
 | :--- | :--- | :--- |
-| **Probe latency** | The seller's network and server | **Not measured here.** The harness drives scripted sellers, so any timing would describe the harness. Requires a live run against the real catalog. |
-| **Decision latency** | Veyra's own computation | Measured above. Sub-millisecond. |
+| **Probe latency** | The seller's network and server | Measured by the live pass: **p50 257 ms, p95 1431 ms**. The fixture harness cannot produce this - it drives scripted sellers, so any timing there would describe the harness. |
+| **Decision latency** | Veyra's own computation | Measured above: **p50 0.017 ms** over six candidates. |
 | **Execution latency** | Arc block times and settlement | Measured onchain, not simulated. Job #186207 settled in **19 seconds** across five transactions for **0.0118 USDC**. See [docs/PROOF_OF_LIVE_ERC8183.md](../docs/PROOF_OF_LIVE_ERC8183.md). |
 
 ---
@@ -107,7 +154,7 @@ let a network-bound number be presented as an engine-bound one.
 Worth stating plainly, because these numbers are easy to over-read:
 
 - **The unsafe-condition counts are from controlled fixtures, not from the live Circle marketplace.** They demonstrate that Veyra classifies each condition correctly when it occurs. They are not a measurement of how often those conditions occur in the wild, and must not be quoted as "Veyra found 4 drifting endpoints in the catalog".
-- **Probe latency is unmeasured.** A live observational run against real endpoints is the missing piece, and its ground truth is unknowable in advance — it would be reported as observation, not correctness.
+- **The live pass is an observation, not a rate.** Twelve endpoints on one day is not a survey of the catalog, and the one drifting endpoint it found is not a measurement of how often drift occurs.
 - **Decision latency excludes discovery and probing**, which dominate wall-clock time in a real request. It is the cost of deciding once the evidence is in hand.
 - **The policy and budget cases drive the engine with fixture evidence**, not with evidence produced by a full discovery run.
 

@@ -69,6 +69,20 @@ export function RunClient() {
     return list;
   }, [candidates, priority]);
 
+  async function post(path: string, body: unknown, headers: Record<string, string> = {}) {
+    const response = await fetch(path, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...headers },
+      body: JSON.stringify(body),
+    });
+    const payload = await response.json().catch(() => null);
+    return { response, payload };
+  }
+
+  function failureText(payload: any, status: number) {
+    return payload?.error || payload?.code || payload?.message || `Request failed (${status})`;
+  }
+
   async function decide() {
     const budgetUsdc = Number(budget);
     if (!Number.isFinite(budgetUsdc) || budgetUsdc <= 0) {
@@ -86,113 +100,209 @@ export function RunClient() {
 
     try {
       setPhase("verifying");
-      const response = await fetch(
-        rail === "api"
-          ? "/api/trust/v1/marketplace/select"
-          : "/api/trust/v1/counterparties/discover",
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(
-            rail === "api"
-              ? {
-                  capability,
-                  query: intent.trim() || undefined,
-                  budgetUsdc,
-                  maxPriceUsdc: budgetUsdc,
-                  limit: 6,
-                }
-              : { capability, limit: 6 },
-          ),
-        },
-      );
-
-      const payload = await response.json().catch(() => null);
-      if (!response.ok) {
-        throw new Error(payload?.error || payload?.code || `Request failed (${response.status})`);
-      }
-
       if (rail === "job") {
-        // The agent-job rail discovers ERC-8004 counterparties; ranking them
-        // needs a second, idempotent call that this screen does not yet make.
-        const found = Array.isArray(payload?.candidates) ? payload.candidates.length : 0;
-        setStats({ catalogTotal: found, discovered: found, probed: 0 });
-        throw new Error(
-          found === 0
-            ? "No ERC-8004 counterparties are registered for this capability yet."
-            : `Discovered ${found} ERC-8004 counterparties. Ranking for the agent-job rail is not wired into this screen yet — use the API purchase rail for a full decision.`,
-        );
+        await decideAgentJob(budgetUsdc);
+      } else {
+        await decideMarketplace(budgetUsdc);
       }
-
-      const selection = payload.selection;
-      const mapped: RunCandidate[] = (selection.candidates ?? []).map((c: any) => ({
-        id: c.marketplace.candidateId,
-        title: c.marketplace.provider?.name || hostOf(c.marketplace.resource) || c.marketplace.candidateId,
-        subtitle: c.marketplace.resource,
-        priceUsdc: c.marketplace.priceUsdc,
-        trustScore: c.trustScore,
-        evidenceCoverage: c.evidenceCoverage,
-        decision: c.trustDecision,
-        maxExposureUsdc: c.recommendedMaxExposureUsdc,
-        rank: c.rank,
-        probe: c.probe
-          ? {
-              reachable: c.probe.reachable,
-              respondedWith402: c.probe.respondedWith402,
-              latencyMs: c.probe.latencyMs,
-              catalogDrift: c.probe.catalogDrift ?? [],
-              statisticalEvidenceAvailable: c.probe.statisticalEvidenceAvailable,
-              integrityScore: c.probe.integrityScore,
-            }
-          : null,
-        evidence: {
-          observed: c.evidenceLimits?.observedDimensions ?? [],
-          missing: c.evidenceLimits?.missingDimensions ?? [],
-          settledExecutions: c.evidenceLimits?.settledExecutions ?? 0,
-          arcProofBacked: Boolean(c.evidenceLimits?.arcProofBacked),
-        },
-        reasons: c.topReasons ?? [],
-        risks: c.riskSignals ?? [],
-      }));
-
-      const rec = selection.recommendation;
-      const winner = mapped.find((c) => c.id === rec.candidateId) ?? null;
-
-      setCandidates(mapped);
-      setSelectedId(rec.candidateId);
-      setStats({
-        catalogTotal: selection.catalogTotal ?? 0,
-        discovered: selection.discovered ?? mapped.length,
-        probed: selection.probed ?? 0,
-      });
-      setDecision({
-        granted: rec.granted,
-        decision: rec.decision,
-        reason: rec.reason,
-        explanation: rec.explanation,
-        resource: rec.resource,
-        payTo: rec.payTo,
-        priceUsdc: rec.priceUsdc,
-        maxExposureUsdc: rec.maxExposureUsdc,
-        postCallVerificationRequired: rec.postCallVerificationRequired,
-        winnerTitle: winner?.title ?? null,
-        reasons: winner?.reasons ?? [],
-        clearance: selection.clearance
-          ? {
-              digest: selection.clearance.clearanceDigest,
-              attester: selection.clearance.attester,
-              expiresAt: selection.clearance.expiresAt,
-              onchainVerified: selection.clearance.onchainVerified,
-              chainId: selection.clearance.chainId,
-            }
-          : null,
-        expiresAt: selection.expiresAt,
-      });
       setPhase("decided");
     } catch (err: any) {
       setError(err?.message || "Something went wrong.");
       setPhase("error");
     }
+  }
+
+  /* ---- ERC-8004 counterparties, settled as an ERC-8183 job ---- */
+
+  async function decideAgentJob(budgetUsdc: number) {
+    const found = await post("/api/trust/v1/counterparties/discover", {
+      capability,
+      maxPriceUsdc: budgetUsdc,
+      limit: 6,
+    });
+    if (!found.response.ok) throw new Error(failureText(found.payload, found.response.status));
+
+    const discovered: any[] = Array.isArray(found.payload?.candidates) ? found.payload.candidates : [];
+    setStats({ catalogTotal: discovered.length, discovered: discovered.length, probed: 0 });
+    if (discovered.length === 0) {
+      throw new Error("No ERC-8004 counterparty is registered for this capability yet.");
+    }
+
+    const chosen = await post(
+      "/api/trust/v1/counterparties/select",
+      {
+        capability,
+        task: intent.trim() || undefined,
+        budgetUsdc,
+        candidates: discovered.map((c) => ({
+          agentId: c.agentId,
+          serviceId: c.services?.[0]?.serviceId,
+        })),
+      },
+      { "Idempotency-Key": `run-${crypto.randomUUID()}` },
+    );
+
+    // A refusal arrives as 422, not as a payload with granted:false. It is a
+    // decision, so it is rendered as one rather than as a broken request.
+    if (chosen.response.status === 422 && chosen.payload?.error === "no_eligible_counterparty") {
+      setCandidates(mapRankedCandidates(chosen.payload?.details?.candidates ?? []));
+      setDecision({
+        granted: false,
+        decision: "DENY",
+        reason: "no_eligible_counterparty",
+        explanation:
+          "No discovered ERC-8004 counterparty cleared the policy for this capability and budget. "
+          + "Veyra will not authorise a job it cannot justify from evidence.",
+        resource: null, payTo: null, priceUsdc: null,
+        maxExposureUsdc: 0,
+        postCallVerificationRequired: false,
+        winnerTitle: null, reasons: [], clearance: null,
+      });
+      return;
+    }
+    if (!chosen.response.ok) throw new Error(failureText(chosen.payload, chosen.response.status));
+
+    const selection = chosen.payload.selection;
+    const mapped = mapRankedCandidates(selection.candidates ?? []);
+    const winner = mapped.find((c) => c.id === selection.recommendedAgentId) ?? null;
+
+    setCandidates(mapped);
+    setSelectedId(selection.recommendedAgentId);
+
+    // The clearance is issued separately for this rail, so the decision is
+    // shown first and the signature attached when it arrives.
+    let clearance: RunDecision["clearance"] = null;
+    const signed = await post(`/api/trust/v1/selections/${selection.selectionId}/clearance`, {});
+    if (signed.response.ok) {
+      const record = signed.payload?.clearance ?? {};
+      clearance = {
+        digest: record.clearanceDigest ?? record.digest ?? "—",
+        attester: record.attester ?? record.signer ?? "—",
+        expiresAt: record.expiresAt ?? selection.expiresAt,
+        onchainVerified: Boolean(signed.payload?.onchainVerified),
+        chainId: 5042002,
+      };
+    }
+
+    setDecision({
+      granted: true,
+      decision: selection.decision,
+      reason: "cleared",
+      explanation: selection.winnerExplanation,
+      resource: selection.recommendedServiceId ?? null,
+      payTo: selection.recommendedWallet,
+      priceUsdc: winner?.priceUsdc ?? null,
+      maxExposureUsdc: selection.recommendedMaxExposureUsdc,
+      postCallVerificationRequired: selection.decision !== "ALLOW",
+      winnerTitle: winner?.title ?? selection.recommendedAgentId,
+      reasons: winner?.reasons ?? [],
+      clearance,
+      expiresAt: selection.expiresAt,
+    });
+  }
+
+  /** ERC-8004 candidates carry settlement history instead of a live probe. */
+  function mapRankedCandidates(list: any[]): RunCandidate[] {
+    return list
+      .filter((c) => c?.identity?.agentId)
+      .map((c) => ({
+        id: c.identity.agentId,
+        title: c.identity.agentId,
+        subtitle: c.identity.ownerAddress,
+        priceUsdc: c.advertisedPriceUsdc ?? c.quotedPriceUsdc ?? null,
+        trustScore: c.trustScore ?? 0,
+        evidenceCoverage: c.evidenceCoverage ?? 0,
+        decision: c.trustDecision ?? null,
+        maxExposureUsdc: c.recommendedMaxExposureUsdc ?? 0,
+        rank: c.rank ?? 0,
+        probe: null,
+        evidence: {
+          observed: (c.evidenceSources ?? []).map((s: any) => s.source),
+          missing: [],
+          settledExecutions: c.evidenceCount ?? 0,
+          arcProofBacked: Boolean(c.identity.verifiedOnchain),
+        },
+        reasons: c.topReasons ?? [],
+        risks: c.riskSignals ?? [],
+      }));
+  }
+
+  /* ---- Circle x402 marketplace, settled over Gateway ---- */
+
+  async function decideMarketplace(budgetUsdc: number) {
+    const { response, payload } = await post("/api/trust/v1/marketplace/select", {
+      capability,
+      query: intent.trim() || undefined,
+      budgetUsdc,
+      maxPriceUsdc: budgetUsdc,
+      limit: 6,
+    });
+    if (!response.ok) throw new Error(failureText(payload, response.status));
+
+    const selection = payload.selection;
+    const mapped: RunCandidate[] = (selection.candidates ?? []).map((c: any) => ({
+      id: c.marketplace.candidateId,
+      title: c.marketplace.provider?.name || hostOf(c.marketplace.resource) || c.marketplace.candidateId,
+      subtitle: c.marketplace.resource,
+      priceUsdc: c.marketplace.priceUsdc,
+      trustScore: c.trustScore,
+      evidenceCoverage: c.evidenceCoverage,
+      decision: c.trustDecision,
+      maxExposureUsdc: c.recommendedMaxExposureUsdc,
+      rank: c.rank,
+      probe: c.probe
+        ? {
+            reachable: c.probe.reachable,
+            respondedWith402: c.probe.respondedWith402,
+            latencyMs: c.probe.latencyMs,
+            catalogDrift: c.probe.catalogDrift ?? [],
+            statisticalEvidenceAvailable: c.probe.statisticalEvidenceAvailable,
+            integrityScore: c.probe.integrityScore,
+          }
+        : null,
+      evidence: {
+        observed: c.evidenceLimits?.observedDimensions ?? [],
+        missing: c.evidenceLimits?.missingDimensions ?? [],
+        settledExecutions: c.evidenceLimits?.settledExecutions ?? 0,
+        arcProofBacked: Boolean(c.evidenceLimits?.arcProofBacked),
+      },
+      reasons: c.topReasons ?? [],
+      risks: c.riskSignals ?? [],
+    }));
+
+    const rec = selection.recommendation;
+    const winner = mapped.find((c) => c.id === rec.candidateId) ?? null;
+
+    setCandidates(mapped);
+    setSelectedId(rec.candidateId);
+    setStats({
+      catalogTotal: selection.catalogTotal ?? 0,
+      discovered: selection.discovered ?? mapped.length,
+      probed: selection.probed ?? 0,
+    });
+    setDecision({
+      granted: rec.granted,
+      decision: rec.decision,
+      reason: rec.reason,
+      explanation: rec.explanation,
+      resource: rec.resource,
+      payTo: rec.payTo,
+      priceUsdc: rec.priceUsdc,
+      maxExposureUsdc: rec.maxExposureUsdc,
+      postCallVerificationRequired: rec.postCallVerificationRequired,
+      winnerTitle: winner?.title ?? null,
+      reasons: winner?.reasons ?? [],
+      clearance: selection.clearance
+        ? {
+            digest: selection.clearance.clearanceDigest,
+            attester: selection.clearance.attester,
+            expiresAt: selection.clearance.expiresAt,
+            onchainVerified: selection.clearance.onchainVerified,
+            chainId: selection.clearance.chainId,
+          }
+        : null,
+      expiresAt: selection.expiresAt,
+    });
   }
 
   return (
@@ -408,11 +518,23 @@ export function RunClient() {
           <Panel className="p-6">
             <Eyebrow>What happens when you press it</Eyebrow>
             <ol className="mt-3 space-y-2 text-[13px] leading-relaxed text-[var(--run-text-muted)]">
-              <li>1. Veyra asks Circle&apos;s catalog which endpoints claim this capability.</li>
-              <li>2. Each one is probed live and for free, and its answer compared against what the catalog advertises.</li>
-              <li>3. Survivors are ranked on evidence — not on what they say about themselves.</li>
-              <li>4. Policy sets a ceiling. A first-contact endpoint never reaches Allow.</li>
-              <li>5. You get a signed authorization bound to one endpoint and one amount, or a refusal with its reason.</li>
+              {rail === "api" ? (
+                <>
+                  <li>1. Veyra asks Circle&apos;s catalog which endpoints claim this capability.</li>
+                  <li>2. Each one is probed live and for free, and its answer compared against what the catalog advertises.</li>
+                  <li>3. Survivors are ranked on evidence — not on what they say about themselves.</li>
+                  <li>4. Policy sets a ceiling. A first-contact endpoint never reaches Allow.</li>
+                  <li>5. You get a signed authorization bound to one endpoint and one amount, or a refusal with its reason.</li>
+                </>
+              ) : (
+                <>
+                  <li>1. Veyra asks the ERC-8004 registry on Arc which agents hold this capability.</li>
+                  <li>2. Each one is scored on settlement history, evaluator verdicts and economic reliability.</li>
+                  <li>3. Policy sets a ceiling from the evidence that actually exists, not from the agent&apos;s claims.</li>
+                  <li>4. You get a signed clearance for one counterparty and one amount — or a refusal naming what was missing.</li>
+                  <li>5. Settlement runs as an ERC-8183 job on Arc: USDC into escrow, deliverable, independent verdict, payout.</li>
+                </>
+              )}
             </ol>
           </Panel>
         ) : null}

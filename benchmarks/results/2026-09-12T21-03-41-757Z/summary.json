@@ -2,8 +2,8 @@
   "schemaVersion": "veyra.benchmark.summary.v1",
   "groundTruthVersion": "veyra.benchmark.ground-truth.v1",
   "groundTruthDefinedAt": "2026-09-12",
-  "startedAt": "2026-09-12T20:58:21.738Z",
-  "finishedAt": "2026-09-12T20:58:21.925Z",
+  "startedAt": "2026-09-12T21:03:41.757Z",
+  "finishedAt": "2026-09-12T21:03:47.439Z",
   "node": "v22.22.2",
   "totals": {
     "cases": 24,
@@ -69,34 +69,61 @@
         "candidateCount": 2,
         "iterations": 2000,
         "unit": "ms",
-        "p50": 0.009,
-        "p95": 0.021,
-        "p99": 0.054,
-        "min": 0.007,
-        "max": 5.477
+        "p50": 0.008,
+        "p95": 0.024,
+        "p99": 0.051,
+        "min": 0.006,
+        "max": 3.553
       },
       {
         "candidateCount": 6,
         "iterations": 2000,
         "unit": "ms",
         "p50": 0.017,
-        "p95": 0.048,
-        "p99": 0.093,
+        "p95": 0.046,
+        "p99": 0.077,
         "min": 0.015,
-        "max": 0.588
+        "max": 0.674
       },
       {
         "candidateCount": 25,
         "iterations": 2000,
         "unit": "ms",
-        "p50": 0.023,
-        "p95": 0.087,
-        "p99": 0.172,
-        "min": 0.02,
-        "max": 1.005
+        "p50": 0.025,
+        "p95": 0.077,
+        "p99": 0.147,
+        "min": 0.019,
+        "max": 0.651
       }
     ],
-    "probe": "Not measured here: the probe is driven by a scripted seller, so its latency describes the harness, not a network. Use --live for observed probe latency.",
+    "probe": {
+      "samples": 12,
+      "p50": 257,
+      "p95": 1431,
+      "min": 226,
+      "max": 1431
+    },
     "execution": "Measured onchain, not in this harness. See docs/PROOF_OF_LIVE_ERC8183.md - job #186207 settled in 19 s across five transactions."
+  },
+  "liveObservation": {
+    "capability": "web_search",
+    "catalogTotal": 132,
+    "discovered": 12,
+    "probed": 12,
+    "reachable": 12,
+    "respondedWith402": 12,
+    "withCatalogDrift": 1,
+    "driftCodes": [
+      "price_changed"
+    ],
+    "criticalFailures": 1,
+    "probeLatencyMs": {
+      "samples": 12,
+      "p50": 257,
+      "p95": 1431,
+      "min": 226,
+      "max": 1431
+    },
+    "note": "Observation, not correctness. Nobody controls these sellers, so no expectation was fixed in advance and nothing is asserted. Counts describe this catalog at this moment."
   }
 }

@@ -26,7 +26,8 @@ export type RunDecision = {
     onchainVerified: boolean;
     chainId: number;
   } | null;
-  expiresAt: string;
+  /** Absent on a refusal: nothing was authorised, so nothing expires. */
+  expiresAt?: string;
 };
 
 function short(hex: string, lead = 10, tail = 6) {
@@ -34,7 +35,8 @@ function short(hex: string, lead = 10, tail = 6) {
   return `${hex.slice(0, lead)}…${hex.slice(-tail)}`;
 }
 
-function secondsLeft(iso: string) {
+function secondsLeft(iso?: string) {
+  if (!iso) return 0;
   const ms = new Date(iso).getTime() - Date.now();
   return Math.max(0, Math.round(ms / 1000));
 }

@@ -350,8 +350,95 @@ function runDecisionLatency(candidateCount: number, iterations: number) {
 }
 
 /* -------------------------------------------------------------------------- */
+/* Part E - live observation (opt-in)                                          */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Probes the real Circle catalog. There is no ground truth here - nobody
+ * controls those sellers - so nothing is asserted. What it produces is the one
+ * number the fixture harness cannot: how long a real x402 challenge takes, and
+ * how often a live endpoint disagrees with the catalog that advertises it.
+ *
+ * Read-only and free: fetching a 402 challenge authorises nothing and settles
+ * nothing.
+ */
+async function runLiveObservation(capability: string, limit: number) {
+  const { discoverMarketplaceCandidates } = await import("../lib/counterparty-selection/marketplace-source.ts");
+  const { probeExpectationFor } = await import("../lib/counterparty-selection/marketplace.ts");
+
+  const discovery = await discoverMarketplaceCandidates({ capability, limit });
+  const rows: any[] = [];
+
+  for (const candidate of discovery.candidates) {
+    try {
+      const probe = await probeX402Resource(probeExpectationFor(candidate));
+      rows.push({
+        part: "live",
+        capability,
+        candidateId: candidate.candidateId,
+        resource: candidate.resource,
+        catalogPriceUsdc: candidate.priceUsdc,
+        observed: {
+          reachable: probe.reachable,
+          httpStatus: probe.httpStatus,
+          respondedWith402: probe.respondedWith402,
+          challengeParseable: probe.challengeParseable,
+          catalogDrift: probe.catalogDrift,
+          observedPriceUsdc: probe.observedPriceUsdc,
+          criticalFailure: probe.criticalFailure,
+          integrityScore: probe.integrityScore,
+          errorCategory: probe.errorCategory,
+          latencyMs: probe.latencyMs,
+        },
+      });
+    } catch (error) {
+      rows.push({
+        part: "live",
+        capability,
+        candidateId: candidate.candidateId,
+        resource: candidate.resource,
+        probeError: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  const latencies = rows
+    .map((r) => r.observed?.latencyMs)
+    .filter((n): n is number => typeof n === "number")
+    .sort((a, b) => a - b);
+
+  return {
+    rows,
+    summary: {
+      capability,
+      catalogTotal: discovery.catalogTotal,
+      discovered: discovery.candidates.length,
+      probed: rows.length,
+      reachable: rows.filter((r) => r.observed?.reachable).length,
+      respondedWith402: rows.filter((r) => r.observed?.respondedWith402).length,
+      withCatalogDrift: rows.filter((r) => (r.observed?.catalogDrift?.length ?? 0) > 0).length,
+      driftCodes: rows.flatMap((r) => r.observed?.catalogDrift ?? []),
+      criticalFailures: rows.filter((r) => r.observed?.criticalFailure).length,
+      probeLatencyMs: latencies.length
+        ? {
+            samples: latencies.length,
+            p50: percentile(latencies, 50),
+            p95: percentile(latencies, 95),
+            min: latencies[0],
+            max: latencies[latencies.length - 1],
+          }
+        : null,
+      note: "Observation, not correctness. Nobody controls these sellers, so no expectation was fixed in advance and nothing is asserted. Counts describe this catalog at this moment.",
+    },
+  };
+}
+
+/* -------------------------------------------------------------------------- */
 
 async function main() {
+  const live = process.argv.includes("--live");
+  const capabilityArg = process.argv.find((a) => a.startsWith("--capability="))?.split("=")[1];
+  const limitArg = Number(process.argv.find((a) => a.startsWith("--limit="))?.split("=")[1] ?? 10);
   const startedAt = new Date();
   const probe = await runProbeCases();
   const policy = runPolicyCases();
@@ -359,6 +446,10 @@ async function main() {
   const all = [...probe, ...policy, ...budget];
 
   const decisionLatency = [2, 6, 25].map((n) => runDecisionLatency(n, 2000));
+
+  const liveResult = live
+    ? await runLiveObservation(capabilityArg ?? "market_research", limitArg)
+    : null;
 
   const byCondition: Record<string, { total: number; passed: number }> = {};
   for (const row of probe) {
@@ -396,9 +487,11 @@ async function main() {
     },
     latency: {
       decision: decisionLatency,
-      probe: "Not measured here: the probe is driven by a scripted seller, so its latency describes the harness, not a network. Use --live for observed probe latency.",
+      probe: liveResult?.summary.probeLatencyMs
+        ?? "Not measured: the fixture harness drives scripted sellers, so its timings describe the harness. Pass --live to probe the real catalog.",
       execution: "Measured onchain, not in this harness. See docs/PROOF_OF_LIVE_ERC8183.md - job #186207 settled in 19 s across five transactions.",
     },
+    liveObservation: liveResult?.summary ?? null,
   };
 
   const stamp = startedAt.toISOString().replace(/[:.]/g, "-");
@@ -406,6 +499,9 @@ async function main() {
   mkdirSync(dir, { recursive: true });
   writeFileSync(resolve(dir, "raw.jsonl"), all.map((r) => JSON.stringify(r)).join("\n") + "\n");
   writeFileSync(resolve(dir, "summary.json"), JSON.stringify(summary, null, 2) + "\n");
+  if (liveResult) {
+    writeFileSync(resolve(dir, "live.jsonl"), liveResult.rows.map((r) => JSON.stringify(r)).join("\n") + "\n");
+  }
 
   for (const row of all) {
     const mark = row.pass ? "PASS" : "FAIL";
@@ -420,6 +516,15 @@ async function main() {
   console.log(`  cases      ${summary.totals.passed}/${summary.totals.cases} passed`);
   for (const row of decisionLatency) {
     console.log(`  decision   ${String(row.candidateCount).padStart(2)} candidates  p50 ${row.p50} ms  p95 ${row.p95} ms`);
+  }
+  if (liveResult) {
+    const s = liveResult.summary;
+    console.log();
+    console.log(`  live       ${s.probed} probed of ${s.discovered} discovered (catalog ${s.catalogTotal})`);
+    console.log(`             ${s.reachable} reachable, ${s.respondedWith402} answered 402, ${s.withCatalogDrift} drifted from catalog`);
+    if (s.probeLatencyMs) {
+      console.log(`  probe      p50 ${s.probeLatencyMs.p50} ms  p95 ${s.probeLatencyMs.p95} ms  (n=${s.probeLatencyMs.samples})`);
+    }
   }
   console.log(`  results    benchmarks/results/${stamp}/`);
 
