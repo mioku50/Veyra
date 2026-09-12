@@ -8,7 +8,17 @@ Third-Party Software and Copyright Notices
 ==============================================================================
 
 Portions of this software are derived from and/or incorporate open-source materials
-created by Circle Internet Group, Inc.:
+created by Circle Internet Group, Inc.
+
+Specifically, the following file is derived from Circle's open-source samples and
+retains Circle's copyright notice:
+
+    lib/x402.ts    Gateway Nanopayments batch facilitator integration,
+                   derived from Circle's arc-nanopayments sample
+                   (https://github.com/circlefin/arc-nanopayments).
+
+All other source files in this repository are original works of the Veyra
+Contributors and carry Veyra's copyright notice.
 
 Copyright 2026 Circle Internet Group, Inc.
 Licensed under the Apache License, Version 2.0 (the "License");

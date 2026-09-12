@@ -1,5 +1,5 @@
 /**
- * Copyright 2026 Circle Internet Group, Inc. All rights reserved.
+ * Copyright 2026 Veyra
  * SPDX-License-Identifier: Apache-2.0
  *
  * Veyra Agent API v1 TypeScript Client Example

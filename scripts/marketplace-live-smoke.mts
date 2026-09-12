@@ -1,5 +1,5 @@
 /**
- * Copyright 2026 Circle Internet Group, Inc.  All rights reserved.
+ * Copyright 2026 Veyra
  * SPDX-License-Identifier: Apache-2.0
  *
  * Live smoke against Circle's public x402 discovery API and real seller
