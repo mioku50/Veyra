@@ -3,12 +3,34 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { createWalletClient, getAddress, http, parseEventLogs, parseUnits } from "viem";
-import { privateKeyToAccount } from "viem/accounts";
+import { createWalletClient, http, parseEventLogs } from "viem";
 import { arcTestnet } from "viem/chains";
 import { getArcPublicClient } from "../../erc8183/client.ts";
+import { prepareDeliverableCommitment } from "../../erc8183/deliverable.ts";
 import { executeOffchainJobEvaluation } from "../../erc8183/evaluator.ts";
+import type { VeyraDeliverableV1 } from "../../erc8183/types.ts";
+import {
+  ARC_USDC_ADDRESS,
+  Erc8183JobLifecycle,
+  Erc8183LifecycleError,
+  PHASE_EXECUTION_STATE,
+  PHASE_NEXT_ACTOR,
+  resolveRoleSigners,
+  type Erc8183PendingAction,
+  type Erc8183Phase,
+  type Erc8183StepResult,
+} from "./erc8183-lifecycle.ts";
 import type { ExecutionRailAdapter, NormalizedRailResult, RailExecutionParams } from "./types.ts";
+
+/**
+ * ERC-8183 rail.
+ *
+ * The adapter authorizes (Trust Gate clearance), opens the job as the client,
+ * and then drives the lifecycle only as far as the roles Veyra legitimately
+ * holds allow. Phases belonging to the counterparty park the execution and
+ * report the exact call the counterparty still owes, rather than Veyra signing
+ * both sides of its own trade.
+ */
 
 const VEYRA_TRUST_GATE_ABI = [
   {
@@ -77,444 +99,391 @@ const VEYRA_TRUST_GATE_ABI = [
   },
 ] as const;
 
-const ERC8183_COMMERCE_ABI = [
-  {
-    name: "createJob",
-    type: "function",
-    stateMutability: "nonpayable",
-    inputs: [
-      { name: "provider", type: "address" },
-      { name: "evaluator", type: "address" },
-      { name: "budget", type: "uint256" },
-      { name: "expiredAt", type: "uint64" },
-      { name: "description", type: "string" },
-    ],
-    outputs: [{ name: "jobId", type: "uint256" }],
-  },
-  {
-    name: "submitJob",
-    type: "function",
-    stateMutability: "nonpayable",
-    inputs: [
-      { name: "jobId", type: "uint256" },
-      { name: "deliverableHash", type: "bytes32" },
-    ],
-    outputs: [],
-  },
+const USDC_TRANSFER_ABI = [
   {
     type: "event",
-    name: "JobCreated",
+    name: "Transfer",
     inputs: [
-      { indexed: true, name: "jobId", type: "uint256" },
-      { indexed: true, name: "client", type: "address" },
-      { indexed: true, name: "provider", type: "address" },
-      { indexed: false, name: "evaluator", type: "address" },
-      { indexed: false, name: "budget", type: "uint256" },
-      { indexed: false, name: "expiredAt", type: "uint64" },
-      { indexed: false, name: "description", type: "string" },
+      { indexed: true, name: "from", type: "address" },
+      { indexed: true, name: "to", type: "address" },
+      { indexed: false, name: "value", type: "uint256" },
     ],
   },
 ] as const;
+
+/** Raw deliverable content, before it is wrapped in a commitment envelope. */
+export interface Erc8183Deliverable {
+  contentUri: string;
+  contentHash: `0x${string}`;
+  contentType?: "application/json";
+}
+
+/** Everything the rail observed, carried back to the executor unchanged. */
+export interface Erc8183RailTrace {
+  jobId: string | null;
+  phase: Erc8183Phase | null;
+  executionState: string | null;
+  steps: Erc8183StepResult[];
+  pendingAction: Erc8183PendingAction | null;
+  providerSimulated: boolean;
+}
+
+function fail(
+  params: RailExecutionParams,
+  failureCode: string,
+  extra: Partial<NormalizedRailResult> = {},
+): NormalizedRailResult {
+  return {
+    executionId: params.executionId,
+    rail: "erc8183",
+    success: false,
+    failureCode,
+    economicCommitted: false,
+    economicSettled: false,
+    actualSettledAmountUsdc: 0,
+    serviceSucceeded: false,
+    evidenceType: "erc8183_job_rejected",
+    ...extra,
+  };
+}
 
 export class Erc8183ExecutionAdapter implements ExecutionRailAdapter {
   readonly rail = "erc8183" as const;
 
   async prepare(params: RailExecutionParams): Promise<any> {
+    const lifecycle = this.tryLifecycle(params);
     return {
       rail: "erc8183",
-      jobContract: process.env.NEXT_PUBLIC_ERC8183_CONTRACT_ADDRESS || "0x0747EEf0706327138c69792bF28Cd525089e4583",
+      jobContract: lifecycle?.commerce ?? process.env.NEXT_PUBLIC_ERC8183_CONTRACT_ADDRESS ?? null,
       providerWallet: params.counterpartyWallet,
-      evaluatorAddress: params.evaluatorAddress || process.env.NEXT_PUBLIC_VEYRA_ERC8183_EVALUATOR_ADDRESS || "0x0d2c04580e081e222bbe5bf9818af337e2633eb7",
+      evaluatorAddress: lifecycle?.evaluatorContract
+        ?? params.evaluatorAddress
+        ?? process.env.NEXT_PUBLIC_VEYRA_ERC8183_EVALUATOR_ADDRESS
+        ?? null,
+      clientWallet: lifecycle?.signers.client.address ?? null,
       maxAmountUsdc: params.amountUsdc,
       selectionHash: params.selectionHash,
       clearanceDigest: params.clearanceDigest,
+      lifecycle: [
+        "client:createJob",
+        "provider:setBudget",
+        "client:approve+fund",
+        "provider:submit",
+        "evaluator:executeVerdict",
+      ],
     };
   }
 
   async execute(params: RailExecutionParams): Promise<NormalizedRailResult> {
-    const isTestMode = process.env.NODE_ENV === "test" && process.env.EXECUTION_ALLOW_TEST_FALLBACK === "true";
-
-    // 1. Mandatory Clearance Enforcement
     if (!params.clearancePayload?.message || !params.clearancePayload?.signature) {
-      return {
-        executionId: params.executionId,
-        rail: "erc8183",
-        success: false,
-        failureCode: "CLEARANCE_REQUIRED",
-        economicCommitted: false,
-        economicSettled: false,
-        actualSettledAmountUsdc: 0,
-        serviceSucceeded: false,
-        evidenceType: "erc8183_job_rejected",
-      };
+      return fail(params, "CLEARANCE_REQUIRED");
+    }
+    if (!params.counterpartyWallet || /^0x0{40}$/i.test(params.counterpartyWallet)) {
+      return fail(params, "INVALID_COUNTERPARTY_WALLET");
     }
 
-    // 2. Validate counterparty wallet
-    if (!params.counterpartyWallet || params.counterpartyWallet === "0x0000000000000000000000000000000000000000") {
-      return {
-        executionId: params.executionId,
-        rail: "erc8183",
-        success: false,
-        failureCode: "INVALID_COUNTERPARTY_WALLET",
-        economicCommitted: false,
-        economicSettled: false,
-        actualSettledAmountUsdc: 0,
-        serviceSucceeded: false,
-        evidenceType: "erc8183_job_rejected",
-      };
+    if (process.env.NODE_ENV === "test" && process.env.EXECUTION_ALLOW_TEST_FALLBACK === "true") {
+      return this.testHarnessResult(params);
     }
 
-    const evaluatorContract = (params.evaluatorAddress ||
-      process.env.NEXT_PUBLIC_VEYRA_ERC8183_EVALUATOR_ADDRESS ||
-      "0x0d2c04580e081e222bbe5bf9818af337e2633eb7") as `0x${string}`;
-    const agenticCommerce = (process.env.NEXT_PUBLIC_ERC8183_CONTRACT_ADDRESS ||
-      "0x0747EEf0706327138c69792bF28Cd525089e4583") as `0x${string}`;
-    const trustGateAddress = (process.env.NEXT_PUBLIC_VEYRA_TRUST_GATE_ADDRESS ||
-      "0x1cD66BCd4FCB73a079c05635840Fde029Ce6BEbB") as `0x${string}`;
-
-    const attesterPk = (process.env.ERC8183_EVALUATOR_ATTESTER_PRIVATE_KEY ||
-      process.env.VEYRA_TRUST_ATTESTER_PRIVATE_KEY) as `0x${string}` | undefined;
-    const relayerPk = (process.env.ERC8183_EVALUATOR_RELAYER_PRIVATE_KEY ||
-      process.env.CANARY_DEPLOYER_PRIVATE_KEY) as `0x${string}` | undefined;
-    const rpcUrl = process.env.ARC_TESTNET_RPC_URL;
-
-    // Controlled deterministic harness for explicit unit/negative test mode only
-    if (isTestMode) {
-      const mockTx = `0x${Buffer.from(`tx_erc8183_${params.executionId}`).toString("hex").padEnd(64, "0")}` as `0x${string}`;
-      const mockJobId = `job_test_${params.executionId.slice(0, 8)}`;
-      return {
-        executionId: params.executionId,
-        rail: "erc8183",
-        success: true,
-        economicCommitted: true,
-        economicSettled: true,
-        actualSettledAmountUsdc: params.amountUsdc,
-        serviceSucceeded: true,
-        externalReference: mockJobId,
-        createTx: mockTx,
-        completeTx: mockTx,
-        evaluationId: `eval_${params.executionId}`,
-        evaluationVerdict: "Complete",
-        evidenceType: "erc8183_job_completed",
-        rawResult: {
-          status: "completed",
-          decision: "complete",
-          jobId: mockJobId,
-          amountUsdc: params.amountUsdc,
-        },
-      };
-    }
-
-    // Real Execution Path
-    if (attesterPk && relayerPk && rpcUrl) {
-      const publicClient = getArcPublicClient(rpcUrl);
-      const relayerAccount = privateKeyToAccount(relayerPk);
-      const walletClient = createWalletClient({
-        account: relayerAccount,
-        chain: arcTestnet,
-        transport: http(rpcUrl),
+    let lifecycle: Erc8183JobLifecycle;
+    try {
+      lifecycle = new Erc8183JobLifecycle({
+        evaluatorContract: (params.evaluatorAddress as `0x${string}`) || undefined,
+        signers: resolveRoleSigners(),
       });
+    } catch (err: any) {
+      return fail(params, err instanceof Erc8183LifecycleError ? err.code : "ERC8183_KEYS_OR_RPC_UNAVAILABLE");
+    }
 
-      try {
-        const clearanceMsg = params.clearancePayload.message;
-        const clearanceSig = params.clearancePayload.signature;
+    const trace: Erc8183RailTrace = {
+      jobId: null,
+      phase: null,
+      executionState: null,
+      steps: [],
+      pendingAction: null,
+      providerSimulated: lifecycle.signers.providerSimulated,
+    };
 
-        // Step 1: Pre-verify clearance onchain before consumption
-        const [isClearanceValidOnchain] = await publicClient.readContract({
-          address: trustGateAddress,
-          abi: VEYRA_TRUST_GATE_ABI,
-          functionName: "verifyClearance",
-          args: [clearanceMsg, clearanceSig],
-        });
+    try {
+      const clearanceFailure = await this.consumeClearance(params, lifecycle);
+      if (clearanceFailure) return fail(params, clearanceFailure, { rawResult: trace });
 
-        if (!isClearanceValidOnchain) {
-          return {
-            executionId: params.executionId,
-            rail: "erc8183",
-            success: false,
-            failureCode: "INVALID_CLEARANCE_ONCHAIN",
-            economicCommitted: false,
-            economicSettled: false,
-            actualSettledAmountUsdc: 0,
-            serviceSucceeded: false,
-            evidenceType: "erc8183_job_rejected",
-          };
+      const created = await lifecycle.createJob({
+        provider: params.counterpartyWallet,
+        description: `Veyra Job ${params.executionId} (${params.capability})`,
+      });
+      trace.jobId = created.jobId;
+      trace.steps.push(created);
+
+      return await this.advance(params, lifecycle, created.jobId, trace);
+    } catch (err: any) {
+      const code = err instanceof Erc8183LifecycleError ? err.code : "ERC8183_LIVE_EXECUTION_ERROR";
+      return fail(params, `${code}${err?.message && code === "ERC8183_LIVE_EXECUTION_ERROR" ? `: ${err.message}` : ""}`, {
+        economicCommitted: trace.steps.some((s) => s.action === "fund"),
+        externalReference: trace.jobId,
+        rawResult: trace,
+      });
+    }
+  }
+
+  /**
+   * Advances the job through every phase Veyra is entitled to act in, stopping
+   * at the first phase that belongs to someone else. Re-entrant: call it again
+   * once the counterparty has acted.
+   */
+  async advance(
+    params: RailExecutionParams,
+    lifecycle: Erc8183JobLifecycle,
+    jobId: string,
+    trace: Erc8183RailTrace = {
+      jobId, phase: null, executionState: null, steps: [],
+      pendingAction: null, providerSimulated: lifecycle.signers.providerSimulated,
+    },
+    deliverable?: Erc8183Deliverable,
+  ): Promise<NormalizedRailResult> {
+    // Bounded: five phases, and every iteration either advances the phase or stops.
+    for (let guard = 0; guard < 6; guard += 1) {
+      const { phase, job } = await lifecycle.readPhase(jobId);
+      trace.phase = phase;
+      trace.executionState = PHASE_EXECUTION_STATE[phase];
+
+      const actor = PHASE_NEXT_ACTOR[phase];
+      if (!actor) break;
+
+      if (actor === "provider" && !lifecycle.signers.provider) {
+        trace.pendingAction = lifecycle.describePendingAction(
+          phase, job,
+          "Veyra holds no key for the provider; the counterparty must sign this step.",
+        );
+        break;
+      }
+
+      if (phase === "CREATED_AWAITING_BUDGET") {
+        trace.steps.push(await lifecycle.setBudget({ jobId, amountUsdc: params.amountUsdc }));
+        continue;
+      }
+
+      if (phase === "BUDGETED_AWAITING_FUNDING") {
+        trace.steps.push(await lifecycle.fundEscrow({ jobId }));
+        continue;
+      }
+
+      if (phase === "FUNDED_AWAITING_SUBMISSION") {
+        if (!deliverable) {
+          trace.pendingAction = lifecycle.describePendingAction(
+            phase, job, "No deliverable has been produced for this job yet.",
+          );
+          break;
         }
+        trace.steps.push(await lifecycle.submitDeliverable({
+          jobId, deliverable: this.envelope(deliverable),
+        }));
+        continue;
+      }
 
-        // Step 2: Real Clearance Consumption on VeyraTrustGate
-        const consumeTxHash = await walletClient.writeContract({
-          address: trustGateAddress,
-          abi: VEYRA_TRUST_GATE_ABI,
-          functionName: "consumeClearance",
-          args: [clearanceMsg, clearanceSig],
-        });
-
-        const consumeReceipt = await publicClient.waitForTransactionReceipt({ hash: consumeTxHash });
-        if (consumeReceipt.status !== "success") {
-          return {
-            executionId: params.executionId,
-            rail: "erc8183",
-            success: false,
-            failureCode: "CLEARANCE_CONSUMPTION_REVERTED",
-            economicCommitted: false,
-            economicSettled: false,
-            actualSettledAmountUsdc: 0,
-            serviceSucceeded: false,
-            evidenceType: "erc8183_job_rejected",
-          };
+      if (phase === "SUBMITTED_AWAITING_EVALUATION") {
+        if (!deliverable) {
+          trace.pendingAction = lifecycle.describePendingAction(
+            phase, job, "The deliverable content is required to evaluate the submission.",
+          );
+          break;
         }
-
-        // Step 3: Create Real Onchain Job
-        const budgetAtomic = parseUnits(params.amountUsdc.toFixed(6), 6);
-        const expiredAt = BigInt(Math.floor(Date.now() / 1000) + 3600); // 1 hour
-
-        const createTxHash = await walletClient.writeContract({
-          address: agenticCommerce,
-          abi: ERC8183_COMMERCE_ABI,
-          functionName: "createJob",
-          args: [
-            params.counterpartyWallet,
-            evaluatorContract,
-            budgetAtomic,
-            expiredAt,
-            `Veyra Job ${params.executionId} (${params.capability})`,
-          ],
-        });
-
-        const createReceipt = await publicClient.waitForTransactionReceipt({ hash: createTxHash });
-        if (createReceipt.status !== "success") {
-          return {
-            executionId: params.executionId,
-            rail: "erc8183",
-            success: false,
-            failureCode: "ERC8183_CREATE_JOB_REVERTED",
-            economicCommitted: false,
-            economicSettled: false,
-            actualSettledAmountUsdc: 0,
-            serviceSucceeded: false,
-            evidenceType: "erc8183_job_rejected",
-          };
-        }
-
-        // Extract and verify real numeric jobId from JobCreated event log
-        const logs = parseEventLogs({
-          abi: ERC8183_COMMERCE_ABI,
-          eventName: "JobCreated",
-          logs: createReceipt.logs,
-        });
-
-        const realJobId = logs.length > 0 ? logs[0].args.jobId.toString() : "";
-        if (!realJobId) {
-          return {
-            executionId: params.executionId,
-            rail: "erc8183",
-            success: false,
-            failureCode: "ERC8183_JOB_ID_NOT_FOUND",
-            economicCommitted: true,
-            economicSettled: false,
-            actualSettledAmountUsdc: 0,
-            serviceSucceeded: false,
-            evidenceType: "erc8183_job_rejected",
-          };
-        }
-
-        // Verify event parameters match immutable execution intent
-        const jobEvent = logs[0].args;
-        if (jobEvent.client?.toLowerCase() !== relayerAccount.address.toLowerCase()) {
-          return {
-            executionId: params.executionId,
-            rail: "erc8183",
-            success: false,
-            failureCode: "ERC8183_CLIENT_MISMATCH",
-            economicCommitted: true,
-            economicSettled: false,
-            actualSettledAmountUsdc: 0,
-            serviceSucceeded: false,
-            evidenceType: "erc8183_job_rejected",
-          };
-        }
-        if (jobEvent.provider?.toLowerCase() !== params.counterpartyWallet.toLowerCase()) {
-          return {
-            executionId: params.executionId,
-            rail: "erc8183",
-            success: false,
-            failureCode: "ERC8183_PROVIDER_MISMATCH",
-            economicCommitted: true,
-            economicSettled: false,
-            actualSettledAmountUsdc: 0,
-            serviceSucceeded: false,
-            evidenceType: "erc8183_job_rejected",
-          };
-        }
-        if (jobEvent.evaluator?.toLowerCase() !== evaluatorContract.toLowerCase()) {
-          return {
-            executionId: params.executionId,
-            rail: "erc8183",
-            success: false,
-            failureCode: "ERC8183_EVALUATOR_MISMATCH",
-            economicCommitted: true,
-            economicSettled: false,
-            actualSettledAmountUsdc: 0,
-            serviceSucceeded: false,
-            evidenceType: "erc8183_job_rejected",
-          };
-        }
-        if (jobEvent.budget == null || jobEvent.budget < parseUnits(params.amountUsdc.toFixed(6), 6)) {
-          return {
-            executionId: params.executionId,
-            rail: "erc8183",
-            success: false,
-            failureCode: "ERC8183_BUDGET_MISMATCH",
-            economicCommitted: true,
-            economicSettled: false,
-            actualSettledAmountUsdc: 0,
-            serviceSucceeded: false,
-            evidenceType: "erc8183_job_rejected",
-          };
-        }
-
-        // Return WAITING_FOR_PROVIDER after successful job creation
-        return {
-          executionId: params.executionId,
-          rail: "erc8183",
-          success: false,  // Not yet complete — waiting for provider
-          economicCommitted: true,  // Budget reserved on-chain
-          economicSettled: false,
-          actualSettledAmountUsdc: 0,
-          serviceSucceeded: false,
-          failureCode: null,
-          externalReference: realJobId,
-          createTx: createTxHash,
-          evidenceType: "erc8183_job_created",
-          rawResult: { jobId: realJobId, provider: params.counterpartyWallet, evaluator: evaluatorContract },
-        } as unknown as NormalizedRailResult & { state: string };
-      } catch (err: any) {
-        return {
-          executionId: params.executionId,
-          rail: "erc8183",
-          success: false,
-          failureCode: `ERC8183_LIVE_EXECUTION_ERROR: ${err.message}`,
-          economicCommitted: false,
-          economicSettled: false,
-          actualSettledAmountUsdc: 0,
-          serviceSucceeded: false,
-          evidenceType: "erc8183_job_rejected",
-        };
+        return await this.evaluate(params, lifecycle, jobId, deliverable, trace);
       }
     }
 
-    // Production fail-closed when live execution cannot proceed
+    return this.resultForPhase(params, lifecycle, jobId, trace);
+  }
+
+  /* ---- evaluator role ---- */
+
+  private async evaluate(
+    params: RailExecutionParams,
+    lifecycle: Erc8183JobLifecycle,
+    jobId: string,
+    deliverable: Erc8183Deliverable,
+    trace: Erc8183RailTrace,
+  ): Promise<NormalizedRailResult> {
+    const evalResult = await executeOffchainJobEvaluation({
+      chainId: 5042002,
+      agenticCommerce: lifecycle.commerce,
+      jobId,
+      deliverable: this.envelope(deliverable),
+      evaluatorContract: lifecycle.evaluatorContract,
+      attesterPrivateKey: lifecycle.signers.evaluatorAttesterKey,
+      relayerPrivateKey: lifecycle.signers.evaluatorRelayerKey,
+      rpcUrl: lifecycle.rpcUrl,
+    });
+
+    const settled = evalResult.status === "completed" && evalResult.decision === "complete";
+    const { phase } = await lifecycle.readPhase(jobId);
+    trace.phase = phase;
+    trace.executionState = PHASE_EXECUTION_STATE[phase];
+
     return {
       executionId: params.executionId,
       rail: "erc8183",
-      success: false,
-      failureCode: "ERC8183_KEYS_OR_RPC_UNAVAILABLE",
-      economicCommitted: false,
-      economicSettled: false,
-      actualSettledAmountUsdc: 0,
-      serviceSucceeded: false,
-      evidenceType: "erc8183_job_rejected",
+      success: settled,
+      failureCode: settled ? null : evalResult.failureCategory || "EVALUATION_REJECTED",
+      economicCommitted: true,
+      economicSettled: settled,
+      actualSettledAmountUsdc: await this.settledAmount(
+        lifecycle, evalResult.settlementTxHash, params.counterpartyWallet,
+      ),
+      serviceSucceeded: settled,
+      externalReference: jobId,
+      createTx: trace.steps.find((s) => s.action === "createJob")?.txHash ?? null,
+      completeTx: evalResult.settlementTxHash || null,
+      evaluationId: evalResult.reportHash || null,
+      evaluationVerdict: settled ? "Complete" : "Reject",
+      evidenceType: settled ? "erc8183_job_completed" : "erc8183_job_rejected",
+      rawResult: { ...trace, evaluation: evalResult },
     };
   }
 
-  async continueAfterProviderSubmission(
-    params: RailExecutionParams,
-    realJobId: string,
-    contentHash: `0x${string}`,
-    contentUri: string,
-    contentType: string = "application/json"
-  ): Promise<NormalizedRailResult> {
-    const evaluatorContract = (params.evaluatorAddress ||
-      process.env.NEXT_PUBLIC_VEYRA_ERC8183_EVALUATOR_ADDRESS ||
-      "0x0d2c04580e081e222bbe5bf9818af337e2633eb7") as `0x${string}`;
-    const agenticCommerce = (process.env.NEXT_PUBLIC_ERC8183_CONTRACT_ADDRESS ||
-      "0x0747EEf0706327138c69792bF28Cd525089e4583") as `0x${string}`;
+  /* ---- helpers ---- */
 
-    const attesterPk = (process.env.ERC8183_EVALUATOR_ATTESTER_PRIVATE_KEY ||
-      process.env.VEYRA_TRUST_ATTESTER_PRIVATE_KEY) as `0x${string}` | undefined;
-    const relayerPk = (process.env.ERC8183_EVALUATOR_RELAYER_PRIVATE_KEY ||
-      process.env.CANARY_DEPLOYER_PRIVATE_KEY) as `0x${string}` | undefined;
-    const rpcUrl = process.env.ARC_TESTNET_RPC_URL;
+  /** One envelope for both the onchain commitment and the evaluation. */
+  private envelope(deliverable: Erc8183Deliverable): VeyraDeliverableV1 {
+    return prepareDeliverableCommitment({
+      contentUri: deliverable.contentUri,
+      contentHash: deliverable.contentHash,
+      contentType: deliverable.contentType,
+    }).deliverable;
+  }
 
-    if (!attesterPk || !relayerPk || !rpcUrl) {
-      throw new Error("ERC8183_KEYS_OR_RPC_UNAVAILABLE");
-    }
-
-    const publicClient = getArcPublicClient(rpcUrl);
-    const relayerAccount = privateKeyToAccount(relayerPk);
-    const walletClient = createWalletClient({
-      account: relayerAccount,
-      chain: arcTestnet,
-      transport: http(rpcUrl),
-    });
-
-    const deliverable = {
-      version: 1 as const,
-      contentUri,
-      contentHash,
-      contentType: contentType as any,
-      schemaId: "veyra://schemas/structured-deliverable-v1" as const,
-      policyId: "structured-deliverable-v1" as const,
-    };
-
-    const submitTxHash = await walletClient.writeContract({
-      address: agenticCommerce,
-      abi: ERC8183_COMMERCE_ABI,
-      functionName: "submitJob",
-      args: [BigInt(realJobId), deliverable.contentHash],
-    });
-    await publicClient.waitForTransactionReceipt({ hash: submitTxHash });
-
-    const evalResult = await executeOffchainJobEvaluation({
-      chainId: 5042002,
-      agenticCommerce,
-      jobId: realJobId,
-      deliverable,
-      evaluatorContract,
-      attesterPrivateKey: attesterPk,
-      relayerPrivateKey: relayerPk,
-      rpcUrl,
-    });
-
-    const success = evalResult.status === "completed" && evalResult.decision === "complete";
-    let actualSettledAmountUsdc = 0;
-
-    if (evalResult.settlementTxHash) {
-      const settlementReceipt = await publicClient.getTransactionReceipt({ hash: evalResult.settlementTxHash as `0x${string}` });
-      const erc20Abi = [{
-        type: "event", name: "Transfer", inputs: [
-          { indexed: true, name: "from", type: "address" },
-          { indexed: true, name: "to", type: "address" },
-          { indexed: false, name: "value", type: "uint256" }
-        ]
-      }] as const;
-      
-      const settlementLogs = parseEventLogs({
-        abi: erc20Abi,
-        logs: settlementReceipt.logs,
-        eventName: "Transfer",
+  private tryLifecycle(params: RailExecutionParams): Erc8183JobLifecycle | null {
+    try {
+      return new Erc8183JobLifecycle({
+        evaluatorContract: (params.evaluatorAddress as `0x${string}`) || undefined,
       });
-      const settlementTransfer = settlementLogs.find(
-        (log) => log.args.to?.toLowerCase() === params.counterpartyWallet.toLowerCase()
-      );
-      actualSettledAmountUsdc = settlementTransfer ? Number(settlementTransfer.args.value) / 1e6 : 0;
+    } catch {
+      return null;
     }
+  }
+
+  /**
+   * The Trust Gate binds a clearance to one executor address and rejects anyone
+   * else, so the signer is chosen by the clearance rather than by convention.
+   */
+  private async consumeClearance(
+    params: RailExecutionParams,
+    lifecycle: Erc8183JobLifecycle,
+  ): Promise<string | null> {
+    const trustGate = (process.env.NEXT_PUBLIC_VEYRA_TRUST_GATE_ADDRESS
+      || process.env.VEYRA_TRUST_GATE_ADDRESS
+      || "0x1cD66BCd4FCB73a079c05635840Fde029Ce6BEbB") as `0x${string}`;
+
+    const message = params.clearancePayload!.message;
+    const signature = params.clearancePayload!.signature;
+    const publicClient = getArcPublicClient(lifecycle.rpcUrl);
+
+    const [valid] = await publicClient.readContract({
+      address: trustGate,
+      abi: VEYRA_TRUST_GATE_ABI,
+      functionName: "verifyClearance",
+      args: [message, signature],
+    });
+    if (!valid) return "INVALID_CLEARANCE_ONCHAIN";
+
+    const executor = String(message.executor || "").toLowerCase();
+    const candidates = [
+      lifecycle.signers.client,
+      lifecycle.signers.evaluatorRelayer,
+      ...(lifecycle.signers.provider ? [lifecycle.signers.provider] : []),
+    ];
+    const account = candidates.find((a) => a.address.toLowerCase() === executor);
+    if (!account) return "CLEARANCE_EXECUTOR_UNAVAILABLE";
+
+    const wallet = createWalletClient({ account, chain: arcTestnet, transport: http(lifecycle.rpcUrl) });
+    const txHash = await wallet.writeContract({
+      address: trustGate,
+      abi: VEYRA_TRUST_GATE_ABI,
+      functionName: "consumeClearance",
+      args: [message, signature],
+      account,
+      chain: arcTestnet,
+    });
+    const receipt = await publicClient.waitForTransactionReceipt({ hash: txHash });
+    return receipt.status === "success" ? null : "CLEARANCE_CONSUMPTION_REVERTED";
+  }
+
+  private async settledAmount(
+    lifecycle: Erc8183JobLifecycle,
+    settlementTxHash: string | null | undefined,
+    provider: `0x${string}`,
+  ): Promise<number> {
+    if (!settlementTxHash) return 0;
+    const publicClient = getArcPublicClient(lifecycle.rpcUrl);
+    const receipt = await publicClient.getTransactionReceipt({
+      hash: settlementTxHash as `0x${string}`,
+    });
+    // Arc mirrors every USDC movement twice: once on the 18-decimal native
+    // pseudo-token and once on the 6-decimal ERC-20 interface. They are the same
+    // balance, so only the ERC-20 view may be read as an amount - matching the
+    // native log and dividing by 1e6 overstates settlement by a factor of 1e12.
+    const transfers = parseEventLogs({
+      abi: USDC_TRANSFER_ABI,
+      eventName: "Transfer",
+      logs: receipt.logs,
+    });
+    const paid = transfers.find(
+      (log) =>
+        log.address.toLowerCase() === ARC_USDC_ADDRESS.toLowerCase()
+        && log.args.to?.toLowerCase() === provider.toLowerCase(),
+    );
+    return paid ? Number(paid.args.value) / 1e6 : 0;
+  }
+
+  /** Non-terminal phases are not failures: the job is open and owed an action. */
+  private async resultForPhase(
+    params: RailExecutionParams,
+    lifecycle: Erc8183JobLifecycle,
+    jobId: string,
+    trace: Erc8183RailTrace,
+  ): Promise<NormalizedRailResult> {
+    const { phase } = await lifecycle.readPhase(jobId);
+    const escrowed = trace.steps.some((s) => s.action === "fund")
+      || ["FUNDED_AWAITING_SUBMISSION", "SUBMITTED_AWAITING_EVALUATION", "COMPLETED", "REJECTED"].includes(phase);
 
     return {
       executionId: params.executionId,
       rail: "erc8183",
-      success,
-      failureCode: success ? null : evalResult.failureCategory || "EVALUATION_REJECTED",
+      success: phase === "COMPLETED",
+      failureCode: phase === "REJECTED" ? "EVALUATION_REJECTED" : phase === "EXPIRED" ? "ERC8183_JOB_EXPIRED" : null,
+      economicCommitted: escrowed,
+      economicSettled: phase === "COMPLETED",
+      actualSettledAmountUsdc: 0,
+      serviceSucceeded: phase === "COMPLETED",
+      externalReference: jobId,
+      createTx: trace.steps.find((s) => s.action === "createJob")?.txHash ?? null,
+      evidenceType:
+        phase === "COMPLETED" ? "erc8183_job_completed"
+          : phase === "REJECTED" ? "erc8183_job_rejected"
+            : "erc8183_job_created",
+      rawResult: trace,
+    };
+  }
+
+  private testHarnessResult(params: RailExecutionParams): NormalizedRailResult {
+    const mockTx = `0x${Buffer.from(`tx_erc8183_${params.executionId}`).toString("hex").padEnd(64, "0")}` as `0x${string}`;
+    const mockJobId = `job_test_${params.executionId.slice(0, 8)}`;
+    return {
+      executionId: params.executionId,
+      rail: "erc8183",
+      success: true,
       economicCommitted: true,
-      economicSettled: success,
-      actualSettledAmountUsdc,
-      serviceSucceeded: success,
-      externalReference: realJobId,
-      completeTx: evalResult.settlementTxHash || null,
-      evaluationId: evalResult.reportHash || null,
-      evaluationVerdict: success ? "Complete" : "Reject",
-      evidenceType: success ? "erc8183_job_completed" : "erc8183_job_rejected",
-      rawResult: evalResult,
+      economicSettled: true,
+      actualSettledAmountUsdc: params.amountUsdc,
+      serviceSucceeded: true,
+      externalReference: mockJobId,
+      createTx: mockTx,
+      completeTx: mockTx,
+      evaluationId: `eval_${params.executionId}`,
+      evaluationVerdict: "Complete",
+      evidenceType: "erc8183_job_completed",
+      rawResult: { status: "completed", decision: "complete", jobId: mockJobId, amountUsdc: params.amountUsdc },
     };
   }
 }
