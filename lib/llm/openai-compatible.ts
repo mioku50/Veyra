@@ -1,7 +1,13 @@
 import type { LlmFailureReason } from "./types.ts";
 import { BRAND } from "../brand.ts";
 
-export const LLM_PROVIDER_NAME = "StepFun" as const;
+/* The client speaks the OpenAI chat-completions protocol, so the vendor behind
+   it is configuration, not a constant. It was pinned to one name, which then
+   appeared verbatim in published report metadata regardless of who actually
+   answered the request. LLM_PROVIDER_LABEL names the routed provider; the
+   default keeps existing deployments reading the same. */
+export const DEFAULT_LLM_PROVIDER_LABEL = "StepFun" as const;
+export const LLM_PROVIDER_NAME = DEFAULT_LLM_PROVIDER_LABEL;
 export const LLM_PROVIDER_PROTOCOL = "openai-compatible" as const;
 export const LLM_REQUEST_TIMEOUT_MS = 30_000;
 export const LLM_MAX_ATTEMPTS = 2;
@@ -13,11 +19,15 @@ export const LLM_MAX_RESPONSE_BYTES = 24_000;
 export const LLM_MAX_COMPLETION_TOKENS = 2_400;
 
 export type OpenAiCompatibleConfig = {
-  provider: typeof LLM_PROVIDER_NAME;
+  provider: string;
   protocol: typeof LLM_PROVIDER_PROTOCOL;
   baseUrl: string;
   apiKey: string;
   model: string;
+  /* Some routers reject a request whose User-Agent they do not recognise —
+     AgentRouter answers 401 `unauthorized_client_error` without it — so the
+     header has to be configurable rather than whatever the runtime sends. */
+  userAgent: string | null;
 };
 
 export type LlmConfigResolution =
@@ -31,7 +41,7 @@ export type LlmConfigResolution =
 export type LlmGenerationResult =
   | {
       ok: true;
-      provider: typeof LLM_PROVIDER_NAME;
+      provider: string;
       protocol: typeof LLM_PROVIDER_PROTOCOL;
       model: string;
       text: string;
@@ -39,7 +49,7 @@ export type LlmGenerationResult =
     }
   | {
       ok: false;
-      provider: typeof LLM_PROVIDER_NAME;
+      provider: string;
       protocol: typeof LLM_PROVIDER_PROTOCOL;
       model: string | null;
       reason: LlmFailureReason;
@@ -74,6 +84,8 @@ export function resolveLlmConfig(
   const apiKey = normalizedEnvironmentValue(environment.LLM_API_KEY)
     ?? normalizedEnvironmentValue(environment.OPENROUTER_API_KEY);
   const model = normalizedEnvironmentValue(environment.LLM_MODEL);
+  const label = normalizedEnvironmentValue(environment.LLM_PROVIDER_LABEL) ?? DEFAULT_LLM_PROVIDER_LABEL;
+  const userAgent = normalizedEnvironmentValue(environment.LLM_USER_AGENT);
 
   if (provider && provider !== LLM_PROVIDER_PROTOCOL) {
     return { configured: false, reason: "unsupported_provider", model };
@@ -88,11 +100,12 @@ export function resolveLlmConfig(
     return {
       configured: true,
       config: {
-        provider: LLM_PROVIDER_NAME,
+        provider: label,
         protocol: LLM_PROVIDER_PROTOCOL,
         baseUrl: normalizeBaseUrl(baseUrl),
         apiKey,
         model,
+        userAgent: userAgent && !/[\r\n\0]/.test(userAgent) ? userAgent : null,
       },
     };
   } catch {
@@ -105,7 +118,9 @@ export function getLlmSynthesisDiagnostic(
 ) {
   const resolution = resolveLlmConfig(environment);
   return {
-    provider: LLM_PROVIDER_NAME,
+    provider: resolution.configured
+      ? resolution.config.provider
+      : (normalizedEnvironmentValue(environment.LLM_PROVIDER_LABEL) ?? DEFAULT_LLM_PROVIDER_LABEL),
     protocol: LLM_PROVIDER_PROTOCOL,
     configured: resolution.configured,
     model: resolution.configured ? resolution.config.model : resolution.model,
@@ -198,7 +213,9 @@ export async function generateOpenAiCompatibleText(input: {
   if (!resolution.configured) {
     return {
       ok: false,
-      provider: LLM_PROVIDER_NAME,
+      provider:
+        (input.environment ?? process.env).LLM_PROVIDER_LABEL?.trim()
+        || DEFAULT_LLM_PROVIDER_LABEL,
       protocol: LLM_PROVIDER_PROTOCOL,
       model: resolution.model,
       reason: resolution.reason,
@@ -226,6 +243,7 @@ export async function generateOpenAiCompatibleText(input: {
           authorization: `Bearer ${config.apiKey}`,
           "HTTP-Referer": "https://agent-commerce-six.vercel.app",
           "X-Title": BRAND.name,
+          ...(config.userAgent ? { "User-Agent": config.userAgent } : {}),
         },
         body: JSON.stringify({
           model: config.model,

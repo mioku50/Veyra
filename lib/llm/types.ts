@@ -16,7 +16,9 @@ export type LlmPaidApiReference = {
 
 export type HostedReportSynthesis = {
   status: "ai_generated" | "deterministic_fallback";
-  provider: "StepFun" | null;
+  /* The routed provider by name. This used to be pinned to one vendor, which
+     published the wrong attribution whenever the request went somewhere else. */
+  provider: string | null;
   protocol: "openai-compatible" | null;
   model: string | null;
   attempted: boolean;

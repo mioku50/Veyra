@@ -274,9 +274,11 @@ assert(!inputLeakFallback.summary.includes(request.inputText));
 assert(!inputLeakFallback.keyFindings.some((finding) => finding.includes(request.inputText)));
 
 if (process.argv.includes("--live")) {
+  // Whichever provider is configured, not one named vendor.
   const diagnostic = getLlmSynthesisDiagnostic();
-  assert.equal(diagnostic.configured, true, "Live StepFun configuration is incomplete.");
+  assert.equal(diagnostic.configured, true, "Live LLM configuration is incomplete.");
   const expectedLiveModel = process.env.LLM_MODEL?.trim();
+  const expectedLiveProvider = diagnostic.provider;
   assert.ok(expectedLiveModel, "LLM_MODEL must be set for the live smoke.");
   assert.equal(diagnostic.model, expectedLiveModel, `Live smoke must use the configured ${expectedLiveModel}.`);
   const liveReport = await synthesizeHostedFinalReport({
@@ -284,10 +286,59 @@ if (process.argv.includes("--live")) {
     report: deterministic,
     serviceResults: serviceResults.slice(0, 1),
   });
-  assert.equal(liveReport.synthesis.status, "ai_generated", `Live StepFun synthesis fell back: ${liveReport.synthesis.fallbackReason ?? "unknown"}`);
-  assert.equal(liveReport.synthesis.provider, "StepFun");
+  assert.equal(
+    liveReport.synthesis.status,
+    "ai_generated",
+    `Live ${expectedLiveProvider} synthesis fell back: ${liveReport.synthesis.fallbackReason ?? "unknown"}`,
+  );
+  assert.equal(liveReport.synthesis.provider, expectedLiveProvider);
   assert.equal(liveReport.synthesis.model, expectedLiveModel);
-  console.log(`[llm-live-smoke] passed: provider=StepFun model=${liveReport.synthesis.model} summaryChars=${liveReport.summary.length} findings=${liveReport.keyFindings.length}`);
+  console.log(`[llm-live-smoke] passed: provider=${expectedLiveProvider} model=${liveReport.synthesis.model} summaryChars=${liveReport.summary.length} findings=${liveReport.keyFindings.length}`);
 }
 
-console.log("[llm-provider-test] passed: OpenAI-compatible request boundary, step-3.7-flash config, timeout, 429 retry, response bounds, malformed output, legacy-key rejection, secret-safe prompt, input-leak fallback, AI metadata, deterministic fallback, and partial failure");
+
+/* A router may gate on the User-Agent: AgentRouter answers 401
+   `unauthorized_client_error` when the header is absent, so a missing header is
+   a hard outage rather than cosmetics. The label travels into published report
+   metadata, so it must follow the provider that actually answered. */
+{
+  const environment = {
+    LLM_PROVIDER: "openai-compatible",
+    LLM_BASE_URL: "https://agentrouter.org/v1",
+    LLM_API_KEY: "test-key",
+    LLM_MODEL: "deepseek-v4-flash",
+    LLM_PROVIDER_LABEL: "AgentRouter",
+    LLM_USER_AGENT: "cline/3.1.0",
+  } as NodeJS.ProcessEnv;
+
+  const resolution = resolveLlmConfig(environment);
+  assert(resolution.configured);
+  assert.equal(resolution.config.provider, "AgentRouter");
+  assert.equal(resolution.config.userAgent, "cline/3.1.0");
+  assert.equal(getLlmSynthesisDiagnostic(environment).provider, "AgentRouter");
+
+  let seenHeaders: Record<string, string> = {};
+  const result = await generateOpenAiCompatibleText({
+    environment,
+    systemPrompt: "s",
+    userPrompt: "u",
+    fetchImpl: (async (_url: string, init: RequestInit) => {
+      seenHeaders = init.headers as Record<string, string>;
+      return new Response(
+        JSON.stringify({ choices: [{ message: { content: '{"summary":"s","keyFindings":["a","b"]}' } }] }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      );
+    }) as unknown as typeof fetch,
+  });
+  assert.equal(seenHeaders["User-Agent"], "cline/3.1.0");
+  assert(result.ok);
+  assert.equal(result.provider, "AgentRouter");
+
+  // Absent by default, so providers that reject unknown headers are unaffected.
+  const withoutUa = resolveLlmConfig({ ...environment, LLM_USER_AGENT: undefined });
+  assert(withoutUa.configured);
+  assert.equal(withoutUa.config.userAgent, null);
+  assert.equal(withoutUa.config.provider, "AgentRouter");
+}
+
+console.log("[llm-provider-test] passed: OpenAI-compatible request boundary, routed provider label and User-Agent header, model config, timeout, 429 retry, response bounds, malformed output, legacy-key rejection, secret-safe prompt, input-leak fallback, AI metadata, deterministic fallback, and partial failure");
