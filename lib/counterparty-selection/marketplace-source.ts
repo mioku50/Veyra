@@ -19,6 +19,11 @@ export const MARKETPLACE_SOURCE = "circle_x402_discovery" as const;
 export const MARKETPLACE_SOURCE_VERSION = "veyra-marketplace-source-v1" as const;
 export const MARKETPLACE_DISCOVERY_URL = "https://api.circle.com/v2/x402/discovery/resources";
 
+/** How many terms of a capability are searched separately before the union is
+ *  considered wide enough. Bounded so a long free-text query cannot fan out
+ *  into an unbounded number of upstream requests. */
+export const MARKETPLACE_QUERY_TERM_LIMIT = 3;
+
 /** Networks the Circle marketplace actually settles on. Arc is absent by design:
  *  the catalog publishes zero Arc resources, so pretending otherwise would
  *  produce empty results with a misleading error. */
@@ -340,39 +345,64 @@ export async function discoverMarketplaceCandidates(
   }
   const query = (input.query ?? capability.replace(/_/g, " ")).trim().slice(0, 120);
 
-  const url = buildMarketplaceDiscoveryUrl({
-    query,
-    network,
-    maxPriceUsdc,
-    limit,
-    requireCircleGateway: input.requireCircleGateway,
-  });
+  /* Circle's discovery search is conjunctive: every term must appear. Measured
+     against the live catalog, `market` returns 50 resources and `research`
+     returns 50, but `market research` returns zero — so every multi-word
+     capability, including the one this screen offers first, discovered nothing
+     and the product's default path always answered "Undecided".
+     Each term is therefore searched on its own and the results unioned; the
+     capability, price and schema filters below already decide what survives, so
+     widening the search cannot loosen the verdict. */
+  const terms = MARKETPLACE_QUERY_TERM_LIMIT > 0
+    ? Array.from(new Set(query.split(/\s+/).filter((term) => term.length > 2)))
+      .slice(0, MARKETPLACE_QUERY_TERM_LIMIT)
+    : [];
+  const queries = terms.length > 1 ? terms : [query];
+
   const doFetch = input.fetchImpl ?? fetch;
-  const controller = new AbortController();
-  const timeout = setTimeout(
-    () => controller.abort(new Error("marketplace_discovery_timeout")),
-    MARKETPLACE_DISCOVERY_LIMITS.requestTimeoutMs,
-  );
-  let payload: Record<string, unknown>;
-  try {
-    const response = await doFetch(url, {
-      method: "GET",
-      headers: { accept: "application/json" },
-      signal: controller.signal,
+
+  async function fetchQuery(term: string) {
+    const url = buildMarketplaceDiscoveryUrl({
+      query: term,
+      network,
+      maxPriceUsdc,
+      limit,
+      requireCircleGateway: input.requireCircleGateway,
     });
-    if (!response.ok) throw new MarketplaceDiscoveryError("marketplace_discovery_unavailable", 502);
-    payload = await response.json() as Record<string, unknown>;
-  } catch (error) {
-    if (error instanceof MarketplaceDiscoveryError) throw error;
-    throw new MarketplaceDiscoveryError("marketplace_discovery_unavailable", 502);
-  } finally {
-    clearTimeout(timeout);
+    const controller = new AbortController();
+    const timeout = setTimeout(
+      () => controller.abort(new Error("marketplace_discovery_timeout")),
+      MARKETPLACE_DISCOVERY_LIMITS.requestTimeoutMs,
+    );
+    try {
+      const response = await doFetch(url, {
+        method: "GET",
+        headers: { accept: "application/json" },
+        signal: controller.signal,
+      });
+      if (!response.ok) throw new MarketplaceDiscoveryError("marketplace_discovery_unavailable", 502);
+      return await response.json() as Record<string, unknown>;
+    } catch (error) {
+      if (error instanceof MarketplaceDiscoveryError) throw error;
+      throw new MarketplaceDiscoveryError("marketplace_discovery_unavailable", 502);
+    } finally {
+      clearTimeout(timeout);
+    }
   }
 
-  const items = Array.isArray(payload.items) ? payload.items : [];
-  const pagination = (payload.pagination && typeof payload.pagination === "object"
-    ? payload.pagination
-    : {}) as Record<string, unknown>;
+  const payloads = queries.length === 1
+    ? [await fetchQuery(queries[0])]
+    : await Promise.all(queries.map(fetchQuery));
+
+  const items: unknown[] = [];
+  let catalogTotal = 0;
+  for (const payload of payloads) {
+    if (Array.isArray(payload.items)) items.push(...payload.items);
+    const pagination = (payload.pagination && typeof payload.pagination === "object"
+      ? payload.pagination
+      : {}) as Record<string, unknown>;
+    catalogTotal += Number(pagination.total) || (Array.isArray(payload.items) ? payload.items.length : 0);
+  }
 
   const seen = new Set<string>();
   const candidates: MarketplaceCandidate[] = [];
@@ -401,7 +431,7 @@ export async function discoverMarketplaceCandidates(
     network,
     networkLabel: MARKETPLACE_NETWORKS[network],
     query,
-    catalogTotal: Number(pagination.total) || items.length,
+    catalogTotal,
     candidates: candidates.slice(0, limit),
     queriedAt: new Date().toISOString(),
     readOnly: true,
