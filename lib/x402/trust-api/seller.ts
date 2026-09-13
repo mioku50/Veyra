@@ -9,6 +9,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { BRAND } from "../../brand.ts";
 import { getByoaClient } from "../../byoa/service.ts";
 import { CREDIT_HEADER, isCreditTokenShaped, redeemCredit } from "./credits.ts";
+import { TRUST_API_DOCS_PATH } from "./pricing.ts";
 
 /**
  * Veyra as an x402 resource server.
@@ -43,6 +44,10 @@ export type TrustApiRequirement = {
   amount: string;
   payTo: string;
   maxTimeoutSeconds: number;
+  /* Where x402 carries the schemas, despite the name: `.input` describes the
+     request and `.output` the response. Buyers read it from the challenge, and
+     Veyra's own probe scores an endpoint that omits it. */
+  outputSchema?: { input: { body: unknown }; output: { body: unknown } };
   extra: Record<string, unknown>;
 };
 
@@ -83,7 +88,10 @@ function usdcAtomic(priceUsdc: number): string {
 }
 
 /** One accept per network Circle will settle, priced identically. */
-export async function buildTrustApiRequirements(priceUsdc: number): Promise<TrustApiRequirement[]> {
+export async function buildTrustApiRequirements(
+  priceUsdc: number,
+  schema?: { input: unknown; output: unknown },
+): Promise<TrustApiRequirement[]> {
   const payTo = payoutAddress();
   if (!payTo) return [];
   const amount = usdcAtomic(priceUsdc);
@@ -105,6 +113,7 @@ export async function buildTrustApiRequirements(priceUsdc: number): Promise<Trus
       amount,
       payTo,
       maxTimeoutSeconds: BATCHED_MAX_TIMEOUT_SECONDS,
+      ...(schema ? { outputSchema: { input: { body: schema.input }, output: { body: schema.output } } } : {}),
       // Echo the facilitator's own domain data. Rebuilding it here is how a
       // resource server ends up advertising a verifying contract the
       // facilitator does not recognise.
@@ -154,6 +163,7 @@ function challengeResponse(input: {
   requirements: TrustApiRequirement[];
   resourceUrl: string;
   description: string;
+  docsUrl: string;
   requestId: string;
   priceUsdc: number;
 }) {
@@ -163,6 +173,10 @@ function challengeResponse(input: {
       url: input.resourceUrl,
       description: input.description,
       mimeType: "application/json",
+      // Veyra's own machine-readable index of what it sells. `provider_documented`
+      // is a check Veyra applies to others; publishing nothing here is how it
+      // failed that check itself.
+      docsUrl: input.docsUrl,
     },
     accepts: input.requirements,
   };
@@ -202,6 +216,9 @@ export function withTrustApiPayment(
     endpoint: string;
     priceUsdc: number;
     description: string;
+    /** Published in the challenge so a buyer can build a valid request and
+     *  check the answer, instead of guessing the shape and paying for a 400. */
+    schema?: { input: unknown; output: unknown };
     /** Runs before any money moves. Returning a reason refuses the call with a
      *  503 instead of charging for something Veyra cannot currently deliver -
      *  a signature it has no attester key for, most of all. There is no refund
@@ -250,7 +267,7 @@ export function withTrustApiPayment(
 
     let requirements: TrustApiRequirement[];
     try {
-      requirements = await buildTrustApiRequirements(options.priceUsdc);
+      requirements = await buildTrustApiRequirements(options.priceUsdc, options.schema);
     } catch {
       requirements = [];
     }
@@ -271,6 +288,7 @@ export function withTrustApiPayment(
         description: options.description,
         requestId,
         priceUsdc: options.priceUsdc,
+        docsUrl: new URL(TRUST_API_DOCS_PATH, request.nextUrl.origin).toString(),
       });
     }
 

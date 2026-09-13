@@ -257,6 +257,7 @@ export async function computeTrustApiVerdict(input: {
      challenge once to learn what this endpoint claims, and reports that it had
      nothing to compare against. */
   let baseline: ExpectationBaseline;
+  let bootstrapDocsUrl: string | null = null;
   let baselineAccept: ObservedAccept | null = null;
   if (lastObservation?.observed_pay_to && lastObservation.observed_price_usdc !== null) {
     baseline = "veyra_history";
@@ -274,6 +275,7 @@ export async function computeTrustApiVerdict(input: {
     baseline = "first_sighting";
     const bootstrap = await readX402Challenge(resource, method, input.probeFetchImpl);
     baselineAccept = selectBaselineAccept(bootstrap.accepts);
+    bootstrapDocsUrl = bootstrap.docsUrl;
   }
 
   if (!baselineAccept || !isAddress(baselineAccept.payTo)) {
@@ -310,6 +312,7 @@ export async function computeTrustApiVerdict(input: {
     resource,
     method,
     accept: baselineAccept,
+    docsUrl: bootstrapDocsUrl,
   });
   const probe = await probeX402Resource(expectation, { fetchImpl: input.probeFetchImpl, now });
 

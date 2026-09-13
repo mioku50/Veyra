@@ -85,4 +85,5 @@ export const POST = withTrustApiPayment(async (request: NextRequest) => {
   endpoint: TRUST_API_PRICING.history.path,
   priceUsdc: TRUST_API_PRICING.history.priceUsdc,
   description: TRUST_API_PRICING.history.description,
+  schema: TRUST_API_PRICING.history.schema,
 });

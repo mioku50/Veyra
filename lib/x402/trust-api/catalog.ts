@@ -26,37 +26,18 @@ const CAPABILITIES: Record<TrustApiProduct, string[]> = {
   outcomes: ["outcome_reporting", "reputation_feedback"],
 };
 
-const OUTPUT_SCHEMAS: Partial<Record<TrustApiProduct, Record<string, unknown>>> = {
-  verdict: {
-    type: "object",
-    properties: {
-      decision: { type: "string" },
-      granted: { type: "boolean" },
-      payTo: { type: "string" },
-      priceUsdc: { type: "number" },
-      maxExposureUsdc: { type: "number" },
-      alerts: { type: "array" },
-      explanation: { type: "string" },
-    },
-    required: ["decision", "granted", "explanation"],
-  },
-  clearance: {
-    type: "object",
-    properties: {
-      signed: { type: "boolean" },
-      decision: { type: "string" },
-      clearance: { type: "object" },
-    },
-    required: ["signed", "decision"],
-  },
-};
+/* Schemas live in pricing.ts, where the seller reads them to build its 402
+   challenge. Keeping a second copy here is how the catalog and the challenge
+   drift apart, and a buyer that trusts the catalog then builds a request the
+   endpoint refuses. */
 
 export async function buildTrustApiCatalog(origin: string, lastUpdated = new Date().toISOString()) {
   const items = await Promise.all(
     (Object.keys(TRUST_API_PRICING) as TrustApiProduct[]).map(async (product) => {
       const entry = TRUST_API_PRICING[product];
+      const schema = "schema" in entry ? entry.schema : undefined;
       const accepts = entry.priceUsdc > 0
-        ? await buildTrustApiRequirements(entry.priceUsdc).catch(() => [])
+        ? await buildTrustApiRequirements(entry.priceUsdc, schema).catch(() => [])
         : [];
       return {
         resource: new URL(entry.path, origin).toString(),
@@ -74,7 +55,12 @@ export async function buildTrustApiCatalog(origin: string, lastUpdated = new Dat
           siwx: false,
           supportsVanillax402: false,
           supportsCircleGateway: true,
-          output: OUTPUT_SCHEMAS[product] ?? undefined,
+          /* Both directions, in the field names Circle's catalog uses. Publishing
+             only `output` is exactly the gap that made Veyra guess at Serper's
+             request shape and pay for an HTTP 400: a reader of this catalog
+             could not have built a valid call either. */
+          input: schema ? { body: schema.input } : undefined,
+          output: schema ? schema.output : undefined,
           provider: {
             name: BRAND.name,
             website: origin,

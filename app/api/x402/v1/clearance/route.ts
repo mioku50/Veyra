@@ -117,6 +117,7 @@ export const POST = withTrustApiPayment(async (request: NextRequest, context) =>
   endpoint: TRUST_API_PRICING.clearance.path,
   priceUsdc: TRUST_API_PRICING.clearance.priceUsdc,
   description: TRUST_API_PRICING.clearance.description,
+  schema: TRUST_API_PRICING.clearance.schema,
   // Never charge for a signature that cannot be produced.
   preflight: async () => attesterConfigured()
     ? { ok: true }

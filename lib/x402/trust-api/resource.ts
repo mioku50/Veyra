@@ -123,7 +123,7 @@ export async function readX402Challenge(
   resource: string,
   method: ProbeMethod,
   fetchImpl?: (url: string, init: RequestInit) => Promise<Response>,
-): Promise<{ accepts: ObservedAccept[]; httpStatus: number | null }> {
+): Promise<{ accepts: ObservedAccept[]; httpStatus: number | null; docsUrl: string | null }> {
   const doFetch = fetchImpl
     ?? ((url: string, init: RequestInit) => fetchWithSsrfProtection(url, init, {
       maxTimeoutMs: X402_PROBE_LIMITS.timeoutMs,
@@ -141,24 +141,50 @@ export async function readX402Challenge(
   try {
     response = await doFetch(resource, init);
   } catch {
-    return { accepts: [], httpStatus: null };
+    return { accepts: [], httpStatus: null, docsUrl: null };
   }
 
-  const header = parseChallengeAccepts(decodePaymentRequiredHeader(
-    response.headers.get("payment-required"),
-  ));
+  const headerChallenge = decodePaymentRequiredHeader(response.headers.get("payment-required"));
+  const header = parseChallengeAccepts(headerChallenge);
   let parsed = header;
+  let challenge: unknown = headerChallenge;
   if (!parsed) {
     try {
-      parsed = parseChallengeAccepts(JSON.parse(await response.text()));
+      challenge = JSON.parse(await response.text());
+      parsed = parseChallengeAccepts(challenge);
     } catch {
       parsed = null;
+      challenge = null;
     }
   }
   return {
     accepts: (parsed ?? []).map(readAccept),
     httpStatus: response.status,
+    docsUrl: challengeDocsUrl(challenge),
   };
+}
+
+/**
+ * Documentation the endpoint points at from its own challenge.
+ *
+ * `provider_documented` was reading a field only Circle's catalog fills, so an
+ * endpoint probed directly could never pass it however well documented it was
+ * — Veyra scored everyone down for something it never looked for, itself
+ * included.
+ */
+function challengeDocsUrl(challenge: unknown): string | null {
+  if (!challenge || typeof challenge !== "object") return null;
+  const descriptor = (challenge as { resource?: unknown }).resource;
+  if (!descriptor || typeof descriptor !== "object") return null;
+  const url = (descriptor as { docsUrl?: unknown }).docsUrl;
+  if (typeof url !== "string") return null;
+  try {
+    const parsed = new URL(url);
+    // Only somewhere a reader could actually go.
+    return parsed.protocol === "https:" || parsed.protocol === "http:" ? parsed.toString() : null;
+  } catch {
+    return null;
+  }
 }
 
 export type ExpectationBaseline = "catalog" | "veyra_history" | "first_sighting";
