@@ -5,7 +5,7 @@
 
 import assert from "node:assert/strict";
 import { buildRequestBody, checkRequestBody } from "../lib/x402/request-body.ts";
-import { challengeSchemas, parseChallengeAccepts } from "../lib/providers/x402-probe.ts";
+import { challengeDocsUrl, challengeSchemas, parseChallengeAccepts } from "../lib/providers/x402-probe.ts";
 
 /* ---- no published schema: say so, do not pretend ---- */
 
@@ -172,4 +172,21 @@ assert.deepEqual(
   { type: "object", properties: { url: { type: "string" } } },
 );
 
-console.log("[x402-request-body-test] passed: an unpublished shape is labelled a guess, a published schema names its own field and supplies its own defaults, missing requirements are reported, and a body the schema rejects is refused before it can be paid for, and the schema an endpoint publishes inside its own 402 is read when the catalog omits it");
+
+/* ---- the docs URL an endpoint publishes about itself ---- */
+
+// `provider_documented` read a field only Circle's catalog fills, so an
+// endpoint probed directly could never pass it however well documented it was.
+assert.equal(
+  challengeDocsUrl({ resource: { url: "https://x.test/a", docsUrl: "https://x.test/docs" } }),
+  "https://x.test/docs",
+);
+assert.equal(challengeDocsUrl({ resource: { url: "https://x.test/a" } }), null);
+assert.equal(challengeDocsUrl({}), null);
+assert.equal(challengeDocsUrl(null), null);
+// Not somewhere a reader could go, and not somewhere a browser should follow.
+assert.equal(challengeDocsUrl({ resource: { docsUrl: "javascript:alert(1)" } }), null);
+assert.equal(challengeDocsUrl({ resource: { docsUrl: "not a url" } }), null);
+assert.equal(challengeDocsUrl({ resource: { docsUrl: 42 } }), null);
+
+console.log("[x402-request-body-test] passed: an unpublished shape is labelled a guess, a published schema names its own field and supplies its own defaults, missing requirements are reported, and a body the schema rejects is refused before it can be paid for, and the schema an endpoint publishes inside its own 402 is read when the catalog omits it, and a docs URL is taken only when it points somewhere a reader could follow");

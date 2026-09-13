@@ -222,6 +222,25 @@ export function challengeSchemas(accepts: Array<Record<string, unknown>> | null)
   return { input, output };
 }
 
+/**
+ * Documentation the endpoint points at from its own challenge.
+ *
+ * `provider_documented` read a field only Circle's catalog fills, so an
+ * endpoint probed directly could never pass it however well documented it was.
+ */
+export function challengeDocsUrl(challenge: unknown): string | null {
+  const descriptor = asObject(asObject(challenge)?.resource);
+  const url = descriptor?.docsUrl;
+  if (typeof url !== "string") return null;
+  try {
+    const parsed = new URL(url);
+    // Only somewhere a reader could actually go.
+    return parsed.protocol === "https:" || parsed.protocol === "http:" ? parsed.toString() : null;
+  } catch {
+    return null;
+  }
+}
+
 function asObject(value: unknown): Record<string, unknown> | null {
   return value && typeof value === "object" && !Array.isArray(value)
     ? value as Record<string, unknown>
@@ -325,9 +344,10 @@ export async function probeX402Resource(
     try { parsedBody = JSON.parse(bodyText); } catch { parsedBody = null; }
   }
   // Header first: that is where conformant x402 v2 servers put the challenge.
-  const headerChallenge = respondedWith402
-    ? parseChallengeAccepts(decodePaymentRequiredHeader(paymentRequiredHeader))
+  const rawHeaderChallenge = respondedWith402
+    ? decodePaymentRequiredHeader(paymentRequiredHeader)
     : null;
+  const headerChallenge = parseChallengeAccepts(rawHeaderChallenge);
   const bodyChallenge = respondedWith402 && !headerChallenge
     ? parseChallengeAccepts(parsedBody)
     : null;
@@ -344,6 +364,19 @@ export async function probeX402Resource(
   const comparison = challengeParseable
     ? compareChallengeToCatalog(accepts!, expected)
     : { matched: null, drift: [] as string[] };
+  /* Read from what the endpoint is advertising right now, not from the
+     yardstick. The baseline exists to detect drift in *money* — payee and
+     price — and a verdict built on Veyra's own history carried no timeout and
+     no batching flag at all, so `timeout_window_sane` failed for every endpoint
+     Veyra had ever seen before, Gateway endpoints most of all: their week-long
+     window was being judged against the one-hour vanilla ceiling. Observing an
+     endpoint more should not make its score worse. */
+  const liveAccept = asObject(comparison.matched) ?? asObject(accepts?.[0]);
+  const observedTimeout = typeof liveAccept?.maxTimeoutSeconds === "number"
+    ? liveAccept.maxTimeoutSeconds
+    : null;
+  const observedBatched = String(asObject(liveAccept?.extra)?.name ?? "") === "GatewayWalletBatched";
+  const observedDocsUrl = challengeDocsUrl(rawHeaderChallenge) ?? challengeDocsUrl(parsedBody);
 
   const observedPriceUsdc = comparison.matched
     ? atomicToUsdc(comparison.matched.amount ?? comparison.matched.maxAmountRequired)
@@ -415,17 +448,17 @@ export async function probeX402Resource(
         ? "Provider publishes an output schema in its 402 challenge."
         : "No output schema published - the response cannot be validated after payment.",
     "minor");
-  const timeoutCeiling = expected.gatewayBatched
+  const timeoutCeiling = expected.gatewayBatched || observedBatched
     ? X402_PROBE_LIMITS.maxSaneGatewayTimeoutSeconds
     : X402_PROBE_LIMITS.maxSaneTimeoutSeconds;
+  const timeoutWindow = observedTimeout ?? expected.maxTimeoutSeconds;
   scored("timeout_window_sane",
-    expected.maxTimeoutSeconds !== null
-      && expected.maxTimeoutSeconds > 0
-      && expected.maxTimeoutSeconds <= timeoutCeiling,
-    `maxTimeoutSeconds=${expected.maxTimeoutSeconds ?? "absent"} ceiling=${timeoutCeiling}`,
+    timeoutWindow !== null && timeoutWindow > 0 && timeoutWindow <= timeoutCeiling,
+    `maxTimeoutSeconds=${timeoutWindow ?? "absent"} ceiling=${timeoutCeiling}`,
     "minor");
-  scored("provider_documented", Boolean(expected.docsUrl),
-    expected.docsUrl ? `Docs at ${expected.docsUrl}.` : "No documentation URL published.",
+  const docsUrl = expected.docsUrl ?? observedDocsUrl;
+  scored("provider_documented", Boolean(docsUrl),
+    docsUrl ? `Docs at ${docsUrl}.` : "No documentation URL published.",
     "minor");
 
   const criticalFailure = checks.find((check) => check.severity === "critical" && !check.passed)?.id

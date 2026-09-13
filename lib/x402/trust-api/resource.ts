@@ -5,12 +5,7 @@
 
 import { createHash } from "node:crypto";
 import { isAddress } from "viem";
-import {
-  decodePaymentRequiredHeader,
-  parseChallengeAccepts,
-  X402_PROBE_LIMITS,
-  type X402ProbeExpectation,
-} from "../../providers/x402-probe.ts";
+import { X402_PROBE_LIMITS, challengeDocsUrl, decodePaymentRequiredHeader, parseChallengeAccepts, type X402ProbeExpectation } from "../../providers/x402-probe.ts";
 import { fetchWithSsrfProtection } from "../../seller/ssrf.ts";
 
 export type ProbeMethod = "GET" | "POST";
@@ -164,28 +159,6 @@ export async function readX402Challenge(
   };
 }
 
-/**
- * Documentation the endpoint points at from its own challenge.
- *
- * `provider_documented` was reading a field only Circle's catalog fills, so an
- * endpoint probed directly could never pass it however well documented it was
- * — Veyra scored everyone down for something it never looked for, itself
- * included.
- */
-function challengeDocsUrl(challenge: unknown): string | null {
-  if (!challenge || typeof challenge !== "object") return null;
-  const descriptor = (challenge as { resource?: unknown }).resource;
-  if (!descriptor || typeof descriptor !== "object") return null;
-  const url = (descriptor as { docsUrl?: unknown }).docsUrl;
-  if (typeof url !== "string") return null;
-  try {
-    const parsed = new URL(url);
-    // Only somewhere a reader could actually go.
-    return parsed.protocol === "https:" || parsed.protocol === "http:" ? parsed.toString() : null;
-  } catch {
-    return null;
-  }
-}
 
 export type ExpectationBaseline = "catalog" | "veyra_history" | "first_sighting";
 
