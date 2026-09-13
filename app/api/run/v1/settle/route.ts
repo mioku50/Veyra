@@ -7,6 +7,13 @@ import { NextResponse, type NextRequest } from "next/server";
 import { isAddress } from "viem";
 import { authenticateSelectionRequest } from "@/lib/counterparty-selection/auth";
 import { fetchWithSsrfProtection, SSRFProtectionError } from "@/lib/seller/ssrf";
+import type { JsonSchema } from "@/lib/seller/json-schema";
+import { verifyPostCall } from "@/lib/x402/post-call-verification";
+import {
+  loadEndpointObservations,
+  summariseEndpointHistory,
+} from "@/lib/x402/trust-api/observations";
+import { normalizeResourceUrl, resourceKeyFor } from "@/lib/x402/trust-api/resource";
 import {
   decodePaymentResponse,
   encodePaymentHeader,
@@ -30,6 +37,14 @@ export const dynamic = "force-dynamic";
 
 const ABSOLUTE_MAX_USDC = 5;
 const MAX_RESULT_BYTES = 200_000;
+
+/** The provider's published output schema, when the caller carries one through
+ *  from the catalog entry. Anything else is ignored rather than trusted. */
+function asOutputSchema(value: unknown): JsonSchema | null {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? value as JsonSchema
+    : null;
+}
 
 function badRequest(code: string, message: string, status = 400) {
   return NextResponse.json({ error: { code, message } }, { status });
@@ -124,6 +139,7 @@ export async function POST(request: NextRequest) {
   });
 
   let response: Response;
+  const startedAt = performance.now();
   try {
     response = await fetchWithSsrfProtection(resource, {
       method,
@@ -141,8 +157,14 @@ export async function POST(request: NextRequest) {
     return badRequest("resource_unreachable", "The endpoint did not answer.", 502);
   }
 
+  const latencyMs = Math.max(0, Math.round(performance.now() - startedAt));
   const text = await response.text().catch(() => "");
-  const settlement = decodePaymentResponse(response.headers.get("x-payment-response"));
+  /* v2 sellers publish the receipt as `PAYMENT-RESPONSE`; only v1 prefixed it
+     with `X-`. Reading one spelling dropped the settlement reference from every
+     conformant v2 seller, including Veyra's own. */
+  const settlement = decodePaymentResponse(
+    response.headers.get("payment-response") ?? response.headers.get("x-payment-response"),
+  );
 
   // A second 402 means the seller refused the payment rather than the request.
   if (response.status === 402) {
@@ -159,14 +181,47 @@ export async function POST(request: NextRequest) {
   let parsed: unknown = null;
   try { parsed = JSON.parse(text); } catch { parsed = null; }
 
+  /* The verification the tier demanded, actually run.
+     REQUIRE_EVALUATOR used to print "Needs evaluator" next to an enabled
+     Authorize button and then verify nothing. A tier that requires
+     verification now gets it, and its verdict is what decides whether this
+     purchase counts as successful. */
+  let latencyP95Ms: number | null = null;
+  try {
+    const key = resourceKeyFor(method, normalizeResourceUrl(resource));
+    const history = summariseEndpointHistory(key, await loadEndpointObservations(key));
+    latencyP95Ms = history.statisticalEvidenceAvailable ? history.metrics.latencyP95Ms : null;
+  } catch {
+    latencyP95Ms = null;
+  }
+
+  const verification = verifyPostCall({
+    httpStatus: response.status,
+    bodyText: text,
+    parsedBody: parsed,
+    latencyMs,
+    quotedAtomic: accept.amountAtomic,
+    authorizedAtomic: authorization.value,
+    payTo: accept.payTo,
+    settlement,
+    declaredOutputSchema: asOutputSchema(body.declaredOutputSchema),
+    latencyP95Ms,
+    required: body.verificationRequired === true,
+  });
+
   return NextResponse.json({
-    settled: response.ok,
+    // A purchase that was paid for but failed the verification its own tier
+    // demanded is not a success, and must not be reported as one.
+    settled: response.ok && verification.verdict !== "FAIL",
+    paid: response.ok,
     status: response.status,
     paidUsdc: Number(authorization.value) / 1e6,
     payTo: accept.payTo,
     network: accept.network,
+    latencyMs,
     settlement,
     transaction: typeof settlement?.transaction === "string" ? settlement.transaction : null,
+    verification,
     result: parsed,
     body: parsed === null ? text.slice(0, MAX_RESULT_BYTES) : null,
   }, { status: 200, headers: { "Cache-Control": "no-store" } });

@@ -92,6 +92,10 @@ export type MarketplaceCandidate = {
   mimeType: string | null;
   declaresInputSchema: boolean;
   declaresOutputSchema: boolean;
+  /** The provider's own published response shape, kept rather than reduced to
+   *  a boolean: it is the only thing a paid response can be held to after the
+   *  money has moved. */
+  outputSchema: Record<string, unknown> | null;
   siwx: boolean;
   supportsVanillaX402: boolean;
   supportsCircleGateway: boolean;
@@ -273,6 +277,9 @@ export function normalizeMarketplaceItem(
     mimeType: textOrNull(metadata.mimeType),
     declaresInputSchema: Boolean(inputSchema && typeof inputSchema === "object"),
     declaresOutputSchema: Boolean(metadata.output && typeof metadata.output === "object"),
+    outputSchema: metadata.output && typeof metadata.output === "object" && !Array.isArray(metadata.output)
+      ? metadata.output as Record<string, unknown>
+      : null,
     siwx: metadata.siwx === true,
     supportsVanillaX402: metadata.supportsVanillax402 === true,
     supportsCircleGateway: metadata.supportsCircleGateway === true,

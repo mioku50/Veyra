@@ -419,7 +419,10 @@ async function buildEvidence(
     snapshotCreatedAt: snapshot.createdAt,
     trustScore: snapshot.trustScore,
     snapshotConfidence: confidencePercent(snapshot),
-    snapshotCoverage: snapshot.coverage > 1 ? snapshot.coverage / 100 : snapshot.coverage,
+    // Reputation coverage is a percent by construction (engine.ts rounds
+    // active/total * 100), so this conversion is exact. It used to guess the
+    // unit from the magnitude, which read a genuine 1% coverage as 100%.
+    snapshotCoverage: snapshot.coverage / 100,
     dimensions: {
       reputationQuality: snapshot.trustScore,
       executionReliability: snapshot.dimensions.execution,

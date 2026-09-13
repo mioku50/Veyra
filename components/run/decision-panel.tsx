@@ -5,7 +5,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { Money, Pill, verdictFromDecision, VERDICT_TONE } from "./primitives";
+import { formatUsdc, Money, Pill, verdictFromDecision, VERDICT_TONE } from "./primitives";
 
 export type RunDecision = {
   granted: boolean;
@@ -28,6 +28,9 @@ export type RunDecision = {
   } | null;
   /** Absent on a refusal: nothing was authorised, so nothing expires. */
   expiresAt?: string;
+  /** The winner's published response shape, when it publishes one. Carried so
+   *  the post-call check can hold the response to the provider's own promise. */
+  outputSchema?: Record<string, unknown> | null;
 };
 
 function short(hex: string, lead = 10, tail = 6) {
@@ -105,21 +108,24 @@ export function DecisionPanel({ decision, busy, onAuthorize }: {
           ) : null}
         </div>
 
+        {/* The headline figure is the money that is about to leave, not the
+            policy ceiling. The wallet will ask for the price; showing the
+            ceiling this large invited the reader to think they were approving
+            it. The ceiling still matters - it is what the clearance authorizes
+            - so it stays, one step down. */}
         <dl className="grid shrink-0 grid-cols-2 gap-x-8 gap-y-3 sm:grid-cols-1 sm:text-right">
           <div>
-            <dt className="run-eyebrow">Maximum exposure</dt>
+            <dt className="run-eyebrow">You pay</dt>
             <dd className="run-display run-num mt-1.5 text-[26px] font-semibold">
-              <Money value={decision.maxExposureUsdc} />
+              <Money value={decision.priceUsdc ?? decision.maxExposureUsdc} />
             </dd>
           </div>
-          {decision.priceUsdc !== null && decision.priceUsdc !== decision.maxExposureUsdc ? (
-            <div>
-              <dt className="run-eyebrow">Quoted</dt>
-              <dd className="run-num mt-1.5 text-[14px] text-[var(--run-text-muted)]">
-                <Money value={decision.priceUsdc} unit="" />
-              </dd>
-            </div>
-          ) : null}
+          <div>
+            <dt className="run-eyebrow">Policy ceiling</dt>
+            <dd className="run-num mt-1.5 text-[14px] text-[var(--run-text-muted)]">
+              <Money value={decision.maxExposureUsdc} unit="" />
+            </dd>
+          </div>
         </dl>
       </div>
 
@@ -144,8 +150,12 @@ export function DecisionPanel({ decision, busy, onAuthorize }: {
           </ul>
         ) : null}
         {decision.postCallVerificationRequired ? (
-          <div className="mt-4">
-            <Pill tone="warn">Response is not independently verified after the call</Pill>
+          <div className="mt-4 flex flex-wrap items-center gap-x-3 gap-y-2">
+            <Pill tone="warn">Verification runs after the call</Pill>
+            <span className="text-[11.5px] text-[var(--run-text-faint)]">
+              Evidence is thin enough that Veyra will not call this purchase
+              successful until it has checked what arrives.
+            </span>
           </div>
         ) : null}
       </div>
@@ -208,11 +218,18 @@ export function DecisionPanel({ decision, busy, onAuthorize }: {
               disabled={busy || ttl === 0}
               className="run-cta run-focus inline-flex h-10 items-center gap-2 rounded-[var(--run-radius-sm)] px-5 text-[13.5px] font-semibold"
             >
-              {busy ? "Authorizing…" : ttl === 0 ? "Decision expired" : "Authorize & pay"}
+              {busy
+                ? "Authorizing…"
+                : ttl === 0
+                  ? "Decision expired"
+                  : decision.priceUsdc !== null
+                    ? `Authorize ${formatUsdc(decision.priceUsdc)} & pay`
+                    : "Authorize & pay"}
             </button>
-            <span className="text-[11.5px] text-[var(--run-text-faint)]">
-              Veyra decides. Circle pays — settlement leaves your agent wallet, capped at{" "}
-              <Money value={decision.maxExposureUsdc} className="text-[var(--run-text-muted)]" />.
+            <span className="max-w-[46ch] text-[11.5px] leading-relaxed text-[var(--run-text-faint)]">
+              Veyra decides; you sign. The price is re-read from the endpoint
+              immediately before your wallet is asked, so what you sign is what
+              it asks for now — never more than the ceiling above.
             </span>
           </div>
         )}

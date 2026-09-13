@@ -94,6 +94,7 @@ export function getTrustDisplayLabel(
 export type ReputationExplanation = {
   trustScore: number;
   confidence: ReputationConfidenceLevel;
+  /** Percent, 0-100: the share of evidence categories that carry data. */
   coverage: number;
   statusLabel: ReputationStatusLabel;
   dimensions: AgentReputationDimensions;
@@ -106,6 +107,7 @@ export type ReputationSnapshot = {
   agentId: string;
   trustScore: number;
   confidence: ReputationConfidenceLevel;
+  /** Percent, 0-100. See ReputationExplanation.coverage. */
   coverage: number;
   statusLabel: ReputationStatusLabel;
   dimensions: AgentReputationDimensions;

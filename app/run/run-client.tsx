@@ -70,6 +70,18 @@ export function RunClient() {
        Gateway deposit, not the wallet balance, so a user holding USDC can still
        be refused — and needs to be told where to put it. */
     funding?: "wallet" | "gateway_deposit";
+    /* The verification the trust tier demanded, as it actually came back. */
+    verification?: {
+      verdict: "PASS" | "FAIL" | "INCONCLUSIVE";
+      required: boolean;
+      summary: string;
+      responseHash: string;
+      checks: Array<{ id: string; passed: boolean | null; severity: string; detail: string }>;
+    } | null;
+    /* The endpoint re-quoted a different price than the catalog advertised.
+       That is catalog drift arriving at the worst possible moment, and the
+       reader has to see it. */
+    quoteDrift?: { advertisedUsdc: number; quotedUsdc: number } | null;
   } | null>(null);
 
   /* Veyra signs its verdicts to a wallet, so a decision needs a verified owner
@@ -372,6 +384,9 @@ export function RunClient() {
       priceUsdc: rec.priceUsdc,
       maxExposureUsdc: rec.maxExposureUsdc,
       postCallVerificationRequired: rec.postCallVerificationRequired,
+      outputSchema: (selection.candidates ?? []).find(
+        (c: any) => c.marketplace?.candidateId === rec.candidateId,
+      )?.marketplace?.outputSchema ?? null,
       winnerTitle: winner?.title ?? null,
       reasons: winner?.reasons ?? [],
       clearance: selection.clearance
@@ -425,7 +440,11 @@ export function RunClient() {
       // 3. Sign. The wallet shows the same recipient and amount as the panel,
       //    and the signature is what caps the spend — not this page.
       const funding: "wallet" | "gateway_deposit" = accept.gatewayBatched ? "gateway_deposit" : "wallet";
-      setPayment({ stage: "signing", quotedUsdc, payTo: accept.payTo, funding });
+      const quoteDrift = decision.priceUsdc !== null
+        && Math.abs(quotedUsdc - decision.priceUsdc) > 1e-9
+        ? { advertisedUsdc: decision.priceUsdc, quotedUsdc }
+        : null;
+      setPayment({ stage: "signing", quotedUsdc, payTo: accept.payTo, funding, quoteDrift });
       const { authorization, typedData } = buildPaymentTypedData({
         accept,
         from: wallet.address as `0x${string}`,
@@ -435,7 +454,7 @@ export function RunClient() {
 
       // 4. Relay. Veyra carries the signed authorization to the seller and
       //    returns what came back.
-      setPayment({ stage: "settling", quotedUsdc, payTo: accept.payTo, funding });
+      setPayment({ stage: "settling", quotedUsdc, payTo: accept.payTo, funding, quoteDrift });
       const settled = await post("/api/run/v1/settle", {
         resource: decision.resource,
         method: "POST",
@@ -444,6 +463,10 @@ export function RunClient() {
         authorization,
         signature,
         resourceDescriptor,
+        // The tier asked for verification; this is what makes it happen rather
+        // than merely be announced.
+        verificationRequired: decision.postCallVerificationRequired,
+        declaredOutputSchema: decision.outputSchema ?? undefined,
       });
       if (!settled.response.ok) throw new Error(failureText(settled.payload?.error ?? settled.payload, settled.response.status));
       const result = settled.payload as any;
@@ -452,7 +475,15 @@ export function RunClient() {
           stage: "failed",
           quotedUsdc,
           funding,
-          message: result.message || "The endpoint rejected the payment.",
+          quoteDrift,
+          paidUsdc: result.paid ? result.paidUsdc : undefined,
+          payTo: result.paid ? result.payTo : undefined,
+          transaction: result.transaction ?? null,
+          verification: result.verification ?? null,
+          result: result.paid ? (result.result ?? result.body) : undefined,
+          message: result.message
+            || result.verification?.summary
+            || "The endpoint rejected the payment.",
         });
         setPhase("decided");
         return;
@@ -464,7 +495,9 @@ export function RunClient() {
         payTo: result.payTo,
         transaction: result.transaction ?? null,
         result: result.result ?? result.body,
+        verification: result.verification ?? null,
         funding,
+        quoteDrift,
       });
       setPhase("authorized");
     } catch (caught: any) {
@@ -795,7 +828,11 @@ export function RunClient() {
             <div className="px-6 py-5">
               <div className="flex flex-wrap items-baseline justify-between gap-4">
                 <span className="run-eyebrow">
-                  {payment.stage === "done" ? "Result" : payment.stage === "failed" ? "Not purchased" : "Purchasing"}
+                  {payment.stage === "done"
+                    ? payment.verification?.verdict === "INCONCLUSIVE" ? "Result · unverified" : "Result · verified"
+                    : payment.stage === "failed"
+                      ? payment.paidUsdc !== undefined ? "Paid · failed verification" : "Not purchased"
+                      : "Purchasing"}
                 </span>
                 {payment.paidUsdc !== undefined ? (
                   <span className="run-num text-[13px] text-[var(--run-text-muted)]">
@@ -835,6 +872,17 @@ export function RunClient() {
                 </ol>
               ) : null}
 
+              {payment.quoteDrift ? (
+                <p
+                  className="mt-3.5 max-w-[62ch] rounded-[var(--run-radius-sm)] border px-3 py-2 text-[12px] leading-relaxed"
+                  style={{ borderColor: "var(--run-amber)", color: "var(--run-amber)" }}
+                >
+                  This endpoint now asks <Money value={payment.quoteDrift.quotedUsdc} /> where its
+                  catalog entry advertised <Money value={payment.quoteDrift.advertisedUsdc} />. The
+                  signature covers the live price, never the advertised one.
+                </p>
+              ) : null}
+
               {payment.stage === "signing" ? (
                 <p className="mt-3.5 max-w-[62ch] text-[12px] leading-relaxed text-[var(--run-text-muted)]">
                   Your wallet is showing the exact recipient and amount above. That
@@ -872,7 +920,53 @@ export function RunClient() {
                 </a>
               ) : null}
 
-              {payment.stage === "done" && payment.result !== undefined && payment.result !== null ? (
+              {payment.verification ? (
+                <div className="mt-4 rounded-[var(--run-radius-sm)] border border-[var(--run-line)] bg-[var(--run-canvas-raised)] p-4">
+                  <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-2">
+                    <span className="run-eyebrow">
+                      {payment.verification.required ? "Required verification" : "Verification"}
+                    </span>
+                    <span
+                      className="run-num text-[12px] font-semibold"
+                      style={{
+                        color: payment.verification.verdict === "PASS"
+                          ? "var(--run-azure)"
+                          : payment.verification.verdict === "FAIL"
+                            ? "var(--run-red)"
+                            : "var(--run-amber)",
+                      }}
+                    >
+                      {payment.verification.verdict}
+                    </span>
+                  </div>
+                  <p className="mt-2 text-[12.5px] leading-relaxed text-[var(--run-text-muted)]">
+                    {payment.verification.summary}
+                  </p>
+                  <ul className="mt-3 space-y-1.5">
+                    {payment.verification.checks.map((check) => (
+                      <li key={check.id} className="flex items-start gap-2.5 text-[12px]">
+                        <span
+                          aria-hidden
+                          className="mt-[6px] h-[5px] w-[5px] shrink-0 rounded-full"
+                          style={{
+                            background: check.passed === true
+                              ? "var(--run-azure)"
+                              : check.passed === false
+                                ? "var(--run-red)"
+                                : "var(--run-text-faint)",
+                          }}
+                        />
+                        <span className="min-w-0 text-[var(--run-text-muted)]">{check.detail}</span>
+                      </li>
+                    ))}
+                  </ul>
+                  <p className="run-num mt-3 text-[11px] text-[var(--run-text-faint)]">
+                    response {payment.verification.responseHash.slice(0, 10)}…{payment.verification.responseHash.slice(-6)}
+                  </p>
+                </div>
+              ) : null}
+
+              {payment.result !== undefined && payment.result !== null ? (
                 <pre className="run-num mt-4 max-h-[26rem] overflow-auto rounded-[var(--run-radius-sm)] border border-[var(--run-line)] bg-[var(--run-canvas)] p-4 text-[11.5px] leading-relaxed text-[var(--run-text-muted)]">
 {typeof payment.result === "string" ? payment.result : JSON.stringify(payment.result, null, 2)}
                 </pre>

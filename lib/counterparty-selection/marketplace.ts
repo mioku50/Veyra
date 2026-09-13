@@ -18,6 +18,12 @@ import { verifyTrustClearanceOnchain } from "../trust-gate/verify.ts";
 import { hashCanonical, normalizeCapability } from "./canonical.ts";
 import { rankCounterparties } from "./engine.ts";
 import {
+  buildEvidenceWithHistory,
+  loadEndpointObservations,
+  recordEndpointObservation,
+} from "../x402/trust-api/observations.ts";
+import { normalizeResourceUrl, resourceKeyFor } from "../x402/trust-api/resource.ts";
+import {
   discoverMarketplaceCandidates,
   marketplacePayToAddress,
   MARKETPLACE_DISCOVERY_LIMITS,
@@ -102,6 +108,7 @@ export type MarketplaceRankedCandidate = RankedCandidate & {
     supportsCircleGateway: boolean;
     declaresInputSchema: boolean;
     declaresOutputSchema: boolean;
+    outputSchema: Record<string, unknown> | null;
     lastUpdated: string | null;
     catalogHash: Hex;
   };
@@ -506,12 +513,36 @@ export async function selectMarketplaceCounterparty(input: {
     (candidate) => candidate.priceUsdc <= request.budgetUsdc,
   );
 
+  /* Probe, then remember. Every probe used to be discarded the moment the
+     response was rendered, so Veyra met each endpoint for the first time on
+     every single run - which is why statistical evidence was never available
+     and why a payee that changed between two runs went unnoticed. The write is
+     best-effort: it improves the next verdict, never this one. */
   const probes = await mapWithConcurrency(affordable, 4, async (candidate) => {
     const probe = await probeX402Resource(probeExpectationFor(candidate), {
       fetchImpl: input.probeFetchImpl,
       now,
     });
-    return { candidate, probe };
+    let resourceKey: string | null = null;
+    let history: Awaited<ReturnType<typeof loadEndpointObservations>> = [];
+    try {
+      const normalized = normalizeResourceUrl(candidate.resource);
+      resourceKey = resourceKeyFor(candidate.method, normalized);
+      history = await loadEndpointObservations(resourceKey);
+      void recordEndpointObservation({
+        resourceKey,
+        resourceUrl: normalized,
+        method: candidate.method,
+        network: candidate.selectedAccept.network,
+        candidateId: candidate.candidateId,
+        asset: candidate.selectedAccept.asset,
+        probe,
+      });
+    } catch {
+      resourceKey = null;
+      history = [];
+    }
+    return { candidate, probe, history };
   });
 
   const rankingInputs: CandidateRankingInput[] = [];
@@ -522,10 +553,12 @@ export async function selectMarketplaceCounterparty(input: {
     coverage: ReturnType<typeof marketplaceEvidenceCoverage>;
   }>();
 
-  for (const { candidate, probe } of probes) {
+  for (const { candidate, probe, history } of probes) {
     const payTo = marketplacePayToAddress(candidate);
     if (!payTo) continue;
-    const evidence = buildX402ProbeEvidence([probe]);
+    const evidence = history.length > 0
+      ? buildEvidenceWithHistory(probe, history)
+      : buildX402ProbeEvidence([probe]);
     const coverage = marketplaceEvidenceCoverage(evidence);
     const confidenceLevel = evidence.qualityScore.confidenceLevel;
     const confidencePercent = confidenceLevel === "high" ? 90 : confidenceLevel === "medium" ? 60 : 30;
@@ -601,6 +634,7 @@ export async function selectMarketplaceCounterparty(input: {
         supportsCircleGateway: context.candidate.supportsCircleGateway,
         declaresInputSchema: context.candidate.declaresInputSchema,
         declaresOutputSchema: context.candidate.declaresOutputSchema,
+        outputSchema: context.candidate.outputSchema,
         lastUpdated: context.candidate.lastUpdated,
         catalogHash: context.candidate.catalogHash,
       },

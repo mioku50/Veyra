@@ -8,12 +8,17 @@ import type { ReactNode } from "react";
 /** Shared vocabulary for the Run surface. Semantics first: a colour here always
  *  means the same thing, so a reader learns the screen once. */
 
-export type Verdict = "allow" | "limited" | "review" | "deny" | "unknown";
+export type Verdict = "allow" | "limited" | "verify" | "review" | "deny" | "unknown";
 
+/* REQUIRE_EVALUATOR and REVIEW_REQUIRED used to share one label, "Needs
+   evaluator", which made a purchasable verdict read like a blocked one. They
+   are opposites: REQUIRE_EVALUATOR may be bought and its result must then be
+   verified, REVIEW_REQUIRED is never eligible to win at all. They now say so. */
 export const VERDICT_TONE: Record<Verdict, { label: string; color: string; wash: string }> = {
   allow: { label: "Allow", color: "var(--run-azure)", wash: "var(--run-azure-wash)" },
   limited: { label: "Allow with limits", color: "var(--run-azure)", wash: "var(--run-azure-wash)" },
-  review: { label: "Needs evaluator", color: "var(--run-amber)", wash: "var(--run-amber-wash)" },
+  verify: { label: "Allow, verify after", color: "var(--run-amber)", wash: "var(--run-amber-wash)" },
+  review: { label: "Review required", color: "var(--run-amber)", wash: "var(--run-amber-wash)" },
   deny: { label: "Deny", color: "var(--run-red)", wash: "var(--run-red-wash)" },
   unknown: { label: "Undecided", color: "var(--run-text-faint)", wash: "transparent" },
 };
@@ -22,7 +27,7 @@ export function verdictFromDecision(decision: string | null | undefined): Verdic
   switch (decision) {
     case "ALLOW": return "allow";
     case "ALLOW_WITH_LIMITS": return "limited";
-    case "REQUIRE_EVALUATOR":
+    case "REQUIRE_EVALUATOR": return "verify";
     case "REVIEW_REQUIRED": return "review";
     case "DENY": return "deny";
     default: return "unknown";
@@ -31,6 +36,14 @@ export function verdictFromDecision(decision: string | null | undefined): Verdic
 
 export function Eyebrow({ children }: { children: ReactNode }) {
   return <div className="run-eyebrow">{children}</div>;
+}
+
+/** The same rounding `Money` renders, for the places that need a plain string
+ *  (a button label, an aria-label) and must not disagree with the figure beside
+ *  them. */
+export function formatUsdc(value: number | null | undefined): string {
+  if (value === null || value === undefined || Number.isNaN(value)) return "—";
+  return `$${value < 0.01 ? value.toFixed(4) : value.toFixed(2)}`;
 }
 
 /** Money is never a plain string: it carries its unit and aligns with its column. */
@@ -44,7 +57,7 @@ export function Money({ value, unit = "USDC", className = "" }: {
   }
   // Sub-cent prices are the normal case here, so significant digits matter more
   // than a fixed two-decimal convention.
-  const text = value < 0.01 ? value.toFixed(4) : value.toFixed(2);
+  const text = formatUsdc(value).replace("$", "");
   return (
     <span className={`run-num ${className}`}>
       ${text}

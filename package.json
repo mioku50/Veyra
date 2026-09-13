@@ -143,7 +143,8 @@
     "audit:secrets": "node --experimental-transform-types --no-warnings scripts/audit-secrets.mts",
     "release:gate": "node --experimental-transform-types --no-warnings scripts/public-beta-release-gate.mts",
     "benchmark": "node --experimental-transform-types --no-warnings benchmarks/run.mts",
-    "x402-payment:test": "node --experimental-transform-types --no-warnings scripts/x402-browser-payment-tests.mts"
+    "x402-payment:test": "node --experimental-transform-types --no-warnings scripts/x402-browser-payment-tests.mts",
+    "x402-verification:test": "node --experimental-transform-types --no-warnings scripts/x402-post-call-verification-tests.mts"
   },
   "dependencies": {
     "@circle-fin/adapter-viem-v2": "^1.14.0",

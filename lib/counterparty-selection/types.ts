@@ -61,6 +61,8 @@ export type CandidateEvidence = {
   snapshotCreatedAt: string;
   trustScore: number;
   snapshotConfidence: number;
+  /** Fraction, 0-1. This is the only place coverage is a fraction; everything
+   *  a caller or a screen sees is `evidenceCoverage`, a 0-100 percent. */
   snapshotCoverage: number;
   dimensions: {
     reputationQuality: number;
@@ -146,6 +148,8 @@ export type RankedCandidate = {
   quotedPriceUsdc?: number;
   priceKind: PriceKind;
   evidenceHash: Hex;
+  /** Percent, 0-100, already rounded by the ranking engine. Never scale it
+   *  again for display - that is what printed "EVIDENCE 3300%". */
   evidenceCoverage: number;
   evidenceCount: number;
   evidenceSources: EvidenceSourceSummary[];
