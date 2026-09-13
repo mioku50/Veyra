@@ -447,6 +447,8 @@ export function RunClient() {
       decision: c.trustDecision,
       maxExposureUsdc: c.recommendedMaxExposureUsdc,
       rank: c.rank,
+      funding: c.marketplace.funding,
+      payableNow: c.marketplace.payableNow ?? null,
       probe: c.probe
         ? {
             reachable: c.probe.reachable,
@@ -487,6 +489,9 @@ export function RunClient() {
       priceUsdc: rec.priceUsdc,
       maxExposureUsdc: rec.maxExposureUsdc,
       postCallVerificationRequired: rec.postCallVerificationRequired,
+      funding: rec.funding ?? null,
+      payableNow: rec.payableNow ?? null,
+      routingNote: rec.routingNote ?? null,
       inputSchema: (selection.candidates ?? []).find(
         (c: any) => c.marketplace?.candidateId === rec.candidateId,
       )?.marketplace?.inputSchema ?? null,

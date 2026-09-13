@@ -9,6 +9,9 @@ import {
   type X402ProbeExpectation,
   type X402ProbeResult,
 } from "../providers/x402-probe.ts";
+import { evmChainIdFromCaip2 } from "../x402/browser-payment.ts";
+import { gatewayContextForChain, readGatewayBalance } from "../x402/gateway-deposit.ts";
+import { railReadiness, routeToPayableRail } from "./payment-rail.ts";
 import { computeCanonicalDecisionHash } from "../trust-gate/canonical.ts";
 import { DENY_TIER, resolvePolicy } from "../trust-gate/policy.ts";
 import { signTrustClearance } from "../trust-gate/sign.ts";
@@ -106,6 +109,11 @@ export type MarketplaceRankedCandidate = RankedCandidate & {
     asset: string;
     supportsVanillaX402: boolean;
     supportsCircleGateway: boolean;
+    /* Where the money leaves from, so the screen can say it before a wallet
+       opens instead of after a refusal. */
+    funding: "wallet" | "gateway_deposit";
+    payableNow: boolean | null;
+    railNote: string;
     declaresInputSchema: boolean;
     declaresOutputSchema: boolean;
     inputSchema: Record<string, unknown> | null;
@@ -180,6 +188,13 @@ export type MarketplaceSelection = {
     decision: TrustDecision["decision"] | null;
     maxExposureUsdc: number;
     postCallVerificationRequired: boolean;
+    /* Which rail the winner settles on, and whether the requester can pay it
+       without setting something up first. */
+    funding: "wallet" | "gateway_deposit" | null;
+    payableNow: boolean | null;
+    /* Set only when payability changed which candidate was chosen, or when
+       nothing here is payable. Silence means the ranking stood unaltered. */
+    routingNote: string | null;
     explanation: string;
   };
   clearance: MarketplaceSelectionClearance | null;
@@ -516,6 +531,18 @@ export async function selectMarketplaceCounterparty(input: {
     (candidate) => candidate.priceUsdc <= request.budgetUsdc,
   );
 
+  /* Read once, for this buyer, on the chain these candidates settle on. A
+     batched endpoint spends a Gateway deposit rather than the wallet balance,
+     so whether one is funded decides which candidates this wallet can pay at
+     all — a fact about the buyer, deliberately kept out of the trust score and
+     applied only when choosing between candidates already ranked on evidence.
+     Null means the question could not be asked, and never demotes anything. */
+  const gatewayChainId = evmChainIdFromCaip2(discovery.network);
+  const gatewayContext = gatewayChainId === null ? null : gatewayContextForChain(gatewayChainId);
+  const gatewayFundedAtomic = gatewayContext && affordable.some((candidate) => candidate.funding === "gateway_deposit")
+    ? (await readGatewayBalance(gatewayContext, input.tenant.requesterWallet))?.availableAtomic ?? null
+    : null;
+
   /* Probe, then remember. Every probe used to be discarded the moment the
      response was rendered, so Veyra met each endpoint for the first time on
      every single run - which is why statistical evidence was never available
@@ -619,7 +646,8 @@ export async function selectMarketplaceCounterparty(input: {
     marketplaceByAgentId.set(candidate.candidateId, { candidate, probe, evidence, coverage });
   }
 
-  const { ranked, winner } = rankCounterparties(rankingInputs);
+  const rankedResult = rankCounterparties(rankingInputs);
+  const { ranked } = rankedResult;
   const candidates: MarketplaceRankedCandidate[] = ranked.map((item) => {
     const context = marketplaceByAgentId.get(item.identity.agentId)!;
     return {
@@ -635,6 +663,17 @@ export async function selectMarketplaceCounterparty(input: {
         asset: context.candidate.selectedAccept.asset,
         supportsVanillaX402: context.candidate.supportsVanillaX402,
         supportsCircleGateway: context.candidate.supportsCircleGateway,
+        funding: context.candidate.funding,
+        payableNow: railReadiness({
+          funding: context.candidate.funding,
+          priceAtomic: BigInt(Math.round(context.candidate.priceUsdc * 1e6)),
+          gatewayFundedAtomic,
+        }).payableNow,
+        railNote: railReadiness({
+          funding: context.candidate.funding,
+          priceAtomic: BigInt(Math.round(context.candidate.priceUsdc * 1e6)),
+          gatewayFundedAtomic,
+        }).reason,
         /* The catalog is the first source, the live challenge the second, and
            the second is not a lesser one: Circle's entry for
            np.orthogonal.com/serper carries no `input` while the endpoint's own
@@ -675,6 +714,32 @@ export async function selectMarketplaceCounterparty(input: {
       },
     };
   });
+
+  /* Rank on evidence, then route on payability. The ranking above is neither
+     re-ordered nor re-weighted: this walks it in order and takes the first
+     candidate whose rail this wallet can settle on, so an unpayable rail loses
+     only to a candidate that was already eligible. When it passes over the
+     top-ranked one it says so, because silently substituting a counterparty is
+     exactly the kind of unexplained decision this product exists to refuse. */
+  const route = routeToPayableRail(
+    candidates.map((item) => ({
+      candidateId: item.identity.agentId,
+      rank: item.rank,
+      funding: item.marketplace.funding,
+      priceAtomic: BigInt(Math.round(item.marketplace.priceUsdc * 1e6)),
+      /* Anything Veyra would let proceed, which includes the evaluator tier —
+         that is the tier a first purchase normally lands in. A candidate
+         needing a human or refused outright is not an alternative. */
+      eligible: item.eligibility !== "INELIGIBLE" && item.eligibility !== "REVIEW_REQUIRED",
+    })),
+    gatewayFundedAtomic,
+  );
+  const routedWinner = route.winner
+    ? candidates.find((item) => item.identity.agentId === route.winner!.candidateId) ?? null
+    : null;
+  const winner = route.passedOver && routedWinner
+    ? rankedResult.ranked.find((item) => item.identity.agentId === routedWinner.identity.agentId) ?? rankedResult.winner
+    : rankedResult.winner;
 
   const winnerContext = winner ? marketplaceByAgentId.get(winner.identity.agentId) : undefined;
   const winnerPayTo = winnerContext ? marketplacePayToAddress(winnerContext.candidate) : null;
@@ -772,6 +837,15 @@ export async function selectMarketplaceCounterparty(input: {
     decision: winner ? (winner.trustDecision as TrustDecision["decision"]) : null,
     maxExposureUsdc: winner?.recommendedMaxExposureUsdc ?? 0,
     postCallVerificationRequired: winner ? winner.trustDecision !== "ALLOW" : false,
+    funding: winnerContext?.candidate.funding ?? null,
+    payableNow: winnerContext
+      ? railReadiness({
+          funding: winnerContext.candidate.funding,
+          priceAtomic: BigInt(Math.round(winnerContext.candidate.priceUsdc * 1e6)),
+          gatewayFundedAtomic,
+        }).payableNow
+      : null,
+    routingNote: route.note,
     explanation: winner && winnerContext
       ? [
           `${winnerContext.candidate.provider.name || winnerContext.candidate.origin} ranks ${winner.rankingScore}/100`,

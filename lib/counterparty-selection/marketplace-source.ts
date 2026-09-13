@@ -1,6 +1,7 @@
 import { getAddress, isAddress, type Hex } from "viem";
 import { hashCanonical, normalizeCapability } from "./canonical.ts";
 import { capabilityMatchFor } from "./policy.ts";
+import { diversifyByProvider, fundingForAccept, type PaymentFunding } from "./payment-rail.ts";
 import type { CapabilityMatch } from "./types.ts";
 
 /**
@@ -47,6 +48,9 @@ export const MARKETPLACE_DEFAULT_NETWORK: MarketplaceNetwork = "eip155:8453";
 export const MARKETPLACE_DISCOVERY_LIMITS = {
   maxLimit: 25,
   defaultLimit: 10,
+  /* How many endpoints one provider may hold in the shortlist before the rest
+     of its catalog is deferred behind other sellers. */
+  perProviderInShortlist: 3,
   maxUsdPrice: 100,
   requestTimeoutMs: 15_000,
   maxResponseBytes: 4 * 1024 * 1024,
@@ -103,6 +107,9 @@ export type MarketplaceCandidate = {
   siwx: boolean;
   supportsVanillaX402: boolean;
   supportsCircleGateway: boolean;
+  /* Which rail the selected accept settles on. Kept next to the accept it was
+     derived from so it can never disagree with what will be signed. */
+  funding: PaymentFunding;
   accepts: MarketplaceAccept[];
   selectedAccept: MarketplaceAccept;
   priceUsdc: number;
@@ -290,6 +297,7 @@ export function normalizeMarketplaceItem(
     siwx: metadata.siwx === true,
     supportsVanillaX402: metadata.supportsVanillax402 === true,
     supportsCircleGateway: metadata.supportsCircleGateway === true,
+    funding: fundingForAccept(selectedAccept),
     accepts,
     selectedAccept,
     priceUsdc: selectedAccept.priceUsdc,
@@ -451,6 +459,18 @@ export async function discoverMarketplaceCandidates(
       || left.candidateId.localeCompare(right.candidateId);
   });
 
+  /* A live "web search" discovery returned nine endpoints from one provider at
+     an identical price, which filled the shortlist and pushed out a resource
+     that cost half as much on a rail the buyer could actually pay. Ties in
+     capability and price leave catalog order intact, so endpoint sprawl reads
+     as a market. Later entries from the same provider are deferred, never
+     dropped, and nothing is promoted above a better match. */
+  const shortlist = diversifyByProvider(
+    candidates,
+    (candidate) => candidate.provider.name?.toLowerCase() || candidate.origin,
+    MARKETPLACE_DISCOVERY_LIMITS.perProviderInShortlist,
+  );
+
   return {
     source: MARKETPLACE_SOURCE,
     sourceVersion: MARKETPLACE_SOURCE_VERSION,
@@ -459,7 +479,7 @@ export async function discoverMarketplaceCandidates(
     networkLabel: MARKETPLACE_NETWORKS[network],
     query,
     catalogTotal,
-    candidates: candidates.slice(0, limit),
+    candidates: shortlist.slice(0, limit),
     queriedAt: new Date().toISOString(),
     readOnly: true,
     paymentCreated: false,

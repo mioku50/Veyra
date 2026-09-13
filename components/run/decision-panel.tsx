@@ -17,6 +17,10 @@ export type RunDecision = {
   priceUsdc: number | null;
   maxExposureUsdc: number;
   postCallVerificationRequired: boolean;
+  funding?: "wallet" | "gateway_deposit" | null;
+  payableNow?: boolean | null;
+  /* Set only when payability changed which counterparty was chosen. */
+  routingNote?: string | null;
   winnerTitle: string | null;
   reasons: string[];
   clearance: {
@@ -211,6 +215,19 @@ export function DecisionPanel({ decision, busy, onAuthorize }: {
         </div>
       ) : null}
 
+      {/* Why this counterparty and not the one that ranked above it. Ranking is
+          on evidence and stays on evidence; payability decides only between
+          candidates already eligible — but substituting one without saying so
+          would be exactly the unexplained decision this product refuses. */}
+      {decision.routingNote ? (
+        <div className="border-t border-[var(--run-line)] px-6 py-4">
+          <span className="run-eyebrow">Routing</span>
+          <p className="mt-2 max-w-[68ch] text-[12.5px] leading-relaxed text-[var(--run-text-muted)]">
+            {decision.routingNote}
+          </p>
+        </div>
+      ) : null}
+
       <div className="border-t border-[var(--run-line)] px-6 py-5">
         {denied ? (
           <div className="text-[13px] leading-relaxed text-[var(--run-text-muted)]">
@@ -233,6 +250,13 @@ export function DecisionPanel({ decision, busy, onAuthorize }: {
                     ? `Authorize ${formatUsdc(decision.priceUsdc)} & pay`
                     : "Authorize & pay"}
             </button>
+            {decision.funding === "gateway_deposit" ? (
+              <span className="text-[11.5px] text-[var(--run-amber)]">
+                {decision.payableNow === false
+                  ? "Needs a Circle Gateway deposit first"
+                  : "Settles through your Circle Gateway deposit"}
+              </span>
+            ) : null}
             <span className="max-w-[46ch] text-[11.5px] leading-relaxed text-[var(--run-text-faint)]">
               Veyra decides; you sign. The price is re-read from the endpoint
               immediately before your wallet is asked, so what you sign is what

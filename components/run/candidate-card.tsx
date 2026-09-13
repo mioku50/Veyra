@@ -21,6 +21,11 @@ export type RunCandidate = {
   decision: string | null;
   maxExposureUsdc: number;
   rank: number;
+  /* Which rail this endpoint settles on, and whether this wallet can pay it
+     today. Shown before the choice, because a candidate needing a deposit the
+     buyer has not made is a different proposition at the same price. */
+  funding?: "wallet" | "gateway_deposit";
+  payableNow?: boolean | null;
   probe?: {
     reachable: boolean;
     respondedWith402: boolean;
@@ -96,6 +101,19 @@ export function CandidateCard({ candidate, selected, index, onSelect }: {
           <div className="shrink-0 text-right">
             <Money value={candidate.priceUsdc} className="text-[17px]" />
             <div className="mt-1 text-[11px] text-[var(--run-text-faint)]">per call</div>
+            {/* The same price on two rails is not the same offer: one spends the
+                balance the wallet already shows, the other spends a Circle
+                Gateway deposit that may not exist yet. */}
+            {candidate.funding === "gateway_deposit" ? (
+              <div
+                className="mt-1.5 text-[10.5px] text-[var(--run-amber)]"
+                title="Settles through a Circle Gateway deposit rather than the wallet balance."
+              >
+                {candidate.payableNow === false ? "needs Gateway deposit" : "via Gateway deposit"}
+              </div>
+            ) : candidate.funding === "wallet" ? (
+              <div className="mt-1.5 text-[10.5px] text-[var(--run-text-faint)]">from wallet balance</div>
+            ) : null}
           </div>
         </div>
 
