@@ -288,6 +288,71 @@ function verdictFor(decision: TrustDecisionLevel, maxExposureUsdc: number): stri
   }
 }
 
+/**
+ * The first counterparty Veyra allows, Nova can pay, and can actually ask.
+ *
+ * Walks the engine's ranking, wallet-payable rails first -- the same order the
+ * selection was given -- and stops at the first candidate whose request body
+ * the endpoint's own 402 challenge accepts. Three attempts, because a person is
+ * waiting and a catalogue where the top three all refuse a plain question is
+ * telling you something a fourth call will not change.
+ *
+ * The quote is kept. It is the only thing that knows what this exact request
+ * costs, and using the catalogue's number on the card instead would make every
+ * approval report a price change that never happened.
+ */
+async function firstPayable(input: {
+  selection: MarketplaceSelection;
+  capability: string;
+  question: string;
+  fetchImpl?: typeof fetch;
+  attempts?: number;
+}): Promise<{
+  winner: MarketplaceRankedCandidate;
+  request: ReturnType<typeof buildRequestBody>;
+  quote: X402Quote;
+  skipped: string | null;
+} | null> {
+  const showable = input.selection.candidates.filter((candidate) =>
+    isExecutableTrustDecision(candidate.trustDecision));
+  const ordered = [
+    ...showable.filter((candidate) => candidate.marketplace.funding === "wallet"),
+    ...showable.filter((candidate) => candidate.marketplace.funding !== "wallet"),
+  ];
+
+  let skipped: string | null = null;
+  for (const candidate of ordered.slice(0, input.attempts ?? 3)) {
+    const request = buildRequestBody({
+      intent: input.question,
+      capability: input.capability,
+      inputSchema: (candidate.marketplace.inputSchema ?? null) as JsonSchema | null,
+    });
+    const quoted = await quoteX402Call({
+      resource: candidate.marketplace.resource,
+      method: candidate.marketplace.method,
+      requestBody: request.body,
+      maxAmountUsdc: RESEARCH_BUDGET_USDC,
+      inputSchema: candidate.marketplace.inputSchema,
+    });
+    if (quoted.kind === "quoted") {
+      /* Said only when a better-ranked candidate was actually passed over.
+         Silently substituting a counterparty is the kind of unexplained
+         decision this product exists to refuse -- including when the reason is
+         mundane. */
+      if (candidate !== ordered[0] && !skipped) {
+        skipped = `The best-ranked endpoint here would not accept a plain question, so ${BRAND_NAME} moved to the next one it could actually ask.`;
+      }
+      return { winner: candidate, request, quote: quoted.quote, skipped };
+    }
+    if (!skipped && candidate === ordered[0]) {
+      skipped = quoted.kind === "free"
+        ? `The best-ranked endpoint here answers without charging, so ${BRAND_NAME} moved to one that can be paid for and verified.`
+        : `The best-ranked endpoint here would not accept a plain question, so ${BRAND_NAME} moved to the next one it could actually ask.`;
+    }
+  }
+  return null;
+}
+
 export async function proposeResearch(input: {
   signal: NovaSignal;
   /** The owner's wallet when one is connected, which makes the Gateway balance
@@ -334,37 +399,61 @@ export async function proposeResearch(input: {
     };
   }
 
-  const winner = selection.recommendation.candidateId
-    ? selection.candidates.find((candidate) =>
-        candidate.identity.agentId === selection.recommendation.candidateId) ?? null
-    : null;
-  if (!winner || !isExecutableTrustDecision(winner.trustDecision)) {
+  /* The one Nova would pay, and one it can actually ask. Ranked order, rail
+     preference first -- the same order the engine was given -- but a candidate
+     is only a candidate if a request can be built for it that the endpoint's own
+     published schema accepts.
+
+     This is not belt and braces. The catalogue's declared input schema and the
+     one inside the 402 challenge are different documents, and the second is the
+     one that decides: Otto AI's margin endpoint lists nothing and then demands
+     `asset`. Pricing that card and discovering the problem when somebody presses
+     Pay is a dead end wearing a button -- and /run's answer, showing the reader
+     the published schema so they can repair the body, is no answer at all on a
+     surface whose whole premise is that nobody has to know what a schema is. */
+  const attempt = await firstPayable({
+    selection,
+    capability,
+    question,
+    fetchImpl: input.fetchImpl,
+  });
+  if (!attempt) {
+    const allowed = selection.candidates.filter((candidate) =>
+      isExecutableTrustDecision(candidate.trustDecision)).length;
     return {
       ok: false,
-      reason: "nothing_allowed",
-      /* Deliberately not "no results". Veyra looked and refused, which is a
-         different fact and the more useful one: it is the product doing its
-         job, not failing at it. */
-      detail: refusalDetail(selection),
+      reason: allowed > 0 ? "nothing_askable" : "nothing_allowed",
+      /* Two different refusals, kept apart. "Veyra would not authorise any of
+         them" and "the ones it would authorise do not answer questions" are
+         different facts about the market, and collapsing them into one would
+         make the policy look stricter than it is. */
+      detail: allowed > 0
+        ? `${BRAND_NAME} found ${allowed} ${allowed === 1 ? "endpoint" : "endpoints"} it would authorise, and none of them accepts a plain question -- they want parameters only their own callers would know. Nothing was paid.`
+        /* Deliberately not "no results". Veyra looked and refused, which is a
+           different fact and the more useful one: it is the product doing its
+           job, not failing at it. */
+        : refusalDetail(selection),
     };
   }
+  const { winner, request, quote, skipped } = attempt;
 
   const decision = winner.trustDecision;
   /* The winner's own ceiling, not the selection's recommendation object: they
-     are the same counterparty now, but quoting a number that belongs to a
-     different one is the failure this used to have and is cheap to keep out. */
+     are usually the same counterparty now, but quoting a number that belongs to
+     a different one is the failure this used to have and is cheap to keep out. */
   const maxExposureUsdc = winner.recommendedMaxExposureUsdc || winner.marketplace.priceUsdc;
-  const terms = termsFromCandidate(winner, capability);
-
-  /* What will actually be sent, decided now rather than at approval time. x402
-     prices per call, so the body IS part of the price: quoting one shape and
-     paying for another would make the number on the card a number about a
-     different request. */
-  const request = buildRequestBody({
-    intent: question,
-    capability,
-    inputSchema: (winner.marketplace.inputSchema ?? null) as JsonSchema | null,
-  });
+  /* From the challenge this exact request raised, not from the listing. x402
+     prices per call, so a card built on the catalogue price would differ from
+     the approval for a reason that is not a change in the market -- the
+     revalidation would report a price move on every single purchase. */
+  const costUsdc = quote.quotedUsdc;
+  const terms: NovaResearchTerms = {
+    ...termsFromCandidate(winner, capability),
+    priceAtomic: quote.accept.amountAtomic,
+    payTo: quote.accept.payTo,
+    network: quote.accept.network,
+    funding: quote.accept.gatewayBatched ? "gateway_deposit" : "wallet",
+  };
 
   return {
     ok: true,
@@ -374,10 +463,10 @@ export async function proposeResearch(input: {
       capability,
       provider: terms.provider,
       resource: terms.resource,
-      costUsdc: winner.marketplace.priceUsdc,
+      costUsdc,
       trustScore: Math.round(winner.trustScore ?? 0),
-      funding: winner.marketplace.funding,
-      paymentLabel: paymentLabelFor(winner.marketplace.funding),
+      funding: terms.funding,
+      paymentLabel: paymentLabelFor(terms.funding),
       payableNow: winner.marketplace.payableNow,
       decision,
       verdict: verdictFor(decision, maxExposureUsdc),
@@ -385,7 +474,7 @@ export async function proposeResearch(input: {
       verifiedAfterPaying: decision !== "ALLOW",
       reasons: reasonsFor(winner),
       probed: selection.probed,
-      routingNote: selection.recommendation.routingNote,
+      routingNote: skipped ?? selection.recommendation.routingNote,
       expiresAt: selection.expiresAt,
       termsHash: hashTerms(terms),
     },
@@ -394,8 +483,8 @@ export async function proposeResearch(input: {
       query,
       requestBody: request.body,
       requestNote: request.guessed ? request.note : null,
-      inputSchema: (winner.marketplace.inputSchema ?? null) as Record<string, unknown> | null,
-      outputSchema: (winner.marketplace.outputSchema ?? null) as Record<string, unknown> | null,
+      inputSchema: (winner.marketplace.inputSchema ?? quote.inputSchema ?? null) as Record<string, unknown> | null,
+      outputSchema: (winner.marketplace.outputSchema ?? quote.outputSchema ?? null) as Record<string, unknown> | null,
       candidateId: winner.marketplace.candidateId,
       method: winner.marketplace.method,
       verificationRequired: decision !== "ALLOW",
