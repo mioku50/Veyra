@@ -250,10 +250,29 @@ const publicItems = publicSidebarNavigation.flatMap(({ items }) =>
 assert.deepEqual(publicItems, [
   { label: "New decision", href: "/run" },
   { label: "Decisions", href: "/executions" },
-  { label: "Receipts", href: "/results" },
+  { label: "Receipts", href: "/receipts" },
   { label: "Agents", href: "/agents" },
   { label: "Evidence", href: "/trust" },
 ]);
+
+/* Labs is frozen behind the developer console. The product navigation must not
+   point at anything the middleware redirects away from, or the shell would send
+   its own visitors to a console they never asked for. */
+{
+  const { FROZEN_LABS_PREFIXES } = await import("../lib/navigation/frozen.ts");
+  for (const { href, label } of publicItems) {
+    const frozen = FROZEN_LABS_PREFIXES.find(
+      (prefix) => href === prefix || href.startsWith(`${prefix}/`),
+    );
+    assert(!frozen, `product navigation item "${label}" points at frozen ${frozen}`);
+  }
+  for (const href of ["/results", "/agent-runner", "/project-360", "/monitoring"]) {
+    assert(
+      consoleSidebarNavigation.some(({ items }) => items.some((item) => item.href === href)),
+      `${href} is frozen, so the console must still link to it`,
+    );
+  }
+}
 assert(publicItems.length <= 6, "product navigation must stay under seven destinations");
 assert.deepEqual(sidebarNavigation, publicSidebarNavigation);
 

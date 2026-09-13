@@ -35,7 +35,7 @@ export const publicSidebarNavigation = [
     label: "Activity",
     items: [
       { href: "/executions", label: "Decisions", icon: "activity" },
-      { href: "/results", label: "Receipts", icon: "results" },
+      { href: "/receipts", label: "Receipts", icon: "receipt" },
     ],
   },
   {
@@ -77,6 +77,7 @@ export const consoleSidebarNavigation = [
   {
     label: "Evidence tools",
     items: [
+      { href: "/results", label: "Reports", icon: "results" },
       { href: "/agent-runner", label: "New Report", icon: "templates" },
       { href: "/project-360", label: "Project 360", icon: "project-360" },
       { href: "/monitoring", label: "Monitoring", icon: "monitoring" },
