@@ -442,7 +442,7 @@ export async function loadBrief(input: {
 
   const [signalResult, refreshResult, awayResult, memoryResult, researchResult] = await Promise.all([
     db().from("nova_signals")
-      .select("signal_id, subject_id, kind, headline, detail, relevance, relevance_reason, evidence, status, execution_public_id, observed_at, nova_subjects(label, kind, interest)")
+      .select("signal_id, subject_id, kind, headline, detail, relevance, relevance_reason, evidence, status, execution_public_id, observed_at, nova_subjects(label, kind, interest, ref)")
       .eq("agent_id", agent.agent_id)
       .in("status", ["new", "seen", "investigating", "investigated"])
       .order("observed_at", { ascending: false })
@@ -482,6 +482,7 @@ export async function loadBrief(input: {
     signalId: row.signal_id,
     subjectId: row.subject_id,
     subjectLabel: row.nova_subjects?.label ?? null,
+    subjectRef: row.nova_subjects?.ref ?? null,
     subjectKind: row.nova_subjects?.kind ?? null,
     interest: row.nova_subjects?.interest ?? null,
     kind: row.kind,
@@ -661,7 +662,7 @@ export async function loadSignalForOwner(input: {
   const agent = await loadOwned(input.publicId, input.ownerSecret);
   const { data } = await db()
     .from("nova_signals")
-    .select("signal_id, subject_id, kind, headline, detail, relevance, relevance_reason, evidence, status, execution_public_id, observed_at, nova_subjects(label, kind, interest)")
+    .select("signal_id, subject_id, kind, headline, detail, relevance, relevance_reason, evidence, status, execution_public_id, observed_at, nova_subjects(label, kind, interest, ref)")
     .eq("agent_id", agent.agent_id)
     .eq("signal_id", input.signalId)
     .maybeSingle();
@@ -672,6 +673,7 @@ export async function loadSignalForOwner(input: {
     signalId: row.signal_id,
     subjectId: row.subject_id,
     subjectLabel: row.nova_subjects?.label ?? null,
+    subjectRef: row.nova_subjects?.ref ?? null,
     subjectKind: row.nova_subjects?.kind ?? null,
     interest: row.nova_subjects?.interest ?? null,
     kind: row.kind,

@@ -180,6 +180,10 @@ export type NovaSignal = ObservedChange & {
   signalId: string;
   subjectId: string | null;
   subjectLabel: string | null;
+  /** The subject's own identifier in the source it came from -- for a paid
+   *  capability, its id in Circle's catalogue. It is what lets an
+   *  investigation ask the endpoint the signal is actually about. */
+  subjectRef?: string | null;
   subjectKind: NovaSubjectKind | null;
   interest: string | null;
   relevance: NovaRelevance;

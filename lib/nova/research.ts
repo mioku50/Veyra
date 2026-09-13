@@ -318,6 +318,9 @@ async function firstPayable(input: {
   selection: MarketplaceSelection;
   capability: string;
   question: string;
+  /** The catalogue id of the thing the signal is about, when it is a listing
+   *  rather than a repository. Tried first. */
+  subjectRef?: string | null;
   fetchImpl?: typeof fetch;
   attempts?: number;
 }): Promise<{
@@ -328,10 +331,20 @@ async function firstPayable(input: {
 } | null> {
   const showable = input.selection.candidates.filter((candidate) =>
     isExecutableTrustDecision(candidate.trustDecision));
-  const ordered = [
+  const byRail = [
     ...showable.filter((candidate) => candidate.marketplace.funding === "wallet"),
     ...showable.filter((candidate) => candidate.marketplace.funding !== "wallet"),
   ];
+  /* Ask the endpoint the signal is about, if it can be asked.
+     "Exa contents is available for $0.0010" produced a question about Exa and
+     bought an answer from somebody else's Reddit scraper for twenty times the
+     price. The generic ranking is right when there is no obvious subject -- a
+     repository does not sell anything -- and wrong the moment there is one: the
+     thing best placed to say what Exa contents is for is Exa contents. */
+  const subject = input.subjectRef
+    ? byRail.find((candidate) => candidate.marketplace.candidateId === input.subjectRef) ?? null
+    : null;
+  const ordered = subject ? [subject, ...byRail.filter((c) => c !== subject)] : byRail;
 
   /* The reason the first candidate was passed over, if one was. Rank-neutral
      wording, because the walk is in rank order and "a higher-ranked endpoint"
@@ -388,6 +401,9 @@ async function firstPayable(input: {
       /* Only when the ranking was actually departed from. Silently substituting
          a counterparty is the kind of unexplained decision this product exists
          to refuse -- including when the reason is mundane. */
+      /* No note when the subject's own endpoint won, or when the ranking
+         stood: a sentence apologising for a substitution that did not happen is
+         the screen explaining itself incorrectly. */
       skipped: candidate === ordered[0] ? null : skipped,
     };
   }
@@ -456,6 +472,7 @@ export async function proposeResearch(input: {
     selection,
     capability,
     question,
+    subjectRef: input.signal.subjectKind === "x402_resource" ? input.signal.subjectRef : null,
     fetchImpl: input.fetchImpl,
   });
   if (!attempt) {
