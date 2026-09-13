@@ -288,6 +288,7 @@ export async function approveResearch(input: {
          makes the settled row an account of what was agreed. */
       terms: outcome.terms,
       terms_hash: outcome.termsHash,
+      verification_required: outcome.verificationRequired,
       approval,
       payer_wallet: getAddress(input.wallet),
       clearance_digest: outcome.clearance.clearanceDigest,
@@ -374,7 +375,12 @@ export async function settleResearch(input: {
     authorization,
     signature: signature(input.signature),
     resourceDescriptor: row.approval.quote.resourceDescriptor,
-    verificationRequired: row.verification_required,
+    /* The tier as it was at approval, not at proposal. They are usually the
+       same and when they are not, the stale one is wrong in the direction that
+       matters: a counterparty whose tier tightened between the card being drawn
+       and the payment being cleared would have had its answer relayed
+       unchecked. */
+    verificationRequired: row.approval.verificationRequired ?? row.verification_required,
     declaredOutputSchema: row.approval.outputSchema ?? row.output_schema,
     selectionId: row.selection_id,
     selectionHash: row.approval.selectionHash,
