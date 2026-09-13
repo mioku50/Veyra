@@ -152,7 +152,8 @@
     "x402-request-body:test": "node --experimental-transform-types --no-warnings scripts/x402-request-body-tests.mts",
     "x402-gateway:test": "node --experimental-transform-types --no-warnings scripts/x402-gateway-tests.mts",
     "payment-rail:test": "node --experimental-transform-types --no-warnings scripts/payment-rail-tests.mts",
-    "nova:test": "node --experimental-transform-types --no-warnings scripts/nova-tests.mts"
+    "nova:test": "node --experimental-transform-types --no-warnings scripts/nova-tests.mts",
+    "nova:research:live": "node --experimental-transform-types --no-warnings --env-file-if-exists=.env.local scripts/nova-research-live.mts"
   },
   "dependencies": {
     "@circle-fin/adapter-viem-v2": "^1.14.0",
