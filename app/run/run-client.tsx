@@ -78,7 +78,7 @@ export function RunClient() {
      to flip a UI state and print a CLI command, so nothing was ever bought from
      the browser. Veyra signs the verdict; the user signs the money. */
   const [payment, setPayment] = useState<{
-    stage: "quoting" | "signing" | "settling" | "preparing" | "prepared" | "done" | "failed";
+    stage: "quoting" | "signing" | "settling" | "preparing" | "prepared" | "funding" | "done" | "failed";
     quotedUsdc?: number;
     paidUsdc?: number;
     payTo?: string;
@@ -89,6 +89,38 @@ export function RunClient() {
        Gateway deposit, not the wallet balance, so a user holding USDC can still
        be refused — and needs to be told where to put it. */
     funding?: "wallet" | "gateway_deposit";
+    /* Exactly what the wallet is about to show, shown here first. A reader who
+       cannot compare the two has no way to tell a bounded authorization from
+       an unlimited approval — which is the whole promise of the product. */
+    signing?: {
+      chainId: number;
+      network: string;
+      primaryType: string;
+      amountUsdc: number;
+      recipient: string;
+      nonce: string;
+      validBefore: number;
+      domainName: string;
+      verifyingContract: string;
+      gatewayBatched: boolean;
+    };
+    /* Whether a Gateway endpoint can actually be paid, asked before the wallet
+       opens rather than discovered from a refusal afterwards. */
+    gateway?: {
+      supported: boolean;
+      sufficient: boolean | null;
+      gatewayAvailableAtomic: string | null;
+      gatewayPendingAtomic: string | null;
+      walletUsdcAtomic: string | null;
+      depositAtomic: string;
+      canDeposit: boolean;
+      chainId: number;
+      message: string;
+      steps: Array<{ kind: string; to: string; data: string; value: string; chainId: number; title: string; detail: string }>;
+    } | null;
+    /* Which deposit step is in the wallet right now. */
+    gatewayBusy?: string | null;
+    gatewayDone?: string[];
     /* The verification the trust tier demanded, as it actually came back. */
     verification?: {
       verdict: "PASS" | "FAIL" | "INCONCLUSIVE";
@@ -570,6 +602,54 @@ export function RunClient() {
   }
 
   /** One step, sent by the user's wallet, then confirmed by Veyra against Arc. */
+  /**
+   * Funds Circle Gateway from the buyer's own wallet.
+   *
+   * Two transactions, exactly as Circle's buyer quickstart does them: approve
+   * the exact deposit, then `deposit()`. The approval is never unlimited, and
+   * it is skipped entirely when the existing allowance already covers it.
+   *
+   * A plain transfer to the Gateway wallet is NOT credited to the unified
+   * balance, which is why this goes through the contract call and not a send.
+   */
+  async function fundGateway(step: { kind: string; to: string; data: string; chainId: number }) {
+    setPayment((prev) => prev && { ...prev, gatewayBusy: step.kind, message: undefined });
+    try {
+      if (wallet.chainId !== step.chainId) {
+        const switched = await wallet.switchToChain(step.chainId);
+        if (!switched) throw new Error(`Switch your wallet to chain ${step.chainId} to fund Gateway.`);
+      }
+      await wallet.sendTransaction({
+        to: step.to as `0x${string}`,
+        data: step.data as `0x${string}`,
+      });
+
+      /* Re-read rather than assume. A deposit is credited to the unified
+         balance a moment after the transaction lands, so the honest report is
+         what Circle says now — not what the amount implies it ought to be. */
+      const done = [...(payment?.gatewayDone ?? []), step.kind];
+      const refreshed = await post("/api/run/v1/gateway", {
+        chainId: step.chainId,
+        wallet: wallet.address,
+        requiredAtomic: payment?.gateway
+          ? String(Math.round((payment.quotedUsdc ?? 0) * 1e6))
+          : "0",
+      });
+      setPayment((prev) => prev && {
+        ...prev,
+        gatewayBusy: null,
+        gatewayDone: done,
+        gateway: refreshed.response.ok ? refreshed.payload : prev.gateway,
+      });
+    } catch (caught: any) {
+      setPayment((prev) => prev && {
+        ...prev,
+        gatewayBusy: null,
+        message: caught?.shortMessage || caught?.message || "That step was not completed.",
+      });
+    }
+  }
+
   async function sendJobStep(step: JobStep) {
     const executionId = payment?.executionId;
     if (!executionId) return;
@@ -683,11 +763,59 @@ export function RunClient() {
         && Math.abs(quotedUsdc - decision.priceUsdc) > 1e-9
         ? { advertisedUsdc: decision.priceUsdc, quotedUsdc }
         : null;
-      setPayment({ stage: "signing", quotedUsdc, payTo: accept.payTo, funding, quoteDrift });
+      /* Ask before the wallet opens, not after the refusal. A batched accept
+         spends a Gateway deposit rather than the wallet balance, so a wallet
+         holding plenty of USDC is still refused — and the refusal arrives
+         after the reader has approved a signature for nothing. */
+      if (accept.gatewayBatched) {
+        const preflight = await post("/api/run/v1/gateway", {
+          chainId: accept.chainId,
+          wallet: wallet.address,
+          requiredAtomic: accept.amountAtomic,
+        });
+        const gateway = preflight.response.ok ? preflight.payload : null;
+        if (gateway && gateway.supported && gateway.sufficient !== true) {
+          setPayment({
+            stage: "funding",
+            quotedUsdc,
+            payTo: accept.payTo,
+            funding,
+            quoteDrift,
+            gateway,
+            gatewayDone: [],
+            gatewayBusy: null,
+          });
+          setPhase("decided");
+          return;
+        }
+      }
+
       const { authorization, typedData } = buildPaymentTypedData({
         accept,
         from: wallet.address as `0x${string}`,
         nonce: nonce as `0x${string}`,
+      });
+      /* Published before the wallet is asked, so the two can be compared field
+         by field. The authorization names one recipient, one amount and one
+         nonce, and expires; it is not an allowance the seller can draw again. */
+      setPayment({
+        stage: "signing",
+        quotedUsdc,
+        payTo: accept.payTo,
+        funding,
+        quoteDrift,
+        signing: {
+          chainId: accept.chainId,
+          network: accept.network,
+          primaryType: typedData.primaryType as string,
+          amountUsdc: Number(authorization.value) / 1e6,
+          recipient: authorization.to,
+          nonce: authorization.nonce,
+          validBefore: Number(authorization.validBefore),
+          domainName: accept.assetName,
+          verifyingContract: accept.verifyingContract,
+          gatewayBatched: Boolean(accept.gatewayBatched),
+        },
       });
       const signature = await wallet.signTypedData(typedData as any);
 
@@ -1129,7 +1257,9 @@ export function RunClient() {
                     ? payment.verification?.verdict === "INCONCLUSIVE" ? "Result · unverified" : "Result · verified"
                     : payment.stage === "failed"
                       ? payment.paidUsdc !== undefined ? "Paid · failed verification" : "Not purchased"
-                      : "Purchasing"}
+                      : payment.stage === "funding"
+                        ? "Gateway balance required"
+                        : "Purchasing"}
                 </span>
                 {payment.paidUsdc !== undefined ? (
                   <span className="run-num text-[13px] text-[var(--run-text-muted)]">
@@ -1144,7 +1274,11 @@ export function RunClient() {
               </div>
 
               {payment.stage !== "done" && payment.stage !== "failed"
-                && payment.stage !== "preparing" && payment.stage !== "prepared" ? (
+                && payment.stage !== "preparing" && payment.stage !== "prepared"
+                /* Funding is not a step of the purchase — it is what has to be
+                   true before the purchase can start. Showing it inside the
+                   three-step run would claim progress that has not happened. */
+                && payment.stage !== "funding" ? (
                 <ol className="mt-4 flex flex-wrap items-center gap-x-2 gap-y-1">
                   {(["quoting", "signing", "settling"] as const).map((step, i) => {
                     const order = { quoting: 0, signing: 1, settling: 2 } as const;
@@ -1186,6 +1320,125 @@ export function RunClient() {
                   Your wallet is showing the exact recipient and amount above. That
                   signature is the ceiling — Veyra relays it and cannot change it.
                 </p>
+              ) : null}
+
+              {/* The same fields the wallet is about to show, published first so
+                  the two can be compared. A wallet may warn on this signature:
+                  Circle's batched scheme domain-separates the authorization by
+                  the Gateway contract rather than by the token, which most
+                  simulators cannot evaluate. The warning is about what the
+                  simulator could not read, and these are the values it could
+                  not read — an authorization for one amount, to one recipient,
+                  on one nonce, that expires. */}
+              {payment.stage === "signing" && payment.signing ? (
+                <div className="mt-4 rounded-[var(--run-radius-sm)] border border-[var(--run-line)] bg-[var(--run-canvas-raised)] p-4">
+                  <span className="run-eyebrow">You are signing</span>
+                  <dl className="mt-3 grid gap-x-6 gap-y-2 sm:grid-cols-[auto_1fr]">
+                    {[
+                      ["Network", `chain ${payment.signing.chainId}`],
+                      ["Type", payment.signing.primaryType],
+                      ["Amount", `${payment.signing.amountUsdc.toFixed(6)} USDC`],
+                      ["Recipient", payment.signing.recipient],
+                      ["Signed against", `${payment.signing.domainName} · ${payment.signing.verifyingContract}`],
+                      ["Expires", new Date(payment.signing.validBefore * 1000).toISOString().replace("T", " ").slice(0, 19) + "Z"],
+                      ["Nonce", payment.signing.nonce],
+                    ].map(([label, value]) => (
+                      <Fragment key={label}>
+                        <dt className="text-[11.5px] uppercase tracking-wide text-[var(--run-text-faint)]">{label}</dt>
+                        <dd className="run-num break-all text-[12px] text-[var(--run-text)]">{value}</dd>
+                      </Fragment>
+                    ))}
+                  </dl>
+                  <p className="mt-3 max-w-[62ch] text-[12px] leading-relaxed text-[var(--run-text-muted)]">
+                    This authorization can move exactly{" "}
+                    {payment.signing.amountUsdc.toFixed(6)} USDC to that recipient,
+                    once, before it expires. It is not an unlimited approval, and
+                    nothing can be drawn again on the same nonce.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => void navigator.clipboard?.writeText(payment.signing!.recipient)}
+                    className="run-focus mt-3 text-[12px] text-[var(--run-azure)] hover:underline"
+                  >
+                    Copy recipient
+                  </button>
+                </div>
+              ) : null}
+
+              {/* The dead end, turned into the step that clears it. Veyra used to
+                  name the Gateway deposit as the reason a funded wallet was
+                  refused and then offer no way to make one. */}
+              {payment.stage === "funding" && payment.gateway ? (
+                <div className="mt-4 space-y-3">
+                  <dl className="grid gap-x-6 gap-y-2 sm:grid-cols-[auto_1fr]">
+                    {[
+                      ["Price", `${(payment.quotedUsdc ?? 0).toFixed(6)} USDC`],
+                      ["Wallet balance", payment.gateway.walletUsdcAtomic === null
+                        ? "unknown"
+                        : `${(Number(payment.gateway.walletUsdcAtomic) / 1e6).toFixed(6)} USDC`],
+                      ["Gateway balance", payment.gateway.gatewayAvailableAtomic === null
+                        ? "unknown"
+                        : `${(Number(payment.gateway.gatewayAvailableAtomic) / 1e6).toFixed(6)} USDC`],
+                    ].map(([label, value]) => (
+                      <Fragment key={label}>
+                        <dt className="text-[11.5px] uppercase tracking-wide text-[var(--run-text-faint)]">{label}</dt>
+                        <dd className="run-num text-[12.5px] text-[var(--run-text)]">{value}</dd>
+                      </Fragment>
+                    ))}
+                  </dl>
+                  <p className="max-w-[62ch] text-[12.5px] leading-relaxed text-[var(--run-text)]">
+                    {payment.gateway.message}
+                  </p>
+
+                  {payment.gateway.sufficient === true ? (
+                    <button
+                      type="button"
+                      onClick={() => void payAndRun()}
+                      className="run-cta run-focus inline-flex h-10 items-center rounded-[var(--run-radius-sm)] px-5 text-[13px] font-semibold"
+                    >
+                      Continue purchase — {(payment.quotedUsdc ?? 0).toFixed(6)} USDC
+                    </button>
+                  ) : payment.gateway.steps.map((step, index) => {
+                    const done = (payment.gatewayDone ?? []).includes(step.kind);
+                    return (
+                      <div
+                        key={step.kind}
+                        className="rounded-[var(--run-radius-sm)] border border-[var(--run-line)] bg-[var(--run-canvas-raised)] p-4"
+                      >
+                        <div className="flex flex-wrap items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-2.5">
+                              <span className="run-num text-[11px] text-[var(--run-text-faint)]">
+                                {String(index + 1).padStart(2, "0")}
+                              </span>
+                              <span className="text-[13.5px] font-medium">{step.title}</span>
+                              {done ? (
+                                <span className="text-[11px] text-[var(--run-azure)]">done</span>
+                              ) : null}
+                            </div>
+                            <p className="mt-1.5 max-w-[58ch] text-[12px] leading-relaxed text-[var(--run-text-muted)]">
+                              {step.detail}
+                            </p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => void fundGateway(step)}
+                            disabled={done || Boolean(payment.gatewayBusy)}
+                            className="run-cta run-focus inline-flex h-9 shrink-0 items-center rounded-[var(--run-radius-sm)] px-4 text-[12.5px] font-semibold disabled:opacity-50"
+                          >
+                            {payment.gatewayBusy === step.kind ? "Waiting for your wallet…" : "Sign in wallet"}
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+
+                  <p className="max-w-[62ch] text-[12px] leading-relaxed text-[var(--run-text-faint)]">
+                    A deposit stays yours and can be withdrawn from Circle Gateway.
+                    It is not a payment to this endpoint — it is the balance every
+                    batched endpoint on this chain draws from.
+                  </p>
+                </div>
               ) : null}
 
               {/* Two rails that look identical in the wallet and are not. A
