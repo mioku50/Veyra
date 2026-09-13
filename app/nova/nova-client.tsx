@@ -951,7 +951,32 @@ export function NovaClient({ view = "today" }: { view?: NovaView } = {}) {
       </Panel>
       ) : null}
 
-      {view === "arc" ? <Standing brief={brief} /> : null}
+      {view === "arc" ? (
+        <>
+          <Standing brief={brief} />
+          {/* Said here because the brief cannot avoid raising it: somebody picks
+              Arc as an interest, gets shown a payment, and the payment settles
+              on Base. That looks like a contradiction until you know which half
+              of the transaction Arc holds, and nobody should have to guess. */}
+          <Panel className="mt-4">
+            <Label>Why the money is not on Arc</Label>
+            <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
+              Circle&apos;s service catalogue lists{" "}
+              <span className="font-mono text-foreground">1,139</span> paid endpoints and not one
+              of them is on Arc, so when {agentName} buys an answer it pays where the sellers
+              are — usually Base, and the card says so before you sign.
+            </p>
+            <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
+              What happens on Arc is the part {BRAND.name} is responsible for: the decision.
+              Every authorisation is signed against the Trust Gate on Arc and verified there
+              before a wallet is ever asked, so the record of what was allowed, for how much and
+              to whom lives on Arc even when the payment does not. That is also where this
+              agent&apos;s identity and standing will be, once there is a history worth pointing
+              at.
+            </p>
+          </Panel>
+        </>
+      ) : null}
       {view === "agent" && !justCreated && identity
         ? <RecoveryKey who={identity} emphatic={false} />
         : null}

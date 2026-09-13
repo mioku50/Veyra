@@ -21,6 +21,7 @@ import {
   issueMarketplaceClearance,
   selectMarketplaceCounterparty,
 } from "../counterparty-selection/marketplace.ts";
+import { MARKETPLACE_NETWORKS } from "../counterparty-selection/marketplace-source.ts";
 import type {
   MarketplaceRankedCandidate,
   MarketplaceSelection,
@@ -257,9 +258,21 @@ function refusalDetail(selection: MarketplaceSelection): string {
 
 const BRAND_NAME = "Veyra";
 
-/** "Direct USDC" is what the money does. "Vanilla x402" is what we call it. */
-function paymentLabelFor(funding: "wallet" | "gateway_deposit"): string {
-  return funding === "wallet" ? "Direct USDC" : "Circle Gateway deposit";
+/**
+ * What the money does, and where.
+ *
+ * The chain is named because the card carries an interest chip -- ARC, AI,
+ * Research -- in the same few inches, and somebody who picked Arc as an
+ * interest and then reads "Direct USDC" next to the word ARC has been given
+ * every reason to think the payment settles there. It does not: Circle's
+ * catalogue publishes 1139 resources and none of them are on Arc. Arc is where
+ * the decision is signed, not where this money moves, and the card should not
+ * make a reader work that out.
+ */
+function paymentLabelFor(funding: "wallet" | "gateway_deposit", network: string): string {
+  const chain = MARKETPLACE_NETWORKS[network as keyof typeof MARKETPLACE_NETWORKS] ?? null;
+  const rail = funding === "wallet" ? "Direct USDC" : "Circle Gateway deposit";
+  return chain ? `${rail} on ${chain}` : rail;
 }
 
 /**
@@ -494,7 +507,7 @@ export async function proposeResearch(input: {
       costUsdc,
       trustScore: Math.round(winner.trustScore ?? 0),
       funding: terms.funding,
-      paymentLabel: paymentLabelFor(terms.funding),
+      paymentLabel: paymentLabelFor(terms.funding, terms.network),
       payableNow: winner.marketplace.payableNow,
       decision,
       /* Quoted at the exact amount, because that is what the clearance will
