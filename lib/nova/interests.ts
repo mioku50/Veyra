@@ -183,15 +183,31 @@ export function planRepositorySubjects(interests: string[]): PlannedSubject[] {
 
 /** The catalog queries to run for a set of interests, in the person's order. */
 export function capabilityQueriesForInterests(interests: string[]): Array<{ interest: string; term: string }> {
-  const queries: Array<{ interest: string; term: string }> = [];
   const seen = new Set<string>();
-  for (const interest of interests) {
+  const perInterest = interests.map((interest) => {
     const definition = findInterest(interest);
     const terms = definition?.capabilityTerms ?? [interestKey(interest)];
+    const mine: Array<{ interest: string; term: string }> = [];
     for (const term of terms) {
       if (!term || seen.has(term)) continue;
       seen.add(term);
-      queries.push({ interest, term });
+      mine.push({ interest, term });
+    }
+    return mine;
+  });
+
+  /* Round-robin, not interest by interest.
+     The per-agent ceiling is shared, and asked in order the first interest's
+     three capability terms could consume nine of twelve before the fourth
+     interest was queried at all -- measured: somebody added Agent payments and
+     Agent standards to an agent that already had Arc and AI, and the refresh
+     never reached either. An interest nobody looks at is worse than an interest
+     nobody offered, because the person chose it. First terms first. */
+  const queries: Array<{ interest: string; term: string }> = [];
+  const deepest = Math.max(0, ...perInterest.map((list) => list.length));
+  for (let round = 0; round < deepest; round += 1) {
+    for (const list of perInterest) {
+      if (round < list.length) queries.push(list[round]);
     }
   }
   return queries;

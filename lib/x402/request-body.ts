@@ -95,13 +95,21 @@ export function buildRequestBody(input: {
   }
 
   const missing = required.filter((name) => !(name in body));
+  /* A schema with no field a question fits in. It is not the same as a missing
+     required field -- Alchemy's token-price call declares `addresses` and no
+     required list at all, so `{}` satisfies it and every check downstream
+     passed on a body carrying nothing anyone asked. The schema is weak, not
+     wrong; what is wrong is treating "valid" as "asked". */
+  const nowhereToAsk = intentField === null;
   return {
     body,
     guessed: false,
     intentField,
     note: missing.length > 0
       ? `The provider requires ${missing.join(", ")}, which nothing in this request supplies. Fill them in before paying.`
-      : null,
+      : nowhereToAsk
+        ? `The provider's schema has no field for a question — it takes ${names.slice(0, 4).join(", ")}. This request carries nothing you asked, so paying buys an answer to no question.`
+        : null,
   };
 }
 

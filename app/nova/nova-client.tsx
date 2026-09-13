@@ -982,11 +982,21 @@ export function NovaClient({ view = "today" }: { view?: NovaView } = {}) {
                 <Row label="Things watched" value={String(brief.lastRefresh?.subjectsChecked ?? 0)} />
                 <Row label="Watching since" value={new Date(brief.agent.createdAt).toLocaleDateString()} />
               </dl>
-              <div className="mt-4">
-                <Verb onClick={() => { setInterestsNote(null); setDraftInterests(brief.agent.interests); }}>
-                  Change what it watches
-                </Verb>
-              </div>
+              {/* Not a Verb. Those are deliberately quiet because they sit
+                  beside the one button that can spend money; here there is no
+                  such button and quiet just means unfindable -- somebody read
+                  this panel and did not see it. */}
+              <button
+                type="button"
+                onClick={() => { setInterestsNote(null); setDraftInterests(brief.agent.interests); }}
+                className="field mt-5 w-full rounded-lg px-4 py-3 text-left text-sm transition hover:border-primary/60 hover:text-foreground"
+              >
+                <span className="font-medium text-foreground">Change what it watches</span>
+                <span className="mt-0.5 block text-xs text-muted-foreground">
+                  Add or remove interests. {brief.agent.name} keeps its memory and everything you
+                  have paid for.
+                </span>
+              </button>
             </>
           ) : (
             <>

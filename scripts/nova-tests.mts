@@ -21,6 +21,8 @@ import { assembleBrief, greeting, quietSummary } from "../lib/nova/brief.ts";
 import { observeRepositories } from "../lib/nova/sources.ts";
 import { EXPLICIT_IGNORE_SUPPORT, ignoreWeight, summariseAway } from "../lib/nova/service.ts";
 import { networkName, settlementNetworkOf } from "../lib/nova/network.ts";
+import { buildRequestBody } from "../lib/x402/request-body.ts";
+import { capabilityQueriesForInterests } from "../lib/nova/interests.ts";
 import {
   compareTerms,
   hashTerms,
@@ -785,4 +787,55 @@ assert.equal(
 );
 assert.equal(settlementNetworkOf(null), null);
 
-console.log("[nova-test] passed: interests kept even when unknown, a first sighting reported as a finding rather than as news, the same commits not re-reported across refreshes, a payee change outranking everything and un-learnable away, a rail change surfaced a day before it could refuse a payment, a 3% price move kept out of the headline, a brief that caps findings so a change can never be crowded out, a tick that reads each URL once and shares its failures, and an absence measured by adding up every unattended pass rather than reporting the last one, and feedback that can raise as well as bury without ever silencing a payee change, and terms that stop a payment when the price or the payee moved between reading the card and pressing the button, and a card that names the chain its money moves on rather than letting the interest stand in for one");
+/* ---- a question has to land somewhere ---- */
+
+/* Alchemy's token-price endpoint, exactly as Circle publishes it: properties,
+   no required list, and no field a sentence fits in. `{}` satisfies this schema,
+   so every downstream check passed and $0.0010 bought
+   "Required argument [HttpRequest request] not specified". */
+const alchemy = buildRequestBody({
+  intent: "What changed in Ethereum EIPs, and does it matter?",
+  capability: "research",
+  inputSchema: {
+    type: "object",
+    properties: { addresses: { type: "array", items: { type: "object" } } },
+  } as never,
+});
+assert.deepEqual(alchemy.body, {}, "nothing in the schema can carry the question");
+assert.equal(alchemy.intentField, null);
+assert.equal(alchemy.guessed, false, "the schema was published, so the shape is not a guess");
+assert.ok(
+  alchemy.note && /no field for a question/.test(alchemy.note),
+  "an empty body that satisfies a weak schema must still say it asks nothing",
+);
+
+/* A schema that does have somewhere to put it still works, and in the
+   provider's own spelling rather than ours. */
+const askable = buildRequestBody({
+  intent: "what is this for",
+  capability: "research",
+  inputSchema: { type: "object", properties: { searchQuery: { type: "string" } }, required: ["searchQuery"] } as never,
+});
+assert.equal(askable.intentField, "searchQuery");
+assert.deepEqual(askable.body, { searchQuery: "what is this for" });
+assert.equal(askable.note, null);
+
+/* ---- every interest gets looked at ---- */
+
+/* Asked interest by interest, the first interest's three capability terms could
+   eat nine of the twelve observations an agent is allowed, and a fourth
+   interest was never queried at all. Somebody added two and saw one new thing. */
+const fairQueries = capabilityQueriesForInterests(["Arc", "AI", "Agent payments", "Agent standards"]);
+const firstFour = fairQueries.slice(0, 4).map((q) => q.interest);
+assert.deepEqual(
+  firstFour,
+  ["Arc", "AI", "Agent payments", "Agent standards"],
+  "every interest is asked once before any interest is asked twice",
+);
+/* And nothing is lost -- the deeper terms still follow, just behind everyone
+   else's first. */
+const interestsSeen = new Set(fairQueries.map((q) => q.interest));
+assert.equal(interestsSeen.size, 4, "no interest is dropped by the interleave");
+assert.ok(fairQueries.length > 4, "second and third capability terms are still asked");
+
+console.log("[nova-test] passed: interests kept even when unknown, a first sighting reported as a finding rather than as news, the same commits not re-reported across refreshes, a payee change outranking everything and un-learnable away, a rail change surfaced a day before it could refuse a payment, a 3% price move kept out of the headline, a brief that caps findings so a change can never be crowded out, a tick that reads each URL once and shares its failures, and an absence measured by adding up every unattended pass rather than reporting the last one, and feedback that can raise as well as bury without ever silencing a payee change, and terms that stop a payment when the price or the payee moved between reading the card and pressing the button, and a card that names the chain its money moves on rather than letting the interest stand in for one, and a body that says it asks nothing rather than satisfying a schema with silence, and a budget every interest gets a share of before any interest gets seconds");

@@ -99,6 +99,7 @@ export async function observeX402Catalog(input: {
   const observations: SourceObservation[] = [];
   const seen = new Set<string>();
   const labels = new Set<string>();
+  const takenPerInterest = new Map<string, number>();
   const queries = capabilityQueriesForInterests(input.interests);
   let anySucceeded = false;
   let anyAttempted = false;
@@ -120,13 +121,17 @@ export async function observeX402Catalog(input: {
     }
     anySucceeded = true;
 
-    let takenForInterest = 0;
+    /* Per interest, not per query. It reset on every capability term, so an
+       interest with three terms could take three times its share while the
+       interest after it took none. */
+    let takenForInterest = takenPerInterest.get(query.interest) ?? 0;
     for (const candidate of result.candidates) {
       if (takenForInterest >= SUBJECT_LIMITS.x402PerInterest) break;
       if (observations.length >= SUBJECT_LIMITS.perAgent) break;
       if (seen.has(candidate.candidateId)) continue;
       seen.add(candidate.candidateId);
       takenForInterest += 1;
+      takenPerInterest.set(query.interest, takenForInterest);
       observations.push({
         kind: "x402_resource",
         ref: candidate.candidateId,

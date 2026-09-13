@@ -346,12 +346,26 @@ async function firstPayable(input: {
     : null;
   const ordered = subject ? [subject, ...byRail.filter((c) => c !== subject)] : byRail;
 
+  /* Why the obvious endpoint is not the one being offered.
+     Preferring the subject only works if the subject survived into byRail, and
+     it can fail to twice over: the shortlist is ranked and capped, and a
+     candidate Veyra will not authorise is dropped before any of this. Either
+     way the card went on to offer a different seller with no note at all --
+     "Exa contents is available for $0.0010" quoting somebody else's Reddit
+     scraper at twenty times the price, silently. A substitution nobody
+     announced is the exact thing this product exists to refuse. */
+  const subjectNote = input.subjectRef && !subject
+    ? input.selection.candidates.some((c) => c.marketplace.candidateId === input.subjectRef)
+      ? `${BRAND_NAME} would not authorise the endpoint this is about, so the answer would come from a different seller.`
+      : `The endpoint this is about did not come back among the candidates for this capability, so the answer would come from a different seller.`
+    : null;
+
   /* The reason the first candidate was passed over, if one was. Rank-neutral
      wording, because the walk is in rank order and "a higher-ranked endpoint"
      is true of every skip -- "the best-ranked one" is true only of the first,
      and a sentence that is right most of the time is the wrong kind of
      explanation for a screen about money. */
-  let skipped: string | null = null;
+  let skipped: string | null = subjectNote;
   const note = (reason: string) => { skipped ??= `${BRAND_NAME} passed over a higher-ranked endpoint: ${reason}`; };
 
   for (const candidate of ordered.slice(0, input.attempts ?? 4)) {
@@ -369,6 +383,23 @@ async function firstPayable(input: {
       capability: input.capability,
       inputSchema: (candidate.marketplace.inputSchema ?? null) as JsonSchema | null,
     });
+    /* An endpoint whose published vocabulary has nowhere to put the question.
+       Alchemy's token-price call declares `{addresses: [{address, network}]}`
+       and no required list, so the body built from it was `{}` -- schema-valid,
+       carrying not one word of what was asked. It quoted cleanly, because the
+       402 middleware sits in front of the handler and never sees the body, and
+       the handler answered the paid call with "Required argument [HttpRequest
+       request] not specified" for a tenth of a cent that nobody refunded.
+
+       Quoting is not enough of a check: it proves the endpoint sells something,
+       not that it was asked anything. If the intent cannot be expressed in the
+       provider's own field names, this endpoint cannot answer this question,
+       and no amount of verification afterwards recovers the money. */
+    if (!request.guessed && request.intentField === null) {
+      note("its published inputs have nowhere to put a question, so it cannot be asked this one.");
+      continue;
+    }
+
     const quoted = await quoteX402Call({
       resource: candidate.marketplace.resource,
       method: candidate.marketplace.method,
@@ -404,7 +435,10 @@ async function firstPayable(input: {
       /* No note when the subject's own endpoint won, or when the ranking
          stood: a sentence apologising for a substitution that did not happen is
          the screen explaining itself incorrectly. */
-      skipped: candidate === ordered[0] ? null : skipped,
+      /* The subject note survives even when the ranking stood, because there it
+         is not an apology for departing from the order -- it is the reason the
+         order does not contain the thing the card is named after. */
+      skipped: candidate === ordered[0] ? subjectNote : skipped,
     };
   }
   return null;
