@@ -320,8 +320,24 @@ async function firstPayable(input: {
     ...showable.filter((candidate) => candidate.marketplace.funding !== "wallet"),
   ];
 
+  /* The reason the first candidate was passed over, if one was. Rank-neutral
+     wording, because the walk is in rank order and "a higher-ranked endpoint"
+     is true of every skip -- "the best-ranked one" is true only of the first,
+     and a sentence that is right most of the time is the wrong kind of
+     explanation for a screen about money. */
   let skipped: string | null = null;
-  for (const candidate of ordered.slice(0, input.attempts ?? 3)) {
+  const note = (reason: string) => { skipped ??= `${BRAND_NAME} passed over a higher-ranked endpoint: ${reason}`; };
+
+  for (const candidate of ordered.slice(0, input.attempts ?? 4)) {
+    /* A path template Nova cannot fill. Circle's catalogue publishes these
+       literally -- x402.api.agentmail.to/v0/domains/{domain_id} -- and they are
+       endpoints for a caller that already knows which record it means. Nova
+       does not, and POSTing to a path with braces in it buys an error. */
+    if (/[{}]/.test(candidate.marketplace.resource)) {
+      note("it answers about one specific record, and a brief has no way to say which.");
+      continue;
+    }
+
     const request = buildRequestBody({
       intent: input.question,
       capability: input.capability,
@@ -334,21 +350,33 @@ async function firstPayable(input: {
       maxAmountUsdc: RESEARCH_BUDGET_USDC,
       inputSchema: candidate.marketplace.inputSchema,
     });
-    if (quoted.kind === "quoted") {
-      /* Said only when a better-ranked candidate was actually passed over.
-         Silently substituting a counterparty is the kind of unexplained
-         decision this product exists to refuse -- including when the reason is
-         mundane. */
-      if (candidate !== ordered[0] && !skipped) {
-        skipped = `The best-ranked endpoint here would not accept a plain question, so ${BRAND_NAME} moved to the next one it could actually ask.`;
-      }
-      return { winner: candidate, request, quote: quoted.quote, skipped };
+
+    if (quoted.kind === "free") {
+      note("it answers without charging, so there is nothing here to authorise or verify.");
+      continue;
     }
-    if (!skipped && candidate === ordered[0]) {
-      skipped = quoted.kind === "free"
-        ? `The best-ranked endpoint here answers without charging, so ${BRAND_NAME} moved to one that can be paid for and verified.`
-        : `The best-ranked endpoint here would not accept a plain question, so ${BRAND_NAME} moved to the next one it could actually ask.`;
+    if (quoted.kind === "refused") {
+      note("it will not accept a plain question -- it wants parameters only its own callers would know.");
+      continue;
     }
+    /* A challenge that asks for nothing. No amount for a wallet to cap, and
+       nothing for the post-call check to compare against. "Pay $0.0000" is not
+       an offer, it is a bug with a button. The developer surface can still
+       choose it; a brief cannot. */
+    if (BigInt(quoted.quote.accept.amountAtomic) <= BigInt(0)) {
+      note("it asks for a payment of nothing, which is not something Veyra can authorise or verify.");
+      continue;
+    }
+
+    return {
+      winner: candidate,
+      request,
+      quote: quoted.quote,
+      /* Only when the ranking was actually departed from. Silently substituting
+         a counterparty is the kind of unexplained decision this product exists
+         to refuse -- including when the reason is mundane. */
+      skipped: candidate === ordered[0] ? null : skipped,
+    };
   }
   return null;
 }
