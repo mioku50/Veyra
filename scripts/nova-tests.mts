@@ -22,6 +22,7 @@ import { observeRepositories } from "../lib/nova/sources.ts";
 import { summariseAway } from "../lib/nova/service.ts";
 import {
   DORMANT_AFTER_DAYS,
+  DUE_TOLERANCE_MINUTES,
   REFRESH_INTERVAL_HOURS,
   tickReader,
 } from "../lib/nova/schedule.ts";
@@ -457,6 +458,19 @@ assert.equal(summariseAway([], hoursAgo(24)), null, "no scheduled pass is not an
 assert(
   DORMANT_AFTER_DAYS * 24 > REFRESH_INTERVAL_HOURS * 4,
   "an agent must get many passes before it can be considered abandoned",
+);
+
+/* The scheduler fires on the same period an agent is due on, so the cutoff has
+   to forgive a late run. Without this a tick twenty minutes later than the last
+   one finds nothing due and skips a whole cycle, silently -- nothing errors,
+   the queue is simply empty. */
+assert(DUE_TOLERANCE_MINUTES > 0, "an exact cutoff loses a cycle to scheduler jitter");
+
+/* And it must stay well inside the period, or a tick would pick up agents that
+   were refreshed by the tick before it. */
+assert(
+  DUE_TOLERANCE_MINUTES < REFRESH_INTERVAL_HOURS * 60 / 2,
+  "tolerance this large would let consecutive ticks refresh the same agent",
 );
 
 console.log("[nova-test] passed: interests kept even when unknown, a first sighting reported as a finding rather than as news, the same commits not re-reported across refreshes, a payee change outranking everything and un-learnable away, a rail change surfaced a day before it could refuse a payment, a 3% price move kept out of the headline, a brief that caps findings so a change can never be crowded out, a tick that reads each URL once and shares its failures, and an absence measured by adding up every unattended pass rather than reporting the last one");

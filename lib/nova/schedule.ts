@@ -52,6 +52,22 @@ import { runRefresh } from "./service.ts";
 export const REFRESH_INTERVAL_HOURS = 6;
 
 /**
+ * How early an agent may be picked up.
+ *
+ * The scheduler fires on the same period an agent is due on, and GitHub's
+ * scheduler does not fire on the minute -- a run can be minutes or tens of
+ * minutes late under load. Two ticks whose delays differ can therefore land
+ * five hours and fifty minutes apart, and with an exact six-hour cutoff the
+ * agent is simply not due yet: it is skipped, and the next pass is twelve
+ * hours after the last, not six. The failure is invisible, because nothing
+ * errors -- the queue is just empty.
+ *
+ * A tolerance shorter than the period cannot cause a double pass, because a
+ * tick that ran on time has nothing due within it.
+ */
+export const DUE_TOLERANCE_MINUTES = 45;
+
+/**
  * After two weeks with nobody opening the brief, the scheduler stops.
  *
  * Two weeks rather than a few days because the failure mode is asymmetric: a
@@ -181,7 +197,9 @@ export async function sweepDormant(now: Date): Promise<number> {
  * claim race below still leave a full tick's worth of work.
  */
 export async function findDue(now: Date, limit = MAX_AGENTS_PER_TICK): Promise<DueAgent[]> {
-  const cutoff = new Date(now.getTime() - REFRESH_INTERVAL_HOURS * 3_600_000).toISOString();
+  const cutoff = new Date(
+    now.getTime() - REFRESH_INTERVAL_HOURS * 3_600_000 + DUE_TOLERANCE_MINUTES * 60_000,
+  ).toISOString();
   const columns = "agent_id, public_id, interests, last_scheduled_refresh_at";
 
   /* Two queries rather than one `or(...)`. PostgREST takes that filter as a

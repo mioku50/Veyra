@@ -1,0 +1,89 @@
+name: Nova Scheduler
+
+# Nova's heartbeat.
+#
+# This lives here rather than in vercel.json because a Hobby project gets two
+# cron jobs, each at most once a day, and Veyra already spends three on
+# operations, seller availability and monitoring. A brief refreshed once a day
+# is not a daily agent, so the scheduler moved to the one place this project
+# already has that can fire on any schedule for free.
+#
+# The endpoint does the deciding. This file knows nothing about which agents are
+# due, how often, or when one is abandoned -- it POSTs, and everything else is
+# in lib/nova/schedule.ts where it can be tested.
+
+on:
+  schedule:
+    # Every six hours, matching REFRESH_INTERVAL_HOURS. GitHub's scheduler is
+    # best-effort and runs late under load, which is why findDue carries a
+    # tolerance: without it a run that is twenty minutes later than the previous
+    # one finds nothing due and silently skips a whole cycle.
+    - cron: "23 */6 * * *"
+  # So a tick can be run by hand from the Actions tab -- the only way to
+  # exercise this end to end without waiting six hours.
+  workflow_dispatch:
+
+# A tick claims agents. Two overlapping runs would not corrupt anything -- the
+# claim is a compare-and-swap -- but they would burn the rate-limit budget
+# twice over for no extra briefs.
+concurrency:
+  group: nova-scheduler
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  tick:
+    name: Refresh due agents
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Refresh due agents
+        env:
+          # Never written down here. The secret lives in this repository's
+          # Actions secrets and in Vercel's environment variables, and the two
+          # must hold the same value. It is passed through the environment so
+          # it never appears in a command line, which `ps` and the run log
+          # would both show.
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+          BASE_URL: ${{ vars.VEYRA_BASE_URL || 'https://agent-commerce-six.vercel.app' }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${CRON_SECRET}" ]; then
+            echo "CRON_SECRET is not set on this repository."
+            echo "Settings -> Secrets and variables -> Actions -> New repository secret,"
+            echo "with the same value as CRON_SECRET in the Vercel project."
+            exit 1
+          fi
+
+          # The body is a summary -- counts and durations, no agent identifiers
+          # and nothing a person wrote -- so it is safe to print into a log this
+          # repository's visibility makes public.
+          status=$(curl --silent --show-error --fail-with-body \
+            --max-time 300 \
+            --write-out '%{http_code}' \
+            --output tick.json \
+            --request POST \
+            --header "authorization: Bearer ${CRON_SECRET}" \
+            "${BASE_URL}/api/nova/cron") || true
+
+          echo "HTTP ${status}"
+          cat tick.json 2>/dev/null || true
+          echo
+
+          # A 404 here is the route's own answer to a bad secret, not a missing
+          # route: it refuses to confirm that a Nova scheduler exists. Calling
+          # that out by name saves the next person the same ten minutes.
+          if [ "${status}" = "404" ]; then
+            echo "Rejected. Either CRON_SECRET does not match the one in Vercel,"
+            echo "or the deployment does not have the route yet."
+            exit 1
+          fi
+
+          if [ "${status}" != "200" ]; then
+            echo "Tick failed."
+            exit 1
+          fi

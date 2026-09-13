@@ -20,6 +20,13 @@ export const maxDuration = 300;
  * doorway, and {@link runScheduledTick} is the thing under test. A cron
  * endpoint that contains its own logic can only be exercised by calling it
  * over HTTP with the production secret, which is not a test anyone runs.
+ *
+ * POST, not GET, because a tick writes: it refreshes agents, records signals
+ * and retires the abandoned. Vercel Cron can only issue GET, which is why the
+ * platform's own examples put mutations behind one; the scheduler here is a
+ * workflow in this repository, which is under no such constraint. If this ever
+ * moves back to Vercel Cron it needs a GET alias, and that is the moment to
+ * think about it rather than leaving a writing GET lying around now.
  */
 function authorized(request: Request): boolean {
   const expected = process.env.CRON_SECRET;
@@ -33,7 +40,7 @@ function authorized(request: Request): boolean {
   );
 }
 
-export async function GET(request: Request) {
+export async function POST(request: Request) {
   /* 404, not 401. This path either belongs to the scheduler or does not exist,
      and confirming that Veyra runs a Nova cron is free information for someone
      probing for one. */
