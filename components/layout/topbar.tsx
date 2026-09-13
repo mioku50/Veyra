@@ -8,6 +8,15 @@ import { ActivityDropdown } from "@/components/activity/ActivityDropdown";
 import { Button } from "@/components/ui/button";
 import { WalletWidget } from "@/components/wallet/WalletWidget";
 import { BRAND } from "@/lib/brand";
+import { publicSidebarNavigation } from "@/lib/navigation/sidebar";
+
+/* The public navigation, flattened. It lived in a left rail, which is the right
+   shape for an operator moving between many tools and the wrong one for a
+   person reading a single brief. Four links across the top do the same job
+   without making the page look like somewhere you work. */
+const PUBLIC_LINKS: ReadonlyArray<{ href: string; label: string }> =
+  publicSidebarNavigation.flatMap((section) =>
+    section.items.map((item) => ({ href: item.href as string, label: item.label as string })));
 
 export function Topbar({
   loggedIn,
@@ -64,6 +73,37 @@ export function Topbar({
             </span>
           </Link>
         </div>
+
+        {isConsole ? null : (
+          <nav
+            aria-label="Public navigation"
+            data-testid="public-nav"
+            /* lg, not md: at 768 the brand block, four links, the wallet widget
+               and the console button together ran 819px wide and pushed the
+               page into a horizontal scroll. Below that width the hamburger
+               carries the same four links. */
+            className="hidden min-w-0 flex-1 items-center gap-1 lg:flex"
+          >
+            {PUBLIC_LINKS.map((link) => {
+              const active = link.href === "/"
+                ? pathname === "/"
+                : pathname === link.href || pathname.startsWith(`${link.href}/`);
+              return (
+                <Link
+                  key={link.href}
+                  href={link.href}
+                  className={`shrink-0 rounded-md px-3 py-2 text-sm font-medium transition-colors ${
+                    active
+                      ? "bg-primary/10 text-primary"
+                      : "text-muted-foreground hover:bg-primary/10 hover:text-primary"
+                  }`}
+                >
+                  {link.label}
+                </Link>
+              );
+            })}
+          </nav>
+        )}
 
         <div className="flex shrink-0 items-center gap-2.5">
           <ActivityDropdown />

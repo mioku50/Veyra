@@ -33,7 +33,16 @@ const FORBIDDEN_PATTERNS = [
   /\breceipt count\b/i,
 ];
 
-const PUBLIC_PATHS = ["/", "/agent-runner", "/agent-runner?workflow=github", "/results"];
+/* The public surface, as it actually is. This listed /agent-runner and
+   /results, both of which are now frozen behind the developer console and
+   answer with a redirect, so the check was inspecting the console rather than
+   the product. */
+const PUBLIC_PATHS = ["/", "/executions", "/run"];
+
+/* /run supplies its own chrome and deliberately has no shell navigation: a
+   single-purpose decision screen nested inside a browsing shell makes both look
+   unfinished. So its copy is checked and its navigation is not. */
+const SHELL_PATHS = ["/", "/executions"];
 
 const VIEWPORTS = [
   { name: "desktop", width: 1440, height: 900 },
@@ -48,14 +57,32 @@ function baseUrl() {
 async function verifyPageCleanliness(page: Page, path: string) {
   await page.goto(`${baseUrl()}${path}`, { waitUntil: "load" });
 
+  /* Words, not markup.
+   *
+   * This used to match the forbidden patterns against innerHTML, which made the
+   * rule impossible to satisfy for reasons that had nothing to do with
+   * language: href="/receipts" is an address, and class="lucide-receipt-text"
+   * is an icon's name in a third-party library. Both tripped the "receipts"
+   * rule on a page whose only visible word was "Payments".
+   *
+   * What is checked now is what a person can actually read: rendered text, plus
+   * the attributes that carry copy rather than plumbing. */
   const { visibleText, innerHtmlWithoutDetails } = await page.evaluate(() => {
     const clone = document.body.cloneNode(true) as HTMLElement;
-    const hiddenElements = clone.querySelectorAll("details, script, style");
-    hiddenElements.forEach((el) => el.remove());
+    clone.querySelectorAll("details, script, style, svg").forEach((el) => el.remove());
+
+    const copyAttributes = ["title", "alt", "placeholder", "aria-label"];
+    const attributeCopy: string[] = [];
+    clone.querySelectorAll("*").forEach((el) => {
+      for (const name of copyAttributes) {
+        const value = el.getAttribute(name);
+        if (value) attributeCopy.push(value);
+      }
+    });
 
     return {
       visibleText: clone.innerText || clone.textContent || "",
-      innerHtmlWithoutDetails: clone.innerHTML || "",
+      innerHtmlWithoutDetails: attributeCopy.join("\n"),
     };
   });
 
@@ -66,7 +93,7 @@ async function verifyPageCleanliness(page: Page, path: string) {
     );
     assert(
       !pattern.test(innerHtmlWithoutDetails),
-      `Forbidden technical jargon matching ${pattern} found in HTML body (outside <details>) of ${path}`
+      `Forbidden technical jargon matching ${pattern} found in a title/alt/placeholder/aria-label of ${path}`
     );
   }
 }
@@ -74,10 +101,13 @@ async function verifyPageCleanliness(page: Page, path: string) {
 async function verifyNavigationLinks(page: Page, path: string) {
   await page.goto(`${baseUrl()}${path}`, { waitUntil: "load" });
 
+  /* The public navigation is in the top bar, not a left rail. A left sidebar is
+     the right shape for an operator moving between many tools and the wrong one
+     for a person reading a single brief; the rail is now the console's alone. */
   const navLabels = await page.evaluate(() => {
-    const sidebar = document.querySelector('[data-testid="desktop-sidebar"]');
-    if (!sidebar) return [];
-    const links = Array.from(sidebar.querySelectorAll('a[href^="/"]'));
+    const nav = document.querySelector('[data-testid="public-nav"]');
+    if (!nav) return [];
+    const links = Array.from(nav.querySelectorAll('a[href^="/"]'));
     return links.map((a) => a.textContent?.trim()).filter((text): text is string => Boolean(text));
   });
 
@@ -109,9 +139,9 @@ async function main() {
     const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
 
     for (const path of PUBLIC_PATHS) {
-      await verifyNavigationLinks(page, path);
+      if (SHELL_PATHS.includes(path)) await verifyNavigationLinks(page, path);
       await verifyPageCleanliness(page, path);
-      console.log(`  ✓ ${path} verified clean of forbidden jargon and has correct navigation links`);
+      console.log(`  ✓ ${path} verified clean of forbidden jargon${SHELL_PATHS.includes(path) ? " and has correct navigation links" : ""}`);
     }
 
     for (const viewport of VIEWPORTS) {

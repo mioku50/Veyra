@@ -10,6 +10,7 @@ import Link from "next/link";
 import { useArcWallet } from "@/components/wallet/use-arc-wallet";
 import { Loader2, RefreshCw, Search } from "lucide-react";
 import type { ExecutionAttempt, ExecutionState } from "@/lib/execution/types";
+import { BRAND } from "@/lib/brand";
 
 /* A decision log is a sequence of economic events, not a spreadsheet. It reads
    down a spine: when it happened, what Veyra decided, what actually moved, and
@@ -249,8 +250,8 @@ export default function ExecutionsPage() {
           <div>
             <h1 className="run-display text-[30px] sm:text-[36px]">Decisions</h1>
             <p className="mt-2 max-w-[54ch] text-[13.5px] leading-relaxed text-[var(--run-text-muted)]">
-              Every authorization Veyra signed, what actually settled against it, and
-              how far through the lifecycle each one reached.
+              Every payment {BRAND.name} approved, what was actually charged against it,
+              and how far each one got.
             </p>
           </div>
           <div className="flex items-center gap-5">

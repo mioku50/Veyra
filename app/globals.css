@@ -30,25 +30,35 @@
  * accent is Veyra mint, so the shell, the tables and the decision surface all
  * read as one thing. */
 :root {
-  --background: 232 41% 6%;
-  --foreground: 234 60% 96%;
-  --card: 235 39% 13%;
-  --card-foreground: 234 60% 96%;
-  --popover: 235 39% 12%;
-  --popover-foreground: 234 60% 96%;
-  --primary: 246 100% 71%;
+  --background: 268 42% 5%;
+  --foreground: 270 30% 96%;
+  --card: 268 32% 9%;
+  --card-foreground: 270 30% 96%;
+  --popover: 268 34% 8%;
+  --popover-foreground: 270 30% 96%;
+  --primary: 268 88% 66%;
   --primary-foreground: 0 0% 100%;
-  --secondary: 235 32% 18%;
-  --secondary-foreground: 234 60% 96%;
-  --muted: 235 32% 16%;
-  --muted-foreground: 232 22% 71%;
-  --accent: 235 32% 21%;
-  --accent-foreground: 234 60% 96%;
-  --destructive: 348 100% 68%;
+  --secondary: 268 26% 15%;
+  --secondary-foreground: 270 30% 96%;
+  --muted: 268 24% 13%;
+  --muted-foreground: 266 16% 66%;
+  --accent: 268 26% 18%;
+  --accent-foreground: 270 30% 96%;
+  --destructive: 352 88% 66%;
   --destructive-foreground: 0 0% 100%;
-  --border: 233 34% 21%;
-  --input: 233 34% 21%;
-  --ring: 246 100% 71%;
+  --border: 268 24% 18%;
+  --input: 268 24% 18%;
+  --ring: 268 88% 66%;
+
+  /* Links read as cyan against a violet ground, which keeps a navigable word
+     from being mistaken for the primary action -- the one thing on these pages
+     that may spend money. */
+  --link: 186 76% 58%;
+  /* Status chips. Machine states get their own tint so a blocked reason is
+     legible at a glance instead of hiding in body text. */
+  --state-good: 152 62% 52%;
+  --state-warn: 38 88% 62%;
+  --state-idle: 266 14% 52%;
   --chart-1: 246 100% 71%;
   --chart-2: 196 100% 65%;
   --chart-3: 38 100% 62%;
@@ -85,6 +95,10 @@
   --radius-lg: var(--radius);
   --radius-md: calc(var(--radius) - 2px);
   --radius-sm: calc(var(--radius) - 4px);
+  --color-link: hsl(var(--link));
+  --color-state-good: hsl(var(--state-good));
+  --color-state-warn: hsl(var(--state-warn));
+  --color-state-idle: hsl(var(--state-idle));
 }
 
 @layer base {
@@ -95,11 +109,19 @@
     @apply bg-background text-foreground;
     color-scheme: dark;
     font-family: var(--font-sans);
+    /* Two violet glows over a near-black purple ground, with a sparse dust of
+       points above them. The points are four tiled radial gradients rather than
+       an image: no request, no layout cost, and they survive a redeploy. */
     background-image:
-      radial-gradient(90rem 50rem at 12% -10%, rgba(104, 84, 232, 0.20), transparent 60%),
-      radial-gradient(70rem 44rem at 88% 4%, rgba(46, 108, 190, 0.14), transparent 62%),
-      radial-gradient(90rem 60rem at 50% 108%, rgba(72, 56, 170, 0.14), transparent 66%),
-      linear-gradient(180deg, #080a18 0%, #0a0c1e 52%, #080a18 100%);
+      radial-gradient(1px 1px at 18% 22%, rgba(210, 190, 255, 0.42), transparent 55%),
+      radial-gradient(1px 1px at 72% 12%, rgba(190, 170, 255, 0.30), transparent 55%),
+      radial-gradient(1px 1px at 42% 78%, rgba(220, 200, 255, 0.26), transparent 55%),
+      radial-gradient(1px 1px at 88% 62%, rgba(200, 180, 255, 0.22), transparent 55%),
+      radial-gradient(88rem 48rem at 12% -12%, rgba(138, 76, 240, 0.22), transparent 62%),
+      radial-gradient(70rem 44rem at 90% 2%, rgba(96, 58, 210, 0.16), transparent 64%),
+      radial-gradient(90rem 60rem at 50% 110%, rgba(110, 62, 220, 0.14), transparent 68%),
+      linear-gradient(180deg, #0a0612 0%, #0d0818 52%, #0a0612 100%);
+    background-size: 340px 340px, 420px 420px, 380px 380px, 460px 460px, auto, auto, auto, auto;
     background-attachment: fixed;
     overflow-x: hidden;
   }
@@ -111,7 +133,7 @@
   }
 
   ::selection {
-    background: rgba(123, 108, 255, 0.32);
+    background: rgba(150, 92, 255, 0.34);
   }
 
   /* Accessibility: Visible Focus Outline */

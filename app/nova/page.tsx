@@ -3,15 +3,9 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { Metadata } from "next";
-import { NovaClient } from "./nova-client";
+import { redirect } from "next/navigation";
 
-export const metadata: Metadata = {
-  title: "Your agent | Veyra",
-  description:
-    "A personal agent that watches the agent economy for you, brings back what changed, and never spends anything without asking.",
-};
-
+/** Nova moved to the front door. Kept so links and bookmarks still land. */
 export default function NovaPage() {
-  return <NovaClient />;
+  redirect("/");
 }

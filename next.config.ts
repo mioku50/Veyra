@@ -18,6 +18,14 @@
 
 import type { NextConfig } from "next";
 
-const nextConfig: NextConfig = {};
+/* The browser test suites drive the dev server over 127.0.0.1, which Next treats
+   as a cross-origin request and answers with 403 for every asset -- the page
+   renders its server markup, never hydrates, and the suites time out waiting
+   for a client-rendered heading. That looks exactly like a broken page and is
+   not one, so the origin is allowed here rather than being rediscovered from
+   console noise every time someone runs them. Development only. */
+const nextConfig: NextConfig = {
+  allowedDevOrigins: ["127.0.0.1", "localhost"],
+};
 
 export default nextConfig;

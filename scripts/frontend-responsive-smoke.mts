@@ -19,23 +19,31 @@ const browser = await chromium.launch({ headless: true });
 try {
   const page = await browser.newPage({ viewport: { width: 1366, height: 768 } });
 
+  /* The front door.
+   *
+   * This leg used to wait for a hero, five workflow headings and a row of
+   * /agent-runner deep links, because the first screen was a tour of the
+   * catalogue. It now creates a personal agent, so what has to be on it is the
+   * one heading, the interests, and the single button that starts everything. */
   await page.goto(`${baseUrl()}/`, { waitUntil: "load" });
-  await page.getByRole("heading", { name: "Veyra", exact: true }).waitFor();
-  await page.getByText("Verified workflows for people and AI agents", { exact: true }).first().waitFor();
-  await page.getByText("Arc Testnet", { exact: true }).first().waitFor();
-  await page.locator('a[href="/agent-runner"]').filter({ hasText: "Explore Workflows" }).waitFor();
-  await page.getByRole("link", { name: "Developer API", exact: true }).waitFor();
-  assert.equal(await page.locator("main > section").first().locator('input[name="repository"]').count(), 0);
-  await page.getByRole("heading", { name: "GitHub Project Due Diligence", exact: true }).first().waitFor();
-  await page.getByRole("heading", { name: "Veyra Agent Trust Report", exact: true }).waitFor();
-  await page.getByRole("heading", { name: "Market Context Brief", exact: true }).waitFor();
-  await page.getByRole("heading", { name: "Sentiment & Tone Report", exact: true }).waitFor();
-  await page.getByRole("heading", { name: "Builder Update Summary", exact: true }).waitFor();
-  await page.locator('a[href="/agent-runner?workflow=github"]').first().waitFor();
-  await page.locator('a[href="/agent-runner?workflow=agent_trust"]').first().waitFor();
-  await page.locator('a[href="/agent-runner?workflow=sentiment"]').first().waitFor();
-  await page.locator('a[href="/agent-runner?workflow=builder_update"]').first().waitFor();
-  await page.locator('a[href^="/agent-runner?workflow=market_context"]').first().waitFor();
+  await page.getByRole("heading", { name: "An agent that watches so you do not have to." }).waitFor();
+  await page.getByLabel("Agent name").waitFor();
+  await page.getByRole("button", { name: "Arc", exact: true }).waitFor();
+  await page.getByRole("button", { name: /^Create/ }).waitFor();
+
+  /* Nothing on the front door may advertise a subsystem. The catalogue is still
+     there and still reachable; it is no longer what a stranger meets first. */
+  assert.equal(await page.locator('a[href^="/agent-runner"]').count(), 0);
+  assert.equal(await page.locator('input[name="repository"]').count(), 0);
+
+  /* Everything below is frozen behind the developer console: opening the
+     console is the opt-in and it lasts the session, so the test takes the same
+     path an operator does instead of asserting against a redirect. */
+  await page.context().addCookies([{
+    name: "veyra_console",
+    value: "1",
+    url: baseUrl(),
+  }]);
 
   await page.goto(`${baseUrl()}/agent-runner?workflow=builder_update`, { waitUntil: "load" });
   assert.equal(
@@ -96,29 +104,35 @@ try {
     { width: 390, height: 844 },
   ]) {
     await page.setViewportSize(viewport);
-    for (const path of ["/", "/agent-runner", "/workflows", "/results", "/proofs", "/console"]) {
+    for (const path of ["/", "/executions", "/agent-runner", "/workflows", "/results", "/proofs", "/console"]) {
       await noHorizontalOverflow(page, path);
     }
   }
 
+  /* The left rail is the console's alone. On the public side there is nothing
+     to scroll through: four links sit in the top bar, which is the right shape
+     for a person reading one brief and the wrong one for an operator moving
+     between many tools -- so each side now gets the shape that fits it. */
   await page.setViewportSize({ width: 911, height: 512 });
   await page.goto(`${baseUrl()}/`, { waitUntil: "load" });
-  const desktopSidebar = page.locator('[data-testid="desktop-sidebar"]');
-  await desktopSidebar.getByRole("link", { name: "Reports", exact: true }).scrollIntoViewIfNeeded();
-  await desktopSidebar.getByRole("link", { name: "Reports", exact: true }).waitFor();
+  assert.equal(await page.locator('[data-testid="desktop-sidebar"]').count(), 0);
 
+  const desktopSidebar = page.locator('[data-testid="desktop-sidebar"]');
   await page.goto(`${baseUrl()}/console`, { waitUntil: "load" });
   await desktopSidebar.getByRole("link", { name: "Operations", exact: true }).scrollIntoViewIfNeeded();
   await desktopSidebar.getByRole("link", { name: "Operations", exact: true }).waitFor();
   assert.equal(await desktopSidebar.getByRole("link", { name: "Services / Seller", exact: true }).count(), 0);
 
+  /* Narrow screens keep the drawer, and it carries the same four public links
+     the top bar does -- so the navigation is never smaller than the product,
+     only differently shaped. */
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto(`${baseUrl()}/`, { waitUntil: "load" });
   await page.getByRole("button", { name: "Open navigation" }).click();
   const mobileSidebar = page.locator('[data-testid="mobile-sidebar"]');
   assert.equal(await mobileSidebar.getAttribute("aria-hidden"), "false");
-  await mobileSidebar.getByRole("link", { name: "Reports", exact: true }).click();
-  await page.waitForURL(`${baseUrl()}/results`);
+  await mobileSidebar.getByRole("link", { name: "Decisions", exact: true }).click();
+  await page.waitForURL(`${baseUrl()}/executions`);
   assert.equal(await mobileSidebar.getAttribute("aria-hidden"), "true");
 
   console.log("[frontend-responsive-smoke] passed: curated deep links, query-backed Results controls, helper/requester/provider copy, keyboard labels, desktop/125%/150%/tablet/mobile overflow, operations navigation, and mobile close-on-navigation");

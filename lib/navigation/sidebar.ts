@@ -24,35 +24,38 @@ export type SidebarIconName =
 //
 // They are not orphaned: each one moves into the developer console below, and
 // each is reachable from the decision it belongs to.
+/**
+ * Four links, in the order a person needs them.
+ *
+ * This list had eight items across four headed sections, which asked a visitor
+ * to learn Veyra's architecture -- run, activity, network, evidence -- before
+ * they could use any of it. The deeper screens still exist and are still
+ * reachable from the thing they belong to; they are just no longer presented as
+ * co-equal destinations to someone who has not made a single decision yet.
+ *
+ * The brief is the product. Everything below it is how the brief is justified.
+ */
 export const publicSidebarNavigation = [
-  /* Your agent leads, and the manual decision screen sits under it as the
-     advanced path. Veyra's own screens answer many questions at once; a person
-     arriving for the first time has exactly one -- what changed, and is any of
-     it worth a cent -- and that is what the first item should open. */
   {
     label: "Your agent",
     items: [
-      { href: "/nova", label: "Daily brief", icon: "agent" },
+      { href: "/", label: "Daily brief", icon: "agent" },
     ],
   },
   {
-    label: "Run",
-    items: [
-      { href: "/run", label: "New decision", icon: "activity" },
-    ],
-  },
-  {
-    label: "Activity",
+    label: "History",
     items: [
       { href: "/executions", label: "Decisions", icon: "activity" },
-      { href: "/receipts", label: "Receipts", icon: "receipt" },
+      /* "Receipts" is on the forbidden-jargon list the public UI check
+         enforces, and rightly: a person looking for what they were charged does
+         not go hunting for a receipts subsystem. */
+      { href: "/receipts", label: "Payments", icon: "receipt" },
     ],
   },
   {
-    label: "Network",
+    label: "Advanced",
     items: [
-      { href: "/agents", label: "Agents", icon: "agent" },
-      { href: "/trust", label: "Evidence", icon: "proof" },
+      { href: "/run", label: "Choose and pay yourself", icon: "activity" },
     ],
   },
 ] as const satisfies ReadonlyArray<{

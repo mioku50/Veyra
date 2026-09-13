@@ -83,26 +83,41 @@ const proofsSource = readFileSync(
   new URL("../app/proofs/page.tsx", import.meta.url),
   "utf8",
 );
-assert(homeSource.includes("BRAND.name"));
-assert(homeSource.includes("BRAND.description"));
-assert(homeSource.includes("Arc Testnet"));
-// The homepage must carry the product's one thesis, in the brand's own words,
-// and lead to the screen that performs it rather than to a subsystem tour. The
-// two halves are rendered separately so the second can be accented, so the
-// invariant is checked against the tagline instead of against a literal.
-assert.equal(BRAND.tagline, "Veyra decides. Circle pays.");
-for (const half of BRAND.tagline.split(" ").reduce<string[]>((acc, word) => {
-  if (acc.length === 0 || acc[acc.length - 1].endsWith(".")) acc.push(word);
-  else acc[acc.length - 1] += ` ${word}`;
-  return acc;
-}, [])) {
-  assert(homeSource.includes(half), `homepage must render "${half}"`);
+/* The front door.
+ *
+ * These assertions used to describe a pitch: the brand tagline rendered in two
+ * accented halves, a link to /run, a row of workflow cards, a repository
+ * analyser. The page now IS the product -- it creates a personal agent and
+ * shows that agent's brief -- so the invariant is no longer "does the pitch
+ * contain the right words" but "does the first screen do the thing".
+ *
+ * What is still enforced, and matters more than the wording: the home page must
+ * not go back to being a tour of subsystems. */
+assert.match(homeSource, /NovaClient/, "the front door renders the personal agent, not a pitch");
+assert(homeSource.includes("metadata"), "the front door still describes itself to crawlers");
+
+for (const tour of [
+  "hostedWorkflowTemplates",
+  "curatedHostedWorkflowTemplates",
+  "quickTrustActions",
+  "publicReportSubject",
+]) {
+  assert(
+    !homeSource.includes(tour),
+    `the front door must not present ${tour}: a person who has not made one decision is not shopping for subsystems`,
+  );
 }
-assert(homeSource.includes('href="/run"'));
-assert(homeSource.includes("BRAND.agentApi"));
+
+/* The old page offered three competing calls to action -- run a decision, run a
+   workflow, open the developer API -- which is how a visitor ends up choosing
+   none of them. The new one has a single path in. */
+assert(
+  !homeSource.includes('href="/run"'),
+  "the front door must not compete with itself: the advanced path is reached from the brief, not offered beside it",
+);
+
 // Report cards must route their title through the shared subject formatter so a
 // JSON-encoded workflow input can never render as a raw object on a public card.
-assert.match(homeSource, /publicReportSubject\(report\)/);
 assert.equal(
   publicReportSubject({
     workflowType: "agent_trust_report",
@@ -119,11 +134,8 @@ assert.equal(
   }),
   "Veyra Agent Trust Report",
 );
-assert.equal(
-  proofsSource.match(/grid-cols-\[minmax\(0,1fr\)\]/g)?.length,
-  2,
-  "Proof cards and their content must constrain real hash/error payloads to the viewport",
-);
+// The workflow catalogue is still real and still checked; it just no longer
+// lives on the first screen a stranger sees.
 for (const [type, label] of [
   ["github_due_diligence", "GitHub Project Due Diligence"],
   ["agent_trust_report", "Veyra Agent Trust Report"],
@@ -131,11 +143,13 @@ for (const [type, label] of [
   ["sentiment_tone", "Sentiment & Tone Report"],
   ["builder_update", "Builder Update Summary"],
 ] as const) {
-  assert(homeSource.includes(`type: "${type}"`), `Home must present ${label}`);
   assert(hostedWorkflowTemplates.some((template) => template.value === type && template.label === label));
 }
-assert(!homeSource.includes("Understand any GitHub project before you build on it"));
-
+assert.equal(
+  proofsSource.match(/grid-cols-\[minmax\(0,1fr\)\]/g)?.length,
+  2,
+  "Proof cards and their content must constrain real hash/error payloads to the viewport",
+);
 for (const template of curatedHostedWorkflowTemplates) {
   assert(typeof template.benefitLabel === "string" && template.benefitLabel.length > 0);
   assert(template.benefitLabel.includes("Arc verification"));
@@ -241,19 +255,23 @@ assert.deepEqual(
   },
 );
 
-// Five destinations. The product navigation is not where the architecture is
-// explained: a stage of a decision belongs to the decision, not to the shell.
-assert.deepEqual(publicSidebarNavigation.map(({ label }) => label), ["Run", "Activity", "Network"]);
+/* Four destinations, and the brief is the first one.
+ *
+ * The product navigation is not where the architecture gets explained: a stage
+ * of a decision belongs to the decision, not to the shell. This list was five
+ * items across three headed sections named after subsystems -- run, activity,
+ * network -- which asked a visitor to learn Veyra before using it. */
+assert.deepEqual(publicSidebarNavigation.map(({ label }) => label), ["Your agent", "History", "Advanced"]);
 const publicItems = publicSidebarNavigation.flatMap(({ items }) =>
   items.map(({ label, href }) => ({ label, href })),
 );
 assert.deepEqual(publicItems, [
-  { label: "New decision", href: "/run" },
+  { label: "Daily brief", href: "/" },
   { label: "Decisions", href: "/executions" },
-  { label: "Receipts", href: "/receipts" },
-  { label: "Agents", href: "/agents" },
-  { label: "Evidence", href: "/trust" },
+  { label: "Payments", href: "/receipts" },
+  { label: "Choose and pay yourself", href: "/run" },
 ]);
+assert.equal(publicItems[0].href, "/", "the brief leads: it is the product, the rest is how it is justified");
 
 /* Labs is frozen behind the developer console. The product navigation must not
    point at anything the middleware redirects away from, or the shell would send

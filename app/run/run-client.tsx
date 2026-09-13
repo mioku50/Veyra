@@ -975,7 +975,7 @@ export function RunClient() {
               <span style={{ color: "var(--run-accent)" }}>Circle pays.</span>
             </h1>
             <p className="mt-3 max-w-[38ch] text-[14px] leading-[1.5] text-[var(--run-text-muted)]">
-              Evidence-based authorization for autonomous USDC spending.
+              Veyra checks who you are about to pay, and what it will cost, before you sign.
             </p>
             <div className="mt-4 flex flex-wrap gap-1.5">
               {["ERC-8004", "ERC-8183", "x402", "Gateway", "USDC", "Arc"].map((s) => (

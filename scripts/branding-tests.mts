@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFileSync, readdirSync, statSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { resolve } from "node:path";
 import { chromium, type Page } from "playwright";
 import { BRAND, BRAND_TITLE } from "../lib/brand.ts";
@@ -19,8 +19,15 @@ function baseUrl() {
     .replace(/\/$/, "");
 }
 
+/* A listed path that no longer exists is skipped rather than thrown on.
+ *
+ * This list names the files the brand check must cover, and it is edited by
+ * hand; when one of them is deliberately removed from the repository the check
+ * should narrow, not collapse. It crashed with ENOENT on a deleted AGENTS.md,
+ * which made an unrelated rename look like a branding failure. */
 function filesUnder(relativePath: string): string[] {
   const absolutePath = resolve(REPOSITORY_ROOT, relativePath);
+  if (!existsSync(absolutePath)) return [];
   if (statSync(absolutePath).isFile()) return [absolutePath];
   return readdirSync(absolutePath, { withFileTypes: true }).flatMap((entry) => {
     const child = `${relativePath}/${entry.name}`;
@@ -217,9 +224,17 @@ try {
     (await page.locator('[data-testid="brand-monogram"]').first().innerText()).trim(),
     BRAND.monogram,
   );
-  await page.getByRole("heading", { name: BRAND.name, exact: true }).waitFor();
+  /* The brand is in the top bar, not in a page heading. The front door's own
+     heading belongs to the front door -- "An agent that watches so you do not
+     have to." -- and putting the company name there instead would be a brand
+     asserting itself over the thing a person came for. */
+  await page.getByTestId("brand-monogram").first().waitFor();
+  await page.getByText(BRAND.name, { exact: true }).first().waitFor();
   await page.getByText(BRAND.tagline, { exact: true }).first().waitFor();
-  await page.getByText(BRAND.description, { exact: true }).waitFor();
+  /* The description is asserted in the metadata above, where it is what a
+     shared link previews as. It used to be required as visible copy too, which
+     only held while the front door was a marketing page; it now has to say what
+     it does for the person reading it, in their words rather than the brand's. */
   await page.getByText("Arc Testnet", { exact: true }).first().waitFor();
 
   await page.goto(`${baseUrl()}/console`, { waitUntil: "load" });

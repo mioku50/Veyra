@@ -6,11 +6,9 @@ import { House, ShieldCheck, Bot, Radar, FileText } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const mobileBottomLinks = [
-  { href: "/", label: "Home", icon: House },
-  { href: "/trust", label: "Trust", icon: ShieldCheck },
-  { href: "/agent-runner", label: "Analyze", icon: Bot },
-  { href: "/monitoring", label: "Monitoring", icon: Radar },
-  { href: "/results", label: "Reports", icon: FileText },
+  { href: "/", label: "Brief", icon: House },
+  { href: "/executions", label: "Decisions", icon: FileText },
+  { href: "/run", label: "Advanced", icon: Bot },
 ];
 
 function isActive(pathname: string, href: string) {
