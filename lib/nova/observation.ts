@@ -104,6 +104,10 @@ export type ChangeInput = {
   now: Date;
   /** The catalog's own "last updated", used only on a first look. */
   catalogUpdatedAt?: string | null;
+  /** True when the commit count hit the API's page size and is therefore a
+   *  floor. Wording only -- it must never enter the digest, or a repository
+   *  crossing the cap would register as a change in its own right. */
+  commitsAreLowerBound?: boolean;
 };
 
 export function changesForSubject(input: ChangeInput): ObservedChange[] {
@@ -114,9 +118,19 @@ export function changesForSubject(input: ChangeInput): ObservedChange[] {
       : x402FirstLook(input.label, input.next, input.now, input.catalogUpdatedAt ?? null);
   }
   const previous = input.previous?.kind === "github_repository" ? input.previous : null;
+  const floor = input.commitsAreLowerBound === true;
   return previous
-    ? repositoryChanges(input.label, previous, input.next, input.now)
-    : repositoryFirstLook(input.label, input.next, input.now);
+    ? repositoryChanges(input.label, previous, input.next, input.now, floor)
+    : repositoryFirstLook(input.label, input.next, input.now, floor);
+}
+
+/** "100 new commits" is what one page of the commits API holds, so at the cap
+ *  it is a floor rather than a total. Printing the cap as an exact count
+ *  understates the busiest repositories every single time, which is the one
+ *  place a reader would most notice being wrong. */
+function commitPhrase(count: number, isLowerBound: boolean): string {
+  const noun = count === 1 ? "new commit" : "new commits";
+  return isLowerBound ? `at least ${count} ${noun}` : `${count} ${noun}`;
 }
 
 function x402Changes(
@@ -240,6 +254,7 @@ function repositoryChanges(
   previous: Extract<SubjectDigest, { kind: "github_repository" }>,
   next: Extract<SubjectDigest, { kind: "github_repository" }>,
   now: Date,
+  commitsAreLowerBound: boolean,
 ): ObservedChange[] {
   const changes: ObservedChange[] = [];
   const observedAt = now.toISOString();
@@ -265,10 +280,11 @@ function repositoryChanges(
     const contributors = next.contributorCount;
     changes.push({
       kind: "repository_activity",
-      headline: `${label}: ${plural(next.commitsInWindow, "new commit")}`,
+      headline: `${label}: ${commitPhrase(next.commitsInWindow, commitsAreLowerBound)}`,
       detail: `${plural(contributors, "contributor")} active, most recent commit ${age === null ? "recently" : describeAge(age)}.`,
       evidence: {
         commits: next.commitsInWindow,
+        commitsAreLowerBound,
         contributors,
         lastCommitAt: next.lastCommitAt,
         previousCommitAt: previous.lastCommitAt,
@@ -284,6 +300,7 @@ function repositoryFirstLook(
   label: string,
   next: Extract<SubjectDigest, { kind: "github_repository" }>,
   now: Date,
+  commitsAreLowerBound: boolean,
 ): ObservedChange[] {
   const changes: ObservedChange[] = [];
   const observedAt = now.toISOString();
@@ -292,10 +309,11 @@ function repositoryFirstLook(
   if (commitAge !== null && commitAge >= 0 && commitAge <= FIRST_LOOK_WINDOW.commitHours && next.commitsInWindow > 0) {
     changes.push({
       kind: "repository_activity",
-      headline: `${label}: ${plural(next.commitsInWindow, "new commit")}`,
+      headline: `${label}: ${commitPhrase(next.commitsInWindow, commitsAreLowerBound)}`,
       detail: `${plural(next.contributorCount, "contributor")} active, most recent commit ${describeAge(commitAge)}.`,
       evidence: {
         commits: next.commitsInWindow,
+        commitsAreLowerBound,
         contributors: next.contributorCount,
         lastCommitAt: next.lastCommitAt,
         firstLook: true,

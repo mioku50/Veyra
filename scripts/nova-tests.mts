@@ -90,7 +90,32 @@ const busyRepo = changesForSubject({
 assert.equal(busyRepo.length, 1);
 assert.equal(busyRepo[0].kind, "repository_activity");
 assert.match(busyRepo[0].headline, /17 new commits/);
+assert.doesNotMatch(busyRepo[0].headline, /at least/, "a count below the page size is exact");
 assert.match(busyRepo[0].detail, /4 contributors/);
+
+/* One page of the commits API holds 100, so a count at the cap is a floor.
+   Observed live: Foundry returned exactly 100 over a week and the brief printed
+   "100 new commits" as though it were the total -- understating the busiest
+   repository, which is the one place a reader would notice being wrong. */
+const capped = changesForSubject({
+  label: "Foundry",
+  previous: null,
+  next: repositoryDigest({ lastCommitAt: hoursAgo(3), commitsInWindow: 100, contributorCount: 17, latestRelease: null, stars: 1 }),
+  now: NOW,
+  commitsAreLowerBound: true,
+});
+assert.match(capped[0].headline, /at least 100 new commits/);
+assert.equal(capped[0].evidence.commitsAreLowerBound, true);
+
+// And on a later refresh, where the change is a delta rather than a first look.
+const cappedAgain = changesForSubject({
+  label: "Foundry",
+  previous: repositoryDigest({ lastCommitAt: hoursAgo(40), commitsInWindow: 90, contributorCount: 15, latestRelease: null, stars: 1 }),
+  next: repositoryDigest({ lastCommitAt: hoursAgo(2), commitsInWindow: 100, contributorCount: 17, latestRelease: null, stars: 1 }),
+  now: NOW,
+  commitsAreLowerBound: true,
+});
+assert.match(cappedAgain[0].headline, /at least 100 new commits/);
 
 /* ---- real deltas ---- */
 

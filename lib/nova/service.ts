@@ -229,6 +229,7 @@ export async function refreshNova(input: {
       next: observation.digest,
       now,
       catalogUpdatedAt: observation.catalogUpdatedAt,
+      commitsAreLowerBound: observation.context.commitsAreLowerBound === true,
     });
 
     for (const change of changes) {
