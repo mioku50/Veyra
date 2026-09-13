@@ -290,6 +290,33 @@ export function useArcWallet() {
     }
   }, []);
 
+  /* Arc is where the clearance lives; the endpoint being paid is usually
+     somewhere else — most of the x402 catalog is on Base. Paying it means the
+     wallet has to be on that chain for one signature, so a switch to an
+     arbitrary EVM chain is a first-class operation rather than an Arc-only one. */
+  const switchToChain = useCallback(async (targetChainId: number) => {
+    const provider = getProvider();
+    if (!provider) {
+      setError("No injected EVM wallet was detected.");
+      return false;
+    }
+    setSwitching(true);
+    try {
+      await provider.request({
+        method: "wallet_switchEthereumChain",
+        params: [{ chainId: `0x${targetChainId.toString(16)}` }],
+      });
+      setChainId(targetChainId);
+      setError(null);
+      return true;
+    } catch (caught) {
+      setError(getErrorMessage(caught));
+      return false;
+    } finally {
+      setSwitching(false);
+    }
+  }, []);
+
   const disconnect = useCallback(async () => {
     const provider = getProvider();
 
@@ -478,6 +505,7 @@ export function useArcWallet() {
     isArcTestnet,
     connect,
     switchToArc,
+    switchToChain,
     disconnect,
     loadBalances,
     refresh,

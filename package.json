@@ -142,7 +142,8 @@
     "execution:production-verify": "node --experimental-transform-types --no-warnings --env-file-if-exists=.env.local scripts/verify-p61-schema.mts",
     "audit:secrets": "node --experimental-transform-types --no-warnings scripts/audit-secrets.mts",
     "release:gate": "node --experimental-transform-types --no-warnings scripts/public-beta-release-gate.mts",
-    "benchmark": "node --experimental-transform-types --no-warnings benchmarks/run.mts"
+    "benchmark": "node --experimental-transform-types --no-warnings benchmarks/run.mts",
+    "x402-payment:test": "node --experimental-transform-types --no-warnings scripts/x402-browser-payment-tests.mts"
   },
   "dependencies": {
     "@circle-fin/adapter-viem-v2": "^1.14.0",

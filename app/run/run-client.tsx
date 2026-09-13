@@ -9,6 +9,7 @@ import Link from "next/link";
 import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import { useArcWallet } from "@/components/wallet/use-arc-wallet";
 import { ConnectChip } from "@/components/wallet/connect-chip";
+import { buildPaymentTypedData } from "@/lib/x402/browser-payment";
 import { CandidateCard, type RunCandidate } from "@/components/run/candidate-card";
 import { DecisionPanel, type RunDecision } from "@/components/run/decision-panel";
 import { Eyebrow, Money, Panel } from "@/components/run/primitives";
@@ -53,6 +54,19 @@ export function RunClient() {
   const [decision, setDecision] = useState<RunDecision | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [stats, setStats] = useState<{ catalogTotal: number; discovered: number; probed: number } | null>(null);
+
+  /* The purchase itself, paid from the visitor's own wallet. `onAuthorize` used
+     to flip a UI state and print a CLI command, so nothing was ever bought from
+     the browser. Veyra signs the verdict; the user signs the money. */
+  const [payment, setPayment] = useState<{
+    stage: "quoting" | "signing" | "settling" | "done" | "failed";
+    quotedUsdc?: number;
+    paidUsdc?: number;
+    payTo?: string;
+    transaction?: string | null;
+    result?: unknown;
+    message?: string;
+  } | null>(null);
 
   /* Veyra signs its verdicts to a wallet, so a decision needs a verified owner
      session. The screen used to call the API without one and print the raw
@@ -369,6 +383,85 @@ export function RunClient() {
     });
   }
 
+  async function payAndRun() {
+    if (!decision?.resource) return;
+    setPhase("authorizing");
+    setPayment({ stage: "quoting" });
+    try {
+      if (!wallet.address) throw new Error("Connect a wallet before paying.");
+
+      // 1. Quote. x402 prices per call, so the challenge is raised by the same
+      //    body that will be sent — a different body is a different price.
+      const requestBody = { query: intent || capability.replace(/_/g, " ") };
+      const quoted = await post("/api/run/v1/quote", {
+        resource: decision.resource,
+        method: "POST",
+        requestBody,
+        maxAmountUsdc: decision.maxExposureUsdc,
+        chainId: wallet.chainId,
+      });
+      if (!quoted.response.ok) throw new Error(failureText(quoted.payload?.error ?? quoted.payload, quoted.response.status));
+      if (quoted.payload?.paymentRequired === false) {
+        setPayment({ stage: "done", paidUsdc: 0, result: quoted.payload.body, message: "The endpoint answered without asking for payment." });
+        setPhase("authorized");
+        return;
+      }
+
+      const { accept, nonce, quotedUsdc, resourceDescriptor } = quoted.payload as { accept: any; nonce: string; quotedUsdc: number; resourceDescriptor: unknown };
+
+      // 2. Be on the chain the endpoint is paid on. The clearance is issued on
+      //    Arc; most of the x402 catalog settles on Base, so the wallet moves
+      //    for one signature and the user is told why.
+      if (wallet.chainId !== accept.chainId) {
+        setPayment({ stage: "signing", quotedUsdc, payTo: accept.payTo, message: `Switch your wallet to chain ${accept.chainId} to pay this endpoint.` });
+        const switched = await wallet.switchToChain(accept.chainId);
+        if (!switched) throw new Error(`This endpoint settles on chain ${accept.chainId}. Switch your wallet there and try again.`);
+      }
+
+      // 3. Sign. The wallet shows the same recipient and amount as the panel,
+      //    and the signature is what caps the spend — not this page.
+      setPayment({ stage: "signing", quotedUsdc, payTo: accept.payTo });
+      const { authorization, typedData } = buildPaymentTypedData({
+        accept,
+        from: wallet.address as `0x${string}`,
+        nonce: nonce as `0x${string}`,
+      });
+      const signature = await wallet.signTypedData(typedData as any);
+
+      // 4. Relay. Veyra carries the signed authorization to the seller and
+      //    returns what came back.
+      setPayment({ stage: "settling", quotedUsdc, payTo: accept.payTo });
+      const settled = await post("/api/run/v1/settle", {
+        resource: decision.resource,
+        method: "POST",
+        requestBody,
+        accept,
+        authorization,
+        signature,
+        resourceDescriptor,
+      });
+      if (!settled.response.ok) throw new Error(failureText(settled.payload?.error ?? settled.payload, settled.response.status));
+      const result = settled.payload as any;
+      if (result.settled === false) {
+        setPayment({ stage: "failed", quotedUsdc, message: result.message || "The endpoint rejected the payment." });
+        setPhase("decided");
+        return;
+      }
+      setPayment({
+        stage: "done",
+        quotedUsdc,
+        paidUsdc: result.paidUsdc,
+        payTo: result.payTo,
+        transaction: result.transaction ?? null,
+        result: result.result ?? result.body,
+      });
+      setPhase("authorized");
+    } catch (caught: any) {
+      setPayment({ stage: "failed", message: caught?.shortMessage || caught?.message || "The purchase did not complete." });
+      setPhase("decided");
+    }
+  }
+
   const checklist = rail === "api"
     ? [
         ["Live endpoint", "Answers a valid x402 challenge right now"],
@@ -677,28 +770,99 @@ export function RunClient() {
             <DecisionPanel
               decision={decision}
               busy={phase === "authorizing"}
-              onAuthorize={() => setPhase("authorized")}
+              onAuthorize={() => void payAndRun()}
             />
           </div>
         ) : null}
 
-        {phase === "authorized" && decision ? (
-          <Panel className="mt-4 p-5">
-            <Eyebrow>Hand-off</Eyebrow>
-            <p className="mt-2 text-[12.5px] leading-relaxed text-[var(--run-text-muted)]">
-              Veyra has decided and signed. Settlement is Circle&apos;s — pay the cleared
-              resource, capped at the authorized exposure:
-            </p>
-            <pre className="run-num mt-3.5 overflow-x-auto rounded-[var(--run-radius-sm)] border border-[var(--run-line)] bg-[var(--run-canvas)] p-3.5 text-[11.5px] leading-relaxed text-[var(--run-text-muted)]">
-{`circle services pay "${decision.resource ?? ""}" \\
-  --max-amount ${decision.maxExposureUsdc} \\
-  --output json`}
-            </pre>
-            <p className="mt-2.5 text-[11.5px] text-[var(--run-text-faint)]">
-              Paying a different resource on the strength of this verdict will not work:
-              the clearance is bound to the one above.
-            </p>
-          </Panel>
+        {/* What the user actually bought. The screen used to stop at a CLI
+            command, which meant the product ended one step before the thing the
+            user came for. */}
+        {payment ? (
+          <section className="run-decision mt-4" data-verdict="allow">
+            <div className="run-signature" />
+            <div className="px-6 py-5">
+              <div className="flex flex-wrap items-baseline justify-between gap-4">
+                <span className="run-eyebrow">
+                  {payment.stage === "done" ? "Result" : payment.stage === "failed" ? "Not purchased" : "Purchasing"}
+                </span>
+                {payment.paidUsdc !== undefined ? (
+                  <span className="run-num text-[13px] text-[var(--run-text-muted)]">
+                    paid <Money value={payment.paidUsdc} className="text-[var(--run-text)]" />
+                    {payment.payTo ? <> to <span className="text-[var(--run-text-faint)]">{payment.payTo.slice(0, 8)}…{payment.payTo.slice(-4)}</span></> : null}
+                  </span>
+                ) : payment.quotedUsdc !== undefined ? (
+                  <span className="run-num text-[13px] text-[var(--run-text-muted)]">
+                    quoted <Money value={payment.quotedUsdc} className="text-[var(--run-text)]" />
+                  </span>
+                ) : null}
+              </div>
+
+              {payment.stage !== "done" && payment.stage !== "failed" ? (
+                <ol className="mt-4 flex flex-wrap items-center gap-x-2 gap-y-1">
+                  {(["quoting", "signing", "settling"] as const).map((step, i) => {
+                    const order = { quoting: 0, signing: 1, settling: 2 } as const;
+                    const at = order[payment.stage as keyof typeof order] ?? 0;
+                    const label = step === "quoting"
+                      ? "Reading the price"
+                      : step === "signing"
+                        ? "Waiting for your signature"
+                        : "Delivering the payment";
+                    return (
+                      <li key={step} className="flex items-center gap-2">
+                        {i > 0 ? <span aria-hidden className="text-[10px] text-[var(--run-line-strong)]">→</span> : null}
+                        <span className="run-node" data-state={i < at ? "done" : i === at ? "active" : "idle"} />
+                        <span
+                          className={`text-[11.5px] ${i === at ? "run-pulse" : ""}`}
+                          style={{ color: i <= at ? "var(--run-text)" : "var(--run-text-faint)" }}
+                        >
+                          {label}
+                        </span>
+                      </li>
+                    );
+                  })}
+                </ol>
+              ) : null}
+
+              {payment.stage === "signing" ? (
+                <p className="mt-3.5 max-w-[62ch] text-[12px] leading-relaxed text-[var(--run-text-muted)]">
+                  Your wallet is showing the exact recipient and amount above. That
+                  signature is the ceiling — Veyra relays it and cannot change it.
+                </p>
+              ) : null}
+
+              {payment.message ? (
+                <p className="mt-3.5 text-[13px] leading-relaxed text-[var(--run-text)]">{payment.message}</p>
+              ) : null}
+
+              {payment.transaction ? (
+                <a
+                  href={`https://basescan.org/tx/${payment.transaction}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="run-focus run-num mt-3 inline-block text-[11.5px] text-[var(--run-azure)] hover:underline"
+                >
+                  {payment.transaction.slice(0, 10)}…{payment.transaction.slice(-6)} ↗
+                </a>
+              ) : null}
+
+              {payment.stage === "done" && payment.result !== undefined && payment.result !== null ? (
+                <pre className="run-num mt-4 max-h-[26rem] overflow-auto rounded-[var(--run-radius-sm)] border border-[var(--run-line)] bg-[var(--run-canvas)] p-4 text-[11.5px] leading-relaxed text-[var(--run-text-muted)]">
+{typeof payment.result === "string" ? payment.result : JSON.stringify(payment.result, null, 2)}
+                </pre>
+              ) : null}
+
+              {payment.stage === "failed" ? (
+                <button
+                  type="button"
+                  onClick={() => void payAndRun()}
+                  className="run-cta run-focus mt-4 inline-flex h-9 items-center rounded-[var(--run-radius-sm)] px-4 text-[13px] font-semibold"
+                >
+                  Try the purchase again
+                </button>
+              ) : null}
+            </div>
+          </section>
         ) : null}
 
         {shown.length > 0 ? (

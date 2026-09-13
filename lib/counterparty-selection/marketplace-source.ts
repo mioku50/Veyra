@@ -390,9 +390,22 @@ export async function discoverMarketplaceCandidates(
     }
   }
 
-  const payloads = queries.length === 1
-    ? [await fetchQuery(queries[0])]
-    : await Promise.all(queries.map(fetchQuery));
+  /* One term timing out must not lose the other terms' results: the union is a
+     widening, so a partial union is still strictly better than the single
+     conjunctive query it replaced. Discovery only fails when nothing answers. */
+  let payloads: Array<Record<string, unknown>>;
+  if (queries.length === 1) {
+    payloads = [await fetchQuery(queries[0])];
+  } else {
+    const settled = await Promise.allSettled(queries.map(fetchQuery));
+    payloads = settled
+      .filter((outcome): outcome is PromiseFulfilledResult<Record<string, unknown>> =>
+        outcome.status === "fulfilled")
+      .map((outcome) => outcome.value);
+    if (payloads.length === 0) {
+      throw new MarketplaceDiscoveryError("marketplace_discovery_unavailable", 502);
+    }
+  }
 
   const items: unknown[] = [];
   let catalogTotal = 0;
