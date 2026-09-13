@@ -8,6 +8,7 @@
 import Link from "next/link";
 import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import { useArcWallet } from "@/components/wallet/use-arc-wallet";
+import { ConnectChip } from "@/components/wallet/connect-chip";
 import { CandidateCard, type RunCandidate } from "@/components/run/candidate-card";
 import { DecisionPanel, type RunDecision } from "@/components/run/decision-panel";
 import { Eyebrow, Money, Panel } from "@/components/run/primitives";
@@ -411,12 +412,14 @@ export function RunClient() {
                 <Link
                   key={href}
                   href={href}
-                  className="run-focus rounded-[6px] px-2.5 py-1.5 text-[12px] text-[var(--run-text-muted)] transition-colors hover:bg-[var(--run-surface)] hover:text-[var(--run-text)]"
+                  className="run-focus hidden rounded-[6px] px-2.5 py-1.5 text-[12px] text-[var(--run-text-muted)] transition-colors hover:bg-[var(--run-surface)] hover:text-[var(--run-text)] sm:block"
                 >
                   {text}
                 </Link>
               ),
             )}
+            <span aria-hidden className="mx-1.5 hidden h-4 w-px bg-[var(--run-line-strong)] sm:block" />
+            <ConnectChip verified={authenticated} onVerify={() => void verifyOwner()} verifying={verifying} />
           </nav>
         </div>
       </header>
