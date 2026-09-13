@@ -46,6 +46,34 @@ function readStored(): { publicId: string; ownerSecret: string } | null {
   }
 }
 
+/**
+ * One string a person can keep.
+ *
+ * An agent is proven by a secret this browser holds; the server stores only its
+ * digest and cannot hand it back. So the browser is the single copy, and
+ * "remembered by this browser alone" was a promise that clearing site data
+ * breaks forever -- worse once a scheduler is running, because the row keeps
+ * existing, unreachable, until dormancy retires it.
+ *
+ * The id and the secret joined by a dot, because two fields to copy is two
+ * chances to copy one of them.
+ */
+function recoveryKeyFor(who: { publicId: string; ownerSecret: string }): string {
+  return `${who.publicId}.${who.ownerSecret}`;
+}
+
+function parseRecoveryKey(text: string): { publicId: string; ownerSecret: string } | null {
+  const trimmed = text.trim();
+  const dot = trimmed.indexOf(".");
+  if (dot < 0) return null;
+  const publicId = trimmed.slice(0, dot);
+  const ownerSecret = trimmed.slice(dot + 1);
+  // Shape only. Whether it is the right key is the server's answer, and asking
+  // it is one request -- guessing here would just be a second, worse, check.
+  if (!/^nva_[0-9a-z]{20}$/.test(publicId) || ownerSecret.length < 16) return null;
+  return { publicId, ownerSecret };
+}
+
 const RELEVANCE_CHIP: Record<NovaSignal["relevance"], { label: string; className: string }> = {
   high: { label: "high relevance", className: "border-state-warn/40 bg-state-warn/10 text-state-warn" },
   medium: { label: "worth reading", className: "border-primary/40 bg-primary/10 text-primary" },
@@ -90,6 +118,12 @@ export function NovaClient() {
   const [name, setName] = useState("Nova");
   const [chosen, setChosen] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
+  /* True only for the visit that created the agent. The key is worth
+     interrupting someone for once; every visit after that it is a detail they
+     can go and find. */
+  const [justCreated, setJustCreated] = useState(false);
+  const [restoreText, setRestoreText] = useState("");
+  const [restoring, setRestoring] = useState(false);
 
   const call = useCallback(async (
     path: string,
@@ -139,6 +173,41 @@ export function NovaClient() {
     });
   }, [loadBrief]);
 
+  /**
+   * Bring an agent back on a browser that has never seen it.
+   *
+   * Nothing new on the server: the brief endpoint already answers a key that
+   * does not match with a 404, so the check that matters is the one request
+   * this makes. Storage is written only after that request succeeds, so a
+   * mistyped key cannot evict the agent this browser already holds.
+   */
+  const restore = async () => {
+    setRestoring(true);
+    setError(null);
+    const who = parseRecoveryKey(restoreText);
+    if (!who) {
+      setError("That does not look like a recovery key. It starts with nva_ and has a dot in it.");
+      setRestoring(false);
+      return;
+    }
+    try {
+      await loadBrief(who);
+      try {
+        window.localStorage.setItem(STORAGE.id, who.publicId);
+        window.localStorage.setItem(STORAGE.key, who.ownerSecret);
+      } catch {
+        setError("Restored, but this browser will not remember it. Keep this tab open.");
+      }
+      setIdentity(who);
+      setRestoreText("");
+    } catch {
+      // The server will not say whether the id exists, and neither will this.
+      setError("No agent answers to that key.");
+    } finally {
+      setRestoring(false);
+    }
+  };
+
   const toggleInterest = (label: string) => {
     setChosen((current) => current.includes(label)
       ? current.filter((entry) => entry !== label)
@@ -162,6 +231,7 @@ export function NovaClient() {
         setError("This browser will not remember your agent, so keep this tab open.");
       }
       setIdentity(who);
+      setJustCreated(true);
       setStage("working");
 
       await call(`/api/nova/v1/agents/${who.publicId}/refresh`, {
@@ -295,9 +365,35 @@ export function NovaClient() {
         </Panel>
 
         <p className="mt-6 max-w-xl text-xs leading-relaxed text-muted-foreground">
-          No account and no wallet. Your agent is remembered by this browser alone, which also
-          means clearing this browser loses it.
+          No account and no wallet. Your agent is remembered by this browser, and you get a
+          recovery key to keep somewhere else.
         </p>
+
+        <Panel className="mt-4">
+          <Label>Already have an agent?</Label>
+          <p className="mt-3 max-w-xl text-sm leading-relaxed text-muted-foreground">
+            Paste the recovery key you saved. This browser will remember it from then on.
+          </p>
+          <div className="mt-4 flex flex-wrap items-center gap-3">
+            <input
+              aria-label="Recovery key"
+              value={restoreText}
+              onChange={(event) => setRestoreText(event.target.value)}
+              placeholder="nva_…"
+              spellCheck={false}
+              autoComplete="off"
+              className="field min-w-0 flex-1 rounded-lg px-3 py-2.5 font-mono text-[12.5px] outline-none transition"
+            />
+            <button
+              type="button"
+              onClick={restore}
+              disabled={restoring || restoreText.trim().length === 0}
+              className="rounded-lg border border-primary/50 px-4 py-2.5 text-sm text-foreground transition hover:bg-primary/15 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              {restoring ? "Looking…" : "Restore"}
+            </button>
+          </div>
+        </Panel>
 
         <Footer />
       </Shell>
@@ -365,6 +461,7 @@ export function NovaClient() {
       </header>
 
       {error ? <Notice tone="error">{error}</Notice> : null}
+      {justCreated && identity ? <RecoveryKey who={identity} emphatic /> : null}
       {brief.wokeFromDormancy ? (
         <Notice tone="warn">
           {agentName} had stopped watching: nobody had opened this brief in a while, and an
@@ -493,6 +590,7 @@ export function NovaClient() {
       </Panel>
 
       <Standing brief={brief} />
+      {!justCreated && identity ? <RecoveryKey who={identity} emphatic={false} /> : null}
       <Footer />
     </Shell>
   );
@@ -587,6 +685,59 @@ function Panel({ children, className = "" }: { children: React.ReactNode; classN
     <section className={`panel-glow rounded-xl p-5 sm:p-6 ${className}`}>
       {children}
     </section>
+  );
+}
+
+/**
+ * The one thing a person has to keep.
+ *
+ * Shown in full rather than masked. A key you cannot read is a key you cannot
+ * write on paper, and paper is exactly where this belongs -- it is the only
+ * copy that survives a cleared browser. It identifies an agent and its brief;
+ * it authorises no payment, because every payment is still signed by the
+ * owner's own wallet.
+ */
+function RecoveryKey({
+  who,
+  emphatic,
+}: {
+  who: { publicId: string; ownerSecret: string };
+  emphatic: boolean;
+}) {
+  const [copied, setCopied] = useState(false);
+  const value = recoveryKeyFor(who);
+
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(value);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // Refused clipboard access is not a failure: the key is on screen anyway.
+    }
+  };
+
+  return (
+    <Panel className={emphatic ? "mb-6 border-primary/60" : "mt-4"}>
+      <Label>Recovery key</Label>
+      <p className="mt-3 max-w-xl text-sm leading-relaxed text-muted-foreground">
+        {emphatic
+          ? "Save this somewhere outside this browser. It is the only way back to your agent if this browser forgets, and nobody can reissue it — the server keeps a fingerprint of it, not the key."
+          : "Kept here while this browser remembers your agent. Save it somewhere else and losing the browser stops mattering."}
+      </p>
+      <div className="mt-4 flex flex-wrap items-center gap-3">
+        <code className="field min-w-0 flex-1 overflow-x-auto whitespace-nowrap rounded-lg px-3 py-2.5 font-mono text-[12.5px]">
+          {value}
+        </code>
+        <button
+          type="button"
+          onClick={copy}
+          className="rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90"
+        >
+          {copied ? "Copied" : "Copy"}
+        </button>
+      </div>
+    </Panel>
   );
 }
 
