@@ -9,6 +9,12 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { BRAND } from "@/lib/brand";
 import { INTEREST_CATALOG, MAX_INTERESTS } from "@/lib/nova/interests";
+/* The same mapping the scorer uses. A third copy would be a third chance for
+   the button to offer a ban the scorer does not honour. Null for the kinds
+   that are not matters of taste -- a payee change, a rail change, an endpoint
+   going dark -- so the button is absent rather than disabled: an offer a
+   person cannot take reads as a promise the product is refusing to keep. */
+import { categoryPhraseFor } from "@/lib/nova/relevance";
 import type { NovaBrief, NovaFeedback, NovaSignal } from "@/lib/nova/types";
 
 /**
@@ -73,23 +79,6 @@ function parseRecoveryKey(text: string): { publicId: string; ownerSecret: string
   if (!/^nva_[0-9a-z]{20}$/.test(publicId) || ownerSecret.length < 16) return null;
   return { publicId, ownerSecret };
 }
-
-/**
- * The category a signal belongs to, for the "Ignore …" verb.
- *
- * Mirrors preferencePhraseFor on the server, and returns null for the same
- * kinds: a changed payee, a changed rail and an endpoint going dark are not
- * matters of taste. The button is not disabled for those, it is absent -- an
- * offer a person cannot take is worse than no offer, because it reads as a
- * promise the product is refusing to keep.
- */
-const IGNORABLE: Record<string, string> = {
-  repository_activity: "commits",
-  repository_release: "releases",
-  capability_available: "new capabilities",
-  price_changed: "price changes",
-  endpoint_recovered: "recoveries",
-};
 
 const RELEVANCE_CHIP: Record<NovaSignal["relevance"], { label: string; className: string }> = {
   high: { label: "high relevance", className: "border-state-warn/40 bg-state-warn/10 text-state-warn" },
@@ -562,9 +551,9 @@ export function NovaClient() {
                     <Verb onClick={() => say(signal.signalId, "not_interesting")}>
                       Not interesting
                     </Verb>
-                    {IGNORABLE[signal.kind] ? (
+                    {categoryPhraseFor(signal.kind) ? (
                       <Verb onClick={() => say(signal.signalId, "ignore_kind")}>
-                        Ignore {IGNORABLE[signal.kind]}
+                        Ignore {categoryPhraseFor(signal.kind)}
                       </Verb>
                     ) : null}
                   </>

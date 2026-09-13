@@ -9,7 +9,7 @@ import { getServerSupabaseConfig } from "../supabase/server-env.ts";
 import { assembleBrief, greeting, quietSummary } from "./brief.ts";
 import { MAX_INTERESTS, keywordsForInterests, normalizeInterests } from "./interests.ts";
 import { changesForSubject } from "./observation.ts";
-import { scoreRelevance } from "./relevance.ts";
+import { categoryPhraseFor, scoreRelevance } from "./relevance.ts";
 import { observeRepositories, observeX402Catalog, type SourceObservation } from "./sources.ts";
 import type {
   NovaAgent,
@@ -727,21 +727,10 @@ async function rememberPreference(
 /**
  * The phrase a dismissal teaches.
  *
- * Derived from the signal kind rather than from its wording, so what lands in
- * "what Nova knows about you" is a category a person would recognise instead of
- * a fragment of a sentence they happened to scroll past.
+ * The mapping itself lives with the scorer, because scoring has to match a
+ * category preference against the same phrase that writing one recorded. Two
+ * copies of this drifting apart would mean a person banning a category and
+ * Nova going on showing it, with the ban visible in "what Nova knows about
+ * you" the whole time -- which is worse than not offering the ban at all.
  */
-export function preferencePhraseFor(kind: string): string | null {
-  switch (kind) {
-    case "repository_activity": return "commits";
-    case "repository_release": return "releases";
-    case "capability_available": return "new capabilities";
-    case "price_changed": return "price changes";
-    case "endpoint_recovered": return "recoveries";
-    /* A changed payee is never learned away, and neither is a rail change or an
-       endpoint going dark. Where someone's money goes is not a matter of taste,
-       and a product where three impatient clicks switch that warning off has
-       quietly become a different product. */
-    default: return null;
-  }
-}
+export const preferencePhraseFor = categoryPhraseFor;

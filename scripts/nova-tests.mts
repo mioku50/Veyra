@@ -294,6 +294,55 @@ const banned = scoreRelevance({
 });
 assert.equal(banned.relevance, "noise", "an explicit ban has to actually silence the category");
 
+/* A category ban has to work on every category, not just the one whose name
+   happens to appear in Nova's own sentence.
+
+   The first version matched preferences through the prose, which worked for
+   "commits" -- a repository headline says "22 new commits" -- and silently did
+   nothing for the other four. Banning "new capabilities" wrote the preference,
+   showed it in what Nova knows about you, and then went on showing every
+   capability signal, because no capability signal contains that phrase. A ban
+   that is visibly recorded and quietly ignored is worse than one never offered. */
+{
+  const capabilityText = "Orthogonal search web research api";
+  assert.doesNotMatch(
+    `${capabilityText} ${firstLook[0].headline}`,
+    /new capabilities/i,
+    "the fixture must not contain the phrase, or this test proves nothing",
+  );
+
+  const shown = scoreRelevance({ change: firstLook[0], keywords, subjectText: capabilityText });
+  const banned = scoreRelevance({
+    change: firstLook[0],
+    keywords,
+    subjectText: capabilityText,
+    preferences: {
+      ...NOTHING_SAID,
+      ignored: [{ phrase: "new capabilities", weight: ignoreWeight(EXPLICIT_IGNORE_SUPPORT) }],
+    },
+  });
+  assert(banned.score < shown.score, "banning a category has to reach the category");
+  assert.match(banned.reason, /you usually dismiss new capabilities/);
+}
+
+/* And a followed subject survives a ban on its category: "I do not care about
+   new capabilities, except this one" is a thing people mean. */
+{
+  const banned = {
+    ...NOTHING_SAID,
+    ignored: [{ phrase: "new capabilities", weight: ignoreWeight(EXPLICIT_IGNORE_SUPPORT) }],
+  };
+  const silenced = scoreRelevance({
+    change: firstLook[0], keywords, subjectText: "Orthogonal search", subjectLabel: "Orthogonal search",
+    preferences: banned,
+  });
+  const excepted = scoreRelevance({
+    change: firstLook[0], keywords, subjectText: "Orthogonal search", subjectLabel: "Orthogonal search",
+    preferences: { ...banned, followed: ["Orthogonal search"] },
+  });
+  assert(excepted.score > silenced.score, "following has to be able to carve an exception out of a ban");
+}
+
 /* When several learned preferences match, the strongest one decides. Stacking
    them would let three mild shrugs outweigh a deliberate decision. */
 const several = scoreRelevance({

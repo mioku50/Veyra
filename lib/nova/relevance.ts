@@ -68,6 +68,49 @@ const BASE_SCORE: Record<NovaSignalKind, number> = {
 
 const THRESHOLD = { high: 70, medium: 45, low: 25 } as const;
 
+/**
+ * The category a kind belongs to, as a person would name it.
+ *
+ * This is the canonical copy: scoring needs it to match a category preference
+ * exactly, and the memory writer needs it to record one. Deriving the phrase
+ * from the kind rather than from the signal's wording is what keeps "what Nova
+ * knows about you" a category someone would recognise instead of a fragment of
+ * a sentence they happened to scroll past.
+ *
+ * Null is the important half. A changed payee is never learned away, and
+ * neither is a rail change or an endpoint going dark: where someone's money
+ * goes is not a matter of taste, and a product where three impatient clicks
+ * switch that warning off has quietly become a different product. It is null in
+ * both directions -- if a payee change cannot be turned off, nothing may claim
+ * credit for turning it up either.
+ */
+const CATEGORY_PHRASE: Partial<Record<NovaSignalKind, string>> = {
+  repository_activity: "commits",
+  repository_release: "releases",
+  capability_available: "new capabilities",
+  price_changed: "price changes",
+  endpoint_recovered: "recoveries",
+};
+
+export function categoryPhraseFor(kind: string): string | null {
+  return CATEGORY_PHRASE[kind as NovaSignalKind] ?? null;
+}
+
+/**
+ * Does a learned preference apply to this change?
+ *
+ * Two ways, because preferences come from two different statements. "Ignore
+ * commits" is about the category, and is matched on the category exactly --
+ * matching it through the prose was the first version and it silently did
+ * nothing for four of the five categories, because a capability signal never
+ * contains the words "new capabilities". "Not interesting" is about the topic,
+ * and that only exists in the subject's own words.
+ */
+function preferenceApplies(phrase: string, category: string | null, shown: string): boolean {
+  if (category && phrase.trim().toLowerCase() === category) return true;
+  return matchedKeywords(shown, [phrase]).length > 0;
+}
+
 function subjectTextOf(input: RelevanceInput): string {
   return (input.subjectText ?? "").toLowerCase();
 }
@@ -183,7 +226,9 @@ export function scoreRelevance(input: RelevanceInput): RelevanceVerdict {
      the phrase came from the signal's kind, which is machine-derived, not from
      the sentence Nova wrote. Capped, so no amount of approval can outrank a
      payee change. */
-  const favoured = matchedKeywords(shown, preferences?.favoured ?? []);
+  const category = categoryPhraseFor(input.change.kind);
+  const favoured = (preferences?.favoured ?? []).filter((phrase) =>
+    preferenceApplies(phrase, category, shown));
   if (favoured.length > 0) {
     score += Math.min(20, 10 * favoured.length);
     reasons.push(`you find ${favoured[0]} useful`);
@@ -211,7 +256,7 @@ export function scoreRelevance(input: RelevanceInput): RelevanceVerdict {
   if (input.change.kind !== "payee_changed") {
     let worst: { phrase: string; weight: number } | null = null;
     for (const entry of preferences?.ignored ?? []) {
-      if (matchedKeywords(shown, [entry.phrase]).length === 0) continue;
+      if (!preferenceApplies(entry.phrase, category, shown)) continue;
       if (!worst || entry.weight > worst.weight) worst = entry;
     }
     if (worst) {
