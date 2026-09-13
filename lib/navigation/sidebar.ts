@@ -25,6 +25,16 @@ export type SidebarIconName =
 // They are not orphaned: each one moves into the developer console below, and
 // each is reachable from the decision it belongs to.
 export const publicSidebarNavigation = [
+  /* Your agent leads, and the manual decision screen sits under it as the
+     advanced path. Veyra's own screens answer many questions at once; a person
+     arriving for the first time has exactly one -- what changed, and is any of
+     it worth a cent -- and that is what the first item should open. */
+  {
+    label: "Your agent",
+    items: [
+      { href: "/nova", label: "Daily brief", icon: "agent" },
+    ],
+  },
   {
     label: "Run",
     items: [
