@@ -16,6 +16,7 @@ import { INTEREST_CATALOG, MAX_INTERESTS } from "@/lib/nova/interests";
    person cannot take reads as a promise the product is refusing to keep. */
 import { categoryPhraseFor } from "@/lib/nova/relevance";
 import type { NovaBrief, NovaFeedback, NovaSignal } from "@/lib/nova/types";
+import type { NovaResearchProposal } from "@/lib/nova/research";
 
 /**
  * The personal agent, and the front door.
@@ -40,6 +41,14 @@ import type { NovaBrief, NovaFeedback, NovaSignal } from "@/lib/nova/types";
 const STORAGE = { id: "veyra.nova.id", key: "veyra.nova.key" } as const;
 
 type Stage = "loading" | "create" | "working" | "brief";
+
+/** Where one item's pricing has got to. "refused" is a result, not an error:
+ *  Veyra looked at the market and would not authorise any of it. */
+type ResearchState =
+  | { stage: "looking" }
+  | { stage: "ready"; proposal: NovaResearchProposal }
+  | { stage: "refused"; detail: string }
+  | { stage: "failed"; detail: string };
 
 function readStored(): { publicId: string; ownerSecret: string } | null {
   try {
@@ -134,6 +143,11 @@ export function NovaClient() {
      keep the item on screen -- hiding something you just called useful is the
      opposite of what the word means -- so the card has to show that it landed. */
   const [said, setSaid] = useState<Record<string, NovaFeedback>>({});
+  /* One entry per item somebody asked Veyra to price. Keyed by signal rather
+     than held as a single "current proposal" because pricing takes seconds
+     against live endpoints, and a person who asks about two things should get
+     two answers rather than watch the first one be replaced. */
+  const [research, setResearch] = useState<Record<string, ResearchState>>({});
 
   const call = useCallback(async (
     path: string,
@@ -276,6 +290,40 @@ export function NovaClient() {
       setStage(previous);
     } finally {
       setBusy(false);
+    }
+  };
+
+  /**
+   * Asks Veyra what it would cost to look deeper, and who would be paid.
+   *
+   * Nothing is spent and nothing is authorised. The answer is evidence: a
+   * provider, a price, a trust score and a rail, gathered by probing the live
+   * endpoints a few seconds ago. The person decides afterwards, or does not.
+   */
+  const price = async (signal: NovaSignal) => {
+    if (!identity) return;
+    setResearch((current) => ({ ...current, [signal.signalId]: { stage: "looking" } }));
+    try {
+      const payload = await call(
+        `/api/nova/v1/agents/${identity.publicId}/signals/${signal.signalId}/research`,
+        { method: "POST", ownerSecret: identity.ownerSecret, body: JSON.stringify({}) },
+      ) as { ok: boolean; proposal?: NovaResearchProposal; detail?: string };
+
+      setResearch((current) => ({
+        ...current,
+        [signal.signalId]: payload.ok && payload.proposal
+          ? { stage: "ready", proposal: payload.proposal }
+          /* Veyra looking and refusing is an answer, not a failure, and it is
+             shown as one. Rendering it as an error would blame Nova for the
+             product doing its job. */
+          : { stage: "refused", detail: payload.detail ?? "Veyra would not authorise any of them." },
+      }));
+      void say(signal.signalId, "investigating");
+    } catch (cause) {
+      setResearch((current) => ({
+        ...current,
+        [signal.signalId]: { stage: "failed", detail: (cause as Error).message },
+      }));
     }
   };
 
@@ -530,13 +578,15 @@ export function NovaClient() {
               </p>
 
               <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-3">
-                <Link
-                  href={investigationLink(signal)}
-                  onClick={() => { void say(signal.signalId, "investigating"); }}
-                  className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90"
-                >
-                  Let {brief.agent.name} investigate
-                </Link>
+                {research[signal.signalId] ? null : (
+                  <button
+                    type="button"
+                    onClick={() => price(signal)}
+                    className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90"
+                  >
+                    Let {brief.agent.name} investigate
+                  </button>
+                )}
 
                 {said[signal.signalId] ? (
                   <span className="font-mono text-[11px] uppercase tracking-wider text-state-good">
@@ -559,6 +609,14 @@ export function NovaClient() {
                   </>
                 )}
               </div>
+
+              {research[signal.signalId] ? (
+                <DeeperResearch
+                  state={research[signal.signalId]}
+                  agentName={brief.agent.name}
+                  fallbackHref={investigationLink(signal)}
+                />
+              ) : null}
             </Panel>
           );
         })}
@@ -799,6 +857,112 @@ function RecoveryKey({
         </button>
       </div>
     </Panel>
+  );
+}
+
+/**
+ * What Veyra found, and what it would cost.
+ *
+ * Everything above this is free: Nova reads public catalogues and public
+ * repositories, and nobody is billed for a brief. This is the one place in the
+ * product where money is on the table, so it says the whole of it in four rows
+ * a person can read in four seconds -- who, how much, on what rail, and what
+ * Veyra decided -- before anything asks for a signature.
+ *
+ * The reasons underneath are not marketing. Every line is something measured in
+ * the last few seconds against the live endpoint: a catalogue can claim a
+ * price, only a probe can say the endpoint asked for it.
+ */
+function DeeperResearch({
+  state,
+  agentName,
+  fallbackHref,
+}: {
+  state: ResearchState;
+  agentName: string;
+  fallbackHref: string;
+}) {
+  if (state.stage === "looking") {
+    return (
+      <div className="mt-5 border-t border-border/60 pt-4">
+        <Label>Deeper research</Label>
+        <p className="mt-2 text-sm text-muted-foreground">
+          {BRAND.name} is checking who could answer this, and what they charge…
+        </p>
+      </div>
+    );
+  }
+
+  if (state.stage !== "ready") {
+    return (
+      <div className="mt-5 border-t border-border/60 pt-4">
+        <Label>Deeper research</Label>
+        <p className="mt-2 text-sm leading-relaxed text-muted-foreground">{state.detail}</p>
+        {state.stage === "failed" ? (
+          <Link href={fallbackHref} className="mt-3 inline-block text-sm text-link underline underline-offset-4">
+            Choose a counterparty yourself
+          </Link>
+        ) : null}
+      </div>
+    );
+  }
+
+  const { proposal } = state;
+  const cost = `$${proposal.costUsdc.toFixed(4)}`;
+
+  return (
+    <div className="mt-5 border-t border-border/60 pt-4">
+      <Label>Deeper research</Label>
+      <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
+        {BRAND.name} looked at{" "}
+        <span className="font-mono text-foreground">{proposal.probed}</span>{" "}
+        {proposal.probed === 1 ? "provider" : "providers"} and picked the best one this wallet
+        can pay. {agentName} would ask: <span className="text-foreground">{proposal.question}</span>
+      </p>
+
+      <dl className="mt-4 space-y-0">
+        <Row label="Provider" value={proposal.provider} />
+        <Row label="Cost" value={cost} />
+        <Row label="Trust" value={`${proposal.trustScore}/100`} />
+        <Row
+          label="Payment"
+          value={proposal.paymentLabel}
+          tone={proposal.funding === "wallet" ? "good" : "warn"}
+        />
+      </dl>
+
+      <p className="mt-4 text-sm leading-relaxed text-foreground">{proposal.verdict}</p>
+      {proposal.routingNote ? (
+        <p className="mt-2 text-xs leading-relaxed text-state-warn">{proposal.routingNote}</p>
+      ) : null}
+
+      {proposal.reasons.length > 0 ? (
+        <ul className="mt-3 space-y-1">
+          {proposal.reasons.map((reason) => (
+            <li key={reason} className="text-xs text-muted-foreground">
+              <span className="mr-2 font-mono text-state-good">✓</span>{reason}
+            </li>
+          ))}
+        </ul>
+      ) : null}
+
+      <div className="mt-4 flex flex-wrap items-center gap-4">
+        {/* Paying means signing, and signing happens where a wallet is
+            connected. Deliberately not labelled "Approve": this hands over to a
+            screen that reads the market again and shows its own verdict, and a
+            button that said approve while the price could still move would be
+            collecting consent for a number it does not control. */}
+        <Link
+          href={fallbackHref}
+          className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90"
+        >
+          Pay {cost} with your wallet
+        </Link>
+        <span className="text-xs text-muted-foreground">
+          You sign it yourself. {BRAND.name} never holds your money.
+        </span>
+      </div>
+    </div>
   );
 }
 

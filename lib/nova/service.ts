@@ -615,6 +615,47 @@ const FEEDBACK_STATUS: Record<NovaFeedback, "seen" | "dismissed" | "investigatin
   investigating: "investigating",
 };
 
+/**
+ * One signal, for the holder of the agent's secret.
+ *
+ * Separate from loadBrief because pricing an investigation needs the subject
+ * behind the signal -- its kind and its label decide what question is worth
+ * asking -- and loading the whole brief to answer a question about one line of
+ * it would re-read sixty rows to use one.
+ */
+export async function loadSignalForOwner(input: {
+  publicId: string;
+  ownerSecret: string;
+  signalId: string;
+}): Promise<NovaSignal> {
+  const agent = await loadOwned(input.publicId, input.ownerSecret);
+  const { data } = await db()
+    .from("nova_signals")
+    .select("signal_id, subject_id, kind, headline, detail, relevance, relevance_reason, evidence, status, execution_public_id, observed_at, nova_subjects(label, kind, interest)")
+    .eq("agent_id", agent.agent_id)
+    .eq("signal_id", input.signalId)
+    .maybeSingle();
+
+  if (!data) throw new NovaError("No such item.", "not_found", 404);
+  const row = data as Record<string, any>;
+  return {
+    signalId: row.signal_id,
+    subjectId: row.subject_id,
+    subjectLabel: row.nova_subjects?.label ?? null,
+    subjectKind: row.nova_subjects?.kind ?? null,
+    interest: row.nova_subjects?.interest ?? null,
+    kind: row.kind,
+    headline: row.headline,
+    detail: row.detail,
+    evidence: row.evidence ?? {},
+    relevance: row.relevance,
+    relevanceReason: row.relevance_reason,
+    status: row.status,
+    executionPublicId: row.execution_public_id,
+    observedAt: row.observed_at,
+  };
+}
+
 export async function markSignal(input: {
   publicId: string;
   ownerSecret: string;
