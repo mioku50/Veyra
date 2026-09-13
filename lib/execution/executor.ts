@@ -34,6 +34,7 @@ import {
 } from "../reputation/db.ts";
 import { publishReputationSnapshotProofToArc } from "../reputation/snapshot.ts";
 import { computeAgentReputation, createReputationSnapshot } from "../reputation/engine.ts";
+import { trustGateAddress as resolveTrustGateAddress } from "../trust-gate/address.ts";
 import {
   ingestErc8183JobOutcomeEvidence,
   ingestX402PaymentEvidence,
@@ -98,8 +99,7 @@ export async function prepareExecution(params: {
   // Issue EIP-712 Clearance
   let clearance: { message: any; signature: `0x${string}`; digest: `0x${string}` } | null = null;
   let clearanceDigest: string | null = null;
-  const trustGateAddress = (process.env.NEXT_PUBLIC_VEYRA_TRUST_GATE_ADDRESS ||
-    "0x1cD66BCd4FCB73a079c05635840Fde029Ce6BEbB") as `0x${string}`;
+  const trustGateAddress = resolveTrustGateAddress();
   const attesterPk = (process.env.VEYRA_TRUST_ATTESTER_PRIVATE_KEY ||
     process.env.ERC8183_EVALUATOR_ATTESTER_PRIVATE_KEY ||
     process.env.CANARY_DEPLOYER_PRIVATE_KEY) as `0x${string}` | undefined;

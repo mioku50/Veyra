@@ -51,6 +51,38 @@ runStep("Required Documentation & Notice Files", () => {
   }
 });
 
+// 2b. The published Trust Gate is the one the code calls
+runStep("Documented Trust Gate Matches Deployed Default", () => {
+  /* docs/contracts.md published 0x1cD66BCd... as canonical for as long as the
+     executor hardcoded it as a fallback, while production ran a different gate
+     entirely. Both answer on Arc, so nothing failed loudly; the only symptom
+     was a clearance verified against a contract that does not implement
+     verifyClearance. A document and a default that can drift apart silently
+     will, so they are compared here. */
+  const doc = readFileSync(resolve(root, "docs/contracts.md"), "utf8");
+  const section = doc.split("### 2. Veyra Trust Gate")[1]?.split("###")[0] ?? "";
+  const documented = section.match(/\*\*Address\*\*: \[`(0x[0-9a-fA-F]{40})`\]/)?.[1];
+  if (!documented) {
+    throw new Error("docs/contracts.md does not publish a Veyra Trust Gate address");
+  }
+  const source = readFileSync(resolve(root, "lib/trust-gate/address.ts"), "utf8");
+  const coded = source.match(/DEFAULT_VEYRA_TRUST_GATE_ADDRESS = "(0x[0-9a-fA-F]{40})"/)?.[1];
+  if (!coded) {
+    throw new Error("lib/trust-gate/address.ts does not declare a default gate");
+  }
+  if (documented.toLowerCase() !== coded.toLowerCase()) {
+    throw new Error(
+      `docs/contracts.md publishes ${documented} but the code defaults to ${coded}`,
+    );
+  }
+  /* And the superseded one must not come back as a live reference. */
+  for (const file of ["lib/execution/executor.ts", "lib/execution/adapters/erc8183.ts"]) {
+    if (readFileSync(resolve(root, file), "utf8").includes("0x1cD66BCd4FCB73a079c05635840Fde029Ce6BEbB")) {
+      throw new Error(`${file} hardcodes the superseded Trust Gate`);
+    }
+  }
+});
+
 // 3. Legacy String / Stale Repository URL Scan
 runStep("Legacy Repository URL & Clone Instructions Scan", () => {
   const readme = readFileSync(resolve(root, "README.md"), "utf8");

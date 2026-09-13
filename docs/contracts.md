@@ -20,7 +20,9 @@
 - **Purpose**: Stores immutable cryptographic hashes and metadata for completed workflow executions and evaluation receipts on Arc.
 
 ### 2. Veyra Trust Gate
-- **Address**: [`0x1cD66BCd4FCB73a079c05635840Fde029Ce6BEbB`](https://testnet.arcscan.app/address/0x1cD66BCd4FCB73a079c05635840Fde029Ce6BEbB)
+- **Address**: [`0x6C702E51B328De51621f48483f6587fb2665efAf`](https://testnet.arcscan.app/address/0x6C702E51B328De51621f48483f6587fb2665efAf)
+- **Deployment Transaction**: [`0x54530df4c581df43a287e8cc8a7660df63d42f743eb1ec75a3e7bd0a320a44b7`](https://testnet.arcscan.app/tx/0x54530df4c581df43a287e8cc8a7660df63d42f743eb1ec75a3e7bd0a320a44b7)
+- **Superseded**: `0x1cD66BCd4FCB73a079c05635840Fde029Ce6BEbB` — an earlier gate, still on Arc, without `verifyClearance` (`0x36d5bb2a`). This document published it as canonical while production called the address above. Nothing reads it any more; it is recorded here so the two are never confused again.
 - **Source Code**: [`contracts/src/VeyraTrustGate.sol`](../contracts/src/VeyraTrustGate.sol)
 - **EIP-712 Domain**: `"Veyra Trust Gate"`, Version `"1"`
 - **Deploy Script**: [`scripts/deploy-veyra-trust-gate.mts`](../scripts/deploy-veyra-trust-gate.mts)

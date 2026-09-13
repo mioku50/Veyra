@@ -22,6 +22,7 @@ import {
   type Erc8183StepResult,
 } from "./erc8183-lifecycle.ts";
 import type { ExecutionRailAdapter, NormalizedRailResult, RailExecutionParams } from "./types.ts";
+import { trustGateAddress as resolveTrustGateAddress } from "../../trust-gate/address.ts";
 
 /**
  * ERC-8183 rail.
@@ -376,9 +377,7 @@ export class Erc8183ExecutionAdapter implements ExecutionRailAdapter {
     params: RailExecutionParams,
     lifecycle: Erc8183JobLifecycle,
   ): Promise<string | null> {
-    const trustGate = (process.env.NEXT_PUBLIC_VEYRA_TRUST_GATE_ADDRESS
-      || process.env.VEYRA_TRUST_GATE_ADDRESS
-      || "0x1cD66BCd4FCB73a079c05635840Fde029Ce6BEbB") as `0x${string}`;
+    const trustGate = resolveTrustGateAddress();
 
     const message = params.clearancePayload!.message;
     const signature = params.clearancePayload!.signature;
