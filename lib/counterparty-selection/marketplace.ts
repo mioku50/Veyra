@@ -110,6 +110,8 @@ export type MarketplaceRankedCandidate = RankedCandidate & {
     declaresOutputSchema: boolean;
     inputSchema: Record<string, unknown> | null;
     outputSchema: Record<string, unknown> | null;
+    /** Where the request schema came from, so the screen can say which. */
+    inputSchemaSource: "catalog" | "challenge" | null;
     lastUpdated: string | null;
     catalogHash: Hex;
   };
@@ -633,10 +635,22 @@ export async function selectMarketplaceCounterparty(input: {
         asset: context.candidate.selectedAccept.asset,
         supportsVanillaX402: context.candidate.supportsVanillaX402,
         supportsCircleGateway: context.candidate.supportsCircleGateway,
-        declaresInputSchema: context.candidate.declaresInputSchema,
-        declaresOutputSchema: context.candidate.declaresOutputSchema,
-        inputSchema: context.candidate.inputSchema,
-        outputSchema: context.candidate.outputSchema,
+        /* The catalog is the first source, the live challenge the second, and
+           the second is not a lesser one: Circle's entry for
+           np.orthogonal.com/serper carries no `input` while the endpoint's own
+           402 declares `required: ["q"]`. Reading only the catalog is what sent
+           `{"query": ...}` to an endpoint that wanted `q`. */
+        declaresInputSchema: context.candidate.declaresInputSchema
+          || context.probe.publishedInputSchema !== null,
+        declaresOutputSchema: context.candidate.declaresOutputSchema
+          || context.probe.publishedOutputSchema !== null,
+        inputSchema: context.candidate.inputSchema ?? context.probe.publishedInputSchema,
+        outputSchema: context.candidate.outputSchema ?? context.probe.publishedOutputSchema,
+        inputSchemaSource: context.candidate.inputSchema
+          ? "catalog"
+          : context.probe.publishedInputSchema
+            ? "challenge"
+            : null,
         lastUpdated: context.candidate.lastUpdated,
         catalogHash: context.candidate.catalogHash,
       },

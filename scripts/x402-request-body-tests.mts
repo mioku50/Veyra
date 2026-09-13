@@ -5,11 +5,13 @@
 
 import assert from "node:assert/strict";
 import { buildRequestBody, checkRequestBody } from "../lib/x402/request-body.ts";
+import { challengeSchemas, parseChallengeAccepts } from "../lib/providers/x402-probe.ts";
 
 /* ---- no published schema: say so, do not pretend ---- */
 
-// This is the real case that cost money: np.orthogonal.com/serper/search
-// publishes no input schema at all, so Veyra posted {"query": ...} and the
+// This is the real case that cost a call: Circle's catalog entry for
+// np.orthogonal.com/serper/search carries no `input`, so Veyra posted
+// {"query": ...} — and the
 // endpoint answered HTTP 400 after taking the call.
 const guessed = buildRequestBody({ intent: "Research Ambient", capability: "web_search" });
 assert.equal(guessed.guessed, true);
@@ -93,4 +95,81 @@ assert.equal(rejected.checked, true);
 assert.deepEqual(checkRequestBody({ anything: 1 }, null), { ok: true, checked: false });
 assert.deepEqual(checkRequestBody({ anything: 1 }, {}), { ok: true, checked: false });
 
-console.log("[x402-request-body-test] passed: an unpublished shape is labelled a guess, a published schema names its own field and supplies its own defaults, missing requirements are reported, and a body the schema rejects is refused before it can be paid for");
+
+/* ---- the schema the catalog omits and the challenge publishes ---- */
+
+/* Captured verbatim from np.orthogonal.com/serper/search. The catalog entry
+   for this resource has no `input` field, which is why Veyra called the shape
+   a guess and sent `{"query": ...}` to an endpoint that answers
+   `Required parameter(s) not provided: q. No payment was charged.`
+   The endpoint documents itself perfectly well — inside its own 402, under
+   `accepts[].outputSchema.input.body`, which nothing was reading. */
+const LIVE_402 = {
+  x402Version: 2,
+  error: "Payment required",
+  accepts: [{
+    scheme: "exact",
+    network: "eip155:8453",
+    asset: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+    amount: "2000",
+    payTo: "0x1563CdE0042d17F53b23d91Fd9B73ACE9Da26a09",
+    maxTimeoutSeconds: 604_900,
+    resource: "https://np.orthogonal.com/serper/search",
+    outputSchema: {
+      input: {
+        body: {
+          type: "object",
+          properties: {
+            q: { type: "string", description: "Search query" },
+            gl: { type: "string", description: "Country code (e.g. us, uk, de)" },
+            num: { type: "number", description: "Number of results (default 10, max 100)" },
+            autocorrect: { type: "boolean", description: "Enable autocorrect (default true)" },
+          },
+          required: ["q"],
+        },
+      },
+    },
+    extra: {
+      name: "GatewayWalletBatched",
+      version: "1",
+      verifyingContract: "0x77777777dcc4d5a8b6e418fd04d8997ef11000ee",
+    },
+  }],
+};
+
+const published = challengeSchemas(parseChallengeAccepts(LIVE_402));
+assert(published.input !== null, "the challenge publishes the request schema and it must be found");
+assert.deepEqual((published.input as { required: string[] }).required, ["q"]);
+// Only `input` was published; inventing an output schema would license the
+// post-call check to claim it verified a promise nobody made.
+assert.equal(published.output, null);
+
+const fromChallenge = buildRequestBody({
+  intent: "Research the latest developments in Ambient",
+  capability: "web_research",
+  inputSchema: published.input,
+});
+assert.deepEqual(fromChallenge.body, { q: "Research the latest developments in Ambient" });
+assert.equal(fromChallenge.guessed, false, "a schema was published, so nothing here is a guess");
+assert.equal(fromChallenge.note, null);
+// Optional fields are left out: `autocorrect` has a documented default of true
+// but the schema declares no `default`, and Veyra does not invent one.
+assert.deepEqual(Object.keys(fromChallenge.body), ["q"]);
+
+// The body that was actually sent is now refused before a wallet opens.
+assert.equal(checkRequestBody({ query: "..." }, published.input).ok, false);
+assert.equal(checkRequestBody(fromChallenge.body, published.input).ok, true);
+
+// A challenge that publishes an empty schema promises nothing, and `{}` must
+// not be mistaken for a contract that everything satisfies.
+assert.equal(challengeSchemas([{ outputSchema: { input: { body: {} } } }]).input, null);
+assert.equal(challengeSchemas([{ outputSchema: { input: {} } }]).input, null);
+assert.equal(challengeSchemas([{}]).input, null);
+assert.equal(challengeSchemas(null).input, null);
+// GET endpoints publish query parameters rather than a body.
+assert.deepEqual(
+  challengeSchemas([{ outputSchema: { input: { queryParams: { type: "object", properties: { url: { type: "string" } } } } } }]).input,
+  { type: "object", properties: { url: { type: "string" } } },
+);
+
+console.log("[x402-request-body-test] passed: an unpublished shape is labelled a guess, a published schema names its own field and supplies its own defaults, missing requirements are reported, and a body the schema rejects is refused before it can be paid for, and the schema an endpoint publishes inside its own 402 is read when the catalog omits it");

@@ -56,6 +56,24 @@ function looksLikeErrorEnvelope(value: unknown): boolean {
   return error !== null && error !== false && error !== "" && error !== undefined;
 }
 
+/**
+ * What the endpoint itself said went wrong, quoted rather than summarised.
+ *
+ * A live purchase showed nine verification lines and not one of them carried
+ * the sentence that actually explained it — the endpoint had replied
+ * `Required parameter(s) not provided: q. No payment was charged.` Withholding
+ * the seller's own words made a one-line fix look like an unexplained loss.
+ */
+function errorEnvelopeMessage(value: unknown): string | null {
+  const record = value as Record<string, unknown> | null;
+  if (!record) return null;
+  for (const key of ["message", "error", "detail", "description"]) {
+    const field = record[key];
+    if (typeof field === "string" && field.trim()) return field.trim().slice(0, 300);
+  }
+  return null;
+}
+
 export function verifyPostCall(input: {
   httpStatus: number;
   bodyText: string;
@@ -120,14 +138,26 @@ export function verifyPostCall(input: {
   );
 
   // --- the goods -----------------------------------------------------------
+  /* Phrasing that never claims a charge nobody observed. Reporting "after
+     taking payment" on a response that carried no settlement receipt asserted
+     the one fact Veyra did not have, and it was the fact the reader cared about
+     most. Sellers validate the request before settling, so a rejected request
+     very often costs nothing — but "often" is not "verified", and the honest
+     word for an unreceipted charge is unconfirmed. */
+  const settledPhrase = settled === true
+    ? "after taking payment"
+    : settled === false
+      ? "and did not settle the payment"
+      : "with no settlement receipt, so whether it charged is unconfirmed";
+
   const statusOk = input.httpStatus >= 200 && input.httpStatus < 300;
   add(
     "response_delivered",
     statusOk,
     "critical",
     statusOk
-      ? `Endpoint answered HTTP ${input.httpStatus} after payment.`
-      : `Endpoint answered HTTP ${input.httpStatus} after taking payment.`,
+      ? `Endpoint answered HTTP ${input.httpStatus}.`
+      : `Endpoint answered HTTP ${input.httpStatus} ${settledPhrase}.`,
   );
 
   const nonEmpty = input.bodyText.trim().length > 0;
@@ -157,7 +187,14 @@ export function verifyPostCall(input: {
     input.parsedBody === null ? null : !errorEnvelope,
     "critical",
     errorEnvelope
-      ? "The paid response carries an error envelope: the endpoint charged and then reported failure."
+      ? [
+          settled === true
+            ? "The paid response carries an error envelope: the endpoint charged and then reported failure."
+            : settled === false
+              ? "The response is an error envelope, and the endpoint reported that settlement did not succeed."
+              : "The response is an error envelope and no settlement receipt came back, so it is not established that anything was charged.",
+          errorEnvelopeMessage(input.parsedBody),
+        ].filter(Boolean).join(" The endpoint said: ")
       : "Response does not report an error.",
   );
 

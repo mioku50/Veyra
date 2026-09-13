@@ -183,27 +183,25 @@ export function ArcWalletWidget({
             </div>
           ) : null}
 
-          <dl className="grid gap-3 sm:grid-cols-2">
+          {/* One balance, not two. On Arc the native gas asset IS USDC: the
+              native view and the ERC-20 view read the same pool, and they
+              differ only by the 10^12 between 18-decimal gas accounting and the
+              6-decimal token. Verified against Arc Testnet — three addresses,
+              native = erc20 x 10^12 exactly. Showing them as two cards that
+              both say "USDC" made one balance look like two. */}
+          <dl className="grid gap-3">
             <div className="rounded-md border bg-background p-4">
-              <dt className="text-sm text-muted-foreground">Native gas balance</dt>
-              <dd className="mt-2 font-mono text-2xl font-semibold">
-                {loadingBalances
-                  ? "Loading..."
-                  : `${formatArcBalance(nativeBalanceWei)} USDC`}
-              </dd>
-              <p className="mt-2 text-xs text-muted-foreground">
-                Arc gas uses native USDC with 18-decimal accounting.
-              </p>
-            </div>
-            <div className="rounded-md border bg-background p-4">
-              <dt className="text-sm text-muted-foreground">ERC-20 USDC balance</dt>
+              <dt className="text-sm text-muted-foreground">USDC balance</dt>
               <dd className="mt-2 font-mono text-2xl font-semibold">
                 {loadingBalances
                   ? "Loading..."
                   : `${formatArcBalance(erc20UsdcBalance, ARC_TESTNET_USDC_DECIMALS)} USDC`}
               </dd>
               <p className="mt-2 text-xs text-muted-foreground">
-                Canonical Arc Testnet USDC token uses 6 decimals.
+                This one balance pays for gas and for transfers alike.
+                {nativeBalanceWei === null || loadingBalances
+                  ? null
+                  : ` Gas is metered against it at 18 decimals: ${formatArcBalance(nativeBalanceWei)} USDC.`}
               </p>
             </div>
           </dl>

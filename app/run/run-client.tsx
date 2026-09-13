@@ -643,6 +643,21 @@ export function RunClient() {
         // own schema rejects the body, rather than letting it be paid for.
         inputSchema: decision.inputSchema ?? undefined,
       });
+      /* The endpoint publishes its request schema inside the 402 challenge,
+         which the quote route reads and the catalog may not carry at all. When
+         that schema refuses the body, the repaired shape goes back on screen in
+         the provider's own field names instead of leaving the reader to guess
+         a second time — the refusal already cost nothing, and a fixed body is
+         one click rather than one more rejected call. */
+      const publishedSchema = quoted.payload?.error?.inputSchema as Record<string, unknown> | undefined;
+      if (quoted.response.status === 422 && publishedSchema) {
+        const repaired = buildRequestBody({ intent, capability, inputSchema: publishedSchema });
+        setRequestBodyText(JSON.stringify(repaired.body, null, 2));
+        setBodyTouched(true);
+        throw new Error(
+          `${quoted.payload.error.message} Veyra rebuilt the request from the schema the endpoint publishes — check it above and try again.`,
+        );
+      }
       if (!quoted.response.ok) throw new Error(failureText(quoted.payload?.error ?? quoted.payload, quoted.response.status));
       if (quoted.payload?.paymentRequired === false) {
         setPayment({ stage: "done", paidUsdc: 0, result: quoted.payload.body, message: "The endpoint answered without asking for payment." });

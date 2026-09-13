@@ -407,22 +407,20 @@ export function AgentLaunchClient() {
               </div>
             ) : null}
 
-            <dl className="grid gap-3 sm:grid-cols-2">
+            {/* The native and ERC-20 views are the same USDC on Arc, so this
+                is one balance with two transfer interfaces below — not two
+                holdings to add up. */}
+            <dl className="grid gap-3">
               <div className="rounded-md border bg-background p-4">
-                <dt className="text-sm text-muted-foreground">Native gas USDC</dt>
-                <dd className="mt-2 font-mono text-xl font-bold tracking-tight text-foreground">
-                  {loadingBalances
-                    ? "Loading..."
-                    : `${formatArcBalance(nativeBalanceWei)} USDC`}
-                </dd>
-              </div>
-              <div className="rounded-md border bg-background p-4">
-                <dt className="text-sm text-muted-foreground">ERC-20 USDC</dt>
+                <dt className="text-sm text-muted-foreground">USDC balance</dt>
                 <dd className="mt-2 font-mono text-xl font-bold tracking-tight text-foreground">
                   {loadingBalances
                     ? "Loading..."
                     : `${formatArcBalance(erc20UsdcBalance, ARC_TESTNET_USDC_DECIMALS)} USDC`}
                 </dd>
+                <p className="mt-2 text-xs text-muted-foreground">
+                  Spendable as a native transfer or an ERC-20 transfer. Both move this same balance.
+                </p>
               </div>
             </dl>
 

@@ -113,6 +113,9 @@ export type X402ProbeResult = {
   integrityScore: number;
   errorCategory: ErrorCategory;
   observation: ApiQualityObservation;
+  /** Schemas the live challenge published, which the catalog entry may omit. */
+  publishedInputSchema: Record<string, unknown> | null;
+  publishedOutputSchema: Record<string, unknown> | null;
 };
 
 export type X402ProbeEvidence = {
@@ -187,6 +190,50 @@ export function parseChallengeAccepts(body: unknown): Array<Record<string, unkno
   if (!accepts) return null;
   return accepts.filter((item): item is Record<string, unknown> =>
     Boolean(item) && typeof item === "object");
+}
+
+/**
+ * The request and response schemas a seller publishes inside its own challenge.
+ *
+ * x402 carries them under `accepts[].outputSchema`, which despite the name
+ * describes both directions: `.input` the request, `.output` the response. For
+ * some sellers this is the *only* place they appear — np.orthogonal.com/serper
+ * declares `required: ["q"]` here while its Circle catalog entry has no `input`
+ * field at all. Reading only the catalog is what made Veyra post `{"query":...}`
+ * and collect an HTTP 400 saying `Required parameter(s) not provided: q`.
+ */
+export function challengeSchemas(accepts: Array<Record<string, unknown>> | null): {
+  input: Record<string, unknown> | null;
+  output: Record<string, unknown> | null;
+} {
+  let input: Record<string, unknown> | null = null;
+  let output: Record<string, unknown> | null = null;
+  for (const accept of accepts ?? []) {
+    const published = asObject(accept.outputSchema);
+    if (!published) continue;
+    // A body schema for POST, query parameters for GET, or the bare schema.
+    const request = asObject(published.input);
+    input ??= usableSchema(request?.body)
+      ?? usableSchema(request?.queryParams)
+      ?? usableSchema(published.input);
+    const response = asObject(published.output);
+    output ??= usableSchema(response?.body) ?? usableSchema(published.output);
+  }
+  return { input, output };
+}
+
+function asObject(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : null;
+}
+
+/** A schema is only usable if it actually names fields; `{}` promises nothing
+ *  and must not be mistaken for a published contract. */
+function usableSchema(value: unknown): Record<string, unknown> | null {
+  const schema = asObject(value);
+  const properties = schema ? asObject(schema.properties) : null;
+  return properties && Object.keys(properties).length > 0 ? schema : null;
 }
 
 /**
@@ -291,6 +338,9 @@ export async function probeX402Resource(
       ? "response_body"
       : "none";
   const challengeParseable = Array.isArray(accepts) && accepts.length > 0;
+  /* Read from the challenge the probe already holds. A seller that publishes
+     its schema here is documented, whatever the catalog happens to carry. */
+  const published = challengeSchemas(accepts);
   const comparison = challengeParseable
     ? compareChallengeToCatalog(accepts!, expected)
     : { matched: null, drift: [] as string[] };
@@ -349,15 +399,21 @@ export async function probeX402Resource(
       ? "No latency measurement available."
       : `Challenge handshake took ${latencyMs}ms (budget ${X402_PROBE_LIMITS.latencyBudgetMs}ms).`,
     "minor");
-  scored("declares_input_schema", expected.declaresInputSchema,
+  const inputSchemaPublished = expected.declaresInputSchema || published.input !== null;
+  scored("declares_input_schema", inputSchemaPublished,
     expected.declaresInputSchema
       ? "Provider publishes an input schema."
-      : "No input schema published - request shape must be guessed.",
+      : published.input !== null
+        ? "Provider publishes an input schema in its 402 challenge."
+        : "No input schema published - request shape must be guessed.",
     "minor");
-  scored("declares_output_schema", expected.declaresOutputSchema,
+  const outputSchemaPublished = expected.declaresOutputSchema || published.output !== null;
+  scored("declares_output_schema", outputSchemaPublished,
     expected.declaresOutputSchema
       ? "Provider publishes an output schema."
-      : "No output schema published - the response cannot be validated after payment.",
+      : published.output !== null
+        ? "Provider publishes an output schema in its 402 challenge."
+        : "No output schema published - the response cannot be validated after payment.",
     "minor");
   const timeoutCeiling = expected.gatewayBatched
     ? X402_PROBE_LIMITS.maxSaneGatewayTimeoutSeconds
@@ -428,6 +484,8 @@ export async function probeX402Resource(
     integrityScore,
     errorCategory,
     observation,
+    publishedInputSchema: published.input,
+    publishedOutputSchema: published.output,
   };
 }
 

@@ -7,7 +7,7 @@ import { randomBytes } from "node:crypto";
 import { NextResponse, type NextRequest } from "next/server";
 import { authenticateSelectionRequest } from "@/lib/counterparty-selection/auth";
 import { fetchWithSsrfProtection, SSRFProtectionError } from "@/lib/seller/ssrf";
-import { decodePaymentRequiredHeader } from "@/lib/providers/x402-probe";
+import { challengeSchemas, decodePaymentRequiredHeader, parseChallengeAccepts } from "@/lib/providers/x402-probe";
 import { isUsdcAsset } from "@/lib/x402/usdc-assets";
 import { checkRequestBody } from "@/lib/x402/request-body";
 import {
@@ -142,11 +142,34 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  /* The last line of defence, and the only one that sees both the live
+     challenge and the body about to be paid for. Sellers publish the request
+     schema inside `accepts[].outputSchema.input`, which the catalog entry may
+     omit entirely — so a body that passed the check above on "no schema, not
+     checked" can still be refused here on the provider's own published rules.
+     The schema is returned with the refusal so the caller can repair the body
+     rather than guess again. */
+  const published = challengeSchemas(parseChallengeAccepts(challenge));
+  const publishedCheck = checkRequestBody(requestBody, published.input);
+  if (!publishedCheck.ok) {
+    return NextResponse.json({
+      error: {
+        code: "request_body_invalid",
+        message: `The provider's published schema rejects this request at ${publishedCheck.path}: ${publishedCheck.message}. Nothing was quoted and nothing was spent.`,
+        inputSchema: published.input,
+      },
+    }, { status: 422 });
+  }
+
   const quotedUsdc = Number(accept.amountAtomic) / 1e6;
 
   return NextResponse.json({
     paymentRequired: true,
     resource,
+    // Published by the endpoint itself, so the caller can validate and display
+    // the request shape even when the catalog entry declares none.
+    inputSchema: published.input,
+    outputSchema: published.output,
     // The challenge's own resource descriptor, echoed back when the payment is
     // relayed. v2 publishes an object here, not the URL.
     resourceDescriptor: challengeResource(challenge),
