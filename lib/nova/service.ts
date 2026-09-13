@@ -130,6 +130,13 @@ export async function createNova(input: {
       owner_secret_digest: ownerDigest(ownerSecret),
       name,
       interests,
+      /* Creating an agent is a visit: somebody was here, choosing a name. Left
+         null, the scheduler's dormancy sweep -- which compares last_opened_at
+         against a cutoff -- would never match this row, because NULL compares
+         false against everything. An agent created and never opened again would
+         then be refreshed forever, which is the exact leak dormancy exists to
+         prevent. */
+      last_opened_at: new Date().toISOString(),
     })
     .select(AGENT_COLUMNS)
     .single();

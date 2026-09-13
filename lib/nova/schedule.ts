@@ -156,13 +156,21 @@ export function tickReader(underlying: typeof fetch = fetch): typeof fetch {
  */
 export async function sweepDormant(now: Date): Promise<number> {
   const cutoff = new Date(now.getTime() - DORMANT_AFTER_DAYS * 86_400_000).toISOString();
-  const { data } = await db()
-    .from("nova_agents")
-    .update({ dormant_since: now.toISOString() })
-    .is("dormant_since", null)
-    .lt("last_opened_at", cutoff)
-    .select("agent_id");
-  return (data ?? []).length;
+  const stamp = { dormant_since: now.toISOString() };
+
+  /* Two sweeps, because NULL compares false against everything. An agent whose
+     last_opened_at is null would never match `lt(cutoff)` and would be visited
+     forever -- the exact leak this function exists to stop, hiding inside the
+     function meant to stop it. createNova now records creation as a visit so
+     the second sweep should find nothing; it stays because "should" is not a
+     guarantee, and the cost of being wrong here is unbounded. */
+  const [opened, never] = await Promise.all([
+    db().from("nova_agents").update(stamp)
+      .is("dormant_since", null).lt("last_opened_at", cutoff).select("agent_id"),
+    db().from("nova_agents").update(stamp)
+      .is("dormant_since", null).is("last_opened_at", null).lt("created_at", cutoff).select("agent_id"),
+  ]);
+  return (opened.data ?? []).length + (never.data ?? []).length;
 }
 
 /**
