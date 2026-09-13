@@ -42,6 +42,17 @@ function hostOf(resource: string | null | undefined) {
   try { return new URL(resource).host; } catch { return resource; }
 }
 
+/** One ERC-8183 transaction, encoded by Veyra and signed by the buyer. */
+type JobStep = {
+  step: "create_job" | "approve_usdc" | "fund_escrow";
+  to: string;
+  data: string;
+  value: string;
+  chainId: number;
+  title: string;
+  detail: string;
+};
+
 export function RunClient() {
   const [rail, setRail] = useState<Rail>("api");
   const [intent, setIntent] = useState("");
@@ -86,6 +97,14 @@ export function RunClient() {
     /* The decision-log entry this purchase or job belongs to. */
     executionId?: string | null;
     executionState?: string | null;
+    /* ERC-8183 steps the buyer's own wallet must send. Veyra encodes them and
+       signs none of them: the escrow is funded from the buyer's USDC. */
+    jobSteps?: JobStep[];
+    jobPhase?: string | null;
+    jobId?: string | null;
+    jobBudgetUsdc?: number | null;
+    jobNote?: string | null;
+    stepBusy?: string | null;
   } | null>(null);
 
   /* Veyra signs its verdicts to a wallet, so a decision needs a verified owner
@@ -172,8 +191,29 @@ export function RunClient() {
     return { response, payload };
   }
 
+  /* Server strings are written for operators reading logs, not for the person
+     looking at the screen. "BYOA request origin is not allowed." told a visitor
+     nothing they could act on and exposed an internal subsystem's name; the
+     original still goes to the console for whoever is debugging. */
+  const HUMANISED: Record<string, string> = {
+    origin_denied: `${BRAND.name} cannot open a wallet session on this address yet. The deployment has to list this domain before it will sign anything here.`,
+    credential_missing: "Verify your wallet first — a decision is signed to an owner, so Veyra needs to know whose it is.",
+    rate_limited: "Too many requests just now. Give it a moment and try again.",
+    marketplace_discovery_unavailable: "The service catalog did not answer. Nothing was decided, and nothing was spent.",
+    counterparty_no_eligible_candidate: "No counterparty cleared the policy at this budget. Raising the budget or relaxing the priority may find one.",
+    clearance_unavailable: `${BRAND.name} cannot sign clearances right now, so it refused rather than authorise something it cannot attest to.`,
+  };
+
   function failureText(payload: any, status: number) {
-    return payload?.error || payload?.code || payload?.message || `Request failed (${status})`;
+    const reason = payload?.reason || payload?.error?.code || payload?.code;
+    const raw = payload?.error?.message || payload?.error || payload?.message;
+    if (typeof raw === "string" && raw) console.warn("[run] request failed", { status, reason, raw });
+    if (typeof reason === "string" && HUMANISED[reason]) return HUMANISED[reason];
+    // A sentence naming an internal subsystem is still an internal string, even
+    // when it reads like prose.
+    const internal = /\bBYOA\b|supabase|postgres|permission denied|relation "/i;
+    if (typeof raw === "string" && raw && !/^[a-z0-9_]+$/i.test(raw) && !internal.test(raw)) return raw;
+    return `Request failed (${status})`;
   }
 
   async function decide() {
@@ -456,21 +496,97 @@ export function RunClient() {
         throw new Error(failureText(prepared.payload?.error ?? prepared.payload, prepared.response.status));
       }
       const attempt = prepared.payload?.execution ?? prepared.payload;
+      const executionId = attempt?.executionId ?? null;
       setPayment({
         stage: "prepared",
         quotedUsdc: decision.priceUsdc ?? undefined,
         payTo: decision.payTo ?? undefined,
-        executionId: attempt?.executionId ?? null,
+        executionId,
         executionState: attempt?.state ?? "PREPARED",
         message:
-          "The job is authorized and recorded on the decision log. ERC-8183 escrow is "
-          + "funded by the buyer's own wallet, so the next signature is yours — Veyra "
-          + "holds no key that can spend for you.",
+          "Authorized and recorded. ERC-8183 escrow is funded from your own wallet — "
+          + `${BRAND.name} encodes each step and verifies it on Arc, and holds no key `
+          + "that could spend for you.",
       });
       setPhase("authorized");
+      if (executionId) await loadJobSteps(executionId, null);
     } catch (caught: any) {
       setPayment({ stage: "failed", message: caught?.shortMessage || caught?.message || "The job could not be prepared." });
       setPhase("decided");
+    }
+  }
+
+  /** Asks Veyra what the wallet must send next. Nothing here is signed server-side. */
+  async function loadJobSteps(executionId: string, jobId: string | null) {
+    if (!wallet.address) {
+      setPayment((prev) => prev && { ...prev, jobNote: "Connect a wallet to fund this job yourself." });
+      return;
+    }
+    const steps = await post("/api/run/v1/job/steps", {
+      executionId,
+      buyerWallet: wallet.address,
+      ...(jobId ? { jobId } : {}),
+    });
+    if (!steps.response.ok) {
+      setPayment((prev) => prev && {
+        ...prev,
+        jobNote: failureText(steps.payload?.error ?? steps.payload, steps.response.status),
+      });
+      return;
+    }
+    setPayment((prev) => prev && {
+      ...prev,
+      jobSteps: steps.payload.steps ?? [],
+      jobPhase: steps.payload.phase ?? null,
+      jobId: steps.payload.job?.id ?? jobId ?? null,
+      jobBudgetUsdc: steps.payload.budgetUsdc ?? null,
+      jobNote: steps.payload.note ?? null,
+    });
+  }
+
+  /** One step, sent by the user's wallet, then confirmed by Veyra against Arc. */
+  async function sendJobStep(step: JobStep) {
+    const executionId = payment?.executionId;
+    if (!executionId) return;
+    setPayment((prev) => prev && { ...prev, stepBusy: step.step, jobNote: null });
+    try {
+      if (wallet.chainId !== step.chainId) {
+        const switched = await wallet.switchToChain(step.chainId);
+        if (!switched) throw new Error("Switch your wallet to Arc Testnet to sign this step.");
+      }
+      const txHash = await wallet.sendTransaction({
+        to: step.to as `0x${string}`,
+        data: step.data as `0x${string}`,
+      });
+      // Veyra reads the receipt from Arc rather than believing the browser.
+      const advanced = await post("/api/run/v1/job/advance", {
+        executionId,
+        step: step.step,
+        txHash,
+      });
+      const result = advanced.payload ?? {};
+      if (!advanced.response.ok || result.confirmed === false) {
+        setPayment((prev) => prev && {
+          ...prev,
+          stepBusy: null,
+          jobNote: result.message || "That step did not confirm on Arc.",
+        });
+        return;
+      }
+      const jobId = result.jobId ?? payment?.jobId ?? null;
+      setPayment((prev) => prev && {
+        ...prev,
+        stepBusy: null,
+        jobId,
+        executionState: result.state ?? prev.executionState,
+      });
+      await loadJobSteps(executionId, jobId);
+    } catch (caught: any) {
+      setPayment((prev) => prev && {
+        ...prev,
+        stepBusy: null,
+        jobNote: caught?.shortMessage || caught?.message || "The wallet did not send that step.",
+      });
     }
   }
 
@@ -993,6 +1109,54 @@ export function RunClient() {
 
               {payment.message ? (
                 <p className="mt-3.5 text-[13px] leading-relaxed text-[var(--run-text)]">{payment.message}</p>
+              ) : null}
+
+              {/* The buyer's own signatures. Veyra encodes each call and reads the
+                  receipt back from Arc; it never holds a key that could send
+                  one, which is what keeps the escrow the buyer's money. */}
+              {payment.jobSteps && payment.jobSteps.length > 0 ? (
+                <div className="mt-4 space-y-2.5">
+                  {payment.jobBudgetUsdc ? (
+                    <div className="run-num text-[12px] text-[var(--run-text-muted)]">
+                      escrow budget <Money value={payment.jobBudgetUsdc} className="text-[var(--run-text)]" />
+                      {payment.jobId ? <span className="text-[var(--run-text-faint)]"> · job #{payment.jobId}</span> : null}
+                    </div>
+                  ) : null}
+                  {payment.jobSteps.map((step, index) => (
+                    <div
+                      key={step.step}
+                      className="rounded-[var(--run-radius-sm)] border border-[var(--run-line)] bg-[var(--run-canvas-raised)] p-4"
+                    >
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2.5">
+                            <span className="run-num text-[11px] text-[var(--run-text-faint)]">
+                              {String(index + 1).padStart(2, "0")}
+                            </span>
+                            <span className="text-[13.5px] font-medium">{step.title}</span>
+                          </div>
+                          <p className="mt-1.5 max-w-[58ch] text-[12px] leading-relaxed text-[var(--run-text-muted)]">
+                            {step.detail}
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => void sendJobStep(step)}
+                          disabled={payment.stepBusy !== null && payment.stepBusy !== undefined}
+                          className="run-cta run-focus inline-flex h-9 shrink-0 items-center rounded-[var(--run-radius-sm)] px-4 text-[12.5px] font-semibold"
+                        >
+                          {payment.stepBusy === step.step ? "Waiting for your wallet…" : "Sign in wallet"}
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+
+              {payment.jobNote ? (
+                <p className="mt-3.5 max-w-[62ch] text-[12px] leading-relaxed text-[var(--run-text-muted)]">
+                  {payment.jobNote}
+                </p>
               ) : null}
 
               {payment.executionId ? (

@@ -146,7 +146,9 @@
     "x402-payment:test": "node --experimental-transform-types --no-warnings scripts/x402-browser-payment-tests.mts",
     "x402-verification:test": "node --experimental-transform-types --no-warnings scripts/x402-post-call-verification-tests.mts",
     "x402-trust-api:test": "node --experimental-transform-types --no-warnings scripts/x402-trust-api-tests.mts",
-    "execution-ledger:test": "node --experimental-transform-types --no-warnings scripts/execution-ledger-tests.mts"
+    "execution-ledger:test": "node --experimental-transform-types --no-warnings scripts/execution-ledger-tests.mts",
+    "erc8183-client:test": "node --experimental-transform-types --no-warnings scripts/erc8183-client-transaction-tests.mts",
+    "byoa-origin:test": "node --experimental-transform-types --no-warnings scripts/byoa-origin-tests.mts"
   },
   "dependencies": {
     "@circle-fin/adapter-viem-v2": "^1.14.0",

@@ -27,16 +27,39 @@ function addressSet(value: string | undefined) {
 }
 
 function originSet(environment: NodeJS.ProcessEnv) {
+  /* The deployment's own origin is trusted without being configured.
+     This guard exists to refuse *cross*-origin callers; a page refusing its own
+     server because nobody set an environment variable is not a security
+     property, it is an outage — and it was one: moving to a new domain made
+     every decision fail with "BYOA request origin is not allowed". Vercel
+     publishes both the stable production host and this deployment's own host,
+     and neither can be forged by a third party. */
+  const vercelHosts = [
+    environment.VERCEL_PROJECT_PRODUCTION_URL,
+    environment.VERCEL_URL,
+    environment.VERCEL_BRANCH_URL,
+  ]
+    .map((host) => host?.trim())
+    .filter((host): host is string => Boolean(host))
+    .map((host) => (/^https?:\/\//i.test(host) ? host : `https://${host}`));
+
   const values = [
     ...(environment.BYOA_ALLOWED_ORIGINS?.split(",") ?? []),
     environment.NEXT_PUBLIC_APP_URL,
     environment.NEXT_PUBLIC_SITE_URL,
+    ...vercelHosts,
   ];
   const origins = new Set<string>();
   for (const item of values) {
     const candidate = item?.trim();
     if (!candidate) continue;
-    const url = new URL(candidate);
+    let url: URL;
+    try {
+      url = new URL(candidate);
+    } catch {
+      // A malformed entry must not take down every origin beside it.
+      continue;
+    }
     origins.add(url.origin);
   }
   if (environment.NODE_ENV !== "production") {

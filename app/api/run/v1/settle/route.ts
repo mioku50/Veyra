@@ -10,6 +10,7 @@ import { fetchWithSsrfProtection, SSRFProtectionError } from "@/lib/seller/ssrf"
 import type { JsonSchema } from "@/lib/seller/json-schema";
 import {
   closeBrowserX402Attempt,
+  markBrowserX402Executing,
   openBrowserX402Attempt,
 } from "@/lib/execution/browser-x402-ledger";
 import { verifyPostCall } from "@/lib/x402/post-call-verification";
@@ -167,6 +168,10 @@ export async function POST(request: NextRequest) {
     resource: resourceDescriptor,
   });
 
+  // The relay is about to leave. AUTHORIZED can only reach EXECUTING, so this
+  // is the step that makes every terminal state below legal.
+  await markBrowserX402Executing(executionId);
+
   let response: Response;
   const startedAt = performance.now();
   try {
@@ -180,6 +185,18 @@ export async function POST(request: NextRequest) {
       body: method === "POST" ? JSON.stringify(requestBody) : undefined,
     });
   } catch (error) {
+    // The signature left this server and nothing came back. Whether money moved
+    // is unknown, so the attempt is closed as failed rather than abandoned
+    // mid-flight in EXECUTING.
+    await closeBrowserX402Attempt({
+      executionId,
+      relayFailed: true,
+      settlementSuccess: null,
+      httpOk: false,
+      paidUsdc: 0,
+      transaction: null,
+      verification: null,
+    });
     if (error instanceof SSRFProtectionError) {
       return badRequest("resource_not_allowed", "That resource address is not allowed.", 422);
     }
@@ -199,7 +216,8 @@ export async function POST(request: NextRequest) {
   if (response.status === 402) {
     await closeBrowserX402Attempt({
       executionId,
-      paid: false,
+      paymentRefused: true,
+      settlementSuccess: false,
       httpOk: false,
       paidUsdc: 0,
       transaction: null,
@@ -247,9 +265,13 @@ export async function POST(request: NextRequest) {
     required: body.verificationRequired === true,
   });
 
-  await closeBrowserX402Attempt({
+  /* Two different facts, never conflated again. A seller can settle the x402
+     authorization and then fail in its own application layer; reading payment
+     off the HTTP status would lose that money from the record entirely. */
+  const settlementSuccess = typeof settlement?.success === "boolean" ? settlement.success : null;
+  const closed = await closeBrowserX402Attempt({
     executionId,
-    paid: response.ok,
+    settlementSuccess,
     httpOk: response.ok,
     paidUsdc: Number(authorization.value) / 1e6,
     transaction: typeof settlement?.transaction === "string" ? settlement.transaction : null,
@@ -259,9 +281,11 @@ export async function POST(request: NextRequest) {
   return NextResponse.json({
     // A purchase that was paid for but failed the verification its own tier
     // demanded is not a success, and must not be reported as one.
-    settled: response.ok && verification.verdict !== "FAIL",
+    settled: response.ok && verification.verdict !== "FAIL" && settlementSuccess !== false,
     executionId,
-    paid: response.ok,
+    executionState: closed?.state ?? null,
+    // Payment, as the seller receipted it — not inferred from the HTTP status.
+    paid: settlementSuccess,
     status: response.status,
     paidUsdc: Number(authorization.value) / 1e6,
     payTo: accept.payTo,

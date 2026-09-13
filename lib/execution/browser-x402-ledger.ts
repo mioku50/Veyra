@@ -110,18 +110,74 @@ export async function openBrowserX402Attempt(input: {
 }
 
 /**
- * The terminal state, decided by what actually happened rather than by whether
- * the HTTP call returned. A response that was paid for and failed its required
- * verification lands in SETTLED_SERVICE_FAILED — money gone, goods not proven —
- * which is a distinct and much more useful fact than "completed".
+ * Moves the attempt into EXECUTING before the relay leaves.
+ *
+ * The state machine allows AUTHORIZED to reach only EXECUTING, CANCELLED,
+ * EXPIRED or REJECTED — terminal success states are reachable only from
+ * EXECUTING. Closing straight out of AUTHORIZED therefore threw, and because
+ * the close swallows its errors the ledger would have been stranded at
+ * AUTHORIZED forever on the first successful purchase. The refusal path
+ * happened to work (REJECTED is legal from AUTHORIZED), which is exactly why
+ * nothing caught it until a funded success was attempted.
  */
-export function terminalStateFor(input: {
-  paid: boolean;
+export async function markBrowserX402Executing(executionId: string | null): Promise<void> {
+  if (!executionId) return;
+  try {
+    await updateExecutionAttemptState(executionId, "EXECUTING", {});
+  } catch (error) {
+    console.warn("execution_attempt_not_marked_executing", {
+      executionId,
+      errorName: error instanceof Error ? error.name : "unknown_error",
+    });
+  }
+}
+
+export type BrowserX402Outcome = {
+  /** The seller's settlement receipt: true settled, false refused, null silent.
+   *  Null is not a failure — Circle's batched rail legitimately defers the
+   *  onchain reference — but it is not proof of payment either. */
+  settlementSuccess: boolean | null;
+  /** Whether the goods came back. Separate from payment on purpose: a seller
+   *  can settle the x402 authorization and then fail in its own application
+   *  layer, and calling that "not paid" would lose the money in the record. */
   httpOk: boolean;
+  /** The seller answered the payment itself with another 402. */
+  paymentRefused?: boolean;
+  /** The relay never completed: nothing is known about the money. */
+  relayFailed?: boolean;
   verification: PostCallVerification | null;
-}): { state: ExecutionState; failureCode: string | null } {
-  if (!input.paid) return { state: "REJECTED", failureCode: "payment_rejected" };
-  if (!input.httpOk) return { state: "SETTLED_SERVICE_FAILED", failureCode: "endpoint_error_after_payment" };
+};
+
+/**
+ * The terminal state, decided by what actually happened rather than by whether
+ * the HTTP call returned.
+ *
+ * Money moved is read from the settlement receipt, never from the HTTP status.
+ * A response that was paid for and failed its required verification lands in
+ * SETTLED_SERVICE_FAILED — money gone, goods not proven — which is a distinct
+ * and far more useful fact than "completed". A payment Veyra cannot prove
+ * either way lands in SETTLEMENT_UNVERIFIED, which is not terminal: the
+ * reconciliation route resolves it against Arc from the context recorded above.
+ */
+export function terminalStateFor(input: BrowserX402Outcome): {
+  state: ExecutionState;
+  failureCode: string | null;
+} {
+  if (input.relayFailed) {
+    return { state: "FAILED", failureCode: "relay_failed" };
+  }
+  if (input.paymentRefused || input.settlementSuccess === false) {
+    return { state: "SETTLEMENT_FAILED", failureCode: "payment_rejected_by_seller" };
+  }
+  if (input.settlementSuccess === null) {
+    // No receipt. The money may well have moved; Veyra will not claim either way.
+    return input.httpOk
+      ? { state: "SETTLEMENT_UNVERIFIED", failureCode: null }
+      : { state: "FAILED", failureCode: "no_settlement_and_no_result" };
+  }
+  if (!input.httpOk) {
+    return { state: "SETTLED_SERVICE_FAILED", failureCode: "endpoint_error_after_payment" };
+  }
   if (input.verification?.verdict === "FAIL") {
     return {
       state: "SETTLED_SERVICE_FAILED",
@@ -135,27 +191,26 @@ export function terminalStateFor(input: {
   return { state: "COMPLETED", failureCode: null };
 }
 
-export async function closeBrowserX402Attempt(input: {
+export async function closeBrowserX402Attempt(input: BrowserX402Outcome & {
   executionId: string | null;
-  paid: boolean;
-  httpOk: boolean;
   paidUsdc: number;
   transaction: string | null;
-  verification: PostCallVerification | null;
-}): Promise<void> {
-  if (!input.executionId) return;
-  const { state, failureCode } = terminalStateFor(input);
+}): Promise<{ state: ExecutionState; failureCode: string | null } | null> {
+  if (!input.executionId) return null;
+  const outcome = terminalStateFor(input);
   try {
-    await updateExecutionAttemptState(input.executionId, state, {
-      actualSettledAmountUsdc: input.paid ? input.paidUsdc : 0,
+    await updateExecutionAttemptState(input.executionId, outcome.state, {
+      actualSettledAmountUsdc: input.settlementSuccess === true ? input.paidUsdc : 0,
       paymentTx: input.transaction,
-      failureCode,
+      failureCode: outcome.failureCode,
       evidenceHash: input.verification?.responseHash ?? null,
     });
   } catch (error) {
     console.warn("execution_attempt_not_closed", {
       executionId: input.executionId,
+      targetState: outcome.state,
       errorName: error instanceof Error ? error.name : "unknown_error",
     });
   }
+  return outcome;
 }
