@@ -18,6 +18,7 @@ import type {
   NovaRefresh,
   NovaSignal,
   NovaStanding,
+  NovaWhileAway,
   SubjectDigest,
 } from "./types.ts";
 
@@ -83,6 +84,8 @@ type AgentRow = {
   arc_identity_address: string | null;
   arc_identity_registered_at: string | null;
   last_brief_at: string | null;
+  last_opened_at: string | null;
+  dormant_since: string | null;
   created_at: string;
 };
 
@@ -100,7 +103,7 @@ function toAgent(row: AgentRow): NovaAgent {
 }
 
 const AGENT_COLUMNS =
-  "agent_id, public_id, name, interests, owner_wallet, arc_identity_address, arc_identity_registered_at, last_brief_at, created_at";
+  "agent_id, public_id, name, interests, owner_wallet, arc_identity_address, arc_identity_registered_at, last_brief_at, last_opened_at, dormant_since, created_at";
 
 /* ---- creating ---- */
 
@@ -188,13 +191,37 @@ export async function refreshNova(input: {
   now?: Date;
 }): Promise<{ refresh: NovaRefresh; newSignals: number }> {
   const agent = await loadOwned(input.publicId, input.ownerSecret);
+  return runRefresh({ agent, trigger: input.trigger, now: input.now });
+}
+
+/**
+ * The pass itself, for a caller that has already established it may act on this
+ * agent.
+ *
+ * `refreshNova` is the owner's door and checks the secret. The scheduler comes
+ * through here instead, holding a row it claimed, because there is no secret to
+ * check when there is nobody on the other end -- and inventing one for the
+ * scheduler would mean storing something that can impersonate an owner, which
+ * is exactly what the digest-only design of this table refuses to do.
+ *
+ * `fetchImpl` exists for the scheduler: one tick refreshes many agents that
+ * nearly all watch the same repositories, and it passes a reader that answers
+ * each URL once.
+ */
+export async function runRefresh(input: {
+  agent: { agent_id: string; interests: string[] };
+  trigger: "creation" | "manual" | "scheduled";
+  now?: Date;
+  fetchImpl?: typeof fetch;
+}): Promise<{ refresh: NovaRefresh; newSignals: number }> {
+  const agent = input.agent;
   const now = input.now ?? new Date();
   const startedAt = now.toISOString();
   const started = Date.now();
 
   const [catalog, repositories] = await Promise.all([
-    observeX402Catalog({ interests: agent.interests }),
-    observeRepositories({ interests: agent.interests, now }),
+    observeX402Catalog({ interests: agent.interests, fetchImpl: input.fetchImpl }),
+    observeRepositories({ interests: agent.interests, now, fetchImpl: input.fetchImpl }),
   ]);
   const observations = [...catalog.observations, ...repositories.observations];
   const sourcesUnavailable = [...catalog.unavailable, ...repositories.unavailable];
@@ -291,9 +318,17 @@ export async function refreshNova(input: {
     .select(REFRESH_COLUMNS)
     .single();
 
+  const finishedAt = new Date().toISOString();
   await db()
     .from("nova_agents")
-    .update({ last_brief_at: new Date().toISOString(), updated_at: new Date().toISOString() })
+    .update({
+      last_brief_at: finishedAt,
+      updated_at: finishedAt,
+      /* Stamped on success only. A pass that threw leaves the old clock, so the
+         agent stays due and the next tick retries it rather than silently
+         skipping an agent for a full interval on one bad read. */
+      ...(input.trigger === "scheduled" ? { last_scheduled_refresh_at: finishedAt } : {}),
+    })
     .eq("agent_id", agent.agent_id);
 
   return { refresh: toRefresh(refreshRow), newSignals: kept };
@@ -350,7 +385,12 @@ export async function loadBrief(input: {
 }): Promise<NovaBrief> {
   const agent = await loadOwned(input.publicId, input.ownerSecret);
 
-  const [signalResult, refreshResult, memoryResult] = await Promise.all([
+  /* Read before the visit is recorded. Stamping last_opened_at first would
+     close the window this query measures and "while you were away" would be
+     empty on every visit -- correct-looking, always wrong. */
+  const awaySince = agent.last_opened_at ?? agent.created_at;
+
+  const [signalResult, refreshResult, awayResult, memoryResult] = await Promise.all([
     db().from("nova_signals")
       .select("signal_id, subject_id, kind, headline, detail, relevance, relevance_reason, evidence, status, execution_public_id, observed_at, nova_subjects(label, kind, interest)")
       .eq("agent_id", agent.agent_id)
@@ -362,6 +402,17 @@ export async function loadBrief(input: {
       .eq("agent_id", agent.agent_id)
       .order("started_at", { ascending: false })
       .limit(1),
+    /* Only scheduled passes count as absence. The creation pass and any manual
+       refresh happened with the person watching; folding those in would tell
+       someone who just clicked Refresh that Nova had been busy while they were
+       away, seconds after they saw it happen. */
+    db().from("nova_refreshes")
+      .select("subjects_checked, signals_found, signals_kept, signals_as_noise, sources_unavailable, started_at, finished_at")
+      .eq("agent_id", agent.agent_id)
+      .eq("trigger", "scheduled")
+      .gt("started_at", awaySince)
+      .order("started_at", { ascending: true })
+      .limit(200),
     db().from("nova_memory")
       .select("memory_id, kind, facet, summary, evidence, support_count, execution_public_id, updated_at")
       .eq("agent_id", agent.agent_id)
@@ -399,6 +450,20 @@ export async function loadBrief(input: {
   }));
 
   const lastRefreshRow = (refreshResult.data ?? [])[0] as Record<string, unknown> | undefined;
+  const whileAway = summariseAway(
+    (awayResult.data ?? []) as Array<Record<string, unknown>>,
+    awaySince,
+  );
+  const wokeFromDormancy = agent.dormant_since !== null;
+
+  /* Recording the visit is the last thing that happens, and a failure here is
+     deliberately not fatal: a brief that rendered is worth more than a
+     perfectly maintained clock. The cost of losing this write is one repeated
+     "while you were away", not a lost brief. */
+  await db()
+    .from("nova_agents")
+    .update({ last_opened_at: new Date().toISOString(), dormant_since: null })
+    .eq("agent_id", agent.agent_id);
 
   return {
     agent: toAgent(agent),
@@ -406,8 +471,53 @@ export async function loadBrief(input: {
     worthAttention,
     noise,
     lastRefresh: lastRefreshRow ? toRefresh(lastRefreshRow) : null,
+    whileAway,
+    wokeFromDormancy,
     memory,
     standing: standingFrom(signals, memory),
+  };
+}
+
+/**
+ * Every scheduled pass since the owner's last visit, added up.
+ *
+ * Exported for its tests: this addition is what makes "while you were away"
+ * a measurement rather than a slogan, and it is the one part of loadBrief that
+ * can be checked without a database.
+ */
+export function summariseAway(
+  rows: Array<Record<string, unknown>>,
+  since: string,
+): NovaWhileAway | null {
+  if (rows.length === 0) return null;
+  const unavailable = new Set<string>();
+  let subjectsChecked = 0;
+  let signalsFound = 0;
+  let signalsKept = 0;
+  let signalsAsNoise = 0;
+  let until = since;
+  for (const row of rows) {
+    subjectsChecked += Number(row.subjects_checked ?? 0);
+    signalsFound += Number(row.signals_found ?? 0);
+    signalsKept += Number(row.signals_kept ?? 0);
+    signalsAsNoise += Number(row.signals_as_noise ?? 0);
+    for (const source of (row.sources_unavailable as string[] | null) ?? []) {
+      unavailable.add(source);
+    }
+    const finished = (row.finished_at as string | null) ?? (row.started_at as string | null);
+    if (finished && finished > until) until = finished;
+  }
+  return {
+    refreshes: rows.length,
+    subjectsChecked,
+    signalsFound,
+    signalsKept,
+    signalsAsNoise,
+    /* A source that failed on one pass out of twelve is still named. Eleven
+       good reads do not retire the blind spot the twelfth had. */
+    sourcesUnavailable: [...unavailable],
+    since,
+    until,
   };
 }
 

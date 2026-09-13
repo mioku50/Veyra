@@ -73,6 +73,13 @@ function timeAgo(iso: string): string {
   return days === 1 ? "yesterday" : `${days}d ago`;
 }
 
+/** The start of an absence, read the way a person would say it rather than the
+ *  way a log would write it. */
+function formatAway(iso: string): string {
+  const label = timeAgo(iso);
+  return label === "just now" ? "your last visit" : `your last visit ${label}`;
+}
+
 export function NovaClient() {
   const [stage, setStage] = useState<Stage>("loading");
   const [identity, setIdentity] = useState<{ publicId: string; ownerSecret: string } | null>(null);
@@ -324,7 +331,11 @@ export function NovaClient() {
   const ignores = brief.memory.filter((entry) => entry.kind === "preference" && entry.facet === "usually_ignores");
   const learnings = brief.memory.filter((entry) => entry.kind === "learning");
   const attention = brief.worthAttention;
-  const blind = brief.lastRefresh?.sourcesUnavailable ?? [];
+  const agentName = brief.agent.name;
+  const away = brief.whileAway;
+  /* Across an absence, the blind spots are the union of every pass's. The last
+     pass reading GitHub fine does not undo the four before it that could not. */
+  const blind = away?.sourcesUnavailable ?? brief.lastRefresh?.sourcesUnavailable ?? [];
 
   return (
     <Shell>
@@ -354,6 +365,13 @@ export function NovaClient() {
       </header>
 
       {error ? <Notice tone="error">{error}</Notice> : null}
+      {brief.wokeFromDormancy ? (
+        <Notice tone="warn">
+          {agentName} had stopped watching: nobody had opened this brief in a while, and an
+          agent nobody reads is not worth the requests. It is watching again from now, but
+          there is a gap in what follows.
+        </Notice>
+      ) : null}
       {blind.length > 0 && attention.length > 0 ? (
         <Notice tone="warn">
           Could not reach {blind.join(" and ")} this time. What is below is real, but it is not
@@ -404,13 +422,30 @@ export function NovaClient() {
         })}
       </div>
 
-      {brief.lastRefresh ? (
+      {away || brief.lastRefresh ? (
         <Panel className="mt-4">
-          <Label>{brief.lastRefresh.trigger === "creation" ? "First look" : "While you were away"}</Label>
+          <Label>
+            {away
+              ? "While you were away"
+              : brief.lastRefresh?.trigger === "creation"
+                ? "First look"
+                : "Last look"}
+          </Label>
+          {away ? (
+            <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
+              {agentName} looked{" "}
+              <span className="font-mono text-foreground">{away.refreshes}</span>{" "}
+              {away.refreshes === 1 ? "time" : "times"} since {formatAway(away.since)},
+              held back{" "}
+              <span className="font-mono text-foreground">{away.signalsAsNoise}</span>{" "}
+              {away.signalsAsNoise === 1 ? "signal" : "signals"} as noise, and kept{" "}
+              <span className="font-mono text-foreground">{away.signalsKept}</span>.
+            </p>
+          ) : null}
           <dl className="mt-4 space-y-0">
-            <Row label="Things checked" value={String(brief.lastRefresh.subjectsChecked)} />
-            <Row label="Worth your attention" value={String(brief.lastRefresh.signalsKept)} />
-            <Row label="Held back as noise" value={String(brief.lastRefresh.signalsAsNoise)} />
+            <Row label="Things checked" value={String(away?.subjectsChecked ?? brief.lastRefresh?.subjectsChecked ?? 0)} />
+            <Row label="Worth your attention" value={String(away?.signalsKept ?? brief.lastRefresh?.signalsKept ?? 0)} />
+            <Row label="Held back as noise" value={String(away?.signalsAsNoise ?? brief.lastRefresh?.signalsAsNoise ?? 0)} />
             {blind.length > 0 ? (
               <Row label="Could not read" value={blind.join(", ")} tone="warn" />
             ) : null}

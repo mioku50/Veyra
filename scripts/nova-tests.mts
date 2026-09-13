@@ -19,6 +19,12 @@ import {
 import { orderByRelevance, scoreRelevance } from "../lib/nova/relevance.ts";
 import { assembleBrief, greeting, quietSummary } from "../lib/nova/brief.ts";
 import { observeRepositories } from "../lib/nova/sources.ts";
+import { summariseAway } from "../lib/nova/service.ts";
+import {
+  DORMANT_AFTER_DAYS,
+  REFRESH_INTERVAL_HOURS,
+  tickReader,
+} from "../lib/nova/schedule.ts";
 
 const NOW = new Date("2026-09-13T18:00:00.000Z");
 const hoursAgo = (h: number) => new Date(NOW.getTime() - h * 3_600_000).toISOString();
@@ -361,4 +367,96 @@ assert.equal(greeting(15), "Good afternoon");
 assert.equal(greeting(22), "Good evening");
 assert.equal(greeting(2), "Good evening", "2am is not morning");
 
-console.log("[nova-test] passed: interests kept even when unknown, a first sighting reported as a finding rather than as news, the same commits not re-reported across refreshes, a payee change outranking everything and un-learnable away, a rail change surfaced a day before it could refuse a payment, a 3% price move kept out of the headline, and a brief that caps findings so a change can never be crowded out");
+/* ---- the scheduler: working while nobody is looking ---- */
+
+/* A tick refreshes many agents that watch the same seven repositories. Without
+   a shared reader that is the same commit list fetched once per agent: the same
+   answer, N times the rate-limit budget, inside the same second. */
+{
+  let calls = 0;
+  const underlying = (async (input: RequestInfo | URL) => {
+    calls += 1;
+    const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+    return new Response(JSON.stringify({ url, call: calls }), {
+      status: 200,
+      headers: { "content-type": "application/json", "x-ratelimit-remaining": "4999" },
+    });
+  }) as typeof fetch;
+
+  const reader = tickReader(underlying);
+  const first = await reader("https://api.github.com/repos/coinbase/x402");
+  const second = await reader("https://api.github.com/repos/coinbase/x402");
+  assert.equal(calls, 1, "the same URL is read once per tick");
+
+  // Both callers get a usable body: a shared Response whose stream was already
+  // drained by the first reader would hand the second an empty one.
+  assert.deepEqual(await first.json(), { url: "https://api.github.com/repos/coinbase/x402", call: 1 });
+  assert.deepEqual(await second.json(), { url: "https://api.github.com/repos/coinbase/x402", call: 1 });
+  assert.equal(second.status, 200);
+  assert.equal(second.headers.get("x-ratelimit-remaining"), "4999", "headers survive the copy");
+
+  await reader("https://api.github.com/repos/ethereum/ERCs");
+  assert.equal(calls, 2, "a different URL is a different read");
+
+  // Nothing in Nova's observation path writes, and a POST collapsed into one
+  // shared answer would be a silent correctness bug rather than a saving.
+  await reader("https://api.github.com/repos/coinbase/x402", { method: "POST" });
+  assert.equal(calls, 3, "a non-GET is never shared");
+}
+
+/* An empty success must not become a crash: `new Response(body, {status: 204})`
+   throws, so a 304 from a conditional GitHub read would take down the tick. */
+{
+  const underlying = (async () => new Response(null, { status: 304 })) as typeof fetch;
+  const reader = tickReader(underlying);
+  const response = await reader("https://api.github.com/repos/coinbase/x402");
+  assert.equal(response.status, 304);
+}
+
+/* If a host is down it is down for the whole tick. Retrying it once per agent
+   would neither discover otherwise nor be a kindness to a struggling host. */
+{
+  let attempts = 0;
+  const underlying = (async () => {
+    attempts += 1;
+    throw new Error("ECONNREFUSED");
+  }) as unknown as typeof fetch;
+  const reader = tickReader(underlying);
+  await assert.rejects(() => reader("https://api.github.com/x"));
+  await assert.rejects(() => reader("https://api.github.com/x"));
+  assert.equal(attempts, 1, "a failure is shared across the tick, not repeated per agent");
+}
+
+/* ---- "while you were away" is an addition, not the last row ---- */
+
+const awayRows = [
+  { subjects_checked: 16, signals_found: 3, signals_kept: 2, signals_as_noise: 1, sources_unavailable: [], started_at: hoursAgo(20), finished_at: hoursAgo(20) },
+  { subjects_checked: 16, signals_found: 5, signals_kept: 1, signals_as_noise: 4, sources_unavailable: ["GitHub (hourly request limit reached)"], started_at: hoursAgo(14), finished_at: hoursAgo(14) },
+  { subjects_checked: 16, signals_found: 2, signals_kept: 0, signals_as_noise: 2, sources_unavailable: [], started_at: hoursAgo(8), finished_at: hoursAgo(8) },
+];
+
+const away = summariseAway(awayRows, hoursAgo(24));
+assert(away, "three passes in the window is an absence");
+assert.equal(away.refreshes, 3);
+assert.equal(away.subjectsChecked, 48, "the passes add up; reporting the last one would undercount by 3x");
+assert.equal(away.signalsKept, 3);
+assert.equal(away.signalsAsNoise, 7);
+assert.equal(away.until, hoursAgo(8), "the window ends at the last pass, not at now");
+
+/* A source that failed on one pass out of three is still named. Two good reads
+   do not retire the blind spot the third had -- and the last pass succeeding is
+   exactly the case where reading only `lastRefresh` would hide it. */
+assert.deepEqual(away.sourcesUnavailable, ["GitHub (hourly request limit reached)"]);
+
+// Nothing ran unattended: a first visit after creation, or a quick return.
+assert.equal(summariseAway([], hoursAgo(24)), null, "no scheduled pass is not an absence");
+
+/* The scheduler's two clocks have to stay on opposite sides of each other: if
+   an agent could be retired faster than it is visited, every agent would go
+   dormant before its second pass. */
+assert(
+  DORMANT_AFTER_DAYS * 24 > REFRESH_INTERVAL_HOURS * 4,
+  "an agent must get many passes before it can be considered abandoned",
+);
+
+console.log("[nova-test] passed: interests kept even when unknown, a first sighting reported as a finding rather than as news, the same commits not re-reported across refreshes, a payee change outranking everything and un-learnable away, a rail change surfaced a day before it could refuse a payment, a 3% price move kept out of the headline, a brief that caps findings so a change can never be crowded out, a tick that reads each URL once and shares its failures, and an absence measured by adding up every unattended pass rather than reporting the last one");

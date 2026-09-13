@@ -61,6 +61,31 @@ export type NovaAgent = {
   createdAt: string;
 };
 
+/**
+ * What the scheduler did between one visit and the next.
+ *
+ * `lastRefresh` is one pass. This is every scheduled pass since the owner last
+ * opened the brief, which is the only honest basis for the sentence "while you
+ * were away" -- across two days that is a dozen passes, and reporting the most
+ * recent one as if it were the whole absence would undercount the work by an
+ * order of magnitude and make a busy week look like a quiet morning.
+ *
+ * Null when nothing ran unattended: a first visit after creation, or a return
+ * inside the refresh interval.
+ */
+export type NovaWhileAway = {
+  refreshes: number;
+  subjectsChecked: number;
+  signalsFound: number;
+  signalsKept: number;
+  signalsAsNoise: number;
+  /** Named sources that could not be read on at least one pass. */
+  sourcesUnavailable: string[];
+  /** The owner's previous visit, and the last pass inside this window. */
+  since: string;
+  until: string;
+};
+
 export type NovaSubject = {
   subjectId: string;
   kind: NovaSubjectKind;
@@ -171,6 +196,13 @@ export type NovaBrief = {
   worthAttention: NovaSignal[];
   noise: NovaSignal[];
   lastRefresh: NovaRefresh | null;
+  whileAway: NovaWhileAway | null;
+  /**
+   * Set when this visit woke an agent the scheduler had stopped visiting. The
+   * brief has to say so: the gap in the record is a fact about Nova, not about
+   * a quiet few weeks in the agent economy.
+   */
+  wokeFromDormancy: boolean;
   memory: NovaMemory[];
   standing: NovaStanding;
 };
