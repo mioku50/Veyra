@@ -43,6 +43,33 @@ import { signPaymentAuthorization, type SigningTerms } from "@/lib/x402/sign-pay
 
 const STORAGE = { id: "veyra.nova.id", key: "veyra.nova.key" } as const;
 
+/**
+ * Which part of the agent's life this page is.
+ *
+ * Four destinations over one set of data, not four products. The brief is what
+ * changed today; the other three are what the agent is, what it has learned
+ * about the person reading it, and what it has earned on Arc. Splitting them
+ * was the point of the rewrite: a single scrolling page made "what Nova knows
+ * about you" a footer under the news, which is exactly backwards for the thing
+ * that makes the news personal.
+ */
+export type NovaView = "today" | "agent" | "memory" | "arc";
+
+const VIEW_TITLE: Record<Exclude<NovaView, "today">, string> = {
+  agent: "Your agent",
+  memory: "What it has learned",
+  arc: "What it has earned",
+};
+
+/* Written in the second person and about the agent, not about the feature. A
+   page called Memory that opens by explaining what memory is has described its
+   own navigation label back to the reader. */
+const VIEW_BLURB: Record<Exclude<NovaView, "today">, (name: string) => string> = {
+  agent: (name) => `Who ${name} is, what it watches on your behalf, and the key that proves it is yours.`,
+  memory: (name) => `${name} starts from what you told it and changes from what you do. This is the difference so far.`,
+  arc: (name) => `${name} is not an identity on Arc yet. It becomes one by doing things that can be checked, not by signing up.`,
+};
+
 type Stage = "loading" | "create" | "working" | "brief";
 
 /**
@@ -149,7 +176,7 @@ function formatAway(iso: string): string {
   return label === "just now" ? "your last visit" : `your last visit ${label}`;
 }
 
-export function NovaClient() {
+export function NovaClient({ view = "today" }: { view?: NovaView } = {}) {
   const [stage, setStage] = useState<Stage>("loading");
   const [identity, setIdentity] = useState<{ publicId: string; ownerSecret: string } | null>(null);
   const [brief, setBrief] = useState<NovaBrief | null>(null);
@@ -702,23 +729,29 @@ export function NovaClient() {
             <span className="size-2 rounded-full bg-state-good" />
             <Label>{brief.agent.name}</Label>
           </div>
-          <h1 className="mt-3 text-3xl font-semibold tracking-tight">{brief.greeting}.</h1>
+          <h1 className="mt-3 text-3xl font-semibold tracking-tight">
+            {view === "today" ? `${brief.greeting}.` : VIEW_TITLE[view]}
+          </h1>
           <p className="mt-2 max-w-xl text-sm text-muted-foreground">
-            {attention.length > 0
-              ? <>Found <span className="font-mono text-foreground">{attention.length}</span> {attention.length === 1 ? "thing" : "things"} worth your attention.</>
-              : blind.length > 0
-                ? <>Could not reach {blind.join(" and ")}, so this is an incomplete look rather than a quiet day.</>
-                : <>Nothing moved across the <span className="font-mono text-foreground">{brief.lastRefresh?.subjectsChecked ?? 0}</span> things being watched for you.</>}
+            {view !== "today"
+              ? VIEW_BLURB[view](agentName)
+              : attention.length > 0
+                ? <>Found <span className="font-mono text-foreground">{attention.length}</span> {attention.length === 1 ? "thing" : "things"} worth your attention.</>
+                : blind.length > 0
+                  ? <>Could not reach {blind.join(" and ")}, so this is an incomplete look rather than a quiet day.</>
+                  : <>Nothing moved across the <span className="font-mono text-foreground">{brief.lastRefresh?.subjectsChecked ?? 0}</span> things being watched for you.</>}
           </p>
         </div>
-        <button
-          type="button"
-          onClick={refresh}
-          disabled={busy}
-          className="rounded-lg border border-border bg-card/60 px-4 py-2 text-sm text-muted-foreground transition hover:border-primary/50 hover:text-foreground disabled:opacity-40"
-        >
-          {busy ? "Looking…" : "Look again"}
-        </button>
+        {view === "today" ? (
+          <button
+            type="button"
+            onClick={refresh}
+            disabled={busy}
+            className="rounded-lg border border-border bg-card/60 px-4 py-2 text-sm text-muted-foreground transition hover:border-primary/50 hover:text-foreground disabled:opacity-40"
+          >
+            {busy ? "Looking…" : "Look again"}
+          </button>
+        ) : null}
       </header>
 
       {error ? <Notice tone="error">{error}</Notice> : null}
@@ -737,6 +770,7 @@ export function NovaClient() {
         </Notice>
       ) : null}
 
+      {view === "today" ? (
       <div className="space-y-4">
         {attention.map((signal) => {
           const chip = RELEVANCE_CHIP[signal.relevance];
@@ -812,8 +846,9 @@ export function NovaClient() {
           );
         })}
       </div>
+      ) : null}
 
-      {away || brief.lastRefresh ? (
+      {view === "today" && (away || brief.lastRefresh) ? (
         <Panel className="mt-4">
           <Label>
             {away
@@ -865,10 +900,26 @@ export function NovaClient() {
         </Panel>
       ) : null}
 
+      {view === "agent" ? (
+        <Panel className="mt-4">
+          <Label>What {brief.agent.name} watches</Label>
+          <dl className="mt-4 space-y-0">
+            <Row label="You care about" value={brief.agent.interests.join(" · ")} />
+            <Row label="Things watched" value={String(brief.lastRefresh?.subjectsChecked ?? 0)} />
+            <Row label="Watching since" value={new Date(brief.agent.createdAt).toLocaleDateString()} />
+          </dl>
+          <p className="mt-4 text-xs leading-relaxed text-muted-foreground">
+            {brief.agent.name} looks on a schedule, whether or not anyone is reading. It stops
+            after a fortnight with nobody here, and starts again the moment you come back — an
+            agent nobody reads is not worth the requests it costs.
+          </p>
+        </Panel>
+      ) : null}
+
+      {view === "memory" ? (
       <Panel className="mt-4">
         <Label>What {brief.agent.name} knows about you</Label>
         <dl className="mt-4 space-y-0">
-          <Row label="You care about" value={brief.agent.interests.join(" · ")} />
           {follows.length > 0 ? (
             <Row label="You follow" value={follows.map((entry) => entry.summary).join(" · ")} tone="good" />
           ) : null}
@@ -898,9 +949,12 @@ export function NovaClient() {
           </p>
         ) : null}
       </Panel>
+      ) : null}
 
-      <Standing brief={brief} />
-      {!justCreated && identity ? <RecoveryKey who={identity} emphatic={false} /> : null}
+      {view === "arc" ? <Standing brief={brief} /> : null}
+      {view === "agent" && !justCreated && identity
+        ? <RecoveryKey who={identity} emphatic={false} />
+        : null}
       <Footer />
     </Shell>
   );

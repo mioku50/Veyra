@@ -255,23 +255,37 @@ assert.deepEqual(
   },
 );
 
-/* Four destinations, and the brief is the first one.
+/* Four destinations, and all four are the agent.
  *
- * The product navigation is not where the architecture gets explained: a stage
- * of a decision belongs to the decision, not to the shell. This list was five
- * items across three headed sections named after subsystems -- run, activity,
- * network -- which asked a visitor to learn Veyra before using it. */
-assert.deepEqual(publicSidebarNavigation.map(({ label }) => label), ["Your agent", "History", "Advanced"]);
+ * The previous list spent three of its four links on buying -- Decisions,
+ * Payments, Choose and pay yourself -- above a page that is a personal agent's
+ * morning brief. Buying is not a destination here: when the agent wants to pay
+ * for something it says so on the item, with a price and a verdict. */
+assert.deepEqual(publicSidebarNavigation.map(({ label }) => label), ["Your agent"]);
 const publicItems = publicSidebarNavigation.flatMap(({ items }) =>
   items.map(({ label, href }) => ({ label, href })),
 );
 assert.deepEqual(publicItems, [
-  { label: "Daily brief", href: "/" },
-  { label: "Decisions", href: "/executions" },
-  { label: "Payments", href: "/receipts" },
-  { label: "Choose and pay yourself", href: "/run" },
+  { label: "Today", href: "/" },
+  { label: "My Agent", href: "/agent" },
+  { label: "Memory", href: "/memory" },
+  { label: "Arc", href: "/arc" },
 ]);
 assert.equal(publicItems[0].href, "/", "the brief leads: it is the product, the rest is how it is justified");
+
+/* The operator surfaces did not disappear, they moved. A link that is dropped
+   from one navigation and added to neither is how a screen becomes unreachable
+   while every test still passes. */
+for (const href of ["/executions", "/receipts", "/run"]) {
+  assert(
+    consoleSidebarNavigation.some(({ items }) => items.some((item) => item.href === href)),
+    `${href} left the product navigation, so the console must link to it`,
+  );
+  assert(
+    !publicItems.some((item) => item.href === href),
+    `${href} is an operator surface and must not be in the product navigation`,
+  );
+}
 
 /* Labs is frozen behind the developer console. The product navigation must not
    point at anything the middleware redirects away from, or the shell would send
@@ -296,7 +310,7 @@ assert.deepEqual(sidebarNavigation, publicSidebarNavigation);
 
 assert.deepEqual(
   consoleSidebarNavigation.map(({ label }) => label),
-  [BRAND.developerConsole, "Decision internals", "Evidence tools"],
+  [BRAND.developerConsole, "Buying and history", "Decision internals", "Evidence tools"],
 );
 // Nothing demoted out of the product navigation may be orphaned.
 {

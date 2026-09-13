@@ -107,7 +107,13 @@ export function Topbar({
 
         <div className="flex shrink-0 items-center gap-2.5">
           <ActivityDropdown />
-          <WalletWidget compact />
+          {/* Only where an on-chain action lives. A wallet button in the chrome
+              of a page that has not asked for one tells a first-time visitor
+              that this is a thing you need a wallet to use -- which is false,
+              and is the first thing they read. Nova asks for a wallet on the
+              card that needs it, at the moment it needs it, with the amount
+              already on screen. */}
+          {isConsole ? <WalletWidget compact /> : null}
           {isConsole ? (
             <>
               <Button asChild size="sm" variant="outline" className="hidden sm:inline-flex border-white/10 hover:bg-white/5">
