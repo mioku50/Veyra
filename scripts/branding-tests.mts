@@ -55,14 +55,25 @@ for (const file of activeFiles) {
   }
 }
 
-// EIP-712 domain names are protocol constants that must byte-match the deployed
-// contracts (`EIP712("Veyra Trust Gate", "1")`), so they are literals on purpose.
-// Routing them through BRAND would silently invalidate every signature the day
-// the product name changes.
+// Signing material is exempt, and only signing material.
+//
+// EIP-712 domain names must byte-match the deployed contracts
+// (`EIP712("Veyra Trust Gate", "1")`), and the provider-submission prefix is a
+// personal_sign domain separator that providers reproduce in their own clients.
+// Both are protocol constants: routing them through BRAND would mean a rename
+// silently invalidates every signature already issued, which is a far worse
+// failure than an unbranded string. Nothing user-facing belongs on this list.
 const BRAND_LITERAL_EXEMPT_FILES = [
   "lib/brand.ts",
   "lib/trust-gate/sign.ts",
   "lib/erc8183/verdict.ts",
+  "app/api/execution/v1/[executionId]/provider-submission/route.ts",
+  // "Veyra Execution Mandate" is the EIP-712 domain every signed mandate is
+  // bound to, and lib/execution/auth.ts pins both the current request-signing
+  // prefix and the legacy one it still accepts. Renaming either would reject
+  // signatures that are valid today.
+  "lib/execution/canonical.ts",
+  "lib/execution/auth.ts",
 ];
 
 for (const root of ["app", "components", "lib"]) {
@@ -99,12 +110,15 @@ for (const [contract, domainName] of [
   );
 }
 
+// Pinned so a rename is a deliberate edit here rather than a drift nobody
+// notices. It had fallen behind the repositioning to "Veyra decides. Circle
+// pays." and was failing the suite as a stale snapshot, not a real regression.
 assert.deepEqual(BRAND, {
   name: "Veyra",
   monogram: "V",
-  tagline: "Trust Infrastructure for Agentic Commerce",
+  tagline: "Veyra decides. Circle pays.",
   description:
-    "Verify agents and services, evaluate counterparties before money moves, independently evaluate ERC-8183 work, and turn completed interactions into verifiable reputation on Arc.",
+    "Before an agent spends USDC, Veyra decides whether it should pay, whom, and how much.",
   developerConsole: "Veyra Developer Console",
   agentApi: "Veyra Agent API",
   reports: "Veyra Reports",
@@ -139,8 +153,8 @@ const openApi = JSON.parse(
 assert.equal(openApi.info?.title, BRAND.agentApi);
 assert(openApi.info?.description?.includes("verified workflows"));
 assert(openApi.info?.description?.includes("reputation"));
-assert.equal(openApi.info?.version, "0.1.0-beta.1");
-assert.equal(openApi.servers?.[0]?.url, "https://veyra.app");
+assert.equal(openApi.info?.version, "0.1.0-beta.2");
+assert.equal(openApi.servers?.[0]?.url, "https://veyras.vercel.app");
 for (const path of [
   "/api/agent/v1/workflows",
   "/api/agent/v1/project-360/discoveries",

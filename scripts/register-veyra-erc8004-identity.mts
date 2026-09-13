@@ -29,7 +29,7 @@ async function main() {
 
   const account = privateKeyToAccount(privateKey as `0x${string}`);
   const ownerAddress = account.address;
-  const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "https://agent-commerce-six.vercel.app";
+  const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "https://veyras.vercel.app";
   const metadataUri = `${baseUrl}/.well-known/veyra-agent.json`;
   const registryAddress = (process.env.ERC8004_IDENTITY_REGISTRY || ARC_ERC8004_IDENTITY_REGISTRY) as `0x${string}`;
 

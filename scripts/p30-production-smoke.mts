@@ -6,7 +6,7 @@
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 
 const baseUrl = (
-  process.env.VEYRA_PRODUCTION_URL ?? "https://agent-commerce-six.vercel.app"
+  process.env.VEYRA_PRODUCTION_URL ?? "https://veyras.vercel.app"
 ).replace(/\/+$/, "");
 
 function assert(condition: unknown, message: string): asserts condition {

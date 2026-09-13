@@ -4,6 +4,7 @@
  */
 
 import { NextResponse, type NextRequest } from "next/server";
+import { BRAND } from "@/lib/brand";
 import { issueMarketplaceClearance } from "@/lib/counterparty-selection/marketplace";
 import { CREDIT_HEADER } from "@/lib/x402/trust-api/credits";
 import {
@@ -64,7 +65,7 @@ export const POST = withTrustApiPayment(async (request: NextRequest, context) =>
         signed: false,
         clearance: null,
         refused: true,
-        message: "Veyra will not sign for this counterparty. The evidence and the reasons are above.",
+        message: `${BRAND.name} will not sign for this counterparty. The evidence and the reasons are above.`,
       }, { headers: TRUST_API_HEADERS });
     }
 
@@ -122,6 +123,6 @@ export const POST = withTrustApiPayment(async (request: NextRequest, context) =>
     : {
         ok: false,
         code: "clearance_unavailable",
-        message: "Veyra cannot sign clearances right now, so this call was refused before it was charged. The free verdict endpoint is unaffected.",
+        message: `${BRAND.name} cannot sign clearances right now, so this call was refused before it was charged. The free verdict endpoint is unaffected.`,
       },
 });

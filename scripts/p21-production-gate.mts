@@ -19,7 +19,7 @@ import { generatePrivateKey } from "viem/accounts";
 import type { Hex } from "viem";
 
 const CONFIRMATION = "--confirm-production";
-const CANONICAL_HOST = "agent-commerce-six.vercel.app";
+const CANONICAL_HOST = "veyras.vercel.app";
 const MACHINE_SCOPES = [
   "workflows:read",
   "quotes:create",

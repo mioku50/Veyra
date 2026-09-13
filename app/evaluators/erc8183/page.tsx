@@ -297,12 +297,12 @@ address constant VEYRA_EVALUATOR = ${evaluatorAddress};`}
               <div className="text-2xs font-semibold text-slate-400 uppercase tracking-wider">Machine API (cURL)</div>
               <pre className="bg-slate-950 p-4 rounded-xl text-xs font-mono text-slate-200 overflow-x-auto border border-slate-800">
 {`# Fetch safe evaluator metadata
-curl -X GET https://agent-commerce-six.vercel.app/api/erc8183/v1/evaluator
+curl -X GET https://veyras.vercel.app/api/erc8183/v1/evaluator
 
 # Submit evaluation request
-curl -X POST https://agent-commerce-six.vercel.app/api/erc8183/v1/evaluations \\
+curl -X POST https://veyras.vercel.app/api/erc8183/v1/evaluations \\
   -H "Content-Type: application/json" \\
-  -d '{"jobId": "171197", "contentUri": "https://agent-commerce-six.vercel.app/canary-deliverable.json"}'`}
+  -d '{"jobId": "171197", "contentUri": "https://veyras.vercel.app/canary-deliverable.json"}'`}
               </pre>
             </div>
           </div>

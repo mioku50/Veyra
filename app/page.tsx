@@ -142,7 +142,7 @@ const evidenceWorkflows: Array<{
     description:
       "Understand the health, activity, engineering signals, and adoption risks of a public repository.",
     benefits: ["Repository health", "Maintainer activity", "Adoption risk signals"],
-    gradient: "from-blue-500/20 via-blue-500/5 to-transparent border-blue-500/30 hover:border-blue-500/60 shadow-[0_0_25px_rgba(52,227,155,0.15)]",
+    gradient: "from-blue-500/20 via-blue-500/5 to-transparent border-blue-500/30 hover:border-blue-500/60 shadow-[0_0_25px_rgba(123,108,255,0.15)]",
     icon: Github,
   },
   {
@@ -254,11 +254,17 @@ export default async function Home() {
             <span style={{ color: "var(--run-accent)" }}>Circle pays.</span>
           </h2>
 
+          {/* The positioning sentence itself, not a paraphrase of it. It was
+              only in the page metadata, so the thing the product claims to be
+              was visible to crawlers and not to readers. */}
           <p className="mt-5 max-w-2xl text-base font-normal leading-relaxed text-muted-foreground sm:text-lg">
-            Evidence-based authorization for autonomous USDC spending. Before your
-            agent pays an API or another agent, Veyra measures the evidence, ranks
-            the alternatives, enforces policy, and signs an authorization bound to
-            one endpoint and one amount.
+            {BRAND.description}
+          </p>
+
+          <p className="mt-3.5 max-w-2xl text-[15px] font-normal leading-relaxed text-muted-foreground/80">
+            It measures the evidence about a counterparty, ranks the alternatives,
+            enforces policy, and signs an authorization bound to one endpoint and
+            one amount.
           </p>
 
           <p className="run-num mt-5 text-[11px] tracking-wide text-muted-foreground/70">
@@ -269,7 +275,7 @@ export default async function Home() {
             <Button
               asChild
               size="lg"
-              className="rounded-xl bg-gradient-to-r from-[var(--run-accent)] to-[var(--run-accent-deep)] font-semibold text-white shadow-[0_0_25px_rgba(52,227,155,0.35)] transition-all duration-300 hover:scale-105 hover:shadow-[0_0_35px_rgba(52,227,155,0.5)]"
+              className="rounded-xl bg-gradient-to-r from-[var(--run-accent)] to-[var(--run-accent-deep)] font-semibold text-white shadow-[0_0_25px_rgba(123,108,255,0.35)] transition-all duration-300 hover:scale-105 hover:shadow-[0_0_35px_rgba(123,108,255,0.5)]"
             >
               <Link href="/run">
                 <ShieldCheck className="size-5 mr-2" />
@@ -369,7 +375,7 @@ export default async function Home() {
 
       {/* 3. Try Veyra in 30 Seconds: GitHub Due Diligence */}
       <section className="mx-auto w-full max-w-7xl px-4 py-10 sm:px-6">
-        <div className="relative overflow-hidden rounded-2xl border border-primary/30 bg-gradient-to-br from-[#0c101a] via-[#090c13] to-[#07090e] p-1 shadow-[0_0_40px_rgba(52,227,155,0.1)] transition-all duration-300 hover:border-primary/50 hover:shadow-[0_0_50px_rgba(52,227,155,0.18)]">
+        <div className="relative overflow-hidden rounded-2xl border border-primary/30 bg-gradient-to-br from-[#0c101a] via-[#090c13] to-[#07090e] p-1 shadow-[0_0_40px_rgba(123,108,255,0.1)] transition-all duration-300 hover:border-primary/50 hover:shadow-[0_0_50px_rgba(123,108,255,0.18)]">
           <div className="grid gap-0 lg:grid-cols-[minmax(0,1.1fr)_minmax(320px,0.9fr)]">
             <div className="p-6 sm:p-8 flex flex-col justify-between">
               <div>
@@ -417,7 +423,7 @@ export default async function Home() {
                   required
                   className="h-12 w-full rounded-xl border border-white/10 bg-[#06080d] px-4 py-2 text-sm placeholder:text-muted-foreground/60 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/40 transition-all"
                 />
-                <Button type="submit" size="lg" className="rounded-xl bg-primary hover:bg-blue-600 font-semibold shadow-[0_0_20px_rgba(52,227,155,0.3)]">
+                <Button type="submit" size="lg" className="rounded-xl bg-primary hover:bg-blue-600 font-semibold shadow-[0_0_20px_rgba(123,108,255,0.3)]">
                   <Bot className="size-5" />
                   Analyze Repository
                 </Button>

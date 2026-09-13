@@ -4,7 +4,7 @@
 [![CI](https://github.com/mioku50/Veyra/actions/workflows/release-gate.yml/badge.svg)](https://github.com/mioku50/Veyra/actions/workflows/release-gate.yml)
 [![Network](https://img.shields.io/badge/network-Arc%20Testnet%20(5042002)-emerald.svg)](https://testnet.arcscan.app)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
-[![Live](https://img.shields.io/badge/live-agent--commerce--six.vercel.app-34e39b.svg)](https://agent-commerce-six.vercel.app)
+[![Live](https://img.shields.io/badge/live-veyras.vercel.app-7b6cff.svg)](https://veyras.vercel.app)
 
 > ## Veyra decides. Circle pays.
 >
@@ -18,10 +18,10 @@ observed outcome becomes new reputation on Arc.
 
 `ERC-8004` · `ERC-8183` · `x402` · `Gateway Nanopayments` · `USDC` · `Arc`
 
-**Live on Arc Testnet — [agent-commerce-six.vercel.app](https://agent-commerce-six.vercel.app)**
-· [Run a decision](https://agent-commerce-six.vercel.app/run), the flow below end to
+**Live on Arc Testnet — [veyras.vercel.app](https://veyras.vercel.app)**
+· [Run a decision](https://veyras.vercel.app/run), the flow below end to
 end in the browser
-· [Decision log](https://agent-commerce-six.vercel.app/executions), every trust-routed
+· [Decision log](https://veyras.vercel.app/executions), every trust-routed
 action, authorization and onchain settlement as it happened
 
 ## The one flow
@@ -116,7 +116,7 @@ the same inputs always produce the same decision, and it can be audited later.
 ### Veyra is itself an x402 resource
 
 Discoverable and payable by the machinery it verifies, at
-[`/.well-known/x402`](https://agent-commerce-six.vercel.app/.well-known/x402). The
+[`/.well-known/x402`](https://veyras.vercel.app/.well-known/x402). The
 verdict is free, with its evidence; the signed clearance costs, because a contract
 can consume an attestation and cannot consume an opinion. Reporting what happened
 after a purchase earns a credit toward the next one.

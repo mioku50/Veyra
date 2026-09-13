@@ -6,6 +6,7 @@
 import { randomUUID } from "node:crypto";
 import { BatchFacilitatorClient } from "@circle-fin/x402-batching/server";
 import { NextResponse, type NextRequest } from "next/server";
+import { BRAND } from "../../brand.ts";
 import { getByoaClient } from "../../byoa/service.ts";
 import { CREDIT_HEADER, isCreditTokenShaped, redeemCredit } from "./credits.ts";
 
@@ -256,7 +257,7 @@ export function withTrustApiPayment(
     if (requirements.length === 0) {
       return NextResponse.json({
         error: "payments_unavailable",
-        message: "Veyra cannot currently accept payment for this resource. The free verdict endpoint is unaffected.",
+        message: `${BRAND.name} cannot currently accept payment for this resource. The free verdict endpoint is unaffected.`,
       }, { status: 503, headers: { "X-Veyra-Request-Id": requestId } });
     }
 

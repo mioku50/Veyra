@@ -31,6 +31,12 @@ export type RunDecision = {
   /** The winner's published response shape, when it publishes one. Carried so
    *  the post-call check can hold the response to the provider's own promise. */
   outputSchema?: Record<string, unknown> | null;
+  /** Identity of the selection this decision came from. The agent-job rail
+   *  executes against it; the API rail files it with the decision log. */
+  selectionId?: string | null;
+  selectionHash?: string | null;
+  candidateId?: string | null;
+  capability?: string | null;
 };
 
 function short(hex: string, lead = 10, tail = 6) {

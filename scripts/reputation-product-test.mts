@@ -31,7 +31,7 @@ async function main() {
   if (!process.env.BYOA_CREDENTIAL_PEPPER) {
     process.env.BYOA_CREDENTIAL_PEPPER = "sample_test_byoa_credential_pepper_32_chars_long";
   }
-  const manifest = byoaManifest("https://agent-commerce-six.vercel.app");
+  const manifest = byoaManifest("https://veyras.vercel.app");
   assert.ok(
     (manifest as Record<string, unknown>).agentReputation,
     "[2] Machine Manifest missing agentReputation capability"

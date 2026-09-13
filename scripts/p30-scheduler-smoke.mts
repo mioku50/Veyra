@@ -7,7 +7,7 @@ import { createClient } from "@supabase/supabase-js";
 import { tryGetServerSupabaseConfig } from "../lib/supabase/server-env.ts";
 
 const baseUrl = (
-  process.env.VEYRA_PRODUCTION_URL ?? "https://agent-commerce-six.vercel.app"
+  process.env.VEYRA_PRODUCTION_URL ?? "https://veyras.vercel.app"
 ).replace(/\/+$/, "");
 const watchlistId = process.argv[2];
 

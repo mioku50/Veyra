@@ -3,6 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import { BRAND } from "../../brand.ts";
 import { buildTrustApiRequirements } from "./seller.ts";
 import { TRUST_API_PRICING, type TrustApiProduct } from "./pricing.ts";
 import { CREDIT_HEADER } from "./credits.ts";
@@ -75,10 +76,10 @@ export async function buildTrustApiCatalog(origin: string, lastUpdated = new Dat
           supportsCircleGateway: true,
           output: OUTPUT_SCHEMAS[product] ?? undefined,
           provider: {
-            name: "Veyra",
+            name: BRAND.name,
             website: origin,
             docsUrl: new URL("/console/agent-api", origin).toString(),
-            description: "Independent trust and policy layer between an agent's intent and its USDC spend.",
+            description: BRAND.description,
             category: "trust",
             tags: CAPABILITIES[product],
           },
@@ -89,7 +90,7 @@ export async function buildTrustApiCatalog(origin: string, lastUpdated = new Dat
 
   return {
     x402Version: 2,
-    provider: "Veyra",
+    provider: BRAND.name,
     description: "Verify before your agent pays.",
     // Said where a buying agent will read it, not only in the docs.
     economics: {

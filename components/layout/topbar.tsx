@@ -37,7 +37,7 @@ export function Topbar({
             <span
               aria-label={`${BRAND.name} logo`}
               data-testid="brand-monogram"
-              className="flex size-9 shrink-0 items-center justify-center rounded-xl from-[var(--run-accent)] to-[var(--run-accent-deep)] bg-gradient-to-b text-sm font-bold text-white shadow-[0_0_24px_rgba(52,227,155,0.35)] transition-transform duration-200 group-hover:scale-105"
+              className="flex size-9 shrink-0 items-center justify-center rounded-xl from-[var(--run-accent)] to-[var(--run-accent-deep)] bg-gradient-to-b text-sm font-bold text-white shadow-[0_0_24px_rgba(123,108,255,0.35)] transition-transform duration-200 group-hover:scale-105"
             >
               {BRAND.monogram}
             </span>

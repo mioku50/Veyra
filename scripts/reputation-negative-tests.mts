@@ -19,7 +19,7 @@ async function runNegativeTests() {
     chainId: 5042002,
     identityRegistry: "0x8004A818BFB912233c491871b3d84c89A494BD9e",
     owner: "0x0d2c04580e081e222bbe5bf9818af337e2633eb7",
-    metadataUri: "https://agent-commerce-six.vercel.app/.well-known/veyra-agent.json",
+    metadataUri: "https://veyras.vercel.app/.well-known/veyra-agent.json",
     verifiedOnchain: true,
   };
 

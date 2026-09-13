@@ -20,7 +20,7 @@ export type SidebarIconName =
 // stages and inputs of a single decision, not places to go. Listing them as
 // co-equal top-level items asked the visitor to learn the architecture before
 // they could use the product, and it is what made the shell read as an internal
-// admin panel next to a screen that says "Veyra decides. Circle pays."
+// admin panel next to a screen carrying the product tagline.
 //
 // They are not orphaned: each one moves into the developer console below, and
 // each is reachable from the decision it belongs to.

@@ -20,13 +20,13 @@ does Veyra create an immutable paid quote.
 Production base URL:
 
 ```text
-https://agent-commerce-six.vercel.app
+https://veyras.vercel.app
 ```
 
 OpenAPI:
 
 ```text
-https://agent-commerce-six.vercel.app/openapi/agent-commerce-v1.json
+https://veyras.vercel.app/openapi/agent-commerce-v1.json
 ```
 
 ## Credential onboarding
@@ -78,7 +78,7 @@ Minimal usage:
 import { AgentCommerceClient } from "@arc-agent-commerce/sdk";
 
 const client = new AgentCommerceClient({
-  baseUrl: "https://agent-commerce-six.vercel.app",
+  baseUrl: "https://veyras.vercel.app",
   credential: process.env.ARC_AGENT_COMMERCE_API_KEY!,
 });
 
@@ -275,7 +275,7 @@ GET /api/trust/vtr_.../badge.svg?variant=arc
 Badge Markdown:
 
 ```md
-[![Veyra Trust](https://agent-commerce-six.vercel.app/api/trust/vtr_.../badge.svg)](https://agent-commerce-six.vercel.app/trust/vtr_...)
+[![Veyra Trust](https://veyras.vercel.app/api/trust/vtr_.../badge.svg)](https://veyras.vercel.app/trust/vtr_...)
 ```
 
 Status and SVG responses use snapshot-derived ETags and mandatory
@@ -299,7 +299,7 @@ Idempotency-Key: a-stable-key-for-this-exact-operation
 ### 1. Discover
 
 ```bash
-curl 'https://agent-commerce-six.vercel.app/api/agent/v1/workflows' \
+curl 'https://veyras.vercel.app/api/agent/v1/workflows' \
   -H "Authorization: Bearer $ARC_AGENT_COMMERCE_API_KEY"
 ```
 
@@ -307,7 +307,7 @@ curl 'https://agent-commerce-six.vercel.app/api/agent/v1/workflows' \
 
 ```bash
 curl -X POST \
-  'https://agent-commerce-six.vercel.app/api/agent/v1/quotes' \
+  'https://veyras.vercel.app/api/agent/v1/quotes' \
   -H "Authorization: Bearer $ARC_AGENT_COMMERCE_API_KEY" \
   -H 'Content-Type: application/json' \
   -H 'Idempotency-Key: github-quote-2026-07-28-001' \
@@ -326,7 +326,7 @@ Sponsored:
 
 ```bash
 curl -X POST \
-  'https://agent-commerce-six.vercel.app/api/agent/v1/runs' \
+  'https://veyras.vercel.app/api/agent/v1/runs' \
   -H "Authorization: Bearer $ARC_AGENT_COMMERCE_API_KEY" \
   -H 'Content-Type: application/json' \
   -H 'Idempotency-Key: github-run-2026-07-28-001' \
@@ -358,7 +358,7 @@ The project-owned hosted payer performs downstream x402 purchases separately.
 
 ```bash
 curl \
-  'https://agent-commerce-six.vercel.app/api/agent/v1/runs/RUN_ID' \
+  'https://veyras.vercel.app/api/agent/v1/runs/RUN_ID' \
   -H "Authorization: Bearer $ARC_AGENT_COMMERCE_API_KEY"
 ```
 
@@ -371,7 +371,7 @@ JSON:
 
 ```bash
 curl \
-  'https://agent-commerce-six.vercel.app/api/agent/v1/reports/REPORT_ID' \
+  'https://veyras.vercel.app/api/agent/v1/reports/REPORT_ID' \
   -H "Authorization: Bearer $ARC_AGENT_COMMERCE_API_KEY" \
   -H 'Accept: application/json'
 ```
@@ -380,7 +380,7 @@ Markdown:
 
 ```bash
 curl \
-  'https://agent-commerce-six.vercel.app/api/agent/v1/reports/REPORT_ID' \
+  'https://veyras.vercel.app/api/agent/v1/reports/REPORT_ID' \
   -H "Authorization: Bearer $ARC_AGENT_COMMERCE_API_KEY" \
   -H 'Accept: text/markdown'
 ```

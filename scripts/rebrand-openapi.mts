@@ -29,7 +29,7 @@ spec.info = {
 
 spec.servers = [
   {
-    url: "https://agent-commerce-six.vercel.app",
+    url: "https://veyras.vercel.app",
     description: "Arc Testnet Live Production Server",
   },
   {

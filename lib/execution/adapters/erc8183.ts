@@ -3,6 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import { BRAND } from "../../brand.ts";
 import { createWalletClient, http, parseEventLogs } from "viem";
 import { arcTestnet } from "viem/chains";
 import { getArcPublicClient } from "../../erc8183/client.ts";
@@ -211,7 +212,7 @@ export class Erc8183ExecutionAdapter implements ExecutionRailAdapter {
 
       const created = await lifecycle.createJob({
         provider: params.counterpartyWallet,
-        description: `Veyra Job ${params.executionId} (${params.capability})`,
+        description: `${BRAND.name} Job ${params.executionId} (${params.capability})`,
       });
       trace.jobId = created.jobId;
       trace.steps.push(created);
@@ -254,7 +255,7 @@ export class Erc8183ExecutionAdapter implements ExecutionRailAdapter {
       if (actor === "provider" && !lifecycle.signers.provider) {
         trace.pendingAction = lifecycle.describePendingAction(
           phase, job,
-          "Veyra holds no key for the provider; the counterparty must sign this step.",
+          `${BRAND.name} holds no key for the provider; the counterparty must sign this step.`,
         );
         break;
       }

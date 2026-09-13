@@ -5,6 +5,7 @@
 
 import { randomBytes } from "node:crypto";
 import { getAddress, isAddress, zeroAddress, type Hex } from "viem";
+import { BRAND } from "../../brand.ts";
 import { hashCanonical } from "../../counterparty-selection/canonical.ts";
 import {
   buildMarketplaceTrustDecision,
@@ -208,7 +209,7 @@ function alertsFrom(input: {
     alerts.push({
       code: "first_sighting",
       severity: "info",
-      detail: "Veyra has never observed this endpoint before. There is no history to compare against, and this verdict says so rather than implying safety.",
+      detail: `${BRAND.name} has never observed this endpoint before. There is no history to compare against, and this verdict says so rather than implying safety.`,
     });
   }
   return alerts;
@@ -399,7 +400,7 @@ export async function computeTrustApiVerdict(input: {
   const explanation = granted
     ? `${candidate.origin} answers a conformant challenge at integrity ${probe.integrityScore}/100, `
       + `with ${summary.observations} observation(s) on record and ${Math.round(coverage.coverage * 100)}% evidence coverage. `
-      + `Veyra would pay up to ${maxExposureUsdc.toFixed(6)} USDC here.`
+      + `${BRAND.name} would pay up to ${maxExposureUsdc.toFixed(6)} USDC here.`
     : alerts.find((alert) => alert.severity === "critical")?.detail
       ?? (requestedValueUsdc > input.budgetUsdc
         ? `The endpoint asks ${requestedValueUsdc.toFixed(6)} USDC, above the ${input.budgetUsdc.toFixed(6)} USDC budget.`

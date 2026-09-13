@@ -800,10 +800,18 @@ export async function listAgentProfiles(limit = 30) {
   return (data ?? []) as unknown as PublicAgentProfile[];
 }
 
-export async function countVerifiedAgentProofs(wallets: string[]) {
+export type VerifiedProofCounts = {
+  counts: Map<string, number>;
+  /** False when the store could not be read. "We saw none" and "we could not
+   *  look" are different facts, and a passport that renders the second as a
+   *  confident zero is telling the reader something Veyra does not know. */
+  available: boolean;
+};
+
+export async function countVerifiedAgentProofs(wallets: string[]): Promise<VerifiedProofCounts> {
   const normalizedWallets = new Set(wallets.map(normalizeAgentWallet));
   const counts = new Map<string, number>();
-  if (normalizedWallets.size === 0) return counts;
+  if (normalizedWallets.size === 0) return { counts, available: true };
 
   const client = getPublicSupabase();
   const { data, error } = await client
@@ -814,11 +822,10 @@ export async function countVerifiedAgentProofs(wallets: string[]) {
   if (error) {
     /* This is a supplementary badge on a passport, not the passport. The public
        role has no grant on payment_events in some deployments, and throwing here
-       took the whole listing down with it — the live site showed no passports at
-       all because a counter could not be read. Absent counts are reported as
-       zero verified proofs, which is what "we cannot see any" honestly means. */
+       took the whole listing down with it. The count is reported as unavailable
+       rather than as zero, so the screen can say so. */
     console.warn("[agent-passport] verified proof counts unavailable:", error.message);
-    return counts;
+    return { counts, available: false };
   }
 
   for (const row of (data ?? []) as Array<{ payer: string | null }>) {
@@ -827,7 +834,7 @@ export async function countVerifiedAgentProofs(wallets: string[]) {
     if (!normalizedWallets.has(wallet)) continue;
     counts.set(wallet, (counts.get(wallet) ?? 0) + 1);
   }
-  return counts;
+  return { counts, available: true };
 }
 
 async function fetchFallbackPassport(

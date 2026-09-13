@@ -24,6 +24,48 @@ export function clearMemoryStores(): void {
   }
 }
 
+/** Postgrest surfaces a transient gateway failure as an ordinary error object,
+ *  so it is matched on the message rather than on a status code. */
+function isTransientDbError(error: { message?: string; code?: string } | null): boolean {
+  if (!error) return false;
+  const haystack = `${error.code ?? ""} ${error.message ?? ""}`.toLowerCase();
+  return [
+    "gateway timeout",
+    "timeout",
+    "fetch failed",
+    "socket",
+    "econnreset",
+    "etimedout",
+    "502",
+    "503",
+    "504",
+  ].some((token) => haystack.includes(token));
+}
+
+/**
+ * Retries a read that failed for a reason that has nothing to do with the query.
+ *
+ * The decision log is an audit surface: a reader who hits a five-second network
+ * blip and is told "Database error" reasonably concludes the record is gone.
+ * Two quick retries turn almost all of those back into the answer that was
+ * always there. Writes are deliberately not wrapped — retrying one of those is
+ * a correctness question, not a resilience one.
+ */
+async function readWithRetry<T>(
+  label: string,
+  run: () => Promise<{ data: T | null; error: { message?: string; code?: string } | null }>,
+): Promise<{ data: T | null; error: { message?: string; code?: string } | null }> {
+  const delaysMs = [250, 1_000];
+  let last = await run();
+  for (const delay of delaysMs) {
+    if (!isTransientDbError(last.error)) return last;
+    console.warn(`[execution-db] transient failure on ${label}, retrying in ${delay}ms`);
+    await new Promise((resolve) => setTimeout(resolve, delay));
+    last = await run();
+  }
+  return last;
+}
+
 export async function saveExecutionMandate(mandate: ExecutionMandate): Promise<void> {
   if (isMemoryStoreAllowed()) {
     memoryMandateStore.set(mandate.mandateId, mandate);
@@ -301,16 +343,17 @@ export async function listExecutionAttempts(options?: {
   }
 
   const supabase = getByoaClient();
-  let query = supabase.from("execution_attempts").select("*").order("created_at", { ascending: false }).limit(limit);
-
-  if (options?.mandateId) {
-    query = query.eq("mandate_id", options.mandateId);
-  }
-  if (options?.counterpartyWallet) {
-    query = query.eq("counterparty_wallet", options.counterpartyWallet.toLowerCase());
-  }
-
-  const { data, error } = await query;
+  const { data, error } = await readWithRetry("listExecutionAttempts", async () => {
+    let query = supabase.from("execution_attempts").select("*").order("created_at", { ascending: false }).limit(limit);
+    if (options?.mandateId) {
+      query = query.eq("mandate_id", options.mandateId);
+    }
+    if (options?.counterpartyWallet) {
+      query = query.eq("counterparty_wallet", options.counterpartyWallet.toLowerCase());
+    }
+    const result = await query;
+    return { data: result.data as any[] | null, error: result.error };
+  });
 
   if (error) {
     throw new Error(`Database error listing execution attempts: ${error.message}`);

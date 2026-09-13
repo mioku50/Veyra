@@ -92,7 +92,7 @@ function baseUrl() {
   return (
     argument?.split("=", 2)[1] ??
     process.env.BASE_URL ??
-    "https://agent-commerce-six.vercel.app"
+    "https://veyras.vercel.app"
   ).replace(/\/$/, "");
 }
 

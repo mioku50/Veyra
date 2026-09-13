@@ -8,7 +8,7 @@ const codeExamples = {
   typescript: `import { AgentCommerceApiError, AgentCommerceClient } from "@arc-agent-commerce/sdk";
 
 const client = new AgentCommerceClient({
-  baseUrl: "https://agent-commerce-six.vercel.app",
+  baseUrl: "https://veyras.vercel.app",
   credential: process.env.ARC_AGENT_COMMERCE_API_KEY!,
 });
 
@@ -38,7 +38,7 @@ try {
   python: `# No third-party dependency required.
 import json, os, time, urllib.request, uuid
 
-BASE = "https://agent-commerce-six.vercel.app"
+BASE = "https://veyras.vercel.app"
 TOKEN = os.environ["ARC_AGENT_COMMERCE_API_KEY"]
 
 def call(method, path, body=None, key=None):
@@ -72,7 +72,7 @@ while True:
 report = call("GET", f"/api/agent/v1/reports/{status.get('reportId', run['runId'])}")
 print(json.dumps({"verdict": report.get("verdict"), "verification": report["verification"]}, indent=2))`,
 
-  curl: `export ARC_AGENT_COMMERCE_BASE_URL="https://agent-commerce-six.vercel.app"
+  curl: `export ARC_AGENT_COMMERCE_BASE_URL="https://veyras.vercel.app"
 
 # Discover curated workflows
 curl "$ARC_AGENT_COMMERCE_BASE_URL/api/agent/v1/workflows" \\

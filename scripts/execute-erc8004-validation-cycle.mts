@@ -34,7 +34,7 @@ async function main() {
   const registryAddress = ARC_ERC8004_VALIDATION_REGISTRY;
   const validatorAddress = account.address;
   const canaryAgentId = BigInt(1);
-  const requestUri = "https://agent-commerce-six.vercel.app/api/erc8004/v1/validations/sample-request.json";
+  const requestUri = "https://veyras.vercel.app/api/erc8004/v1/validations/sample-request.json";
   const requestPayload = JSON.stringify({ deliverable: "live_canary_acceptance_proof", timestamp: Date.now() });
   const requestHash = keccak256(stringToBytes(requestPayload));
 
@@ -60,7 +60,7 @@ async function main() {
 
   console.log("⚡ Step 2: Executing Veyra Evaluation & Submitting validationResponse()...");
   const canonicalReportHash = requestHash;
-  const responseUri = "https://agent-commerce-six.vercel.app/api/erc8004/v1/validations/" + requestHash;
+  const responseUri = "https://veyras.vercel.app/api/erc8004/v1/validations/" + requestHash;
   const tag = "veyra_erc8183_deliverable_passed";
 
   const resTx = await walletClient.writeContract({

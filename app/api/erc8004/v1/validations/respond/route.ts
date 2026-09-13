@@ -166,7 +166,7 @@ export async function POST(request: Request) {
       evaluation: evaluationData as Erc8183EvaluationRecord,
       requestHash: requestHash as Hex,
       agentId: onchainBefore.agentId.toString(),
-      baseUrl: process.env.NEXT_PUBLIC_APP_URL || "https://agent-commerce-six.vercel.app",
+      baseUrl: process.env.NEXT_PUBLIC_APP_URL || "https://veyras.vercel.app",
     });
     if (!exactStoredBinding(stored, canonical)) {
       return publicError(

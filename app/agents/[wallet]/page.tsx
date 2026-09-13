@@ -138,7 +138,12 @@ function Passport({
 
       <div className="grid gap-7 px-6 pb-6 pt-6 sm:grid-cols-[200px_minmax(0,1fr)]">
         <div>
-          <span className="run-eyebrow">Trust</span>
+          {/* Not "Trust". The number is computed from observed activity —
+              completed runs, paid calls, budgets respected — and saturates at
+              100 on volume alone, with no cryptographic evidence required. A
+              passport reading "Trust 100/100" beside "Arc proofs 0" invites
+              exactly the conclusion the evidence does not support. */}
+          <span className="run-eyebrow">Observed activity</span>
           <div className="run-display run-num mt-1.5 text-[52px] leading-none" style={{ color: band }}>
             {score}
             <span className="text-[18px] text-[var(--run-text-faint)]">/100</span>
@@ -147,8 +152,10 @@ function Passport({
             <span style={{ width: `${score}%`, background: band }} />
           </div>
           <p className="mt-2.5 text-[11px] leading-relaxed text-[var(--run-text-faint)]">
-            Deterministic, not a model output. Completed workflows, successful paid
-            calls and budget-respected execution raise it; failures reduce it.
+            Deterministic, not a model output: completed workflows, successful paid
+            calls and budget-respected execution raise it, failures reduce it. It
+            measures behaviour Veyra has watched, not cryptographic proof — so it
+            is an input to a decision, never authority for a large spend on its own.
           </p>
         </div>
 

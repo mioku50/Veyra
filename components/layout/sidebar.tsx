@@ -85,12 +85,12 @@ function SidebarLink({ item, collapsed }: { item: NavItem; collapsed?: boolean }
       className={cn(
         "group relative flex min-w-0 items-center gap-3 rounded-lg border border-transparent px-3 py-2.5 text-sm font-medium text-muted-foreground transition-all duration-200 hover:border-white/10 hover:bg-white/5 hover:text-foreground",
         active &&
-          "border-primary/40 bg-gradient-to-r from-primary/20 via-primary/10 to-transparent text-foreground shadow-[0_0_20px_rgba(52,227,155,0.15)] font-semibold",
+          "border-primary/40 bg-gradient-to-r from-primary/20 via-primary/10 to-transparent text-foreground shadow-[0_0_20px_rgba(123,108,255,0.15)] font-semibold",
         collapsed && "justify-center px-2",
       )}
     >
       {active && (
-        <span className="absolute left-0 top-1/2 -translate-y-1/2 h-5 w-1 rounded-r-full bg-gradient-to-b from-primary to-[var(--run-accent-deep)] shadow-[0_0_8px_rgba(52,227,155,0.8)]" />
+        <span className="absolute left-0 top-1/2 -translate-y-1/2 h-5 w-1 rounded-r-full bg-gradient-to-b from-primary to-[var(--run-accent-deep)] shadow-[0_0_8px_rgba(123,108,255,0.8)]" />
       )}
       <Icon
         className={cn(
@@ -220,7 +220,7 @@ export function MobileSidebar({
           <span
             aria-label={`${BRAND.name} logo`}
             data-testid="brand-monogram"
-            className="flex size-10 items-center justify-center rounded-xl from-[var(--run-accent)] to-[var(--run-accent-deep)] bg-gradient-to-b text-sm font-bold text-white shadow-[0_0_20px_rgba(52,227,155,0.4)]"
+            className="flex size-10 items-center justify-center rounded-xl from-[var(--run-accent)] to-[var(--run-accent-deep)] bg-gradient-to-b text-sm font-bold text-white shadow-[0_0_20px_rgba(123,108,255,0.4)]"
           >
             {BRAND.monogram}
           </span>

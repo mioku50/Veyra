@@ -68,7 +68,7 @@ const BLOCKED_X402_ENDPOINT =
   process.env.TRUST_GATE_LIVE_X402_ENDPOINT
   || "/api/reference-seller/project-update-intelligence";
 const BASE_URL = (
-  process.env.NEXT_PUBLIC_APP_URL || "https://agent-commerce-six.vercel.app"
+  process.env.NEXT_PUBLIC_APP_URL || "https://veyras.vercel.app"
 ).replace(/\/$/, "");
 
 async function publishCanonicalSnapshotProof(

@@ -85,7 +85,7 @@ export default async function ResultsPage({ searchParams }: ResultsPageProps) {
               Browse immutable structured reports and verified workflow outputs generated on Arc Testnet.
             </p>
           </div>
-          <Button asChild size="lg" className="rounded-xl bg-gradient-to-r from-primary to-blue-600 font-bold text-white shadow-[0_0_20px_rgba(52,227,155,0.3)]">
+          <Button asChild size="lg" className="rounded-xl bg-gradient-to-r from-primary to-blue-600 font-bold text-white shadow-[0_0_20px_rgba(123,108,255,0.3)]">
             <Link href="/agent-runner">
               <Sparkles className="size-4 mr-2" />
               Create Report
@@ -176,7 +176,7 @@ export default async function ResultsPage({ searchParams }: ResultsPageProps) {
           </div>
         ) : (
           reports.map((report) => (
-            <Card key={report.id} className="rounded-2xl border border-white/10 bg-[#090c13]/90 backdrop-blur-xl p-1 transition-all duration-300 hover:border-primary/40 hover:shadow-[0_0_30px_rgba(52,227,155,0.12)]">
+            <Card key={report.id} className="rounded-2xl border border-white/10 bg-[#090c13]/90 backdrop-blur-xl p-1 transition-all duration-300 hover:border-primary/40 hover:shadow-[0_0_30px_rgba(123,108,255,0.12)]">
               <CardHeader className="p-6 pb-4">
                 <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
                   <Badge variant="secondary" className="border-primary/30 bg-primary/10 text-primary text-xs font-semibold">

@@ -110,7 +110,7 @@ type ReviewStatus = {
 
 const ARC_TESTNET_NETWORK = "eip155:5042002";
 const ARC_TESTNET_USDC = "0x3600000000000000000000000000000000000000";
-const DEFAULT_BASE_URL = "https://agent-commerce-six.vercel.app";
+const DEFAULT_BASE_URL = "https://veyras.vercel.app";
 const REQUEST_TIMEOUT_MS = Number(process.env.REVIEW_SMOKE_TIMEOUT_MS ?? 60_000);
 
 function requiresVerifiedProof() {

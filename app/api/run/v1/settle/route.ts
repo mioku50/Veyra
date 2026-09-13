@@ -8,6 +8,10 @@ import { isAddress } from "viem";
 import { authenticateSelectionRequest } from "@/lib/counterparty-selection/auth";
 import { fetchWithSsrfProtection, SSRFProtectionError } from "@/lib/seller/ssrf";
 import type { JsonSchema } from "@/lib/seller/json-schema";
+import {
+  closeBrowserX402Attempt,
+  openBrowserX402Attempt,
+} from "@/lib/execution/browser-x402-ledger";
 import { verifyPostCall } from "@/lib/x402/post-call-verification";
 import {
   loadEndpointObservations,
@@ -125,6 +129,31 @@ export async function POST(request: NextRequest) {
     return badRequest("authorization_expired", "That authorization has already expired. Quote again.", 422);
   }
 
+  /* The authorization is real from here on, so the decision log must know about
+     it regardless of how the relay turns out. Opening before the call is what
+     makes a purchase that fails mid-flight visible instead of invisible. */
+  const executionId = await openBrowserX402Attempt({
+    selectionId: typeof body.selectionId === "string" ? body.selectionId : `vms_browser_${Date.now()}`,
+    selectionHash: typeof body.selectionHash === "string" ? body.selectionHash : "0x",
+    clearanceDigest: typeof body.clearanceDigest === "string" ? body.clearanceDigest : null,
+    counterpartyAgentId: typeof body.counterpartyAgentId === "string"
+      ? body.counterpartyAgentId
+      : `x402:${new URL(resource).host}`,
+    counterpartyWallet: accept.payTo,
+    capability: typeof body.capability === "string" ? body.capability : "x402_purchase",
+    resource,
+    quotedUsdc: Number(accept.amountAtomic) / 1e6,
+    authorizedUsdc: Number(authorization.value) / 1e6,
+    payerWallet: authorization.from,
+    payTo: accept.payTo,
+    asset: accept.asset,
+    network: accept.network,
+    authorizedAtomic: authorization.value,
+    authorizationNonce: authorization.nonce,
+    authorizationSignature: signature as `0x${string}`,
+    authorizationValidBefore: Number(authorization.validBefore),
+  });
+
   /* The descriptor the challenge published, carried back through the browser
      untouched. Falling back to the URL keeps a v1-shaped seller working. */
   const resourceDescriptor = body.resourceDescriptor === undefined || body.resourceDescriptor === null
@@ -168,8 +197,17 @@ export async function POST(request: NextRequest) {
 
   // A second 402 means the seller refused the payment rather than the request.
   if (response.status === 402) {
+    await closeBrowserX402Attempt({
+      executionId,
+      paid: false,
+      httpOk: false,
+      paidUsdc: 0,
+      transaction: null,
+      verification: null,
+    });
     return NextResponse.json({
       settled: false,
+      executionId,
       status: 402,
       code: "payment_rejected",
       message: "The endpoint rejected the signed payment. Nothing was transferred.",
@@ -209,10 +247,20 @@ export async function POST(request: NextRequest) {
     required: body.verificationRequired === true,
   });
 
+  await closeBrowserX402Attempt({
+    executionId,
+    paid: response.ok,
+    httpOk: response.ok,
+    paidUsdc: Number(authorization.value) / 1e6,
+    transaction: typeof settlement?.transaction === "string" ? settlement.transaction : null,
+    verification,
+  });
+
   return NextResponse.json({
     // A purchase that was paid for but failed the verification its own tier
     // demanded is not a success, and must not be reported as one.
     settled: response.ok && verification.verdict !== "FAIL",
+    executionId,
     paid: response.ok,
     status: response.status,
     paidUsdc: Number(authorization.value) / 1e6,

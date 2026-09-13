@@ -153,8 +153,8 @@ async function main() {
   console.log(`  Snapshot ID: ${snapshot.snapshotId}`);
   console.log(`  Canonical Hash: ${snapshot.canonicalHash}`);
   console.log("\nPublic Surfaces:");
-  console.log(`  Public API: https://agent-commerce-six.vercel.app/api/reputation/v1/agents/${agentId}`);
-  console.log(`  Public Agent Profile: https://agent-commerce-six.vercel.app/reputation/${agentId}`);
+  console.log(`  Public API: https://veyras.vercel.app/api/reputation/v1/agents/${agentId}`);
+  console.log(`  Public Agent Profile: https://veyras.vercel.app/reputation/${agentId}`);
   console.log("\nP5.3 REPUTATION PRODUCTION SMOKE: PASS");
   console.log("=======================================================\n");
 }

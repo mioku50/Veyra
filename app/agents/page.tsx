@@ -58,7 +58,7 @@ function ProfileCard({
   verifiedProofs,
 }: {
   profile: PublicAgentProfile;
-  verifiedProofs: number;
+  verifiedProofs: number | null;
 }) {
   const trustColor =
     profile.trust_score >= 67
@@ -74,7 +74,7 @@ function ProfileCard({
           <div className="flex flex-wrap items-center gap-2">
             <Badge variant="secondary">Agent Passport</Badge>
             <Badge variant={profile.trust_score >= 60 ? "default" : "outline"}>
-              Trust {profile.trust_score}/100
+              Activity {profile.trust_score}/100
             </Badge>
           </div>
           <div className="w-full max-w-[220px]">
@@ -109,7 +109,14 @@ function ProfileCard({
           </div>
           <div>
             <dt className="text-muted-foreground">Arc proofs</dt>
-            <dd className="font-mono">{verifiedProofs}</dd>
+            {/* null is "could not read", which must not be shown as a confident
+                zero: one says this agent has no onchain proofs, the other says
+                Veyra does not know whether it has any. */}
+            <dd className="font-mono">
+              {verifiedProofs === null
+                ? <span className="text-muted-foreground">Unavailable</span>
+                : verifiedProofs}
+            </dd>
           </div>
           <div>
             <dt className="text-muted-foreground">Spent</dt>
@@ -146,6 +153,7 @@ async function AgentsList() {
   let profiles: PublicAgentProfile[] = [];
   let error: string | null = null;
   let proofCounts = new Map<string, number>();
+  let proofsAvailable = true;
 
   try {
     profiles = await listAgentProfiles(30);
@@ -162,9 +170,12 @@ async function AgentsList() {
      try so a missing grant on the payments table cannot hide the agents. */
   if (profiles.length > 0) {
     try {
-      proofCounts = await countVerifiedAgentProofs(profiles.map((profile) => profile.wallet));
+      const result = await countVerifiedAgentProofs(profiles.map((profile) => profile.wallet));
+      proofCounts = result.counts;
+      proofsAvailable = result.available;
     } catch (caught) {
       console.warn("[agents] proof counts unavailable", caught);
+      proofsAvailable = false;
     }
   }
 
@@ -192,7 +203,7 @@ async function AgentsList() {
           <ProfileCard
             key={profile.wallet}
             profile={profile}
-            verifiedProofs={proofCounts.get(profile.wallet.toLowerCase()) ?? 0}
+            verifiedProofs={proofsAvailable ? (proofCounts.get(profile.wallet.toLowerCase()) ?? 0) : null}
           />
         ))
       )}
@@ -262,7 +273,7 @@ export default function AgentsPage() {
 
       <section className="mx-auto grid w-full max-w-6xl gap-4 px-4 pt-8 sm:px-6 md:grid-cols-3">
         {[
-          ["Trust score", "Computed deterministically from observed activity"],
+          ["Activity score", "Observed behaviour, not cryptographic proof — an input to a decision, not authority for one"],
           ["Workflow history", "Reports, paid calls, spend, and success rate"],
           ["Arc verification", "Registry proofs linked to successful receipts"],
         ].map(([title, body]) => (

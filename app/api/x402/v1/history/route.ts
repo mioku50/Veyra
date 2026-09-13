@@ -4,6 +4,7 @@
  */
 
 import { NextResponse, type NextRequest } from "next/server";
+import { BRAND } from "@/lib/brand";
 import { readJsonBody, trustApiError, TRUST_API_HEADERS } from "@/lib/x402/trust-api/http";
 import {
   loadEndpointObservations,
@@ -74,7 +75,7 @@ export const POST = withTrustApiPayment(async (request: NextRequest) => {
       },
       changes: history.changes,
       note: history.observations === 0
-        ? "Veyra has no observations of this endpoint yet. Ask for a verdict first - that probe is free and it is what starts the record."
+        ? `${BRAND.name} has no observations of this endpoint yet. Ask for a verdict first - that probe is free and it is what starts the record.`
         : undefined,
     }, { headers: TRUST_API_HEADERS });
   } catch (error) {

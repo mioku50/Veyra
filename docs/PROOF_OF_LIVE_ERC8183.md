@@ -72,7 +72,7 @@ All eleven policy checks passed:
 ```
 
 The deliverable was fetched over HTTPS from
-`https://agent-commerce-six.vercel.app/canary-deliverable.json` and its raw body
+`https://veyras.vercel.app/canary-deliverable.json` and its raw body
 hashed to the committed `contentHash`. The evaluator never trusts the submitter's
 word about what was delivered; it re-fetches and re-hashes.
 

@@ -41,7 +41,7 @@ export function MobileBottomNav() {
               active ? "text-primary font-bold" : "text-muted-foreground hover:text-foreground",
             )}
           >
-            <div className={cn("flex size-7 items-center justify-center rounded-lg transition-all", active && "bg-primary/15 text-primary shadow-[0_0_10px_rgba(52,227,155,0.4)]")}>
+            <div className={cn("flex size-7 items-center justify-center rounded-lg transition-all", active && "bg-primary/15 text-primary shadow-[0_0_10px_rgba(123,108,255,0.4)]")}>
               <Icon className="size-4" />
             </div>
             <span>{link.label}</span>

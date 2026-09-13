@@ -7,6 +7,7 @@
 
 import Link from "next/link";
 import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
+import { BRAND } from "@/lib/brand";
 import { useArcWallet } from "@/components/wallet/use-arc-wallet";
 import { ConnectChip } from "@/components/wallet/connect-chip";
 import { buildPaymentTypedData } from "@/lib/x402/browser-payment";
@@ -59,7 +60,7 @@ export function RunClient() {
      to flip a UI state and print a CLI command, so nothing was ever bought from
      the browser. Veyra signs the verdict; the user signs the money. */
   const [payment, setPayment] = useState<{
-    stage: "quoting" | "signing" | "settling" | "done" | "failed";
+    stage: "quoting" | "signing" | "settling" | "preparing" | "prepared" | "done" | "failed";
     quotedUsdc?: number;
     paidUsdc?: number;
     payTo?: string;
@@ -82,6 +83,9 @@ export function RunClient() {
        That is catalog drift arriving at the worst possible moment, and the
        reader has to see it. */
     quoteDrift?: { advertisedUsdc: number; quotedUsdc: number } | null;
+    /* The decision-log entry this purchase or job belongs to. */
+    executionId?: string | null;
+    executionState?: string | null;
   } | null>(null);
 
   /* Veyra signs its verdicts to a wallet, so a decision needs a verified owner
@@ -246,7 +250,7 @@ export function RunClient() {
         reason: "no_eligible_counterparty",
         explanation:
           "No discovered ERC-8004 counterparty cleared the policy for this capability and budget. "
-          + "Veyra will not authorise a job it cannot justify from evidence.",
+          + `${BRAND.name} will not authorise a job it cannot justify from evidence.`,
         resource: null, payTo: null, priceUsdc: null,
         maxExposureUsdc: 0,
         postCallVerificationRequired: false,
@@ -292,6 +296,11 @@ export function RunClient() {
       reasons: winner?.reasons ?? [],
       clearance,
       expiresAt: selection.expiresAt,
+      // The persisted selection is what the ERC-8183 rail executes against.
+      // Without it the job rail had nothing to hand the execution pipeline and
+      // fell through to the x402 path, which cannot run an agent job.
+      selectionId: selection.selectionId,
+      capability,
     });
   }
 
@@ -399,7 +408,70 @@ export function RunClient() {
           }
         : null,
       expiresAt: selection.expiresAt,
+      selectionId: selection.selectionId,
+      selectionHash: selection.canonicalHash,
+      candidateId: rec.candidateId,
+      capability,
     });
+  }
+
+  /**
+   * One button, two rails, and they are not the same transaction.
+   *
+   * `onAuthorize` used to call the x402 purchase path no matter which rail the
+   * decision came from. For an agent job that meant posting an ERC-8004 service
+   * id to a route that expects an x402 endpoint URL: the button could not work,
+   * and the rail the project's strongest onchain proof belongs to was the one
+   * the product could not run.
+   */
+  async function authorize() {
+    if (rail === "job") return prepareAgentJob();
+    return payAndRun();
+  }
+
+  /**
+   * The agent-job rail, on the rail it actually settles on.
+   *
+   * Preparation is deliberately where this stops by default. Advancing an
+   * ERC-8183 job means creating it onchain and funding escrow, and the adapter
+   * that does so signs with keys Veyra holds — which is the right shape for the
+   * operator's own demo and the wrong shape for a stranger's money. So the job
+   * is prepared, recorded, and the screen says plainly who must sign next.
+   */
+  async function prepareAgentJob() {
+    if (!decision?.selectionId) {
+      setPayment({ stage: "failed", message: "This decision has no persisted selection to execute against." });
+      return;
+    }
+    setPhase("authorizing");
+    setPayment({ stage: "preparing" });
+    try {
+      const prepared = await post("/api/execution/v1/prepare", {
+        selectionId: decision.selectionId,
+        requestedAmountUsdc: decision.maxExposureUsdc,
+        mode: "PREPARE",
+        ...(wallet.address ? { executorWallet: wallet.address } : {}),
+      });
+      if (!prepared.response.ok) {
+        throw new Error(failureText(prepared.payload?.error ?? prepared.payload, prepared.response.status));
+      }
+      const attempt = prepared.payload?.execution ?? prepared.payload;
+      setPayment({
+        stage: "prepared",
+        quotedUsdc: decision.priceUsdc ?? undefined,
+        payTo: decision.payTo ?? undefined,
+        executionId: attempt?.executionId ?? null,
+        executionState: attempt?.state ?? "PREPARED",
+        message:
+          "The job is authorized and recorded on the decision log. ERC-8183 escrow is "
+          + "funded by the buyer's own wallet, so the next signature is yours — Veyra "
+          + "holds no key that can spend for you.",
+      });
+      setPhase("authorized");
+    } catch (caught: any) {
+      setPayment({ stage: "failed", message: caught?.shortMessage || caught?.message || "The job could not be prepared." });
+      setPhase("decided");
+    }
   }
 
   async function payAndRun() {
@@ -467,12 +539,20 @@ export function RunClient() {
         // than merely be announced.
         verificationRequired: decision.postCallVerificationRequired,
         declaredOutputSchema: decision.outputSchema ?? undefined,
+        // Files this purchase against the decision that authorized it, instead
+        // of leaving the decision log blank while money moves.
+        selectionId: decision.selectionId ?? undefined,
+        selectionHash: decision.selectionHash ?? undefined,
+        clearanceDigest: decision.clearance?.digest ?? undefined,
+        counterpartyAgentId: decision.candidateId ?? undefined,
+        capability: decision.capability ?? undefined,
       });
       if (!settled.response.ok) throw new Error(failureText(settled.payload?.error ?? settled.payload, settled.response.status));
       const result = settled.payload as any;
       if (result.settled === false) {
         setPayment({
           stage: "failed",
+          executionId: result.executionId ?? null,
           quotedUsdc,
           funding,
           quoteDrift,
@@ -490,6 +570,7 @@ export function RunClient() {
       }
       setPayment({
         stage: "done",
+        executionId: result.executionId ?? null,
         quotedUsdc,
         paidUsdc: result.paidUsdc,
         payTo: result.payTo,
@@ -814,7 +895,7 @@ export function RunClient() {
             <DecisionPanel
               decision={decision}
               busy={phase === "authorizing"}
-              onAuthorize={() => void payAndRun()}
+              onAuthorize={() => void authorize()}
             />
           </div>
         ) : null}
@@ -828,7 +909,11 @@ export function RunClient() {
             <div className="px-6 py-5">
               <div className="flex flex-wrap items-baseline justify-between gap-4">
                 <span className="run-eyebrow">
-                  {payment.stage === "done"
+                  {payment.stage === "preparing"
+                    ? "Preparing the job"
+                    : payment.stage === "prepared"
+                      ? "Job authorized"
+                      : payment.stage === "done"
                     ? payment.verification?.verdict === "INCONCLUSIVE" ? "Result · unverified" : "Result · verified"
                     : payment.stage === "failed"
                       ? payment.paidUsdc !== undefined ? "Paid · failed verification" : "Not purchased"
@@ -846,7 +931,8 @@ export function RunClient() {
                 ) : null}
               </div>
 
-              {payment.stage !== "done" && payment.stage !== "failed" ? (
+              {payment.stage !== "done" && payment.stage !== "failed"
+                && payment.stage !== "preparing" && payment.stage !== "prepared" ? (
                 <ol className="mt-4 flex flex-wrap items-center gap-x-2 gap-y-1">
                   {(["quoting", "signing", "settling"] as const).map((step, i) => {
                     const order = { quoting: 0, signing: 1, settling: 2 } as const;
@@ -907,6 +993,19 @@ export function RunClient() {
 
               {payment.message ? (
                 <p className="mt-3.5 text-[13px] leading-relaxed text-[var(--run-text)]">{payment.message}</p>
+              ) : null}
+
+              {payment.executionId ? (
+                <p className="run-num mt-3 text-[11.5px] text-[var(--run-text-faint)]">
+                  recorded as{" "}
+                  <Link
+                    href="/executions"
+                    className="run-focus text-[var(--run-azure)] hover:underline"
+                  >
+                    {payment.executionId}
+                  </Link>
+                  {payment.executionState ? ` · ${payment.executionState}` : null}
+                </p>
               ) : null}
 
               {payment.transaction ? (

@@ -40,7 +40,7 @@ After applying migrations, configure the production scheduler once:
 ```bash
 npx vercel env run -e production -- \
   npm run webhooks:production-configure -- \
-  --confirm-production https://agent-commerce-six.vercel.app
+  --confirm-production https://veyras.vercel.app
 ```
 
 The worker claims at most 25 due deliveries atomically. Retry timestamps remain
