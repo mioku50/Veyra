@@ -30,6 +30,11 @@ export const X402_VERSION = 2;
 export const PAYMENT_SIGNATURE_HEADER = "PAYMENT-SIGNATURE";
 export const PAYMENT_SIGNATURE_HEADER_V1 = "X-PAYMENT";
 
+/** Circle's batched scheme announces itself through the EIP-712 domain name. */
+export const CIRCLE_BATCHING_DOMAIN_NAME = "GatewayWalletBatched";
+const VANILLA_MAX_TIMEOUT_SECONDS = 3_600;
+const GATEWAY_MAX_TIMEOUT_SECONDS = 604_900;
+
 export type X402Accept = {
   scheme: string;
   network: string;
@@ -38,9 +43,19 @@ export type X402Accept = {
   asset: `0x${string}`;
   payTo: `0x${string}`;
   maxTimeoutSeconds: number;
-  /** EIP-712 domain of the asset, which EIP-3009 signing requires. */
+  /** EIP-712 domain name and version the signature is separated by. For a
+   *  vanilla EIP-3009 accept these are the token's; for a Circle Gateway
+   *  batched accept they are the Gateway wallet's. They are NOT the asset's
+   *  identity — `asset` is. */
   assetName: string;
   assetVersion: string;
+  /** The contract the EIP-712 domain binds to. Circle's batched scheme signs
+   *  against the GatewayWallet, not the token, so this is read from
+   *  `extra.verifyingContract` and only falls back to the asset. */
+  verifyingContract: `0x${string}`;
+  /** Circle Gateway batches settlement and legitimately needs a week-long
+   *  authorization window, which a vanilla accept never does. */
+  gatewayBatched: boolean;
   chainId: number;
   /* The accept exactly as the seller published it. A v2 payload echoes it back
      under `accepted`, and the seller compares it to what it offered, so a
@@ -136,7 +151,22 @@ export function selectPayableAccept(
     // accept that omits them is not payable rather than payable-and-broken.
     if (!assetName || !assetVersion) continue;
 
+    const gatewayBatched = assetName === CIRCLE_BATCHING_DOMAIN_NAME
+      || /gateway/i.test(String(accept.scheme ?? ""));
+    const verifyingContract = isHexAddress(extra?.verifyingContract)
+      ? extra.verifyingContract
+      : accept.asset;
+    // A batched accept that does not name its GatewayWallet cannot be signed
+    // for: guessing the domain produces a signature the facilitator rejects.
+    if (gatewayBatched && verifyingContract === accept.asset) continue;
+
     const timeout = Number(accept.maxTimeoutSeconds);
+    // The ceiling stops a hostile seller from demanding a year-long standing
+    // authorization. Batching needs a week, so it gets a week — and nothing an
+    // agent could not revoke by spending the nonce.
+    const ceiling = gatewayBatched
+      ? GATEWAY_MAX_TIMEOUT_SECONDS
+      : VANILLA_MAX_TIMEOUT_SECONDS;
     payable.push({
       raw: accept,
       scheme: "exact",
@@ -144,9 +174,11 @@ export function selectPayableAccept(
       amountAtomic,
       asset: accept.asset,
       payTo: accept.payTo,
-      maxTimeoutSeconds: Number.isFinite(timeout) && timeout > 0 ? Math.min(timeout, 3_600) : 60,
+      maxTimeoutSeconds: Number.isFinite(timeout) && timeout > 0 ? Math.min(timeout, ceiling) : 60,
       assetName,
       assetVersion,
+      verifyingContract,
+      gatewayBatched,
       chainId,
     });
   }
@@ -210,7 +242,7 @@ export function buildPaymentTypedData(input: {
         name: input.accept.assetName,
         version: input.accept.assetVersion,
         chainId: input.accept.chainId,
-        verifyingContract: input.accept.asset,
+        verifyingContract: input.accept.verifyingContract,
       },
       types: TRANSFER_WITH_AUTHORIZATION_TYPES,
       primaryType: "TransferWithAuthorization" as const,

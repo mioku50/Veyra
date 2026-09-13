@@ -8,6 +8,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { authenticateSelectionRequest } from "@/lib/counterparty-selection/auth";
 import { fetchWithSsrfProtection, SSRFProtectionError } from "@/lib/seller/ssrf";
 import { decodePaymentRequiredHeader } from "@/lib/providers/x402-probe";
+import { isUsdcAsset } from "@/lib/x402/usdc-assets";
 import {
   challengeResource,
   selectPayableAccept,
@@ -35,7 +36,9 @@ export const dynamic = "force-dynamic";
  *  a life-changing number to a wallet. */
 const ABSOLUTE_MAX_USDC = 5;
 
-const USDC_ASSET_NAMES = new Set(["usd coin", "usdc", "usdcoin"]);
+/* Asset identity is the contract address, never the EIP-712 domain name: a
+   Circle Gateway accept is domain-separated by "GatewayWalletBatched" while
+   paying in ordinary USDC. See lib/x402/usdc-assets.ts. */
 
 function badRequest(code: string, message: string, status = 400) {
   return NextResponse.json({ error: { code, message } }, { status });
@@ -113,10 +116,10 @@ export async function POST(request: NextRequest) {
     throw error;
   }
 
-  if (!USDC_ASSET_NAMES.has(accept.assetName.trim().toLowerCase())) {
+  if (!isUsdcAsset(accept.chainId, accept.asset)) {
     return badRequest(
       "asset_not_usdc",
-      `This endpoint prices in ${accept.assetName}, which Veyra does not quote.`,
+      `This endpoint prices in ${accept.asset} on chain ${accept.chainId}, which is not the USDC contract Veyra quotes.`,
       422,
     );
   }

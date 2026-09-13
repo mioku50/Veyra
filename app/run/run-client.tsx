@@ -66,6 +66,10 @@ export function RunClient() {
     transaction?: string | null;
     result?: unknown;
     message?: string;
+    /* Where the money actually leaves from. Circle's batched scheme debits a
+       Gateway deposit, not the wallet balance, so a user holding USDC can still
+       be refused — and needs to be told where to put it. */
+    funding?: "wallet" | "gateway_deposit";
   } | null>(null);
 
   /* Veyra signs its verdicts to a wallet, so a decision needs a verified owner
@@ -420,7 +424,8 @@ export function RunClient() {
 
       // 3. Sign. The wallet shows the same recipient and amount as the panel,
       //    and the signature is what caps the spend — not this page.
-      setPayment({ stage: "signing", quotedUsdc, payTo: accept.payTo });
+      const funding: "wallet" | "gateway_deposit" = accept.gatewayBatched ? "gateway_deposit" : "wallet";
+      setPayment({ stage: "signing", quotedUsdc, payTo: accept.payTo, funding });
       const { authorization, typedData } = buildPaymentTypedData({
         accept,
         from: wallet.address as `0x${string}`,
@@ -430,7 +435,7 @@ export function RunClient() {
 
       // 4. Relay. Veyra carries the signed authorization to the seller and
       //    returns what came back.
-      setPayment({ stage: "settling", quotedUsdc, payTo: accept.payTo });
+      setPayment({ stage: "settling", quotedUsdc, payTo: accept.payTo, funding });
       const settled = await post("/api/run/v1/settle", {
         resource: decision.resource,
         method: "POST",
@@ -443,7 +448,12 @@ export function RunClient() {
       if (!settled.response.ok) throw new Error(failureText(settled.payload?.error ?? settled.payload, settled.response.status));
       const result = settled.payload as any;
       if (result.settled === false) {
-        setPayment({ stage: "failed", quotedUsdc, message: result.message || "The endpoint rejected the payment." });
+        setPayment({
+          stage: "failed",
+          quotedUsdc,
+          funding,
+          message: result.message || "The endpoint rejected the payment.",
+        });
         setPhase("decided");
         return;
       }
@@ -454,6 +464,7 @@ export function RunClient() {
         payTo: result.payTo,
         transaction: result.transaction ?? null,
         result: result.result ?? result.body,
+        funding,
       });
       setPhase("authorized");
     } catch (caught: any) {
@@ -828,6 +839,21 @@ export function RunClient() {
                 <p className="mt-3.5 max-w-[62ch] text-[12px] leading-relaxed text-[var(--run-text-muted)]">
                   Your wallet is showing the exact recipient and amount above. That
                   signature is the ceiling — Veyra relays it and cannot change it.
+                </p>
+              ) : null}
+
+              {/* Two rails that look identical in the wallet and are not. A
+                  vanilla accept moves USDC out of the balance the wallet shows;
+                  Circle's batched accept debits a Gateway deposit, so someone
+                  holding plenty of USDC can still be refused for an empty
+                  deposit — with no way to guess that from the error. */}
+              {payment.funding === "gateway_deposit"
+                && payment.stage !== "done" ? (
+                <p className="mt-3.5 max-w-[62ch] text-[12px] leading-relaxed text-[var(--run-text-faint)]">
+                  This endpoint settles through Circle Gateway, which spends a
+                  Gateway deposit rather than your wallet balance. Holding USDC is
+                  not enough — it has to be deposited to the Gateway wallet on
+                  this chain first.
                 </p>
               ) : null}
 

@@ -16,7 +16,9 @@ import {
   X402PaymentError,
   X402_VERSION,
   PAYMENT_SIGNATURE_HEADER,
+  CIRCLE_BATCHING_DOMAIN_NAME,
 } from "../lib/x402/browser-payment.ts";
+import { isUsdcAsset, usdcAddressForChain } from "../lib/x402/usdc-assets.ts";
 
 /* A challenge in the shape the live catalog actually returns. Captured from
    api.exa.ai, which offers Base and Solana for the same call. */
@@ -162,4 +164,84 @@ assert.deepEqual(
 assert.equal(decodePaymentResponse("not base64 json"), null);
 assert.equal(decodePaymentResponse(null), null);
 
-console.log("[x402-browser-payment-test] passed: live challenge shape, rail selection, ceiling refusal, EIP-3009 domain recovery, header encoding, settlement decoding");
+
+
+/* Circle Gateway batched accept, captured live from np.orthogonal.com/serper/search.
+   This is the shape that produced `asset_not_usdc` in production: the accept
+   pays in ordinary Base USDC, but its EIP-712 domain is named after the Gateway
+   wallet, and the quote route was reading that name as the asset's identity. */
+const GATEWAY_CHALLENGE = {
+  x402Version: 2,
+  resource: {
+    url: "https://np.orthogonal.com/serper/search",
+    description: "Serper search",
+    mimeType: "application/json",
+  },
+  accepts: [
+    {
+      scheme: "exact",
+      network: "eip155:8453",
+      amount: "2000",
+      payTo: "0x6d6E695b09861467c7d462f5AAF31cF3540B9192",
+      maxTimeoutSeconds: 604_900,
+      asset: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+      extra: {
+        name: "GatewayWalletBatched",
+        version: "1",
+        verifyingContract: "0x77777777dcc4d5a8b6e418fd04d8997ef11000ee",
+      },
+    },
+  ],
+};
+
+const batched = selectPayableAccept(GATEWAY_CHALLENGE, { maxAtomic: 5_000_000n });
+assert.equal(batched.gatewayBatched, true);
+assert.equal(batched.assetName, CIRCLE_BATCHING_DOMAIN_NAME);
+// The asset is USDC even though the domain is not named after it. Identity is
+// the contract address; the domain name is only a signing detail.
+assert.equal(batched.asset.toLowerCase(), usdcAddressForChain(8453));
+assert.equal(isUsdcAsset(8453, batched.asset), true);
+assert.equal(isUsdcAsset(8453, "0xd9aAEc86B65D86f6A7B5B1b0c42FFA531710b6CA"), false, "bridged USDbC is not USDC");
+assert.equal(isUsdcAsset(1, batched.asset), false, "Base USDC is not Ethereum USDC");
+
+// Batching settles on a schedule, so its week-long window must survive intact.
+// Clamping it to the vanilla one-hour ceiling would produce an authorization
+// the facilitator refuses as too short.
+assert.equal(batched.maxTimeoutSeconds, 604_900);
+
+const batchedSigned = buildPaymentTypedData({
+  accept: batched,
+  from: account.address,
+  nonce,
+  now,
+});
+// The domain binds to Circle's GatewayWallet, NOT to the token contract.
+assert.deepEqual(batchedSigned.typedData.domain, {
+  name: "GatewayWalletBatched",
+  version: "1",
+  chainId: 8453,
+  verifyingContract: "0x77777777dcc4d5a8b6e418fd04d8997ef11000ee",
+});
+assert.notEqual(
+  batchedSigned.typedData.domain.verifyingContract.toLowerCase(),
+  batched.asset.toLowerCase(),
+);
+const batchedSignature = await account.signTypedData(batchedSigned.typedData);
+assert.equal(
+  (await recoverTypedDataAddress({ ...batchedSigned.typedData, signature: batchedSignature })).toLowerCase(),
+  account.address.toLowerCase(),
+  "a batched authorization must recover to its signer under the Gateway domain",
+);
+
+// A batched accept that does not publish its GatewayWallet cannot be signed for.
+assert.throws(
+  () => selectPayableAccept({
+    accepts: [{
+      ...GATEWAY_CHALLENGE.accepts[0],
+      extra: { name: "GatewayWalletBatched", version: "1" },
+    }],
+  }, { maxAtomic: 5_000_000n }),
+  (error: unknown) => error instanceof X402PaymentError && error.code === "no_payable_accept",
+);
+
+console.log("[x402-browser-payment-test] passed: live challenge shape, rail selection, ceiling refusal, EIP-3009 domain recovery, header encoding, settlement decoding, Circle Gateway batched domain + USDC asset identity");

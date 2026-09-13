@@ -44,6 +44,10 @@ function asAccept(value: unknown): X402Accept | null {
   if (typeof accept.asset !== "string" || !isAddress(accept.asset)) return null;
   if (typeof accept.payTo !== "string" || !isAddress(accept.payTo)) return null;
   if (typeof accept.assetName !== "string" || typeof accept.assetVersion !== "string") return null;
+  // The contract the signature is domain-separated by. It is the token for a
+  // vanilla accept and Circle's GatewayWallet for a batched one, so it is
+  // checked as an address rather than compared to `asset`.
+  if (typeof accept.verifyingContract !== "string" || !isAddress(accept.verifyingContract)) return null;
   // The seller compares `accepted` against what it published, so the original
   // object has to survive the round trip through the browser intact.
   if (!accept.raw || typeof accept.raw !== "object" || Array.isArray(accept.raw)) return null;

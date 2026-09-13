@@ -110,9 +110,12 @@ export function CandidateCard({ candidate, selected, index, onSelect }: {
           <div>
             <div className="mb-1.5 flex items-baseline justify-between">
               <span className="run-eyebrow">Evidence</span>
-              <span className="run-num text-[13px]">{Math.round(candidate.evidenceCoverage * 100)}%</span>
+              {/* Already a percentage: the ranking engine rounds coverage to
+                  0-100 before it leaves the server. Scaling it again here is
+                  what printed "3300%". */}
+              <span className="run-num text-[13px]">{Math.round(candidate.evidenceCoverage)}%</span>
             </div>
-            <Meter score={candidate.evidenceCoverage * 100} />
+            <Meter score={candidate.evidenceCoverage} />
           </div>
           <div
             className="rounded-full border px-2.5 py-1 text-[11px] font-medium"
