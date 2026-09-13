@@ -206,17 +206,29 @@ export function verifyPostCall(input: {
   const unrunCritical = checks.filter((check) => check.severity === "critical" && check.passed === null);
   const failedMajor = checks.filter((check) => check.severity === "major" && check.passed === false);
 
+  /* Whether money moved is its own question, and the summary must not answer it
+     by assumption. A seller that returns no settlement receipt has told us
+     nothing about the charge; saying "Paid, but..." there is the one sentence a
+     reader most needs to be true, and it was being written without evidence. */
+  const settlementKnown = settled === true;
+  const chargeUnknown = settled === undefined;
+  const opening = settlementKnown ? "Paid" : chargeUnknown ? "Possibly charged" : "Not paid";
+
   let verdict: PostCallVerdict;
   let summary: string;
   if (failedCritical.length > 0) {
     verdict = "FAIL";
-    summary = `Paid, but the delivery failed verification: ${failedCritical.map((c) => c.id).join(", ")}.`;
+    summary = chargeUnknown
+      ? `The delivery failed verification (${failedCritical.map((c) => c.id).join(", ")}), and the endpoint returned no settlement receipt — so whether it charged cannot be confirmed from its response.`
+      : `${opening}, but the delivery failed verification: ${failedCritical.map((c) => c.id).join(", ")}.`;
   } else if (failedMajor.length > 0) {
     verdict = "FAIL";
-    summary = `Paid and answered, but the response did not hold up: ${failedMajor.map((c) => c.id).join(", ")}.`;
+    summary = `${opening} and answered, but the response did not hold up: ${failedMajor.map((c) => c.id).join(", ")}.`;
   } else if (unrunCritical.length > 0) {
     verdict = "INCONCLUSIVE";
-    summary = "Paid and answered, but Veyra could not confirm every required check from what the endpoint returned.";
+    summary = chargeUnknown
+      ? "The endpoint answered, but returned no settlement receipt, so Veyra cannot confirm whether it charged."
+      : `${opening} and answered, but Veyra could not confirm every required check from what the endpoint returned.`;
   } else {
     verdict = "PASS";
     summary = "Paid, delivered, and verified against everything this endpoint can be held to.";

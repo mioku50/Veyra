@@ -25,7 +25,7 @@ const setupSteps = [
   "Open the project repository and clone it locally.",
   "Install dependencies with npm install.",
   "Create .env.local from .env.example.",
-  "Set BASE_URL=https://veyras.vercel.app for the production demo.",
+  "Set BASE_URL=https://agent-commerce-six.vercel.app for the production demo.",
   "Set or generate AGENT_PRIVATE_KEY locally only.",
   "Fund the buyer-agent wallet on Arc Testnet from /agent-launch.",
   "Run the generated npm command from the repository root.",

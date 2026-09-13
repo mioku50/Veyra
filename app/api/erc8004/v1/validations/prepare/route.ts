@@ -95,7 +95,7 @@ export async function POST(request: Request) {
       evaluation,
       requestHash: requestHash as Hex,
       agentId: onchain.agentId.toString(),
-      baseUrl: process.env.NEXT_PUBLIC_APP_URL || "https://veyras.vercel.app",
+      baseUrl: process.env.NEXT_PUBLIC_APP_URL || "https://agent-commerce-six.vercel.app",
     });
 
     const row = {

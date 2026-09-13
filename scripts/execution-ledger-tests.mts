@@ -57,14 +57,25 @@ assert.equal(
   "SETTLEMENT_FAILED",
 );
 
-// No receipt at all: Veyra will not claim the money moved, and will not claim it
-// did not. Non-terminal on purpose - the reconcile route resolves it from Arc.
+/* No receipt at all: Veyra will not claim the money moved, and will not claim it
+   did not. This holds even when the endpoint then answered with an error - a
+   live purchase returned HTTP 400 with no receipt, and recording that as FAILED
+   would have asserted the wallet was untouched, which nobody could see. Once the
+   PAYMENT-SIGNATURE header leaves, the authorization nonce may already be spent.
+   Non-terminal on purpose: the reconcile route resolves it against Arc. */
 assert.deepEqual(
   terminalStateFor({ settlementSuccess: null, httpOk: true, verification: verification("INCONCLUSIVE") }),
   { state: "SETTLEMENT_UNVERIFIED", failureCode: null },
 );
 assert.equal(
-  terminalStateFor({ settlementSuccess: null, httpOk: false, verification: null }).state,
+  terminalStateFor({ settlementSuccess: null, httpOk: false, verification: verification("FAIL", "response_delivered") }).state,
+  "SETTLEMENT_UNVERIFIED",
+  "an error answer with no receipt still leaves the charge unknown",
+);
+
+// Only a relay that never left asserts nothing was spent.
+assert.equal(
+  terminalStateFor({ relayFailed: true, settlementSuccess: null, httpOk: false, verification: null }).state,
   "FAILED",
 );
 

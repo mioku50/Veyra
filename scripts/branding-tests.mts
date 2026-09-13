@@ -154,7 +154,7 @@ assert.equal(openApi.info?.title, BRAND.agentApi);
 assert(openApi.info?.description?.includes("verified workflows"));
 assert(openApi.info?.description?.includes("reputation"));
 assert.equal(openApi.info?.version, "0.1.0-beta.2");
-assert.equal(openApi.servers?.[0]?.url, "https://veyras.vercel.app");
+assert.equal(openApi.servers?.[0]?.url, "https://agent-commerce-six.vercel.app");
 for (const path of [
   "/api/agent/v1/workflows",
   "/api/agent/v1/project-360/discoveries",

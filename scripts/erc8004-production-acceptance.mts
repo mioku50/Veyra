@@ -35,7 +35,7 @@ import type { Erc8183EvaluationRecord } from "../lib/erc8183/types.ts";
 import type { Erc8004ValidationLinkRecord } from "../lib/erc8004/types.ts";
 
 const RPC_URL = process.env.ARC_TESTNET_RPC_URL || "https://rpc.testnet.arc.network";
-const BASE_URL = (process.env.NEXT_PUBLIC_APP_URL || "https://veyras.vercel.app").replace(/\/$/, "");
+const BASE_URL = (process.env.NEXT_PUBLIC_APP_URL || "https://agent-commerce-six.vercel.app").replace(/\/$/, "");
 const ZERO_HASH = `0x${"0".repeat(64)}`;
 
 function requirePrivateKey(value: string | undefined, label: string): Hex {

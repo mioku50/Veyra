@@ -5,7 +5,7 @@ import {
 } from "../../sdk/typescript/src/index.ts";
 
 const baseUrl =
-  process.env.VEYRA_API_BASE_URL ?? "https://veyras.vercel.app";
+  process.env.VEYRA_API_BASE_URL ?? "https://agent-commerce-six.vercel.app";
 const credential = process.env.VEYRA_AGENT_API_KEY;
 if (!credential) throw new Error("Set VEYRA_AGENT_API_KEY.");
 

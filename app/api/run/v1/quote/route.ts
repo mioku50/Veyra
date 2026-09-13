@@ -9,6 +9,7 @@ import { authenticateSelectionRequest } from "@/lib/counterparty-selection/auth"
 import { fetchWithSsrfProtection, SSRFProtectionError } from "@/lib/seller/ssrf";
 import { decodePaymentRequiredHeader } from "@/lib/providers/x402-probe";
 import { isUsdcAsset } from "@/lib/x402/usdc-assets";
+import { checkRequestBody } from "@/lib/x402/request-body";
 import {
   challengeResource,
   selectPayableAccept,
@@ -73,6 +74,23 @@ export async function POST(request: NextRequest) {
      endpoint as unpayable. */
 
   const requestBody = body.requestBody === undefined ? {} : body.requestBody;
+
+  /* Refuse to quote a request the provider's own schema calls invalid. x402
+     charges for the call, not for a useful answer, so a malformed body is money
+     spent on a rejection — and that is not a theoretical risk, it happened. */
+  const bodyCheck = checkRequestBody(
+    requestBody,
+    body.inputSchema && typeof body.inputSchema === "object" && !Array.isArray(body.inputSchema)
+      ? body.inputSchema as Record<string, unknown>
+      : null,
+  );
+  if (!bodyCheck.ok) {
+    return badRequest(
+      "request_body_invalid",
+      `The provider's published schema rejects this request at ${bodyCheck.path}: ${bodyCheck.message}. Nothing was quoted and nothing was spent.`,
+      422,
+    );
+  }
 
   let response: Response;
   try {

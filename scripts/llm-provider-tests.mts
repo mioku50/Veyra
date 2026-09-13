@@ -62,7 +62,7 @@ const success = await generateOpenAiCompatibleText({
 assert.equal(success.ok, true);
 assert.equal(capturedUrl, "https://openrouter.ai/api/v1/chat/completions");
 assert.equal(capturedAuthorization, `Bearer ${config.apiKey}`);
-assert.equal(capturedReferer, "https://veyras.vercel.app");
+assert.equal(capturedReferer, "https://agent-commerce-six.vercel.app");
 assert.equal(capturedTitle, "Veyra");
 assert.equal((JSON.parse(capturedBody) as { reasoning_effort?: unknown }).reasoning_effort, undefined);
 assert(!capturedBody.includes(config.apiKey), "LLM API key leaked into the request body.");

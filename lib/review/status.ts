@@ -102,7 +102,7 @@ export function getDefaultProductionUrl() {
     process.env.NEXT_PUBLIC_APP_URL ??
     (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : null);
 
-  return (publicUrl ?? "https://veyras.vercel.app").replace(/\/$/, "");
+  return (publicUrl ?? "https://agent-commerce-six.vercel.app").replace(/\/$/, "");
 }
 
 function isInsufficientBalanceRun(run: PublicAgentRun) {

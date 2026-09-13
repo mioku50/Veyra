@@ -241,7 +241,7 @@ export async function generateOpenAiCompatibleText(input: {
         headers: {
           "content-type": "application/json",
           authorization: `Bearer ${config.apiKey}`,
-          "HTTP-Referer": "https://veyras.vercel.app",
+          "HTTP-Referer": "https://agent-commerce-six.vercel.app",
           "X-Title": BRAND.name,
           ...(config.userAgent ? { "User-Agent": config.userAgent } : {}),
         },

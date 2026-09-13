@@ -15,7 +15,7 @@ export const dynamic = "force-dynamic";
 export const revalidate = 60;
 
 export async function GET() {
-  const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "https://veyras.vercel.app";
+  const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "https://agent-commerce-six.vercel.app";
   const publicClient = getArcPublicClient();
   const identityRecord = await getCanonicalVeyraAgentIdentity(publicClient);
   if (!identityRecord) {

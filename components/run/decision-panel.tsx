@@ -30,6 +30,7 @@ export type RunDecision = {
   expiresAt?: string;
   /** The winner's published response shape, when it publishes one. Carried so
    *  the post-call check can hold the response to the provider's own promise. */
+  inputSchema?: Record<string, unknown> | null;
   outputSchema?: Record<string, unknown> | null;
   /** Identity of the selection this decision came from. The agent-job rail
    *  executes against it; the API rail files it with the decision log. */

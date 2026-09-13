@@ -16,7 +16,7 @@ async function runTestVectors() {
     chainId: 5042002,
     identityRegistry: "0x8004A818BFB912233c491871b3d84c89A494BD9e",
     owner: "0x1111111111111111111111111111111111111111",
-    metadataUri: "https://veyras.vercel.app/.well-known/veyra-agent.json",
+    metadataUri: "https://agent-commerce-six.vercel.app/.well-known/veyra-agent.json",
     verifiedOnchain: true,
   };
 

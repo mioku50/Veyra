@@ -11,7 +11,7 @@ import { privateKeyToAccount } from "viem/accounts";
 import { ARC_TESTNET_RPC_URL, arcTestnetChain } from "../lib/wallet/arc.ts";
 
 const CONFIRMATION = "--confirm-production";
-const CANONICAL_HOST = "veyras.vercel.app";
+const CANONICAL_HOST = "agent-commerce-six.vercel.app";
 
 type Json = Record<string, any>;
 

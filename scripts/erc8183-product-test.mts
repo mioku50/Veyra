@@ -13,7 +13,7 @@ process.env.BYOA_MANAGEMENT_SESSION_SECRET =
 process.env.BYOA_CREDENTIAL_PEPPER =
   process.env.BYOA_CREDENTIAL_PEPPER || "1234567890123456789012345678901234567890";
 process.env.NEXT_PUBLIC_APP_URL =
-  process.env.NEXT_PUBLIC_APP_URL || "https://veyras.vercel.app";
+  process.env.NEXT_PUBLIC_APP_URL || "https://agent-commerce-six.vercel.app";
 
 async function main() {
   console.log("⚡ Running ERC-8183 Productization Verification Tests...\n");
@@ -30,7 +30,7 @@ async function main() {
 
   // 2. Verify Manifest Capability Integration
   const { byoaManifest } = await import("../lib/byoa/service.ts");
-  const manifest = byoaManifest("https://veyras.vercel.app");
+  const manifest = byoaManifest("https://agent-commerce-six.vercel.app");
   assert.ok(manifest.erc8183Evaluation, "byoaManifest must export erc8183Evaluation capability");
   assert.equal(manifest.erc8183Evaluation.capability, "erc8183_evaluation");
   assert.equal(manifest.erc8183Evaluation.standard, "ERC-8183");

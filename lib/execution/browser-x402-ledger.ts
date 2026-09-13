@@ -170,10 +170,13 @@ export function terminalStateFor(input: BrowserX402Outcome): {
     return { state: "SETTLEMENT_FAILED", failureCode: "payment_rejected_by_seller" };
   }
   if (input.settlementSuccess === null) {
-    // No receipt. The money may well have moved; Veyra will not claim either way.
-    return input.httpOk
-      ? { state: "SETTLEMENT_UNVERIFIED", failureCode: null }
-      : { state: "FAILED", failureCode: "no_settlement_and_no_result" };
+    /* No receipt. Once the PAYMENT-SIGNATURE header leaves this server the
+       authorization nonce may already have been consumed, and that is true
+       whether or not the seller then answered with an error. Recording FAILED
+       would assert no money moved, which Veyra cannot see. SETTLEMENT_UNVERIFIED
+       is not terminal: the reconciliation route resolves it against Arc from the
+       nonce and signature stored with the attempt. */
+    return { state: "SETTLEMENT_UNVERIFIED", failureCode: null };
   }
   if (!input.httpOk) {
     return { state: "SETTLED_SERVICE_FAILED", failureCode: "endpoint_error_after_payment" };

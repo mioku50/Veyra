@@ -12,14 +12,14 @@ process.env.BYOA_MANAGEMENT_SESSION_SECRET =
 process.env.BYOA_CREDENTIAL_PEPPER =
   process.env.BYOA_CREDENTIAL_PEPPER || "1234567890123456789012345678901234567890";
 process.env.NEXT_PUBLIC_APP_URL =
-  process.env.NEXT_PUBLIC_APP_URL || "https://veyras.vercel.app";
+  process.env.NEXT_PUBLIC_APP_URL || "https://agent-commerce-six.vercel.app";
 
 async function main() {
   console.log("⚡ Running ERC-8004 Productization Verification Tests...\n");
 
   // 1. Verify Manifest Export of ERC-8004 Standards & Identity
   const { byoaManifest } = await import("../lib/byoa/service.ts");
-  const manifest = byoaManifest("https://veyras.vercel.app");
+  const manifest = byoaManifest("https://agent-commerce-six.vercel.app");
   assert.ok(manifest.standards, "byoaManifest must include standards object");
   assert.ok(manifest.standards.erc8004, "byoaManifest must support erc8004 standard");
   assert.equal(manifest.standards.erc8004.supported, true);

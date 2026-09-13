@@ -11,6 +11,7 @@ import { BRAND } from "@/lib/brand";
 import { useArcWallet } from "@/components/wallet/use-arc-wallet";
 import { ConnectChip } from "@/components/wallet/connect-chip";
 import { buildPaymentTypedData } from "@/lib/x402/browser-payment";
+import { buildRequestBody } from "@/lib/x402/request-body";
 import { CandidateCard, type RunCandidate } from "@/components/run/candidate-card";
 import { DecisionPanel, type RunDecision } from "@/components/run/decision-panel";
 import { Eyebrow, Money, Panel } from "@/components/run/primitives";
@@ -66,6 +67,12 @@ export function RunClient() {
   const [decision, setDecision] = useState<RunDecision | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [stats, setStats] = useState<{ catalogTotal: number; discovered: number; probed: number } | null>(null);
+
+  /* The exact bytes that will be posted to the seller, shown before the wallet
+     opens and editable, because for a provider that publishes no input schema
+     the only party who can know the right shape is the person reading. */
+  const [requestBodyText, setRequestBodyText] = useState("");
+  const [bodyTouched, setBodyTouched] = useState(false);
 
   /* The purchase itself, paid from the visitor's own wallet. `onAuthorize` used
      to flip a UI state and print a CLI command, so nothing was ever bought from
@@ -162,6 +169,21 @@ export function RunClient() {
       setVerifying(false);
     }
   }
+
+  const bodyPlan = useMemo(
+    () => buildRequestBody({
+      intent,
+      capability,
+      inputSchema: (decision?.inputSchema ?? null) as Record<string, unknown> | null,
+    }),
+    [intent, capability, decision?.inputSchema],
+  );
+
+  // Follows the plan until the reader edits it, then stays out of their way.
+  useEffect(() => {
+    if (bodyTouched) return;
+    setRequestBodyText(JSON.stringify(bodyPlan.body, null, 2));
+  }, [bodyPlan, bodyTouched]);
 
   const busy = phase === "discovering" || phase === "verifying" || phase === "authorizing";
   const step = PHASE_STEP[phase];
@@ -433,6 +455,9 @@ export function RunClient() {
       priceUsdc: rec.priceUsdc,
       maxExposureUsdc: rec.maxExposureUsdc,
       postCallVerificationRequired: rec.postCallVerificationRequired,
+      inputSchema: (selection.candidates ?? []).find(
+        (c: any) => c.marketplace?.candidateId === rec.candidateId,
+      )?.marketplace?.inputSchema ?? null,
       outputSchema: (selection.candidates ?? []).find(
         (c: any) => c.marketplace?.candidateId === rec.candidateId,
       )?.marketplace?.outputSchema ?? null,
@@ -597,15 +622,26 @@ export function RunClient() {
     try {
       if (!wallet.address) throw new Error("Connect a wallet before paying.");
 
-      // 1. Quote. x402 prices per call, so the challenge is raised by the same
-      //    body that will be sent — a different body is a different price.
-      const requestBody = { query: intent || capability.replace(/_/g, " ") };
+      /* 1. Quote. x402 prices per call, so the challenge is raised by the same
+            body that will be sent — a different body is a different price.
+            The body is whatever the reader approved above, not a guess made
+            here: posting an invented shape is what turned a live purchase into
+            a paid HTTP 400. */
+      let requestBody: unknown;
+      try {
+        requestBody = JSON.parse(requestBodyText);
+      } catch {
+        throw new Error("The request body is not valid JSON. Fix it before paying.");
+      }
       const quoted = await post("/api/run/v1/quote", {
         resource: decision.resource,
         method: "POST",
         requestBody,
         maxAmountUsdc: decision.maxExposureUsdc,
         chainId: wallet.chainId,
+        // Sent so the server can refuse the quote outright when the provider's
+        // own schema rejects the body, rather than letting it be paid for.
+        inputSchema: decision.inputSchema ?? undefined,
       });
       if (!quoted.response.ok) throw new Error(failureText(quoted.payload?.error ?? quoted.payload, quoted.response.status));
       if (quoted.payload?.paymentRequired === false) {
@@ -1013,6 +1049,51 @@ export function RunClient() {
               busy={phase === "authorizing"}
               onAuthorize={() => void authorize()}
             />
+
+            {/* Shown before the wallet opens, never after. x402 prices per call
+                and the seller charges for what it received, so a request the
+                provider rejects still costs the call — which is exactly how a
+                live purchase became a paid HTTP 400. */}
+            {rail === "api" && decision.granted ? (
+              <section className="run-panel mt-3 overflow-hidden">
+                <div className="flex flex-wrap items-center justify-between gap-3 px-5 pt-4">
+                  <span className="run-eyebrow">Request sent to the provider</span>
+                  {bodyPlan.guessed ? (
+                    <span className="text-[11px] font-medium text-[var(--run-amber)]">
+                      Shape not published — guessed
+                    </span>
+                  ) : (
+                    <span className="text-[11px] text-[var(--run-azure)]">
+                      Built from the provider&apos;s published schema
+                    </span>
+                  )}
+                </div>
+                <div className="px-5 pb-4 pt-3">
+                  <textarea
+                    value={requestBodyText}
+                    onChange={(event) => { setBodyTouched(true); setRequestBodyText(event.target.value); }}
+                    spellCheck={false}
+                    rows={Math.min(10, Math.max(3, requestBodyText.split("\n").length))}
+                    aria-label="Request body sent to the provider"
+                    className="run-field run-num w-full resize-y rounded-[var(--run-radius-sm)] p-3 text-[12px] leading-relaxed"
+                  />
+                  {bodyPlan.note ? (
+                    <p className="mt-2.5 max-w-[68ch] text-[11.5px] leading-relaxed text-[var(--run-text-muted)]">
+                      {bodyPlan.note}
+                    </p>
+                  ) : null}
+                  {bodyTouched ? (
+                    <button
+                      type="button"
+                      onClick={() => setBodyTouched(false)}
+                      className="run-focus mt-2.5 text-[11.5px] text-[var(--run-text-faint)] underline-offset-4 hover:underline"
+                    >
+                      Reset to what Veyra proposed
+                    </button>
+                  ) : null}
+                </div>
+              </section>
+            ) : null}
           </div>
         ) : null}
 

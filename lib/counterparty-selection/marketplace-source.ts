@@ -92,6 +92,10 @@ export type MarketplaceCandidate = {
   mimeType: string | null;
   declaresInputSchema: boolean;
   declaresOutputSchema: boolean;
+  /** The provider's own published request shape. Without it Veyra is guessing
+   *  what to send, and a guessed body is what turned a live purchase into a
+   *  paid HTTP 400. */
+  inputSchema: Record<string, unknown> | null;
   /** The provider's own published response shape, kept rather than reduced to
    *  a boolean: it is the only thing a paid response can be held to after the
    *  money has moved. */
@@ -276,6 +280,9 @@ export function normalizeMarketplaceItem(
     description: textOrNull(metadata.description),
     mimeType: textOrNull(metadata.mimeType),
     declaresInputSchema: Boolean(inputSchema && typeof inputSchema === "object"),
+    inputSchema: inputSchema && typeof inputSchema === "object" && !Array.isArray(inputSchema)
+      ? inputSchema as Record<string, unknown>
+      : null,
     declaresOutputSchema: Boolean(metadata.output && typeof metadata.output === "object"),
     outputSchema: metadata.output && typeof metadata.output === "object" && !Array.isArray(metadata.output)
       ? metadata.output as Record<string, unknown>

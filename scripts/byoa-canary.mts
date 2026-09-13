@@ -33,7 +33,7 @@ function baseUrl() {
   return (
     argument?.slice("--base-url=".length) ||
     process.env.BYOA_CANARY_BASE_URL?.trim() ||
-    "https://veyras.vercel.app"
+    "https://agent-commerce-six.vercel.app"
   ).replace(/\/$/, "");
 }
 
@@ -42,7 +42,7 @@ function requireConfirmation(url: string) {
     throw new Error("Re-run with --confirm-arc-testnet-payment to authorize one Arc Testnet x402 workflow payment.");
   }
   const parsed = new URL(url);
-  if (parsed.protocol !== "https:" || parsed.hostname !== "veyras.vercel.app") {
+  if (parsed.protocol !== "https:" || parsed.hostname !== "agent-commerce-six.vercel.app") {
     throw new Error("The paid canary is restricted to the canonical production HTTPS deployment.");
   }
 }

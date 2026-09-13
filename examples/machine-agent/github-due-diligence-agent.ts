@@ -15,7 +15,7 @@ const repository =
 const client = new AgentCommerceClient({
   baseUrl:
     process.env.ARC_AGENT_COMMERCE_BASE_URL ??
-    "https://veyras.vercel.app",
+    "https://agent-commerce-six.vercel.app",
   credential,
 });
 

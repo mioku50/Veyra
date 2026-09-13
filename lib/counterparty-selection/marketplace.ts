@@ -108,6 +108,7 @@ export type MarketplaceRankedCandidate = RankedCandidate & {
     supportsCircleGateway: boolean;
     declaresInputSchema: boolean;
     declaresOutputSchema: boolean;
+    inputSchema: Record<string, unknown> | null;
     outputSchema: Record<string, unknown> | null;
     lastUpdated: string | null;
     catalogHash: Hex;
@@ -634,6 +635,7 @@ export async function selectMarketplaceCounterparty(input: {
         supportsCircleGateway: context.candidate.supportsCircleGateway,
         declaresInputSchema: context.candidate.declaresInputSchema,
         declaresOutputSchema: context.candidate.declaresOutputSchema,
+        inputSchema: context.candidate.inputSchema,
         outputSchema: context.candidate.outputSchema,
         lastUpdated: context.candidate.lastUpdated,
         catalogHash: context.candidate.catalogHash,

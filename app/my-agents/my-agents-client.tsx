@@ -1445,7 +1445,7 @@ export function MyAgentsClient({ diagnostic }: { diagnostic: Diagnostic }) {
 }
 
 function IntegrationExamples({ publicId }: { publicId: string }) {
-  const sample = `const API = "https://veyras.vercel.app";
+  const sample = `const API = "https://agent-commerce-six.vercel.app";
 const credential = process.env.BYOA_API_CREDENTIAL; // stays in your agent runtime
 const idempotencyKey = crypto.randomUUID();
 
