@@ -22,7 +22,7 @@
  */
 
 import assert from "node:assert/strict";
-import { createNova, db, loadBrief, loadOwned, refreshNova } from "../lib/nova/service.ts";
+import { createNova, db, loadBrief, loadOwned, refreshNova, updateNova } from "../lib/nova/service.ts";
 import { recordProposal, settleResearch, approveResearch } from "../lib/nova/investigation.ts";
 import { hashTerms } from "../lib/nova/research-terms.ts";
 
@@ -194,10 +194,72 @@ await assert.rejects(
   "the wallet that approved is the wallet that pays",
 );
 
+/* ---- changing what it watches ---- */
+
+/* rows[0] is investigated by now -- it went through the verified branch above --
+   and rows[1..2] carry a payment that was refused. All three must survive an
+   interest being dropped, because each is a receipt. */
+const { data: beforeChange } = await db().from("nova_signals")
+  .select("signal_id, status, nova_subjects(interest)")
+  .eq("agent_id", owned.agent_id);
+const openBefore = (beforeChange ?? []).filter((r: any) => r.status === "new" || r.status === "seen");
+const paidBefore = (beforeChange ?? []).filter((r: any) => r.status === "investigated" || r.status === "investigating");
+assert.ok(paidBefore.length > 0, "the fixture must leave at least one investigated signal to protect");
+
+const changed = await updateNova({
+  publicId: agent.agent.publicId,
+  ownerSecret: agent.ownerSecret,
+  interests: ["Agent payments"],
+});
+assert.deepEqual(changed.agent.interests, ["Agent payments"], "the new interests are what was asked for");
+assert.deepEqual(
+  [...changed.droppedInterests].sort(),
+  ["AI", "Arc"],
+  "what stopped being watched is named back, or a person cannot tell what they just lost",
+);
+
+const { data: afterChange } = await db().from("nova_signals")
+  .select("signal_id, status")
+  .eq("agent_id", owned.agent_id);
+const byIdAfter = new Map((afterChange ?? []).map((r: any) => [r.signal_id, r.status]));
+
+for (const row of paidBefore as any[]) {
+  assert.equal(
+    byIdAfter.get(row.signal_id),
+    row.status,
+    "an investigation is a receipt and must survive the interest that found it",
+  );
+}
+for (const row of openBefore as any[]) {
+  assert.equal(
+    byIdAfter.get(row.signal_id),
+    "dismissed",
+    "an open signal from a dropped interest must leave the brief",
+  );
+}
+assert.equal(changed.retiredSignals, openBefore.length, "the count reported is the count retired");
+
+/* The subjects stay. nova_signals.subject_id is ON DELETE SET NULL, so deleting
+   them would strip provenance from the investigations just protected. */
+const { count: subjectsLeft } = await db().from("nova_subjects")
+  .select("*", { count: "exact", head: true }).eq("agent_id", owned.agent_id);
+assert.ok((subjectsLeft ?? 0) > 0, "subjects are unwatched, not deleted");
+
+await assert.rejects(
+  () => updateNova({ publicId: agent.agent.publicId, ownerSecret: agent.ownerSecret, interests: [] }),
+  /at least one/,
+  "an agent that cares about nothing has nothing to watch",
+);
+await assert.rejects(
+  () => updateNova({ publicId: agent.agent.publicId, ownerSecret: "not-the-secret", interests: ["Arc"] }),
+  /No such agent/,
+  "only the holder of the secret may change what an agent watches",
+);
+
 await db().from("nova_agents").delete().eq("agent_id", owned.agent_id);
 for (const table of ["nova_research", "nova_memory", "nova_signals", "nova_subjects", "nova_refreshes"]) {
   const { count } = await db().from(table).select("*", { count: "exact", head: true })
     .eq("agent_id", owned.agent_id);
   assert.equal(count ?? 0, 0, `${table} left orphans`);
 }
-console.log("[research-live] passed — verified / paid_unverified / unpaid, one learning with a receipt, no double settle, no cross-wallet signature, 0 orphans");
+console.log("[research-live] passed — verified / paid_unverified / unpaid, one learning with a receipt, no double settle, no cross-wallet signature, interests changed without losing a receipt, 0 orphans");

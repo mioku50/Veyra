@@ -7,10 +7,11 @@ import { createHash, randomBytes } from "node:crypto";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { getServerSupabaseConfig } from "../supabase/server-env.ts";
 import { assembleBrief, greeting, quietSummary } from "./brief.ts";
-import { MAX_INTERESTS, keywordsForInterests, normalizeInterests } from "./interests.ts";
+import { MAX_INTERESTS, interestKey, keywordsForInterests, normalizeInterests } from "./interests.ts";
 import { changesForSubject } from "./observation.ts";
 import { categoryPhraseFor, scoreRelevance } from "./relevance.ts";
 import { observeRepositories, observeX402Catalog, type SourceObservation } from "./sources.ts";
+import { settlementNetworkOf } from "./network.ts";
 import type {
   NovaAgent,
   NovaBrief,
@@ -175,6 +176,82 @@ export async function loadOwned(publicId: string, ownerSecret: string): Promise<
 
 export async function getNova(publicId: string, ownerSecret: string): Promise<NovaAgent> {
   return toAgent(await loadOwned(publicId, ownerSecret));
+}
+
+/**
+ * Changes what an agent cares about, without starting a new one.
+ *
+ * Interests were fixed at creation, so the only way to follow something else
+ * was to abandon the agent and build another -- losing its memory, its standing
+ * and every investigation it had paid for, to change one word.
+ *
+ * Dropping an interest retires the open signals that came in through it. They
+ * are dismissed rather than deleted, and only where the status says nobody has
+ * spent anything: an investigation, paid or refused, is a receipt, and a
+ * receipt does not stop being true because the interest behind it was dropped.
+ *
+ * Subjects are left alone. `nova_signals.subject_id` is ON DELETE SET NULL, so
+ * removing a subject would strip provenance from every signal it ever produced
+ * -- including the ones with money attached. An unwatched subject costs one row
+ * and no requests, because each refresh re-resolves what to watch from the
+ * interests rather than from the table.
+ */
+export async function updateNova(input: {
+  publicId: string;
+  ownerSecret: string;
+  interests: unknown;
+}): Promise<{ agent: NovaAgent; retiredSignals: number; droppedInterests: string[] }> {
+  const agent = await loadOwned(input.publicId, input.ownerSecret);
+
+  const interests = normalizeInterests(input.interests);
+  if (interests.length === 0) {
+    throw new NovaError("Choose at least one thing for your agent to care about.", "interests_required");
+  }
+  if (interests.length > MAX_INTERESTS) {
+    throw new NovaError(`Up to ${MAX_INTERESTS} interests.`, "interests_too_many");
+  }
+
+  const before = agent.interests ?? [];
+  const kept = new Set(interests.map(interestKey));
+  const droppedInterests = before.filter((entry) => !kept.has(interestKey(entry)));
+
+  const { data, error } = await db()
+    .from("nova_agents")
+    .update({ interests, updated_at: new Date().toISOString() })
+    .eq("agent_id", agent.agent_id)
+    .select(AGENT_COLUMNS)
+    .single();
+
+  if (error || !data) {
+    throw new NovaError("Could not save that change right now.", "database_unavailable", 503);
+  }
+
+  let retiredSignals = 0;
+  if (droppedInterests.length > 0) {
+    const { data: subjectRows } = await db()
+      .from("nova_subjects")
+      .select("subject_id, interest")
+      .eq("agent_id", agent.agent_id);
+
+    const orphaned = ((subjectRows ?? []) as Array<{ subject_id: string; interest: string }>)
+      .filter((row) => !kept.has(interestKey(row.interest)))
+      .map((row) => row.subject_id);
+
+    if (orphaned.length > 0) {
+      const { data: retired } = await db()
+        .from("nova_signals")
+        .update({ status: "dismissed", updated_at: new Date().toISOString() })
+        .eq("agent_id", agent.agent_id)
+        .in("subject_id", orphaned)
+        /* Never an investigation. Money moved, or was signed for, and the card
+           recording that is the only place a person can go to check. */
+        .in("status", ["new", "seen"])
+        .select("signal_id");
+      retiredSignals = (retired ?? []).length;
+    }
+  }
+
+  return { agent: toAgent(data as AgentRow), retiredSignals, droppedInterests };
 }
 
 /* ---- refreshing ---- */
@@ -442,7 +519,7 @@ export async function loadBrief(input: {
 
   const [signalResult, refreshResult, awayResult, memoryResult, researchResult] = await Promise.all([
     db().from("nova_signals")
-      .select("signal_id, subject_id, kind, headline, detail, relevance, relevance_reason, evidence, status, execution_public_id, observed_at, nova_subjects(label, kind, interest, ref)")
+      .select("signal_id, subject_id, kind, headline, detail, relevance, relevance_reason, evidence, status, execution_public_id, observed_at, nova_subjects(label, kind, interest, ref, last_digest)")
       .eq("agent_id", agent.agent_id)
       .in("status", ["new", "seen", "investigating", "investigated"])
       .order("observed_at", { ascending: false })
@@ -485,6 +562,7 @@ export async function loadBrief(input: {
     subjectRef: row.nova_subjects?.ref ?? null,
     subjectKind: row.nova_subjects?.kind ?? null,
     interest: row.nova_subjects?.interest ?? null,
+    settlesOn: settlementNetworkOf(row.nova_subjects?.last_digest),
     kind: row.kind,
     headline: row.headline,
     detail: row.detail,
@@ -662,7 +740,7 @@ export async function loadSignalForOwner(input: {
   const agent = await loadOwned(input.publicId, input.ownerSecret);
   const { data } = await db()
     .from("nova_signals")
-    .select("signal_id, subject_id, kind, headline, detail, relevance, relevance_reason, evidence, status, execution_public_id, observed_at, nova_subjects(label, kind, interest, ref)")
+    .select("signal_id, subject_id, kind, headline, detail, relevance, relevance_reason, evidence, status, execution_public_id, observed_at, nova_subjects(label, kind, interest, ref, last_digest)")
     .eq("agent_id", agent.agent_id)
     .eq("signal_id", input.signalId)
     .maybeSingle();
@@ -676,6 +754,7 @@ export async function loadSignalForOwner(input: {
     subjectRef: row.nova_subjects?.ref ?? null,
     subjectKind: row.nova_subjects?.kind ?? null,
     interest: row.nova_subjects?.interest ?? null,
+    settlesOn: settlementNetworkOf(row.nova_subjects?.last_digest),
     kind: row.kind,
     headline: row.headline,
     detail: row.detail,

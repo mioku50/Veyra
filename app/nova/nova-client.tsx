@@ -201,6 +201,12 @@ export function NovaClient({ view = "today" }: { view?: NovaView } = {}) {
      against live endpoints, and a person who asks about two things should get
      two answers rather than watch the first one be replaced. */
   const [research, setResearch] = useState<Record<string, ResearchState>>({});
+  /* Editing what the agent watches. Null when nobody is editing, because an
+     empty array is a legitimate mid-edit state -- somebody clearing every chip
+     before picking new ones -- and the two must not be the same value. */
+  const [draftInterests, setDraftInterests] = useState<string[] | null>(null);
+  const [savingInterests, setSavingInterests] = useState(false);
+  const [interestsNote, setInterestsNote] = useState<string | null>(null);
   /* The owner's own wallet, in their own browser. Nova holds no key and never
      sees one: everything it can do with this is read an address and ask the
      wallet to sign something the person can read first. */
@@ -309,6 +315,61 @@ export function NovaClient({ view = "today" }: { view?: NovaView } = {}) {
     setChosen((current) => current.includes(label)
       ? current.filter((entry) => entry !== label)
       : current.length >= MAX_INTERESTS ? current : [...current, label]);
+  };
+
+  const toggleDraftInterest = (label: string) => {
+    setDraftInterests((current) => {
+      const list = current ?? [];
+      return list.includes(label)
+        ? list.filter((entry) => entry !== label)
+        : list.length >= MAX_INTERESTS ? list : [...list, label];
+    });
+  };
+
+  /**
+   * Save what the agent should care about, then go and look for it.
+   *
+   * Two requests on purpose. The save answers immediately and says what it
+   * dropped; the refresh re-resolves every subject against the new interests,
+   * which is eight or more live reads and belongs behind its own wait. Doing
+   * them as one call would leave a person staring at a spinner wondering
+   * whether a checkbox had been accepted.
+   */
+  const saveInterests = async () => {
+    if (!identity || !draftInterests || draftInterests.length === 0) return;
+    setSavingInterests(true);
+    setError(null);
+    setInterestsNote(null);
+    try {
+      const saved = await call(`/api/nova/v1/agents/${identity.publicId}`, {
+        method: "PATCH",
+        ownerSecret: identity.ownerSecret,
+        body: JSON.stringify({ interests: draftInterests }),
+      }) as { droppedInterests: string[]; retiredSignals: number };
+
+      setDraftInterests(null);
+      if (saved.droppedInterests.length > 0) {
+        /* Named, and counted. Dropping an interest takes cards off a screen
+           somebody was reading a moment ago, and a disappearance nobody
+           announced reads as a bug. */
+        setInterestsNote(
+          `Stopped watching ${saved.droppedInterests.join(", ")}.`
+          + (saved.retiredSignals > 0
+            ? ` ${saved.retiredSignals} ${saved.retiredSignals === 1 ? "item" : "items"} left your brief; anything you paid to investigate stayed.`
+            : ""),
+        );
+      }
+      await call(`/api/nova/v1/agents/${identity.publicId}/refresh`, {
+        method: "POST",
+        ownerSecret: identity.ownerSecret,
+        body: JSON.stringify({ trigger: "manual" }),
+      });
+      await loadBrief(identity);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not save that.");
+    } finally {
+      setSavingInterests(false);
+    }
   };
 
   const create = async () => {
@@ -781,6 +842,16 @@ export function NovaClient({ view = "today" }: { view?: NovaView } = {}) {
                   {chip.label}
                 </span>
                 {signal.interest ? <Label>{signal.interest}</Label> : null}
+                {/* The interest is why this is on screen. The network is where
+                    the money would actually go, and the two are not the same
+                    word -- ARC sat directly above "$0.01" on an endpoint that
+                    settles on Base, because Circle's catalogue publishes
+                    nothing on Arc at all. */}
+                {signal.settlesOn ? (
+                  <span className="font-mono text-[11px] text-muted-foreground">
+                    pays on {signal.settlesOn}
+                  </span>
+                ) : null}
                 <span className="ml-auto font-mono text-[11px] text-muted-foreground">
                   {timeAgo(signal.observedAt)}
                 </span>
@@ -903,11 +974,80 @@ export function NovaClient({ view = "today" }: { view?: NovaView } = {}) {
       {view === "agent" ? (
         <Panel className="mt-4">
           <Label>What {brief.agent.name} watches</Label>
-          <dl className="mt-4 space-y-0">
-            <Row label="You care about" value={brief.agent.interests.join(" · ")} />
-            <Row label="Things watched" value={String(brief.lastRefresh?.subjectsChecked ?? 0)} />
-            <Row label="Watching since" value={new Date(brief.agent.createdAt).toLocaleDateString()} />
-          </dl>
+
+          {draftInterests === null ? (
+            <>
+              <dl className="mt-4 space-y-0">
+                <Row label="You care about" value={brief.agent.interests.join(" · ")} />
+                <Row label="Things watched" value={String(brief.lastRefresh?.subjectsChecked ?? 0)} />
+                <Row label="Watching since" value={new Date(brief.agent.createdAt).toLocaleDateString()} />
+              </dl>
+              <div className="mt-4">
+                <Verb onClick={() => { setInterestsNote(null); setDraftInterests(brief.agent.interests); }}>
+                  Change what it watches
+                </Verb>
+              </div>
+            </>
+          ) : (
+            <>
+              <p className="mt-3 text-xs text-muted-foreground">
+                Pick up to <span className="font-mono">{MAX_INTERESTS}</span>. {brief.agent.name} keeps
+                everything it has learned and everything it has paid for either way.
+              </p>
+              <div className="mt-4 flex flex-wrap gap-2">
+                {INTEREST_CATALOG.map((interest) => {
+                  const active = draftInterests.includes(interest.label);
+                  return (
+                    <button
+                      key={interest.id}
+                      type="button"
+                      onClick={() => toggleDraftInterest(interest.label)}
+                      aria-pressed={active}
+                      className={`rounded-lg px-4 py-2 text-sm transition ${
+                        active
+                          ? "border border-primary bg-primary/25 text-foreground"
+                          : "field text-muted-foreground hover:text-foreground"
+                      }`}
+                    >
+                      {interest.label}
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Said before the button, not after it. Choosing Arc and being
+                  shown Base is the question this product gets asked most, and
+                  the honest answer is one sentence about where the sellers
+                  are. */}
+              {draftInterests.some((entry) => entry.toLowerCase() === "arc") ? (
+                <p className="mt-4 text-xs leading-relaxed text-muted-foreground">
+                  Arc finds endpoints whose work is about Arc, USDC and stablecoins. They settle
+                  where the sellers are, which today is Base — Circle&apos;s catalogue lists none
+                  on Arc. Each card says which chain it pays on.
+                </p>
+              ) : null}
+
+              <div className="mt-5 flex flex-wrap items-center gap-x-4 gap-y-3">
+                <button
+                  type="button"
+                  onClick={saveInterests}
+                  disabled={savingInterests || draftInterests.length === 0}
+                  className="rounded-lg bg-primary px-5 py-2.5 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  {savingInterests ? "Saving and looking again…" : "Save and look again"}
+                </button>
+                <Verb onClick={() => setDraftInterests(null)}>Cancel</Verb>
+                {draftInterests.length === 0 ? (
+                  <span className="text-xs text-muted-foreground">Pick at least one.</span>
+                ) : null}
+              </div>
+            </>
+          )}
+
+          {interestsNote ? (
+            <p className="mt-4 text-xs leading-relaxed text-state-warn">{interestsNote}</p>
+          ) : null}
+
           <p className="mt-4 text-xs leading-relaxed text-muted-foreground">
             {brief.agent.name} looks on a schedule, whether or not anyone is reading. It stops
             after a fortnight with nobody here, and starts again the moment you come back — an

@@ -20,6 +20,7 @@ import { orderByRelevance, scoreRelevance } from "../lib/nova/relevance.ts";
 import { assembleBrief, greeting, quietSummary } from "../lib/nova/brief.ts";
 import { observeRepositories } from "../lib/nova/sources.ts";
 import { EXPLICIT_IGNORE_SUPPORT, ignoreWeight, summariseAway } from "../lib/nova/service.ts";
+import { networkName, settlementNetworkOf } from "../lib/nova/network.ts";
 import {
   compareTerms,
   hashTerms,
@@ -743,4 +744,45 @@ assert.equal(
    0.007000000000000001 is a bug waiting for a provider that prices in thirds. */
 assert.equal(normaliseTerms({ ...SHOWN, priceAtomic: 7000 as unknown as string }).priceAtomic, "7000");
 
-console.log("[nova-test] passed: interests kept even when unknown, a first sighting reported as a finding rather than as news, the same commits not re-reported across refreshes, a payee change outranking everything and un-learnable away, a rail change surfaced a day before it could refuse a payment, a 3% price move kept out of the headline, a brief that caps findings so a change can never be crowded out, a tick that reads each URL once and shares its failures, and an absence measured by adding up every unattended pass rather than reporting the last one, and feedback that can raise as well as bury without ever silencing a payee change, and terms that stop a payment when the price or the payee moved between reading the card and pressing the button");
+/* ---- an interest is not a network ---- */
+
+/* The brief printed the interest that matched directly above the price, so
+   choosing Arc put the word ARC over "$0.0100" on an endpoint that settles on
+   Base. Circle's catalogue publishes nothing on Arc at all, so that reading was
+   not merely unsupported -- it could never be true. */
+assert.equal(networkName("eip155:8453"), "Base");
+assert.equal(networkName("eip155:137"), "Polygon");
+assert.equal(networkName(null), null);
+/* Arc is deliberately absent from the marketplace network map, and an unknown
+   chain id must come back as nothing rather than as its own raw identifier: a
+   card reading "pays on eip155:5042002" is worse than a card that stays quiet. */
+assert.equal(networkName("eip155:5042002"), null, "an unlisted chain id is not a name");
+
+assert.equal(
+  settlementNetworkOf({
+    kind: "x402_resource",
+    priceAtomic: "10000",
+    payTo: "0x1111111111111111111111111111111111111111",
+    reachable: true,
+    provider: "StableEnrich",
+    network: "eip155:8453",
+    funding: "wallet",
+  }),
+  "Base",
+);
+/* A repository has no price and therefore no chain, and must not be given one. */
+assert.equal(
+  settlementNetworkOf({
+    kind: "github_repository",
+    lastCommitAt: null,
+    commitsInWindow: 3,
+    contributorCount: 2,
+    latestRelease: null,
+    stars: 10,
+  }),
+  null,
+  "a repository does not settle anywhere",
+);
+assert.equal(settlementNetworkOf(null), null);
+
+console.log("[nova-test] passed: interests kept even when unknown, a first sighting reported as a finding rather than as news, the same commits not re-reported across refreshes, a payee change outranking everything and un-learnable away, a rail change surfaced a day before it could refuse a payment, a 3% price move kept out of the headline, a brief that caps findings so a change can never be crowded out, a tick that reads each URL once and shares its failures, and an absence measured by adding up every unattended pass rather than reporting the last one, and feedback that can raise as well as bury without ever silencing a payee change, and terms that stop a payment when the price or the payee moved between reading the card and pressing the button, and a card that names the chain its money moves on rather than letting the interest stand in for one");

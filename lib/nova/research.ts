@@ -21,7 +21,6 @@ import {
   issueMarketplaceClearance,
   selectMarketplaceCounterparty,
 } from "../counterparty-selection/marketplace.ts";
-import { MARKETPLACE_NETWORKS } from "../counterparty-selection/marketplace-source.ts";
 import type {
   MarketplaceRankedCandidate,
   MarketplaceSelection,
@@ -40,6 +39,7 @@ import {
   type TermsChange,
 } from "./research-terms.ts";
 import type { NovaSignal } from "./types.ts";
+import { networkName } from "./network.ts";
 
 /**
  * What it would cost to look deeper, and who would be paid.
@@ -270,7 +270,7 @@ const BRAND_NAME = "Veyra";
  * make a reader work that out.
  */
 function paymentLabelFor(funding: "wallet" | "gateway_deposit", network: string): string {
-  const chain = MARKETPLACE_NETWORKS[network as keyof typeof MARKETPLACE_NETWORKS] ?? null;
+  const chain = networkName(network);
   const rail = funding === "wallet" ? "Direct USDC" : "Circle Gateway deposit";
   return chain ? `${rail} on ${chain}` : rail;
 }

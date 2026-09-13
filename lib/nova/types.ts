@@ -186,6 +186,11 @@ export type NovaSignal = ObservedChange & {
   subjectRef?: string | null;
   subjectKind: NovaSubjectKind | null;
   interest: string | null;
+  /** The chain this signal's money moves on, named the way a person names it,
+   *  for signals that are about money at all. The interest label above a price
+   *  is not a network, and letting it read as one put "ARC" over a payment that
+   *  settles on Base. */
+  settlesOn?: string | null;
   relevance: NovaRelevance;
   relevanceReason: string;
   status: NovaSignalStatus;

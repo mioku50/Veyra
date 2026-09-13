@@ -157,6 +157,9 @@ export async function observeX402Catalog(input: {
           method: candidate.method,
           capability: query.term,
           priceUsdc: candidate.priceUsdc,
+          /* The chain the price is on. Absent, the only thing naming a network
+             on the card was the interest that matched, which is not one. */
+          network: candidate.selectedAccept.network,
           funding: candidate.funding,
           provider: candidate.provider.name,
           docsUrl: candidate.provider.docsUrl,
