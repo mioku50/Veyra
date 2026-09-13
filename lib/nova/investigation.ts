@@ -90,6 +90,12 @@ const ROW_COLUMNS =
 
 function toInvestigation(row: ResearchRow): NovaInvestigation {
   return {
+    /* The terms that were cleared, not the ones first proposed: a person
+       re-confirming a changed price agreed to this number, and a card that
+       reports a refusal has to name the amount they signed for or it cannot be
+       checked against a wallet. */
+    authorisedUsdc: Number(row.terms?.priceAtomic ?? 0) / 1e6 || null,
+    provider: row.terms?.provider ?? null,
     researchId: row.research_id,
     signalId: row.signal_id,
     status: row.status,
@@ -397,10 +403,16 @@ export async function settleResearch(input: {
   }
 
   if (outcome.kind === "payment_rejected") {
+    /* The seller said why, in its own words, and those words were being thrown
+       away. "The endpoint rejected the signed payment" is true and useless: it
+       cost an hour of forensics against the chain to learn what one line of the
+       response already said. It is kept and shown now, including the raw body,
+       because a refusal nobody can act on is a dead end with a receipt. */
     return finish(row, {
       status: "unpaid",
       executionPublicId: outcome.executionId,
-      failure: outcome.message,
+      result: outcome.body || null,
+      failure: `${outcome.message} ${sellerReason(outcome.body)}`.trim(),
     });
   }
 
@@ -436,6 +448,26 @@ export async function settleResearch(input: {
       ? `The payment went through and the answer did not pass ${"Veyra"}'s check: ${settled.verification.summary}`
       : settled.verification.summary || "The endpoint did not answer with a usable result.",
   });
+}
+
+/**
+ * What the seller actually said, in a sentence.
+ *
+ * x402 sellers answer a refused payment with a JSON body carrying their own
+ * error and reason. Neither is written for a reader, so the raw body is stored
+ * whole and this pulls out the part worth putting on a card.
+ */
+function sellerReason(body: string | null | undefined): string {
+  if (!body) return "";
+  let parsed: unknown = null;
+  try { parsed = JSON.parse(body); } catch { return `The endpoint said: ${body.slice(0, 200)}`; }
+  if (!parsed || typeof parsed !== "object") return "";
+  const record = parsed as Record<string, unknown>;
+  const said = typeof record.error === "string" ? record.error
+    : typeof record.message === "string" ? record.message
+      : null;
+  if (!said) return "";
+  return `The endpoint said: ${said.slice(0, 300)}`;
 }
 
 function signature(value: string): `0x${string}` {

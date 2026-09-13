@@ -244,6 +244,10 @@ export type NovaInvestigation = {
   status: "proposed" | "approved" | "verified" | "paid_unverified" | "unpaid";
   question: string;
   proposal: Record<string, unknown>;
+  /** What the owner authorised, from the terms that were cleared rather than
+   *  the ones first shown. Present even when nothing moved. */
+  authorisedUsdc: number | null;
+  provider: string | null;
   executionPublicId: string | null;
   paidUsdc: number | null;
   transaction: string | null;

@@ -1431,8 +1431,20 @@ function Outcome({
       <p className="mt-2 text-sm leading-relaxed text-foreground">{investigation.question}</p>
 
       <dl className="mt-3 space-y-0">
-        <Row label="Provider" value={proposal.provider} />
-        {paid > 0 ? <Row label="Paid" value={`$${paid.toFixed(4)}`} /> : null}
+        <Row label="Provider" value={investigation.provider ?? proposal.provider} />
+        {paid > 0 ? (
+          <Row label="Paid" value={`$${paid.toFixed(4)}`} />
+        ) : investigation.authorisedUsdc ? (
+          /* The amount is named even though it did not move. "Nothing was paid"
+             with no number is a card nobody can check against their wallet,
+             and checking is the first thing a person does after a payment
+             screen tells them something went wrong. */
+          <Row
+            label="You signed for"
+            value={`$${investigation.authorisedUsdc.toFixed(4)} — still in your wallet`}
+            tone="idle"
+          />
+        ) : null}
         {investigation.verification ? (
           <Row
             label="Verification"
@@ -1454,6 +1466,20 @@ function Outcome({
         <p className="mt-3 text-sm leading-relaxed text-state-warn">{investigation.failure}</p>
       ) : null}
 
+      {!verified && investigation.result && typeof investigation.result === "string" ? (
+        /* What the endpoint said, verbatim, under what Veyra made of it. A
+           refusal paraphrased and then discarded is how an afternoon goes into
+           reconstructing something one line of the response already explained. */
+        <details className="mt-3">
+          <summary className="cursor-pointer text-xs text-muted-foreground hover:text-foreground">
+            What the endpoint sent back
+          </summary>
+          <pre className="mt-2 max-h-48 overflow-auto rounded-lg border border-border/60 bg-background/40 p-3 font-mono text-[11px] leading-relaxed text-muted-foreground">
+            {investigation.result}
+          </pre>
+        </details>
+      ) : null}
+
       {verified ? (
         <p className="mt-3 text-xs leading-relaxed text-muted-foreground">
           {BRAND.name} checked the answer against what this endpoint declares it returns, after
@@ -1461,7 +1487,7 @@ function Outcome({
         </p>
       ) : null}
 
-      {investigation.result !== null && investigation.result !== undefined ? (
+      {verified && investigation.result !== null && investigation.result !== undefined ? (
         <pre className="mt-3 max-h-80 overflow-auto rounded-lg border border-border/60 bg-background/40 p-3 font-mono text-[11px] leading-relaxed text-muted-foreground">
           {typeof investigation.result === "string"
             ? investigation.result
