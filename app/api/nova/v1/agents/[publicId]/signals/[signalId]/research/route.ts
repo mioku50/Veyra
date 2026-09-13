@@ -5,7 +5,8 @@
 
 import { NextResponse, type NextRequest } from "next/server";
 import { NOVA_HEADERS, novaErrorResponse, ownerSecretFrom } from "@/lib/nova/http";
-import { loadSignalForOwner } from "@/lib/nova/service";
+import { recordProposal } from "@/lib/nova/investigation";
+import { loadOwned, loadSignalForOwner } from "@/lib/nova/service";
 import { proposeResearch } from "@/lib/nova/research";
 
 export const dynamic = "force-dynamic";
@@ -23,6 +24,10 @@ type RouteContext = { params: Promise<{ publicId: string; signalId: string }> };
  * clearance is a signed permission bound to a wallet, and producing one just
  * because somebody read their brief would mean reading was an act of consent.
  *
+ * What it does write is the terms. Approval is checked against what this card
+ * actually said, which only works if what it said still exists somewhere the
+ * page cannot edit.
+ *
  * The wallet is optional. With one, Veyra can read its Circle Gateway balance
  * and say whether a candidate is payable right now; without one it assumes no
  * deposit, which is both the safe assumption and the true one for almost
@@ -31,14 +36,14 @@ type RouteContext = { params: Promise<{ publicId: string; signalId: string }> };
 export async function POST(request: NextRequest, { params }: RouteContext) {
   try {
     const { publicId, signalId } = await params;
+    const ownerSecret = ownerSecretFrom(request);
     const body = await request.json().catch(() => ({})) as { wallet?: unknown };
     const wallet = typeof body.wallet === "string" ? body.wallet : null;
 
-    const signal = await loadSignalForOwner({
-      publicId,
-      ownerSecret: ownerSecretFrom(request),
-      signalId,
-    });
+    const [agent, signal] = await Promise.all([
+      loadOwned(publicId, ownerSecret),
+      loadSignalForOwner({ publicId, ownerSecret, signalId }),
+    ]);
 
     const outcome = await proposeResearch({ signal, wallet });
     if (!outcome.ok) {
@@ -51,7 +56,18 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
         { headers: NOVA_HEADERS },
       );
     }
-    return NextResponse.json({ ok: true, proposal: outcome.proposal }, { headers: NOVA_HEADERS });
+
+    const researchId = await recordProposal({
+      agentId: agent.agent_id,
+      signalId,
+      proposal: outcome.proposal,
+      plan: outcome.plan,
+    });
+
+    return NextResponse.json(
+      { ok: true, researchId, proposal: outcome.proposal },
+      { headers: NOVA_HEADERS },
+    );
   } catch (error) {
     return novaErrorResponse(error);
   }

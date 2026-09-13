@@ -503,6 +503,43 @@ export async function selectMarketplaceCounterparty(input: {
   fetchImpl?: typeof fetch;
   probeFetchImpl?: (url: string, init: RequestInit) => Promise<Response>;
   issueClearance?: boolean;
+  /**
+   * Lets a caller pick the winner out of the ranked, decided, routed list.
+   *
+   * Not a way to override policy: the candidates handed to it have already been
+   * probed, scored and tiered, and returning one changes which of them the
+   * recommendation describes and the clearance authorizes -- nothing else. A
+   * caller that returns null, or something not on the list, gets the engine's
+   * own choice.
+   *
+   * This exists because Nova picks differently from the developer surface: it
+   * prefers a counterparty payable from the wallet balance over one needing a
+   * Circle Gateway deposit, because the person it is asking has not heard of
+   * Circle Gateway. Before this hook it made that choice afterwards, on the
+   * returned selection, which meant the card named one counterparty while the
+   * clearance -- had one been issued -- would have authorized another.
+   */
+  preferCandidate?: (candidates: MarketplaceRankedCandidate[]) =>
+    { candidate: MarketplaceRankedCandidate; note?: string | null } | null;
+  /**
+   * Hands back the winner's full trust decision, for a caller that has to issue
+   * its own clearance against a different amount than this selection budgeted.
+   *
+   * Nova needs it: it decides whether to authorize anything only after reading
+   * the live 402 challenge for the exact request body, which is the only thing
+   * that knows the exact price -- x402 charges per call, and the free probe
+   * above cannot raise the same challenge a paid body does. So the selection
+   * runs with `issueClearance: false`, the price is read, the terms are checked
+   * against what the person was actually shown, and the clearance is signed
+   * afterwards for that exact number or not at all.
+   *
+   * Server-side only. Nothing here reaches an API payload.
+   */
+  onWinnerDecision?: (input: {
+    decision: TrustDecision;
+    selectionHash: Hex;
+    expiresAt: string;
+  }) => void;
 }): Promise<MarketplaceSelection> {
   const request = validateMarketplaceSelectionRequest(input.request);
   const now = input.now ?? new Date();
@@ -737,9 +774,23 @@ export async function selectMarketplaceCounterparty(input: {
   const routedWinner = route.winner
     ? candidates.find((item) => item.identity.agentId === route.winner!.candidateId) ?? null
     : null;
-  const winner = route.passedOver && routedWinner
+  const routed = route.passedOver && routedWinner
     ? rankedResult.ranked.find((item) => item.identity.agentId === routedWinner.identity.agentId) ?? rankedResult.winner
     : rankedResult.winner;
+
+  /* The caller's preference, checked against the list it was given. An id that
+     is not on it is ignored rather than trusted: the hook may narrow who wins,
+     never who was eligible. */
+  const preference = input.preferCandidate?.(candidates) ?? null;
+  const winner = preference
+    ? rankedResult.ranked.find((item) => item.identity.agentId === preference.candidate.identity.agentId) ?? routed
+    : routed;
+  /* Only when the preference actually moved the outcome. A note explaining a
+     substitution that did not happen is the screen apologising for nothing. */
+  const preferenceNote = preference?.note && winner && routed
+    && winner.identity.agentId !== routed.identity.agentId
+    ? preference.note
+    : null;
 
   const winnerContext = winner ? marketplaceByAgentId.get(winner.identity.agentId) : undefined;
   const winnerPayTo = winnerContext ? marketplacePayToAddress(winnerContext.candidate) : null;
@@ -789,6 +840,10 @@ export async function selectMarketplaceCounterparty(input: {
     createdAt,
     expiresAt,
   });
+
+  if (winner && winnerDecision && winnerPayTo) {
+    input.onWinnerDecision?.({ decision: winnerDecision, selectionHash: canonicalHash, expiresAt });
+  }
 
   let clearance: MarketplaceSelectionClearance | null = null;
   let clearanceReason = "";
@@ -845,7 +900,7 @@ export async function selectMarketplaceCounterparty(input: {
           gatewayFundedAtomic,
         }).payableNow
       : null,
-    routingNote: route.note,
+    routingNote: preferenceNote ?? route.note,
     explanation: winner && winnerContext
       ? [
           `${winnerContext.candidate.provider.name || winnerContext.candidate.origin} ranks ${winner.rankingScore}/100`,

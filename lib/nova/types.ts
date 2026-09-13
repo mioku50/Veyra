@@ -230,6 +230,29 @@ export type NovaStanding = {
   readyForArcIdentity: boolean;
 };
 
+/**
+ * One paid investigation, as the brief shows it.
+ *
+ * `status` is the honest part. A payment that went through and whose answer
+ * failed the check its own tier demanded is `paid_unverified`, not a completed
+ * research with a caveat: the money is gone and the result is not trustworthy,
+ * and those are two facts a person is entitled to read separately.
+ */
+export type NovaInvestigation = {
+  researchId: string;
+  signalId: string;
+  status: "proposed" | "approved" | "verified" | "paid_unverified" | "unpaid";
+  question: string;
+  proposal: Record<string, unknown>;
+  executionPublicId: string | null;
+  paidUsdc: number | null;
+  transaction: string | null;
+  verification: { verdict: string; summary: string } | null;
+  result: unknown;
+  failure: string | null;
+  settledAt: string | null;
+};
+
 export type NovaBrief = {
   agent: NovaAgent;
   greeting: string;
@@ -244,5 +267,9 @@ export type NovaBrief = {
    */
   wokeFromDormancy: boolean;
   memory: NovaMemory[];
+  /** What has been paid for against these signals, so a result appears under
+   *  the card that produced it after a reload and not only in the session that
+   *  bought it. */
+  investigations: NovaInvestigation[];
   standing: NovaStanding;
 };

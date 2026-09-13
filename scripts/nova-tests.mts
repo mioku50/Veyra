@@ -21,6 +21,12 @@ import { assembleBrief, greeting, quietSummary } from "../lib/nova/brief.ts";
 import { observeRepositories } from "../lib/nova/sources.ts";
 import { EXPLICIT_IGNORE_SUPPORT, ignoreWeight, summariseAway } from "../lib/nova/service.ts";
 import {
+  compareTerms,
+  hashTerms,
+  normaliseTerms,
+  type NovaResearchTerms,
+} from "../lib/nova/research-terms.ts";
+import {
   DORMANT_AFTER_DAYS,
   DUE_TOLERANCE_MINUTES,
   REFRESH_INTERVAL_HOURS,
@@ -645,4 +651,96 @@ assert(
   "tolerance this large would let consecutive ticks refresh the same agent",
 );
 
-console.log("[nova-test] passed: interests kept even when unknown, a first sighting reported as a finding rather than as news, the same commits not re-reported across refreshes, a payee change outranking everything and un-learnable away, a rail change surfaced a day before it could refuse a payment, a 3% price move kept out of the headline, a brief that caps findings so a change can never be crowded out, a tick that reads each URL once and shares its failures, and an absence measured by adding up every unattended pass rather than reporting the last one, and feedback that can raise as well as bury without ever silencing a payee change");
+/* ---- paid research: what somebody agreed to, and what is true now ---- */
+
+const SHOWN: NovaResearchTerms = {
+  provider: "Exa",
+  resource: "https://api.exa.ai/x402/contents",
+  capability: "search",
+  priceAtomic: "7000",
+  payTo: "0x1111111111111111111111111111111111111111",
+  network: "eip155:8453",
+  funding: "wallet",
+};
+
+assert.deepEqual(compareTerms(SHOWN, SHOWN), [], "identical terms are not a change");
+
+/* Checksum case is not a changed payee. This is the one signal Nova raises on
+   its own and must never cry wolf about: an address that differs only in the
+   case of its hex digits is the same address, and reporting it would teach
+   people to click through the warning that matters most. */
+assert.deepEqual(
+  compareTerms(SHOWN, { ...SHOWN, payTo: SHOWN.payTo.toUpperCase().replace("0X", "0x") }),
+  [],
+  "the same address in a different case is the same address",
+);
+
+/* The negative acceptance, in the smallest form that can hold it. A price or a
+   payee that moved between the card and the click has to come back as a change,
+   with both numbers, or the revalidation is decoration. */
+const priceMoved = compareTerms(SHOWN, { ...SHOWN, priceAtomic: "12000" });
+assert.equal(priceMoved.length, 1);
+assert.equal(priceMoved[0].field, "priceAtomic");
+assert.equal(priceMoved[0].was, "$0.0070");
+assert.equal(priceMoved[0].now, "$0.0120", "a person must be able to read the new price, not just be told it changed");
+
+const payeeMoved = compareTerms(SHOWN, {
+  ...SHOWN,
+  payTo: "0x2222222222222222222222222222222222222222",
+});
+assert.equal(payeeMoved.length, 1);
+assert.equal(payeeMoved[0].field, "payTo");
+
+/* Money first. Somebody scanning a list of differences should meet the ones
+   that decide whether to walk away before the ones that decide nothing. */
+const manyMoved = compareTerms(SHOWN, {
+  ...SHOWN,
+  provider: "Exa Labs",
+  priceAtomic: "9000",
+  payTo: "0x3333333333333333333333333333333333333333",
+});
+assert.deepEqual(
+  manyMoved.map((change) => change.field),
+  ["priceAtomic", "payTo", "provider"],
+  "price and payee are read before a renamed provider",
+);
+
+/* Every field is compared, or the ones left out are the ones that change. */
+const FIELDS: (keyof NovaResearchTerms)[] = [
+  "provider", "resource", "capability", "priceAtomic", "payTo", "network", "funding",
+];
+for (const field of FIELDS) {
+  const altered: NovaResearchTerms = {
+    ...SHOWN,
+    [field]: field === "funding" ? "gateway_deposit" : `${SHOWN[field]}-changed`,
+  };
+  assert.equal(compareTerms(SHOWN, altered).length, 1, `a changed ${field} must be reported`);
+}
+
+/* The hash is what a re-confirmation is bound to. If a price that moved twice
+   produced the same fingerprint as a price that moved once, a click that saw
+   the first move would silently approve the second. */
+assert.equal(hashTerms(SHOWN), hashTerms({ ...SHOWN }), "the same terms hash the same");
+assert.notEqual(
+  hashTerms({ ...SHOWN, priceAtomic: "12000" }),
+  hashTerms({ ...SHOWN, priceAtomic: "13000" }),
+  "two different prices must not share a confirmation",
+);
+assert.notEqual(
+  hashTerms(SHOWN),
+  hashTerms({ ...SHOWN, payTo: "0x2222222222222222222222222222222222222222" }),
+  "a changed payee must invalidate a confirmation",
+);
+/* And it must not be sensitive to the things that are not differences, or
+   every approval would come back as a change. */
+assert.equal(
+  hashTerms(SHOWN),
+  hashTerms({ ...SHOWN, payTo: SHOWN.payTo.toUpperCase().replace("0X", "0x"), network: "EIP155:8453" }),
+  "case is not a change, so it must not break a confirmation either",
+);
+
+/* Atomic units, compared as text. A float comparison of 0.007 against
+   0.007000000000000001 is a bug waiting for a provider that prices in thirds. */
+assert.equal(normaliseTerms({ ...SHOWN, priceAtomic: 7000 as unknown as string }).priceAtomic, "7000");
+
+console.log("[nova-test] passed: interests kept even when unknown, a first sighting reported as a finding rather than as news, the same commits not re-reported across refreshes, a payee change outranking everything and un-learnable away, a rail change surfaced a day before it could refuse a payment, a 3% price move kept out of the headline, a brief that caps findings so a change can never be crowded out, a tick that reads each URL once and shares its failures, and an absence measured by adding up every unattended pass rather than reporting the last one, and feedback that can raise as well as bury without ever silencing a payee change, and terms that stop a payment when the price or the payee moved between reading the card and pressing the button");

@@ -15,8 +15,11 @@ import { INTEREST_CATALOG, MAX_INTERESTS } from "@/lib/nova/interests";
    going dark -- so the button is absent rather than disabled: an offer a
    person cannot take reads as a promise the product is refusing to keep. */
 import { categoryPhraseFor } from "@/lib/nova/relevance";
-import type { NovaBrief, NovaFeedback, NovaSignal } from "@/lib/nova/types";
+import type { NovaBrief, NovaFeedback, NovaInvestigation, NovaSignal } from "@/lib/nova/types";
 import type { NovaResearchProposal } from "@/lib/nova/research";
+import type { TermsChange } from "@/lib/nova/research-terms";
+import { useArcWallet } from "@/components/wallet/use-arc-wallet";
+import { signPaymentAuthorization, type SigningTerms } from "@/lib/x402/sign-payment";
 
 /**
  * The personal agent, and the front door.
@@ -42,13 +45,36 @@ const STORAGE = { id: "veyra.nova.id", key: "veyra.nova.key" } as const;
 
 type Stage = "loading" | "create" | "working" | "brief";
 
-/** Where one item's pricing has got to. "refused" is a result, not an error:
- *  Veyra looked at the market and would not authorise any of it. */
+/**
+ * Where one item's investigation has got to.
+ *
+ * Two of these are results rather than errors, and the difference is the whole
+ * product. "refused" is Veyra looking at the market and declining to authorise
+ * any of it. "changed" is Veyra stopping between the price somebody read and
+ * the signature they were about to give, because the two no longer describe the
+ * same purchase.
+ *
+ * "paid_unverified" is the third. It is what an honest product has instead of
+ * rounding a failed check up into a completed one.
+ */
 type ResearchState =
   | { stage: "looking" }
-  | { stage: "ready"; proposal: NovaResearchProposal }
+  | { stage: "ready"; researchId: string; proposal: NovaResearchProposal }
   | { stage: "refused"; detail: string }
-  | { stage: "failed"; detail: string };
+  | { stage: "failed"; detail: string; proposal?: NovaResearchProposal; researchId?: string }
+  | { stage: "approving"; researchId: string; proposal: NovaResearchProposal }
+  | {
+      stage: "changed";
+      researchId: string;
+      proposal: NovaResearchProposal;
+      changes: TermsChange[];
+      termsHash: string;
+      costUsdc: number;
+      detail: string;
+    }
+  | { stage: "signing"; researchId: string; proposal: NovaResearchProposal; terms: SigningTerms | null; note: string | null }
+  | { stage: "settling"; researchId: string; proposal: NovaResearchProposal }
+  | { stage: "settled"; researchId: string; proposal: NovaResearchProposal; investigation: NovaInvestigation };
 
 function readStored(): { publicId: string; ownerSecret: string } | null {
   try {
@@ -148,6 +174,10 @@ export function NovaClient() {
      against live endpoints, and a person who asks about two things should get
      two answers rather than watch the first one be replaced. */
   const [research, setResearch] = useState<Record<string, ResearchState>>({});
+  /* The owner's own wallet, in their own browser. Nova holds no key and never
+     sees one: everything it can do with this is read an address and ask the
+     wallet to sign something the person can read first. */
+  const wallet = useArcWallet();
 
   const call = useCallback(async (
     path: string,
@@ -174,6 +204,22 @@ export function NovaClient() {
       { ownerSecret: who.ownerSecret },
     ) as NovaBrief;
     setBrief(payload);
+    /* A result belongs under the card that produced it, including on the next
+       morning's visit. Without this the whole flow is a property of one browser
+       session: somebody pays, closes the tab, comes back, and the item says
+       "Let Nova investigate" as though nothing had ever happened to it. */
+    setResearch((current) => {
+      const restored: Record<string, ResearchState> = { ...current };
+      for (const entry of payload.investigations ?? []) {
+        if (current[entry.signalId]) continue;
+        const proposal = entry.proposal as unknown as NovaResearchProposal;
+        if (!proposal?.provider) continue;
+        restored[entry.signalId] = entry.status === "proposed" || entry.status === "approved"
+          ? { stage: "ready", researchId: entry.researchId, proposal }
+          : { stage: "settled", researchId: entry.researchId, proposal, investigation: entry };
+      }
+      return restored;
+    });
     setStage("brief");
   }, [call]);
 
@@ -306,13 +352,19 @@ export function NovaClient() {
     try {
       const payload = await call(
         `/api/nova/v1/agents/${identity.publicId}/signals/${signal.signalId}/research`,
-        { method: "POST", ownerSecret: identity.ownerSecret, body: JSON.stringify({}) },
-      ) as { ok: boolean; proposal?: NovaResearchProposal; detail?: string };
+        {
+          method: "POST",
+          ownerSecret: identity.ownerSecret,
+          /* Sent when there is one, so the rail note can be a fact about this
+             wallet's Gateway balance rather than an assumption about it. */
+          body: JSON.stringify({ wallet: wallet.address ?? undefined }),
+        },
+      ) as { ok: boolean; researchId?: string; proposal?: NovaResearchProposal; detail?: string };
 
       setResearch((current) => ({
         ...current,
-        [signal.signalId]: payload.ok && payload.proposal
-          ? { stage: "ready", proposal: payload.proposal }
+        [signal.signalId]: payload.ok && payload.proposal && payload.researchId
+          ? { stage: "ready", researchId: payload.researchId, proposal: payload.proposal }
           /* Veyra looking and refusing is an answer, not a failure, and it is
              shown as one. Rendering it as an error would blame Nova for the
              product doing its job. */
@@ -324,6 +376,137 @@ export function NovaClient() {
         ...current,
         [signal.signalId]: { stage: "failed", detail: (cause as Error).message },
       }));
+    }
+  };
+
+  /**
+   * Pays for one investigation, and shows what it bought.
+   *
+   * Six steps, and the order is the product.
+   *
+   *   1  Veyra reads the live payment challenge for the exact endpoint and the
+   *      exact request this card was priced from.
+   *   2  It compares seven facts against what this card actually said:
+   *      provider, endpoint, capability, price, payee, network, rail.
+   *   3  Any difference stops here. Nothing is signed, nothing is substituted,
+   *      and both sets of numbers go on screen for the person to accept or not.
+   *   4  Only then is a clearance signed, for that exact amount and that exact
+   *      wallet.
+   *   5  The owner signs, in their own wallet, with their own key.
+   *   6  Veyra relays the signature and checks the answer against what the
+   *      endpoint declares it returns.
+   *
+   * `acknowledge` is the hash of terms the person has just been shown and
+   * accepted. Deliberately a hash rather than a flag: a price that moves twice
+   * must not be payable by a click that only ever saw it move once.
+   */
+  const pay = async (signal: NovaSignal, acknowledge?: string) => {
+    if (!identity) return;
+    const current = research[signal.signalId];
+    if (!current || !("proposal" in current) || !current.proposal || !("researchId" in current) || !current.researchId) return;
+    const { proposal, researchId } = current as { proposal: NovaResearchProposal; researchId: string };
+
+    if (!wallet.address) {
+      setResearch((state) => ({
+        ...state,
+        [signal.signalId]: {
+          stage: "failed",
+          researchId,
+          proposal,
+          detail: "Connect a wallet first. Nova cannot pay for you — you sign the amount yourself.",
+        },
+      }));
+      return;
+    }
+
+    const at = (next: ResearchState) =>
+      setResearch((state) => ({ ...state, [signal.signalId]: next }));
+
+    at({ stage: "approving", researchId, proposal });
+    try {
+      const approval = await call(
+        `/api/nova/v1/agents/${identity.publicId}/signals/${signal.signalId}/research/approve`,
+        {
+          method: "POST",
+          ownerSecret: identity.ownerSecret,
+          body: JSON.stringify({ wallet: wallet.address, acknowledge: acknowledge ?? null }),
+        },
+      ) as {
+        ok: boolean;
+        reason?: string;
+        detail?: string;
+        changes?: TermsChange[];
+        termsHash?: string;
+        costUsdc?: number;
+        accept?: Parameters<typeof signPaymentAuthorization>[0]["accept"];
+        nonce?: string;
+      };
+
+      if (!approval.ok) {
+        if (approval.reason === "market_changed" && approval.termsHash) {
+          at({
+            stage: "changed",
+            researchId,
+            proposal,
+            changes: approval.changes ?? [],
+            termsHash: approval.termsHash,
+            costUsdc: approval.costUsdc ?? proposal.costUsdc,
+            detail: approval.detail ?? "",
+          });
+          return;
+        }
+        at({ stage: "failed", researchId, proposal, detail: approval.detail ?? "Veyra would not authorise that payment." });
+        return;
+      }
+      if (!approval.accept || !approval.nonce) {
+        at({ stage: "failed", researchId, proposal, detail: "Veyra cleared the payment but returned nothing to sign." });
+        return;
+      }
+
+      /* The same signing step /run uses, on the same terms object. Two copies
+         of this would not disagree loudly — they would disagree about which
+         chain the wallet is on, once, in a popup somebody approves without
+         reading. */
+      at({ stage: "signing", researchId, proposal, terms: null, note: null });
+      const { authorization, signature } = await signPaymentAuthorization({
+        wallet,
+        accept: approval.accept,
+        nonce: approval.nonce,
+        onSwitchingChain: (chainId) => at({
+          stage: "signing",
+          researchId,
+          proposal,
+          terms: null,
+          note: `Switch your wallet to chain ${chainId} — this endpoint settles there.`,
+        }),
+        onTerms: (terms) => at({ stage: "signing", researchId, proposal, terms, note: null }),
+      });
+
+      at({ stage: "settling", researchId, proposal });
+      const settlement = await call(
+        `/api/nova/v1/agents/${identity.publicId}/signals/${signal.signalId}/research/settle`,
+        {
+          method: "POST",
+          ownerSecret: identity.ownerSecret,
+          /* The accept is not sent back. Veyra relays the one it cleared, from
+             its own row, so the payment that leaves is the payment it
+             authorised and not merely one that agrees with itself. */
+          body: JSON.stringify({ researchId, authorization, signature }),
+        },
+      ) as { status: string; investigation: NovaInvestigation };
+
+      at({ stage: "settled", researchId, proposal, investigation: settlement.investigation });
+      /* Reloaded because a settled investigation moves more than this card:
+         the item's own state, what Veyra has decided for this person, and —
+         when the answer passed its check — a new line in what Nova knows. */
+      await loadBrief(identity);
+    } catch (cause) {
+      at({
+        stage: "failed",
+        researchId,
+        proposal,
+        detail: (cause as Error)?.message ?? "The payment did not complete.",
+      });
     }
   };
 
@@ -619,6 +802,10 @@ export function NovaClient() {
                   state={research[signal.signalId]}
                   agentName={brief.agent.name}
                   fallbackHref={investigationLink(signal)}
+                  walletAddress={wallet.address}
+                  onConnect={() => void wallet.connect()}
+                  connecting={wallet.connecting}
+                  onPay={(acknowledge) => void pay(signal, acknowledge)}
                 />
               ) : null}
             </Panel>
@@ -888,42 +1075,64 @@ function DeeperResearch({
   state,
   agentName,
   fallbackHref,
+  walletAddress,
+  onConnect,
+  connecting,
+  onPay,
 }: {
   state: ResearchState;
   agentName: string;
   fallbackHref: string;
+  walletAddress: string | null;
+  onConnect: () => void;
+  connecting: boolean;
+  onPay: (acknowledge?: string) => void;
 }) {
   if (state.stage === "looking") {
     return (
-      <div className="mt-5 border-t border-border/60 pt-4">
-        <Label>Deeper research</Label>
+      <Section>
         <p className="mt-2 text-sm text-muted-foreground">
           {BRAND.name} is checking who could answer this, and what they charge…
         </p>
-      </div>
+      </Section>
     );
   }
 
-  if (state.stage !== "ready") {
+  if (state.stage === "refused") {
     return (
-      <div className="mt-5 border-t border-border/60 pt-4">
-        <Label>Deeper research</Label>
+      <Section>
         <p className="mt-2 text-sm leading-relaxed text-muted-foreground">{state.detail}</p>
-        {state.stage === "failed" ? (
-          <Link href={fallbackHref} className="mt-3 inline-block text-sm text-link underline underline-offset-4">
-            Choose a counterparty yourself
-          </Link>
-        ) : null}
-      </div>
+      </Section>
     );
   }
 
-  const { proposal } = state;
+  if (state.stage === "failed" && !state.proposal) {
+    return (
+      <Section>
+        <p className="mt-2 text-sm leading-relaxed text-muted-foreground">{state.detail}</p>
+        <Link href={fallbackHref} className="mt-3 inline-block text-sm text-link underline underline-offset-4">
+          Choose a counterparty yourself
+        </Link>
+      </Section>
+    );
+  }
+
+  /* Every remaining stage carries the proposal; the one that may not was
+     returned above. Narrowed explicitly rather than asserted, so adding a stage
+     that forgets it fails here instead of at somebody's breakfast. */
+  const proposal = "proposal" in state ? state.proposal : null;
+  if (!proposal) return null;
   const cost = `$${proposal.costUsdc.toFixed(4)}`;
 
+  /* Once money has moved, the price and the trust score are history. What
+     matters is what came back and whether it held up, so the proposal collapses
+     to one line and the result takes the space. */
+  if (state.stage === "settled") {
+    return <Outcome investigation={state.investigation} proposal={proposal} />;
+  }
+
   return (
-    <div className="mt-5 border-t border-border/60 pt-4">
-      <Label>Deeper research</Label>
+    <Section>
       <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
         {BRAND.name} looked at{" "}
         <span className="font-mono text-foreground">{proposal.probed}</span>{" "}
@@ -974,22 +1183,237 @@ function DeeperResearch({
         </ul>
       ) : null}
 
+      {state.stage === "changed" ? (
+        <MarketChanged
+          changes={state.changes}
+          detail={state.detail}
+          costUsdc={state.costUsdc}
+          onConfirm={() => onPay(state.termsHash)}
+        />
+      ) : null}
+
+      {state.stage === "failed" ? (
+        <p className="mt-4 border-t border-border/60 pt-3 text-sm leading-relaxed text-state-warn">
+          {state.detail}
+        </p>
+      ) : null}
+
+      {state.stage === "signing" ? <SigningPanel terms={state.terms} note={state.note} /> : null}
+
       <div className="mt-4 flex flex-wrap items-center gap-4">
-        {/* Paying means signing, and signing happens where a wallet is
-            connected. Deliberately not labelled "Approve": this hands over to a
-            screen that reads the market again and shows its own verdict, and a
-            button that said approve while the price could still move would be
-            collecting consent for a number it does not control. */}
-        <Link
-          href={fallbackHref}
-          className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90"
-        >
-          Pay {cost} with your wallet
+        {state.stage === "ready" || state.stage === "failed" ? (
+          walletAddress ? (
+            <button
+              type="button"
+              onClick={() => onPay()}
+              className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90"
+            >
+              {state.stage === "failed" ? `Try again — ${cost}` : `Pay ${cost} with your wallet`}
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={onConnect}
+              disabled={connecting}
+              className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:opacity-60"
+            >
+              {connecting ? "Opening your wallet…" : `Connect a wallet to pay ${cost}`}
+            </button>
+          )
+        ) : null}
+
+        {state.stage === "approving" ? (
+          <span className="text-sm text-muted-foreground">
+            {BRAND.name} is reading the market again before anything is signed…
+          </span>
+        ) : null}
+        {state.stage === "settling" ? (
+          <span className="text-sm text-muted-foreground">
+            Paid. Waiting for the answer, and checking it…
+          </span>
+        ) : null}
+
+        {state.stage === "ready" || state.stage === "failed" ? (
+          <span className="text-xs text-muted-foreground">
+            You sign it yourself. {BRAND.name} never holds your money.
+          </span>
+        ) : null}
+      </div>
+
+      {state.stage === "ready" || state.stage === "failed" ? (
+        <Link href={fallbackHref} className="mt-3 inline-block text-xs text-link underline underline-offset-4">
+          Or choose a counterparty yourself
         </Link>
+      ) : null}
+    </Section>
+  );
+}
+
+function Section({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="mt-5 border-t border-border/60 pt-4">
+      <Label>Deeper research</Label>
+      {children}
+    </div>
+  );
+}
+
+/**
+ * The market moved between the price somebody read and the signature they were
+ * about to give.
+ *
+ * This panel is the reason the rest of the file exists. Nothing has been paid,
+ * nothing has been substituted for something cheaper, and no button here is the
+ * one that was pressed a moment ago -- confirming is a second, separate act
+ * against numbers that are on screen at the time it is made.
+ */
+function MarketChanged({
+  changes,
+  detail,
+  costUsdc,
+  onConfirm,
+}: {
+  changes: TermsChange[];
+  detail: string;
+  costUsdc: number;
+  onConfirm: () => void;
+}) {
+  return (
+    <div className="mt-4 rounded-lg border border-state-warn/40 bg-state-warn/5 p-4">
+      <p className="text-sm font-medium text-state-warn">
+        The market changed since {BRAND.name} checked it.
+      </p>
+      <p className="mt-1.5 text-xs leading-relaxed text-muted-foreground">{detail}</p>
+
+      {changes.length > 0 ? (
+        <dl className="mt-3 space-y-0">
+          {changes.map((change) => (
+            <div
+              key={change.field}
+              className="flex items-baseline justify-between gap-4 border-b border-border/40 py-2 last:border-b-0"
+            >
+              <dt className="text-xs text-muted-foreground">{change.label}</dt>
+              <dd className="text-right font-mono text-xs">
+                <span className="text-muted-foreground line-through">{change.was}</span>
+                <span className="mx-2 text-muted-foreground">→</span>
+                <span className="text-foreground">{change.now}</span>
+              </dd>
+            </div>
+          ))}
+        </dl>
+      ) : null}
+
+      <div className="mt-4 flex flex-wrap items-center gap-4">
+        <button
+          type="button"
+          onClick={onConfirm}
+          className="rounded-lg border border-state-warn/60 px-4 py-2 text-sm font-semibold text-state-warn transition hover:bg-state-warn/10"
+        >
+          Pay ${costUsdc.toFixed(4)} on the new terms
+        </button>
         <span className="text-xs text-muted-foreground">
-          You sign it yourself. {BRAND.name} never holds your money.
+          Or leave it. Nothing has been paid.
         </span>
       </div>
+    </div>
+  );
+}
+
+/** What the wallet is about to be shown, shown first. The wallet names one
+ *  recipient, one amount and one nonce, and the authorization expires; it is
+ *  not an allowance the seller can draw on again. */
+function SigningPanel({ terms, note }: { terms: SigningTerms | null; note: string | null }) {
+  if (note) {
+    return <p className="mt-4 border-t border-border/60 pt-3 text-sm text-state-warn">{note}</p>;
+  }
+  if (!terms) {
+    return (
+      <p className="mt-4 border-t border-border/60 pt-3 text-sm text-muted-foreground">
+        {BRAND.name} cleared it. Your wallet is about to ask you to sign.
+      </p>
+    );
+  }
+  return (
+    <div className="mt-4 border-t border-border/60 pt-3">
+      <p className="text-sm text-muted-foreground">
+        Your wallet will show exactly this. Nothing else can be drawn against it.
+      </p>
+      <dl className="mt-3 space-y-0">
+        <Row label="Amount" value={`$${terms.amountUsdc.toFixed(4)}`} />
+        <Row label="To" value={terms.recipient} />
+        <Row label="Chain" value={String(terms.chainId)} />
+        <Row label="Expires" value={new Date(terms.validBefore * 1000).toLocaleTimeString()} />
+      </dl>
+    </div>
+  );
+}
+
+/**
+ * What the money bought.
+ *
+ * Three terminal states, and they are not softened into each other. A payment
+ * that went through and whose answer failed the check its own tier demanded is
+ * not a completed investigation with a note attached: the money is gone and the
+ * result is not trustworthy, and a person is entitled to read those as two
+ * facts rather than one hedge.
+ */
+function Outcome({
+  investigation,
+  proposal,
+}: {
+  investigation: NovaInvestigation;
+  proposal: NovaResearchProposal;
+}) {
+  const paid = investigation.paidUsdc ?? 0;
+  const verified = investigation.status === "verified";
+  const paidUnverified = investigation.status === "paid_unverified";
+
+  return (
+    <div className="mt-5 border-t border-border/60 pt-4">
+      <Label>
+        {verified ? "Result" : paidUnverified ? "Paid, not verified" : "Nothing was paid"}
+      </Label>
+
+      <p className="mt-2 text-sm leading-relaxed text-foreground">{investigation.question}</p>
+
+      <dl className="mt-3 space-y-0">
+        <Row label="Provider" value={proposal.provider} />
+        {paid > 0 ? <Row label="Paid" value={`$${paid.toFixed(4)}`} /> : null}
+        {investigation.verification ? (
+          <Row
+            label="Verification"
+            value={investigation.verification.verdict}
+            tone={investigation.verification.verdict === "PASS"
+              ? "good"
+              : investigation.verification.verdict === "FAIL" ? "warn" : "idle"}
+          />
+        ) : null}
+        {investigation.executionPublicId ? (
+          <Row label="Execution" value={investigation.executionPublicId} />
+        ) : null}
+        {investigation.transaction ? (
+          <Row label="Transaction" value={investigation.transaction} />
+        ) : null}
+      </dl>
+
+      {investigation.failure ? (
+        <p className="mt-3 text-sm leading-relaxed text-state-warn">{investigation.failure}</p>
+      ) : null}
+
+      {verified ? (
+        <p className="mt-3 text-xs leading-relaxed text-muted-foreground">
+          {BRAND.name} checked the answer against what this endpoint declares it returns, after
+          the payment. It is in what {"Nova"} knows, with the execution behind it.
+        </p>
+      ) : null}
+
+      {investigation.result !== null && investigation.result !== undefined ? (
+        <pre className="mt-3 max-h-80 overflow-auto rounded-lg border border-border/60 bg-background/40 p-3 font-mono text-[11px] leading-relaxed text-muted-foreground">
+          {typeof investigation.result === "string"
+            ? investigation.result
+            : JSON.stringify(investigation.result, null, 2)}
+        </pre>
+      ) : null}
     </div>
   );
 }

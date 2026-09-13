@@ -17,10 +17,27 @@
  */
 
 import { getAddress, isAddress } from "viem";
-import { selectMarketplaceCounterparty } from "../counterparty-selection/marketplace.ts";
-import type { MarketplaceSelection } from "../counterparty-selection/marketplace.ts";
+import {
+  issueMarketplaceClearance,
+  selectMarketplaceCounterparty,
+} from "../counterparty-selection/marketplace.ts";
+import type {
+  MarketplaceRankedCandidate,
+  MarketplaceSelection,
+  MarketplaceSelectionClearance,
+} from "../counterparty-selection/marketplace.ts";
 import { isExecutableTrustDecision } from "../trust-gate/types.ts";
-import type { TrustDecisionLevel } from "../trust-gate/types.ts";
+import type { TrustDecision, TrustDecisionLevel } from "../trust-gate/types.ts";
+import { quoteX402Call, type X402Quote } from "../x402/execution.ts";
+import { buildRequestBody } from "../x402/request-body.ts";
+import type { JsonSchema } from "../seller/json-schema.ts";
+import {
+  compareTerms,
+  hashTerms,
+  usdcFromAtomic,
+  type NovaResearchTerms,
+  type TermsChange,
+} from "./research-terms.ts";
 import type { NovaSignal } from "./types.ts";
 
 /**
@@ -85,10 +102,36 @@ export type NovaResearchProposal = {
   /** Set when evidence's first choice was passed over, and why. */
   routingNote: string | null;
   expiresAt: string;
+  /** A fingerprint of the seven facts above. Carried back on approval so the
+   *  market can be checked against what this card actually said, rather than
+   *  against whatever it says by the time somebody presses the button. */
+  termsHash: string;
+};
+
+/**
+ * What the proposal committed to, kept on the server.
+ *
+ * None of this is decoration on the card: it is what makes the approval
+ * checkable. The request body especially -- x402 prices per call, so a proposal
+ * that did not pin the body priced a different request than the one it would
+ * have paid for.
+ */
+export type NovaResearchPlan = {
+  terms: NovaResearchTerms;
+  query: string;
+  requestBody: unknown;
+  /** Set when no input schema was published and the shape is Veyra's guess. */
+  requestNote: string | null;
+  inputSchema: Record<string, unknown> | null;
+  outputSchema: Record<string, unknown> | null;
+  candidateId: string;
+  method: "GET" | "POST";
+  verificationRequired: boolean;
+  maxExposureUsdc: number;
 };
 
 export type NovaResearchOutcome =
-  | { ok: true; proposal: NovaResearchProposal }
+  | { ok: true; proposal: NovaResearchProposal; plan: NovaResearchPlan }
   | { ok: false; reason: string; detail: string };
 
 /**
@@ -159,17 +202,40 @@ export function researchRequestFor(signal: NovaSignal): { capability: string; qu
  * Veyra will not execute either, and a Pay button on something Veyra will not
  * execute is a button that exists to fail.
  */
-function vanillaFirst(selection: MarketplaceSelection) {
-  const showable = selection.candidates.filter((candidate) =>
+function preferWalletPayable(candidates: MarketplaceRankedCandidate[]) {
+  const showable = candidates.filter((candidate) =>
     isExecutableTrustDecision(candidate.trustDecision));
   const wallet = showable.find((candidate) => candidate.marketplace.funding === "wallet");
-  if (wallet) return { winner: wallet, note: null as string | null };
+  if (wallet) return { candidate: wallet, note: null };
 
   const first = showable[0] ?? null;
-  if (!first) return { winner: null, note: null as string | null };
+  if (!first) return null;
   return {
-    winner: first,
+    candidate: first,
     note: "Nothing here settles from a wallet balance, so this one needs a Circle Gateway deposit before it can be paid.",
+  };
+}
+
+/** The same counterparty as last time, or nobody. Used when re-reading the
+ *  market for an approval: the question there is whether *this* endpoint still
+ *  offers what it offered, and answering it with a different endpoint would be
+ *  the silent substitution the whole revalidation exists to prevent. */
+function pinnedTo(resource: string) {
+  return (candidates: MarketplaceRankedCandidate[]) => {
+    const match = candidates.find((candidate) => candidate.marketplace.resource === resource);
+    return match ? { candidate: match, note: null } : null;
+  };
+}
+
+export function termsFromCandidate(candidate: MarketplaceRankedCandidate, capability: string): NovaResearchTerms {
+  return {
+    provider: candidate.marketplace.provider?.name ?? "Unknown provider",
+    resource: candidate.marketplace.resource,
+    capability,
+    priceAtomic: String(Math.round(candidate.marketplace.priceUsdc * 1e6)),
+    payTo: candidate.marketplace.payTo,
+    network: candidate.marketplace.network,
+    funding: candidate.marketplace.funding,
   };
 }
 
@@ -250,6 +316,10 @@ export async function proposeResearch(input: {
       },
       now: input.now,
       fetchImpl: input.fetchImpl,
+      /* Nova's rule, applied where the engine can act on it rather than
+         afterwards on its answer. Choosing the winner here is what keeps the
+         card and the clearance describing the same counterparty. */
+      preferCandidate: preferWalletPayable,
       /* No clearance at proposal time. A clearance is an authorisation bound to
          a wallet and an endpoint, and issuing one before anybody has agreed to
          anything would mean the act of reading a brief produced a signed
@@ -264,8 +334,11 @@ export async function proposeResearch(input: {
     };
   }
 
-  const { winner, note } = vanillaFirst(selection);
-  if (!winner) {
+  const winner = selection.recommendation.candidateId
+    ? selection.candidates.find((candidate) =>
+        candidate.identity.agentId === selection.recommendation.candidateId) ?? null
+    : null;
+  if (!winner || !isExecutableTrustDecision(winner.trustDecision)) {
     return {
       ok: false,
       reason: "nothing_allowed",
@@ -277,11 +350,21 @@ export async function proposeResearch(input: {
   }
 
   const decision = winner.trustDecision;
-  /* The winner's own ceiling, not the selection's: vanillaFirst may have chosen
-     a different candidate than the engine recommended, and quoting the
-     recommendation's exposure next to another counterparty's price would be a
-     number that belongs to neither. */
+  /* The winner's own ceiling, not the selection's recommendation object: they
+     are the same counterparty now, but quoting a number that belongs to a
+     different one is the failure this used to have and is cheap to keep out. */
   const maxExposureUsdc = winner.recommendedMaxExposureUsdc || winner.marketplace.priceUsdc;
+  const terms = termsFromCandidate(winner, capability);
+
+  /* What will actually be sent, decided now rather than at approval time. x402
+     prices per call, so the body IS part of the price: quoting one shape and
+     paying for another would make the number on the card a number about a
+     different request. */
+  const request = buildRequestBody({
+    intent: question,
+    capability,
+    inputSchema: (winner.marketplace.inputSchema ?? null) as JsonSchema | null,
+  });
 
   return {
     ok: true,
@@ -289,8 +372,8 @@ export async function proposeResearch(input: {
       signalId: input.signal.signalId,
       question,
       capability,
-      provider: winner.marketplace.provider?.name ?? "Unknown provider",
-      resource: winner.marketplace.resource,
+      provider: terms.provider,
+      resource: terms.resource,
       costUsdc: winner.marketplace.priceUsdc,
       trustScore: Math.round(winner.trustScore ?? 0),
       funding: winner.marketplace.funding,
@@ -302,9 +385,259 @@ export async function proposeResearch(input: {
       verifiedAfterPaying: decision !== "ALLOW",
       reasons: reasonsFor(winner),
       probed: selection.probed,
-      routingNote: note ?? selection.recommendation.routingNote,
+      routingNote: selection.recommendation.routingNote,
       expiresAt: selection.expiresAt,
+      termsHash: hashTerms(terms),
     },
+    plan: {
+      terms,
+      query,
+      requestBody: request.body,
+      requestNote: request.guessed ? request.note : null,
+      inputSchema: (winner.marketplace.inputSchema ?? null) as Record<string, unknown> | null,
+      outputSchema: (winner.marketplace.outputSchema ?? null) as Record<string, unknown> | null,
+      candidateId: winner.marketplace.candidateId,
+      method: winner.marketplace.method,
+      verificationRequired: decision !== "ALLOW",
+      maxExposureUsdc,
+    },
+  };
+}
+
+/* ---- approval ---- */
+
+export type NovaRevalidation =
+  | {
+      ok: true;
+      quote: X402Quote;
+      terms: NovaResearchTerms;
+      termsHash: string;
+      clearance: MarketplaceSelectionClearance;
+      candidateId: string;
+      selectionId: string;
+      decision: TrustDecisionLevel;
+      verificationRequired: boolean;
+      outputSchema: Record<string, unknown> | null;
+    }
+  | {
+      /** The one outcome this whole module exists for. Nothing is authorised,
+       *  nothing is rerouted, and the person is shown both sets of numbers. */
+      ok: false;
+      reason: "market_changed";
+      changes: TermsChange[];
+      terms: NovaResearchTerms;
+      termsHash: string;
+      costUsdc: number;
+      detail: string;
+    }
+  | { ok: false; reason: "gone" | "refused" | "unquotable" | "over_budget"; detail: string };
+
+/**
+ * Reads the market again, for the exact endpoint that was on the card.
+ *
+ * Two reads, because they answer different questions and only one of them
+ * knows the price. The selection re-probes the listing -- who the provider is,
+ * what capability it claims, which rail it settles on, and whether Veyra still
+ * allows it at all. The quote raises the endpoint's own 402 challenge with the
+ * exact body that will be paid for, which is the only thing that can say what
+ * this call costs.
+ *
+ * A clearance is signed only after both have agreed with what the person was
+ * shown, or after they have explicitly accepted the difference. Everything
+ * before that point is read-only.
+ */
+export async function revalidateResearch(input: {
+  shown: NovaResearchTerms;
+  /** Hash of the terms the person is agreeing to. Equal to the hash of `shown`
+   *  on a first approval; equal to the hash of the *new* terms when they are
+   *  re-confirming a change they have just been shown. */
+  acknowledged?: string | null;
+  requestBody: unknown;
+  inputSchema?: Record<string, unknown> | null;
+  method?: "GET" | "POST";
+  query: string;
+  wallet: string;
+  signalId: string;
+  now?: Date;
+  fetchImpl?: typeof fetch;
+}): Promise<NovaRevalidation> {
+  const requesterWallet = getAddress(input.wallet);
+  const shown = input.shown;
+
+  let selection: MarketplaceSelection;
+  let winnerDecision: TrustDecision | null = null;
+  let selectionHash: `0x${string}` | null = null;
+  let selectionExpiresAt: string | null = null;
+  try {
+    selection = await selectMarketplaceCounterparty({
+      request: {
+        capability: shown.capability,
+        query: input.query,
+        budgetUsdc: RESEARCH_BUDGET_USDC,
+        limit: RESEARCH_CANDIDATE_LIMIT,
+      },
+      tenant: { tenantKey: `nova:${input.signalId}`, requesterWallet },
+      now: input.now,
+      fetchImpl: input.fetchImpl,
+      preferCandidate: pinnedTo(shown.resource),
+      // Read-only until the comparison below has passed.
+      issueClearance: false,
+      onWinnerDecision: ({ decision, selectionHash: hash, expiresAt }) => {
+        winnerDecision = decision;
+        selectionHash = hash;
+        selectionExpiresAt = expiresAt;
+      },
+    });
+  } catch (error) {
+    return {
+      ok: false,
+      reason: "unquotable",
+      detail: error instanceof Error ? error.message : "Veyra could not reach the market just now.",
+    };
+  }
+
+  const live = selection.candidates.find((candidate) =>
+    candidate.marketplace.resource === shown.resource) ?? null;
+  if (!live) {
+    return {
+      ok: false,
+      reason: "gone",
+      detail: "That endpoint is no longer listed in the catalogue. Nothing was paid. Ask for a fresh look and Veyra will price the market again.",
+    };
+  }
+  if (!isExecutableTrustDecision(live.trustDecision)) {
+    return {
+      ok: false,
+      reason: "refused",
+      detail: `${BRAND_NAME} re-checked this endpoint and will no longer authorise it: ${live.trustDecision}. Nothing was paid.`,
+    };
+  }
+
+  /* The live 402 challenge, raised by the body that will be paid for. The probe
+     above cannot substitute for this: it sends nothing, and an endpoint that
+     charges per call answers a different price to an empty request. */
+  const quoted = await quoteX402Call({
+    resource: shown.resource,
+    method: input.method === "GET" ? "GET" : "POST",
+    requestBody: input.requestBody,
+    maxAmountUsdc: RESEARCH_BUDGET_USDC,
+    inputSchema: input.inputSchema ?? null,
+  });
+  if (quoted.kind === "free") {
+    /* Not a change to confirm: there is nothing to pay, so a confirm button
+       would offer to approve an amount that does not exist and would come back
+       here again on the next press. */
+    return {
+      ok: false,
+      reason: "unquotable",
+      detail: "This endpoint is no longer asking to be paid for that request. Nothing was spent. Ask for a fresh look before deciding.",
+    };
+  }
+  if (quoted.kind === "refused") {
+    /* Deliberately not "market_changed" with an empty list. These are refusals
+       with reasons, and dressing one as a change would offer a confirm button
+       for something no confirmation can make payable. */
+    if (quoted.code === "price_above_authorization") {
+      return {
+        ok: false,
+        reason: "over_budget",
+        detail: `This endpoint now asks more than the $${RESEARCH_BUDGET_USDC.toFixed(2)} ceiling ${BRAND_NAME} will authorise from a brief. Nothing was paid, and nothing else was substituted for it.`,
+      };
+    }
+    return { ok: false, reason: "unquotable", detail: `${quoted.message} Nothing was paid.` };
+  }
+
+  const accept = quoted.quote.accept;
+  const liveTerms: NovaResearchTerms = {
+    provider: live.marketplace.provider?.name ?? "Unknown provider",
+    resource: shown.resource,
+    capability: shown.capability,
+    /* From the challenge, not the listing. The listing is what the card was
+       built from; the challenge is what the wallet will sign. */
+    priceAtomic: accept.amountAtomic,
+    payTo: accept.payTo,
+    network: accept.network,
+    funding: accept.gatewayBatched ? "gateway_deposit" : "wallet",
+  };
+  const liveHash = hashTerms(liveTerms);
+  const changes = compareTerms(shown, liveTerms);
+  const costUsdc = usdcFromAtomic(accept.amountAtomic);
+
+  /* A ceiling no confirmation can click past. Everything on the card was chosen
+     under this budget; a price that has left it is not the same proposition,
+     and offering to confirm it would turn a safety limit into a formality. */
+  if (costUsdc > RESEARCH_BUDGET_USDC) {
+    return {
+      ok: false,
+      reason: "over_budget",
+      detail: `This now costs $${costUsdc.toFixed(4)}, above the $${RESEARCH_BUDGET_USDC.toFixed(2)} ceiling ${BRAND_NAME} will authorise from a brief. Nothing was paid.`,
+    };
+  }
+
+  if (changes.length > 0 && input.acknowledged !== liveHash) {
+    return {
+      ok: false,
+      reason: "market_changed",
+      changes,
+      terms: liveTerms,
+      termsHash: liveHash,
+      costUsdc,
+      detail: `${BRAND_NAME} stopped before paying. Nothing was spent, and nothing was substituted.`,
+    };
+  }
+
+  if (!winnerDecision || !selectionHash || !selectionExpiresAt) {
+    return {
+      ok: false,
+      reason: "refused",
+      detail: `${BRAND_NAME} could not reconstruct a trust decision for that endpoint, so it refused to authorise anything.`,
+    };
+  }
+
+  /* Signed last, and only for what the challenge just quoted. Both the
+     requested value and the policy ceiling are the exact amount: a clearance
+     that authorised the tier's limit would be a stronger permission than the
+     verdict it accompanies, and a wider one than the person agreed to. */
+  const decision: TrustDecision = winnerDecision;
+  let clearance: MarketplaceSelectionClearance;
+  try {
+    clearance = await issueMarketplaceClearance({
+      decision: {
+        ...decision,
+        request: {
+          ...decision.request,
+          requestedValueUsdc: costUsdc,
+          counterparty: accept.payTo,
+        },
+        policy: { ...decision.policy, maxValueUsdc: costUsdc },
+      },
+      selectionHash,
+      issuedAt: new Date().toISOString(),
+      expiresAt: selectionExpiresAt,
+    });
+  } catch (error) {
+    return {
+      ok: false,
+      reason: "refused",
+      detail: error instanceof Error
+        ? `${BRAND_NAME} cannot sign a clearance right now, so it refused rather than authorise something it cannot attest to.`
+        : "Clearance signing is unavailable.",
+    };
+  }
+
+  return {
+    ok: true,
+    quote: quoted.quote,
+    terms: liveTerms,
+    termsHash: liveHash,
+    clearance,
+    candidateId: live.marketplace.candidateId,
+    selectionId: selection.selectionId,
+    decision: live.trustDecision,
+    verificationRequired: live.trustDecision !== "ALLOW",
+    outputSchema: (live.marketplace.outputSchema
+      ?? quoted.quote.outputSchema
+      ?? null) as Record<string, unknown> | null,
   };
 }
 

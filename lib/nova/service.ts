@@ -15,6 +15,7 @@ import type {
   NovaAgent,
   NovaBrief,
   NovaFeedback,
+  NovaInvestigation,
   NovaMemory,
   NovaPreferences,
   NovaRefresh,
@@ -48,7 +49,9 @@ export class NovaError extends Error {
 }
 
 let client: SupabaseClient | null = null;
-function db(): SupabaseClient {
+/** Shared with the investigation module, which writes the same agent's rows and
+ *  must do it through the same service-role client and the same owner check. */
+export function db(): SupabaseClient {
   if (!client) {
     const config = getServerSupabaseConfig();
     client = createClient(config.url, config.key, {
@@ -77,7 +80,7 @@ export function ownerDigest(secret: string): string {
 
 /* ---- rows ---- */
 
-type AgentRow = {
+export type AgentRow = {
   agent_id: string;
   public_id: string;
   name: string;
@@ -155,7 +158,7 @@ export async function createNova(input: {
  * A mismatch is a 404 rather than a 403, because confirming that a public id
  * exists is itself information about somebody else's agent.
  */
-async function loadOwned(publicId: string, ownerSecret: string): Promise<AgentRow> {
+export async function loadOwned(publicId: string, ownerSecret: string): Promise<AgentRow> {
   const { data, error } = await db()
     .from("nova_agents")
     .select(`${AGENT_COLUMNS}, owner_secret_digest`)
@@ -437,7 +440,7 @@ export async function loadBrief(input: {
      empty on every visit -- correct-looking, always wrong. */
   const awaySince = agent.last_opened_at ?? agent.created_at;
 
-  const [signalResult, refreshResult, awayResult, memoryResult] = await Promise.all([
+  const [signalResult, refreshResult, awayResult, memoryResult, researchResult] = await Promise.all([
     db().from("nova_signals")
       .select("signal_id, subject_id, kind, headline, detail, relevance, relevance_reason, evidence, status, execution_public_id, observed_at, nova_subjects(label, kind, interest)")
       .eq("agent_id", agent.agent_id)
@@ -465,6 +468,14 @@ export async function loadBrief(input: {
       .eq("agent_id", agent.agent_id)
       .order("updated_at", { ascending: false })
       .limit(40),
+    /* Read here rather than through lib/nova/investigation.ts, which reads this
+       module for the owner check. One narrow query is a smaller price than an
+       import cycle between the two files that write the same agent's rows. */
+    db().from("nova_research")
+      .select("research_id, signal_id, status, question, proposal, execution_public_id, paid_usdc, transaction_hash, verification, result, failure, settled_at")
+      .eq("agent_id", agent.agent_id)
+      .order("created_at", { ascending: false })
+      .limit(60),
   ]);
 
   const signals: NovaSignal[] = ((signalResult.data ?? []) as Array<Record<string, any>>).map((row) => ({
@@ -496,6 +507,22 @@ export async function loadBrief(input: {
     updatedAt: row.updated_at,
   }));
 
+  const investigations: NovaInvestigation[] = ((researchResult.data ?? []) as Array<Record<string, any>>)
+    .map((row) => ({
+      researchId: row.research_id,
+      signalId: row.signal_id,
+      status: row.status,
+      question: row.question,
+      proposal: row.proposal ?? {},
+      executionPublicId: row.execution_public_id,
+      paidUsdc: row.paid_usdc === null ? null : Number(row.paid_usdc),
+      transaction: row.transaction_hash,
+      verification: row.verification ?? null,
+      result: row.result ?? null,
+      failure: row.failure,
+      settledAt: row.settled_at,
+    }));
+
   const lastRefreshRow = (refreshResult.data ?? [])[0] as Record<string, unknown> | undefined;
   const whileAway = summariseAway(
     (awayResult.data ?? []) as Array<Record<string, unknown>>,
@@ -521,6 +548,7 @@ export async function loadBrief(input: {
     whileAway,
     wokeFromDormancy,
     memory,
+    investigations,
     standing: standingFrom(signals, memory),
   };
 }

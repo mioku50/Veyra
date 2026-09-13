@@ -10,7 +10,7 @@ import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import { BRAND } from "@/lib/brand";
 import { useArcWallet } from "@/components/wallet/use-arc-wallet";
 import { ConnectChip } from "@/components/wallet/connect-chip";
-import { buildPaymentTypedData } from "@/lib/x402/browser-payment";
+import { signPaymentAuthorization } from "@/lib/x402/sign-payment";
 import { buildRequestBody } from "@/lib/x402/request-body";
 import { CandidateCard, type RunCandidate } from "@/components/run/candidate-card";
 import { DecisionPanel, type RunDecision } from "@/components/run/decision-panel";
@@ -772,17 +772,11 @@ export function RunClient() {
 
       const { accept, nonce, quotedUsdc, resourceDescriptor } = quoted.payload as { accept: any; nonce: string; quotedUsdc: number; resourceDescriptor: unknown };
 
-      // 2. Be on the chain the endpoint is paid on. The clearance is issued on
-      //    Arc; most of the x402 catalog settles on Base, so the wallet moves
-      //    for one signature and the user is told why.
-      if (wallet.chainId !== accept.chainId) {
-        setPayment({ stage: "signing", quotedUsdc, payTo: accept.payTo, message: `Switch your wallet to chain ${accept.chainId} to pay this endpoint.` });
-        const switched = await wallet.switchToChain(accept.chainId);
-        if (!switched) throw new Error(`This endpoint settles on chain ${accept.chainId}. Switch your wallet there and try again.`);
-      }
-
-      // 3. Sign. The wallet shows the same recipient and amount as the panel,
-      //    and the signature is what caps the spend — not this page.
+      // 2. Sign. The wallet shows the same recipient and amount as the panel,
+      //    and the signature is what caps the spend — not this page. The chain
+      //    switch is part of that step now rather than ahead of it, so a
+      //    payment that turns out to need a Gateway deposit no longer opens a
+      //    chain-switch prompt on its way to being refused.
       const funding: "wallet" | "gateway_deposit" = accept.gatewayBatched ? "gateway_deposit" : "wallet";
       const quoteDrift = decision.priceUsdc !== null
         && Math.abs(quotedUsdc - decision.priceUsdc) > 1e-9
@@ -815,36 +809,31 @@ export function RunClient() {
         }
       }
 
-      const { authorization, typedData } = buildPaymentTypedData({
+      /* Shared with Nova, which pays the same way through the same code. The
+         terms are published before the wallet is asked so the two can be
+         compared field by field: one recipient, one amount, one nonce, and an
+         expiry. It is not an allowance the seller can draw again. */
+      const { authorization, signature } = await signPaymentAuthorization({
+        wallet,
         accept,
-        from: wallet.address as `0x${string}`,
-        nonce: nonce as `0x${string}`,
+        nonce,
+        onSwitchingChain: (chainId) => setPayment({
+          stage: "signing",
+          quotedUsdc,
+          payTo: accept.payTo,
+          message: `Switch your wallet to chain ${chainId} to pay this endpoint.`,
+        }),
+        onTerms: (signing) => setPayment({
+          stage: "signing",
+          quotedUsdc,
+          payTo: accept.payTo,
+          funding,
+          quoteDrift,
+          signing,
+        }),
       });
-      /* Published before the wallet is asked, so the two can be compared field
-         by field. The authorization names one recipient, one amount and one
-         nonce, and expires; it is not an allowance the seller can draw again. */
-      setPayment({
-        stage: "signing",
-        quotedUsdc,
-        payTo: accept.payTo,
-        funding,
-        quoteDrift,
-        signing: {
-          chainId: accept.chainId,
-          network: accept.network,
-          primaryType: typedData.primaryType as string,
-          amountUsdc: Number(authorization.value) / 1e6,
-          recipient: authorization.to,
-          nonce: authorization.nonce,
-          validBefore: Number(authorization.validBefore),
-          domainName: accept.assetName,
-          verifyingContract: accept.verifyingContract,
-          gatewayBatched: Boolean(accept.gatewayBatched),
-        },
-      });
-      const signature = await wallet.signTypedData(typedData as any);
 
-      // 4. Relay. Veyra carries the signed authorization to the seller and
+      // 3. Relay. Veyra carries the signed authorization to the seller and
       //    returns what came back.
       setPayment({ stage: "settling", quotedUsdc, payTo: accept.payTo, funding, quoteDrift });
       const settled = await post("/api/run/v1/settle", {
