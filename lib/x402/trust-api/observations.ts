@@ -253,9 +253,16 @@ export function summariseEndpointHistory(
     payToNow: previousPayTo,
     payToStableSince,
     distinctPayTos: payTos.size,
-    // Newest first: an agent reading a truncated list should see the most
-    // recent change, not the oldest one.
-    changes: changes.reverse(),
+    /* Newest first, and within one observation the payee change outranks the
+       price change: a caller that reads only the first entry must see the one
+       that decides whether to pay at all. Relying on push order made this
+       depend on the order the fields happen to be checked in. */
+    changes: changes.sort((left, right) => {
+      const byTime = Date.parse(right.observedAt) - Date.parse(left.observedAt);
+      if (byTime !== 0) return byTime;
+      if (left.field === right.field) return 0;
+      return left.field === "pay_to" ? -1 : 1;
+    }),
   };
 }
 

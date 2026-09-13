@@ -71,9 +71,6 @@ transaction hash:
 | Time to payout | **19 seconds**, createJob → USDC in the provider's wallet |
 | Policy checks | 11 of 11 passed, deliverable re-fetched and re-hashed by the evaluator |
 
-- Full transaction-by-transaction record: **[docs/PROOF_OF_LIVE_ERC8183.md](docs/PROOF_OF_LIVE_ERC8183.md)**
-- Live decision log: **[agent-commerce-six.vercel.app/executions](https://agent-commerce-six.vercel.app/executions)**
-
 ## Two rails, one decision core
 
 The same engine, policy tiers, and EIP-712 clearance serve both. What differs is
@@ -116,6 +113,14 @@ priority. It does not choose who gets paid. Ranking, policy, exposure limits and
 the signed authorization are deterministic and reproducible from the evidence, so
 the same inputs always produce the same decision, and it can be audited later.
 
+### Veyra is itself an x402 resource
+
+Discoverable and payable by the machinery it verifies, at
+[`/.well-known/x402`](https://agent-commerce-six.vercel.app/.well-known/x402). The
+verdict is free, with its evidence; the signed clearance costs, because a contract
+can consume an attestation and cannot consume an opinion. Reporting what happened
+after a purchase earns a credit toward the next one.
+
 ## Arc integration
 
 | | |
@@ -139,8 +144,7 @@ are what make a per-job escrow sensible at cent scale.
 ## Quickstart
 
 ```bash
-git clone https://github.com/mioku50/Veyra.git
-cd Veyra
+git clone https://github.com/mioku50/Veyra.git && cd Veyra
 npm install
 cp .env.example .env.local
 npm run dev
@@ -148,17 +152,16 @@ npm run dev
 
 Open [http://localhost:3000](http://localhost:3000).
 
-### Ask Veyra before paying an endpoint
+### Ask Veyra before paying an endpoint — no account, no key
 
 ```bash
-curl -s -X POST "$VEYRA_BASE_URL/api/trust/v1/marketplace/select" \
-  -H "authorization: Bearer $VEYRA_MACHINE_TOKEN" \
+curl -s -X POST "$VEYRA_BASE_URL/api/x402/v1/verdict" \
   -H "content-type: application/json" \
-  -d '{"capability":"market_research","budgetUsdc":0.02,"maxPriceUsdc":0.02,"limit":5}'
+  -d '{"resource":"https://api.example.com/search","budgetUsdc":0.01}'
 ```
 
 `granted: false` means do not pay. `maxExposureUsdc` is the ceiling for the call,
-and the clearance is bound to one resource — it is not transferable to another.
+and a clearance is bound to one resource — it is not transferable to another.
 
 ### TypeScript SDK
 
@@ -182,6 +185,7 @@ The deterministic suite runs locally with no secrets — every `*:test` script i
 ```bash
 npm run lint && npm run build
 npm run erc8004:test && npm run erc8183:test && npm run trust-gate:test
+npm run x402-payment:test && npm run x402-trust-api:test
 (cd contracts && forge test)
 ```
 

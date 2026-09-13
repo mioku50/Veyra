@@ -54,13 +54,37 @@ CREATE INDEX IF NOT EXISTS x402_endpoint_obs_payto_idx
 CREATE INDEX IF NOT EXISTS x402_endpoint_obs_probed_idx
     ON public.x402_endpoint_observations (probed_at DESC);
 
--- 2. Reported outcomes ------------------------------------------------------
+-- 2. Issued clearances ------------------------------------------------------
+-- The ledger an outcome report is checked against. Without it, "report what
+-- happened and earn a credit" would accept an invented digest, and the credit
+-- loop would be farmable by anyone with a random number generator.
+CREATE TABLE IF NOT EXISTS public.x402_trust_clearances (
+    clearance_digest TEXT PRIMARY KEY CHECK (clearance_digest ~ '^0x[0-9a-f]{64}$'),
+    clearance_id TEXT NOT NULL,
+    decision_id TEXT NOT NULL,
+    resource_key TEXT NOT NULL CHECK (resource_key ~ '^[0-9a-f]{64}$'),
+    resource_url TEXT NOT NULL,
+    payer TEXT CHECK (payer IS NULL OR payer ~ '^0x[0-9a-fA-F]{40}$'),
+    pay_to TEXT CHECK (pay_to IS NULL OR pay_to ~ '^0x[0-9a-fA-F]{40}$'),
+    decision TEXT NOT NULL,
+    max_exposure_usdc NUMERIC(20, 6) NOT NULL DEFAULT 0 CHECK (max_exposure_usdc >= 0),
+    chain_id INTEGER NOT NULL,
+    issued_at TIMESTAMPTZ NOT NULL,
+    expires_at TIMESTAMPTZ NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS x402_trust_clearances_resource_idx
+    ON public.x402_trust_clearances (resource_key, issued_at DESC);
+
+-- 3. Reported outcomes ------------------------------------------------------
 -- What actually happened after Veyra cleared a purchase. Only a clearance Veyra
 -- itself issued can be reported against, and each one exactly once: that is the
 -- whole Sybil defence. You cannot farm credits without first buying clearances.
 CREATE TABLE IF NOT EXISTS public.x402_trust_outcomes (
     outcome_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    clearance_digest TEXT NOT NULL UNIQUE CHECK (clearance_digest ~ '^0x[0-9a-f]{64}$'),
+    clearance_digest TEXT NOT NULL UNIQUE
+        REFERENCES public.x402_trust_clearances(clearance_digest) ON DELETE CASCADE,
     resource_key TEXT NOT NULL CHECK (resource_key ~ '^[0-9a-f]{64}$'),
     resource_url TEXT NOT NULL,
     reporter TEXT CHECK (reporter IS NULL OR reporter ~ '^0x[0-9a-fA-F]{40}$'),
@@ -76,7 +100,7 @@ CREATE TABLE IF NOT EXISTS public.x402_trust_outcomes (
 CREATE INDEX IF NOT EXISTS x402_trust_outcomes_resource_idx
     ON public.x402_trust_outcomes (resource_key, created_at DESC);
 
--- 3. Credits ----------------------------------------------------------------
+-- 4. Credits ----------------------------------------------------------------
 -- A single-use bearer grant returned once, at the moment an outcome is accepted.
 -- Only the sha256 of the token is stored, so a database reader cannot spend it.
 CREATE TABLE IF NOT EXISTS public.x402_trust_credits (
@@ -110,7 +134,7 @@ AS $$
     RETURNING x402_trust_credits.credit_id, x402_trust_credits.uses_remaining;
 $$;
 
--- 4. Paid call ledger -------------------------------------------------------
+-- 5. Paid call ledger -------------------------------------------------------
 CREATE TABLE IF NOT EXISTS public.x402_trust_api_calls (
     call_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     endpoint TEXT NOT NULL,
@@ -127,8 +151,9 @@ CREATE TABLE IF NOT EXISTS public.x402_trust_api_calls (
 CREATE INDEX IF NOT EXISTS x402_trust_api_calls_created_idx
     ON public.x402_trust_api_calls (created_at DESC);
 
--- 5. Access -----------------------------------------------------------------
+-- 6. Access -----------------------------------------------------------------
 ALTER TABLE public.x402_endpoint_observations ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.x402_trust_clearances ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.x402_trust_outcomes ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.x402_trust_credits ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.x402_trust_api_calls ENABLE ROW LEVEL SECURITY;
@@ -142,6 +167,10 @@ CREATE POLICY "Public read x402_endpoint_observations"
 DROP POLICY IF EXISTS "Service role writes x402_endpoint_observations" ON public.x402_endpoint_observations;
 CREATE POLICY "Service role writes x402_endpoint_observations"
     ON public.x402_endpoint_observations FOR ALL TO service_role USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Service role owns x402_trust_clearances" ON public.x402_trust_clearances;
+CREATE POLICY "Service role owns x402_trust_clearances"
+    ON public.x402_trust_clearances FOR ALL TO service_role USING (true) WITH CHECK (true);
 
 DROP POLICY IF EXISTS "Service role owns x402_trust_outcomes" ON public.x402_trust_outcomes;
 CREATE POLICY "Service role owns x402_trust_outcomes"
