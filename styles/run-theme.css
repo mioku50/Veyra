@@ -21,24 +21,24 @@
  */
 
 :root {
-  --run-canvas: #080a18;
-  --run-canvas-raised: #0d1024;
-  --run-surface: #13162e;
-  --run-surface-hover: #191d39;
-  --run-surface-active: #232a4d;
+  --run-canvas: #0f0818;
+  --run-canvas-raised: #180d24;
+  --run-surface: #20132e;
+  --run-surface-hover: #281939;
+  --run-surface-active: #37234d;
 
-  --run-line: #242a49;
-  --run-line-strong: #363e6b;
-  --run-line-accent: #4a3fa8;
+  --run-line: #352449;
+  --run-line-strong: #4f366b;
+  --run-line-accent: #703fa8;
 
-  --run-text: #f1f2fb;
-  --run-text-muted: #a3a8c8;
-  --run-text-faint: #6d7299;
+  --run-text: #f6f1fb;
+  --run-text-muted: #b4a3c8;
+  --run-text-faint: #826d99;
 
-  --run-accent: #7b6cff;
-  --run-accent-deep: #5b46e5;
-  --run-accent-dim: #3a2f8a;
-  --run-accent-wash: rgba(123, 108, 255, 0.11);
+  --run-accent: #b16cff;
+  --run-accent-deep: #9046e5;
+  --run-accent-dim: #592f8a;
+  --run-accent-wash: rgba(177, 108, 255, 0.11);
 
   --run-azure: #4dd0ff;
   --run-azure-deep: #1f9fd4;
@@ -51,13 +51,13 @@
   --run-red: #ff5c7a;
   --run-red-wash: rgba(255, 92, 122, 0.09);
 
-  --run-lavender: #b3a8ff;
+  --run-lavender: #d1a8ff;
 
   --run-radius: 12px;
   --run-radius-sm: 8px;
   --run-radius-lg: 18px;
 
-  --run-shadow: 0 1px 1px rgba(0, 0, 0, 0.5), 0 12px 32px -14px rgba(4, 4, 18, 0.95);
+  --run-shadow: 0 1px 1px rgba(0, 0, 0, 0.5), 0 12px 32px -14px rgba(8, 4, 18, 0.95);
   --run-shadow-lift: 0 1px 1px rgba(0, 0, 0, 0.5), 0 30px 64px -24px rgba(4, 4, 18, 1);
 
   /* A hairline of light along the top edge is what separates a surface that
@@ -72,13 +72,16 @@
   text-rendering: optimizeLegibility;
 
   /* Not flat black: a violet wash from the top-left where the eye lands first,
-     a blue wash where the eye lands, and an indigo bloom under the fold. The
-     ground has a hue at every elevation; flat black was the problem. */
-  background:
-    radial-gradient(90rem 50rem at 12% -10%, rgba(104, 84, 232, 0.20), transparent 60%),
-    radial-gradient(70rem 44rem at 88% 4%, rgba(46, 108, 190, 0.14), transparent 62%),
-    radial-gradient(90rem 60rem at 50% 108%, rgba(72, 56, 170, 0.14), transparent 66%),
-    var(--run-canvas);
+     a second wash top-right, an indigo bloom under the fold, and the same dust
+     the rest of the product sits in. The ground has a hue at every elevation;
+     flat black was the problem. */
+  background-color: var(--run-canvas);
+  background-image:
+    var(--veyra-dust),
+    radial-gradient(90rem 50rem at 12% -10%, rgba(138, 76, 240, 0.24), transparent 60%),
+    radial-gradient(70rem 44rem at 88% 4%, rgba(96, 58, 210, 0.18), transparent 62%),
+    radial-gradient(90rem 60rem at 50% 108%, rgba(110, 62, 220, 0.16), transparent 66%);
+  background-size: var(--veyra-dust-size), auto, auto, auto;
   background-attachment: fixed;
 }
 

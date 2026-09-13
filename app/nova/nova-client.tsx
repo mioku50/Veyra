@@ -247,7 +247,7 @@ export function NovaClient() {
             value={name}
             maxLength={40}
             onChange={(event) => setName(event.target.value)}
-            className="mt-3 w-full max-w-xs rounded-lg border border-border bg-background/60 px-3 py-2.5 font-mono text-base outline-none transition focus:border-primary"
+            className="field mt-3 w-full max-w-xs rounded-lg px-3 py-2.5 font-mono text-base outline-none transition"
           />
 
           <div className="mt-8">
@@ -264,10 +264,10 @@ export function NovaClient() {
                     type="button"
                     onClick={() => toggleInterest(interest.label)}
                     aria-pressed={active}
-                    className={`rounded-lg border px-4 py-2 text-sm transition ${
+                    className={`rounded-lg px-4 py-2 text-sm transition ${
                       active
-                        ? "border-primary bg-primary/15 text-foreground"
-                        : "border-border bg-background/40 text-muted-foreground hover:border-primary/50 hover:text-foreground"
+                        ? "border border-primary bg-primary/25 text-foreground"
+                        : "field text-muted-foreground hover:text-foreground"
                     }`}
                   >
                     {interest.label}
@@ -549,7 +549,7 @@ function Label({ children }: { children: React.ReactNode }) {
 
 function Panel({ children, className = "" }: { children: React.ReactNode; className?: string }) {
   return (
-    <section className={`rounded-xl border border-border bg-card/60 p-5 sm:p-6 ${className}`}>
+    <section className={`panel-glow rounded-xl p-5 sm:p-6 ${className}`}>
       {children}
     </section>
   );
@@ -580,6 +580,6 @@ function Footer() {
 
 function Shell({ children }: { children: React.ReactNode }) {
   return (
-    <div className="mx-auto w-full max-w-2xl px-5 py-10 sm:px-6 sm:py-12">{children}</div>
+    <div className="mx-auto w-full max-w-3xl px-5 py-10 sm:px-6 sm:py-12">{children}</div>
   );
 }

@@ -28,8 +28,8 @@
   --duration-slow: 400ms;
 
   /* ── Glassmorphism ── */
-  --glass-bg: rgba(19, 22, 46, 0.62);
-  --glass-bg-solid: rgba(19, 22, 46, 0.8);
+  --glass-bg: rgba(32, 19, 46, 0.62);
+  --glass-bg-solid: rgba(32, 19, 46, 0.8);
   --glass-border: rgba(255, 255, 255, 0.06);
   --glass-border-hover: rgba(255, 255, 255, 0.1);
   --glass-blur: 16px;
@@ -46,8 +46,8 @@
 
   /* ── Shadows & glows ── */
   --shadow-card: 0 4px 24px rgba(0, 0, 0, 0.4);
-  --shadow-card-hover: 0 8px 32px rgba(123, 108, 255, 0.12);
-  --shadow-glow-blue: 0 0 24px rgba(123, 108, 255, 0.18);
-  --shadow-glow-cyan: 0 0 24px rgba(123, 108, 255, 0.15);
-  --shadow-glow-sm: 0 0 12px rgba(123, 108, 255, 0.15);
+  --shadow-card-hover: 0 8px 32px rgba(163, 92, 245, 0.16);
+  --shadow-glow-blue: 0 0 24px rgba(163, 92, 245, 0.2);
+  --shadow-glow-cyan: 0 0 24px rgba(163, 92, 245, 0.16);
+  --shadow-glow-sm: 0 0 12px rgba(163, 92, 245, 0.16);
 }
