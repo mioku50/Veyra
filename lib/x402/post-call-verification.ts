@@ -251,16 +251,26 @@ export function verifyPostCall(input: {
   const chargeUnknown = settled === undefined;
   const opening = settlementKnown ? "Paid" : chargeUnknown ? "Possibly charged" : "Not paid";
 
+  /* Every check already carries a sentence saying what happened. The summary
+     was joining their ids instead, so the line a person read after paying was
+     "the delivery failed verification: response_delivered" -- the name of the
+     check that failed, where the check itself said "Endpoint answered HTTP 403
+     after taking payment". The id is still the failure code on the ledger row,
+     which is where a string meant for grep belongs. */
+  const said = (list: VerificationCheck[]) =>
+    list.map((c) => c.detail.trim()).filter(Boolean).join(" ")
+      || list.map((c) => c.id).join(", ");
+
   let verdict: PostCallVerdict;
   let summary: string;
   if (failedCritical.length > 0) {
     verdict = "FAIL";
     summary = chargeUnknown
-      ? `The delivery failed verification (${failedCritical.map((c) => c.id).join(", ")}), and the endpoint returned no settlement receipt — so whether it charged cannot be confirmed from its response.`
-      : `${opening}, but the delivery failed verification: ${failedCritical.map((c) => c.id).join(", ")}.`;
+      ? `The delivery failed verification, and the endpoint returned no settlement receipt — so whether it charged cannot be confirmed from its response. ${said(failedCritical)}`
+      : `${opening}, but the delivery failed verification. ${said(failedCritical)}`;
   } else if (failedMajor.length > 0) {
     verdict = "FAIL";
-    summary = `${opening} and answered, but the response did not hold up: ${failedMajor.map((c) => c.id).join(", ")}.`;
+    summary = `${opening} and answered, but the response did not hold up. ${said(failedMajor)}`;
   } else if (unrunCritical.length > 0) {
     verdict = "INCONCLUSIVE";
     summary = chargeUnknown

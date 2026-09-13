@@ -1491,16 +1491,23 @@ function Outcome({
         <p className="mt-3 text-sm leading-relaxed text-state-warn">{investigation.failure}</p>
       ) : null}
 
-      {!verified && investigation.result && typeof investigation.result === "string" ? (
+      {!verified && investigation.result !== null && investigation.result !== undefined ? (
         /* What the endpoint said, verbatim, under what Veyra made of it. A
            refusal paraphrased and then discarded is how an afternoon goes into
-           reconstructing something one line of the response already explained. */
+           reconstructing something one line of the response already explained.
+
+           It used to render only a string. A refused payment comes back as raw
+           text and showed; a payment that settled and then failed comes back
+           parsed, so the one case where the money is actually gone was the one
+           case that rendered nothing at all. */
         <details className="mt-3">
           <summary className="cursor-pointer text-xs text-muted-foreground hover:text-foreground">
             What the endpoint sent back
           </summary>
           <pre className="mt-2 max-h-48 overflow-auto rounded-lg border border-border/60 bg-background/40 p-3 font-mono text-[11px] leading-relaxed text-muted-foreground">
-            {investigation.result}
+            {typeof investigation.result === "string"
+              ? investigation.result
+              : JSON.stringify(investigation.result, null, 2)}
           </pre>
         </details>
       ) : null}

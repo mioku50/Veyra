@@ -444,9 +444,13 @@ export async function settleResearch(input: {
     transaction: settled.transaction,
     verification,
     result: settled.result ?? settled.body,
+    /* The seller's own words, on the branch where they matter most. A refused
+       payment already carried them; a *successful* payment followed by a
+       failed delivery did not, which is the one case where the money is gone
+       and the reader has to decide what to do about it. */
     failure: moneyMoved
-      ? `The payment went through and the answer did not pass ${"Veyra"}'s check: ${settled.verification.summary}`
-      : settled.verification.summary || "The endpoint did not answer with a usable result.",
+      ? `The payment went through and the answer did not pass ${"Veyra"}'s check: ${settled.verification.summary} ${sellerReason(settled.result ?? settled.body)}`.trim()
+      : `${settled.verification.summary || "The endpoint did not answer with a usable result."} ${sellerReason(settled.result ?? settled.body)}`.trim(),
   });
 }
 
@@ -457,17 +461,28 @@ export async function settleResearch(input: {
  * error and reason. Neither is written for a reader, so the raw body is stored
  * whole and this pulls out the part worth putting on a card.
  */
-function sellerReason(body: string | null | undefined): string {
-  if (!body) return "";
-  let parsed: unknown = null;
-  try { parsed = JSON.parse(body); } catch { return `The endpoint said: ${body.slice(0, 200)}`; }
+function sellerReason(body: unknown): string {
+  if (body === null || body === undefined) return "";
+  let parsed: unknown = body;
+  if (typeof body === "string") {
+    if (!body.trim()) return "";
+    try { parsed = JSON.parse(body); } catch { return `The endpoint said: ${body.slice(0, 200)}`; }
+  }
   if (!parsed || typeof parsed !== "object") return "";
   const record = parsed as Record<string, unknown>;
-  const said = typeof record.error === "string" ? record.error
-    : typeof record.message === "string" ? record.message
-      : null;
-  if (!said) return "";
-  return `The endpoint said: ${said.slice(0, 300)}`;
+  /* `detail` is FastAPI's field, and fal.ai answers through it. Reading only
+     `error` and `message` threw away "User is locked. Reason: Exhausted
+     balance." -- a seller telling us, in one sentence, that it had taken the
+     payment and could not deliver because its own upstream account was empty.
+     That sentence is the whole explanation of the charge, and the card showed
+     the reader a check id instead. */
+  for (const key of ["error", "message", "detail", "reason"]) {
+    const value = record[key];
+    if (typeof value === "string" && value.trim()) {
+      return `The endpoint said: ${value.slice(0, 300)}`;
+    }
+  }
+  return "";
 }
 
 function signature(value: string): `0x${string}` {

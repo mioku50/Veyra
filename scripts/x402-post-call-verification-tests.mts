@@ -153,8 +153,28 @@ const refused = verifyPostCall({
 assert.doesNotMatch(detailFor(refused, "response_delivered"), /taking payment/);
 assert.match(detailFor(refused, "response_is_not_an_error"), /settlement did not succeed/);
 
+/* ---- the summary is the only line most people read ---- */
+
+/* This is the real fal.ai answer from the first browser-signed x402 payment
+   that ever settled: the seller took $0.01 and returned its own upstream
+   account being empty. The reader saw "the delivery failed verification:
+   response_delivered" -- the name of a check -- and nothing else. */
+const locked = verifyPostCall({
+  ...BASE,
+  httpStatus: 403,
+  bodyText: JSON.stringify({ detail: "User is locked. Reason: Exhausted balance." }),
+  parsedBody: { detail: "User is locked. Reason: Exhausted balance." },
+  settlement: { success: true, transaction: "0x4c99" },
+});
+assert.equal(locked.verdict, "FAIL");
+assert.match(locked.summary, /^Paid, but the delivery failed verification\./);
+assert.match(locked.summary, /HTTP 403/, "the summary must say what the endpoint actually did");
+assert.doesNotMatch(locked.summary, /response_delivered/, "a check id is not an explanation");
+// The id survives where it is useful: as the ledger's failure code.
+assert.ok(locked.checks.some((check) => check.id === "response_delivered" && check.passed === false));
+
 function detailFor(result: ReturnType<typeof verifyPostCall>, id: string) {
   return result.checks.find((check) => check.id === id)?.detail ?? "";
 }
 
-console.log("[x402-post-call-verification-test] passed: delivery, error envelopes, empty bodies, settlement receipts, published schemas, latency envelope, amount binding, response commitment, and no check that claims a charge without a receipt");
+console.log("[x402-post-call-verification-test] passed: delivery, error envelopes, empty bodies, settlement receipts, published schemas, latency envelope, amount binding, response commitment, a failure summary that says what happened rather than which check it was, and no check that claims a charge without a receipt");

@@ -209,10 +209,16 @@ export async function closeBrowserX402Attempt(input: BrowserX402Outcome & {
       evidenceHash: input.verification?.responseHash ?? null,
     });
   } catch (error) {
+    /* Non-fatal on purpose: a ledger that is down must not strand a purchase
+       the user already signed for. But the name alone said "Error", which is
+       what a constraint violation and an illegal transition both report, and
+       the row it failed to close was the one holding a real payment. The
+       message is what tells the two apart without a forensic session. */
     console.warn("execution_attempt_not_closed", {
       executionId: input.executionId,
       targetState: outcome.state,
       errorName: error instanceof Error ? error.name : "unknown_error",
+      errorMessage: error instanceof Error ? error.message.slice(0, 300) : String(error).slice(0, 300),
     });
   }
   return outcome;

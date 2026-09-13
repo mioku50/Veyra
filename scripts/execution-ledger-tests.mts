@@ -209,3 +209,48 @@ assert.equal(unverified.state, "SETTLEMENT_UNVERIFIED");
 assert.equal(unverified.actualSettledAmountUsdc, 0, "an unproven payment is not a settled amount");
 
 console.log("[execution-ledger-test] passed: full AUTHORIZED -> EXECUTING -> terminal round trip through the real store, for settled, service-failed, refused and unverifiable purchases");
+
+/* ---- the store the states are actually written to ---- */
+
+/* Every assertion above this line runs against the in-memory store, which
+   accepts any string. The database does not: execution_attempts.state carries a
+   CHECK, and for five states it did not carry them. All five describe a moment
+   after the money left -- SETTLED_SERVICE_FAILED among them -- so the ledger
+   could record every way a purchase fails before paying and no way it fails
+   after. The write is deliberately non-fatal, so nothing surfaced; the row for
+   the first payment this product ever settled just stayed at EXECUTING.
+
+   Comparing the union against the schema is the check that would have caught
+   it, and it costs a file read. */
+
+const migrations = await import("node:fs/promises");
+const migrationDir = new URL("../supabase/migrations/", import.meta.url);
+const files = (await migrations.readdir(migrationDir)).sort();
+
+let constrained: Set<string> | null = null;
+for (const file of files) {
+  const sql = await migrations.readFile(new URL(file, migrationDir), "utf8");
+  for (const match of sql.matchAll(/state\s+TEXT\s+NOT\s+NULL\s+CHECK\s*\(state\s+IN\s*\(([^)]*)\)|CONSTRAINT\s+execution_attempts_state_check\s+CHECK\s*\(state\s+IN\s*\(([^)]*)\)/gi)) {
+    const body = match[1] ?? match[2] ?? "";
+    constrained = new Set([...body.matchAll(/'([A-Z_]+)'/g)].map((m) => m[1]));
+  }
+}
+
+assert.ok(constrained, "execution_attempts.state must be constrained by a migration");
+
+const declared = Object.keys(ALLOWED_TRANSITIONS) as ExecutionState[];
+const unwritable = declared.filter((state) => !constrained!.has(state));
+assert.deepEqual(
+  unwritable,
+  [],
+  `the state machine can reach states the database rejects: ${unwritable.join(", ")}`,
+);
+
+const unreachable = [...constrained].filter((state) => !declared.includes(state as ExecutionState));
+assert.deepEqual(
+  unreachable,
+  [],
+  `the database allows states no execution can reach: ${unreachable.join(", ")}`,
+);
+
+console.log(`[execution-ledger-test] passed: all ${declared.length} execution states are writable by the schema, and the schema allows no state the machine cannot produce`);
