@@ -19,7 +19,7 @@ import {
 import { orderByRelevance, scoreRelevance } from "../lib/nova/relevance.ts";
 import { assembleBrief, greeting, quietSummary } from "../lib/nova/brief.ts";
 import { observeRepositories } from "../lib/nova/sources.ts";
-import { summariseAway } from "../lib/nova/service.ts";
+import { EXPLICIT_IGNORE_SUPPORT, ignoreWeight, summariseAway } from "../lib/nova/service.ts";
 import {
   DORMANT_AFTER_DAYS,
   DUE_TOLERANCE_MINUTES,
@@ -261,25 +261,148 @@ for (const verdict of [payeeVerdict, tinyVerdict, doubled]) {
   assert(verdict.reason.length > 0, "a relevance decision with no stated reason is not auditable");
 }
 
-/* A learned preference demotes, but it must never suppress a payee change:
-   taste is evidence about what someone likes to read, not permission to hide
-   where their money goes. */
-const dismissedNoise = scoreRelevance({
+/* ---- what a person says, and what it changes ---- */
+
+const NOTHING_SAID = { ignored: [], favoured: [], followed: [] };
+
+/* One shrug is not a decision. A single "not interesting" on a crowded morning
+   must not cost someone a whole topic -- it demotes, and that is all. */
+const shrugged = scoreRelevance({
   change: busyRepo[0],
   keywords,
   subjectText: "Foundry ethereum toolkit",
-  ignoredPhrases: ["commit"],
+  preferences: { ...NOTHING_SAID, ignored: [{ phrase: "commit", weight: ignoreWeight(1) }] },
 });
-assert.equal(dismissedNoise.relevance, "noise");
-assert.match(dismissedNoise.reason, /usually dismiss/);
+assert.match(shrugged.reason, /usually dismiss/);
+assert.notEqual(shrugged.relevance, "noise", "one dismissal must not bury a topic");
 
-const dismissedPayee = scoreRelevance({
-  change: payee[0],
+/* Repetition is what turns a shrug into a preference, and an explicit "never
+   show me this" enters at the same weight repetition would take days to earn --
+   because it is not an inference at all, the person said it. */
+assert(ignoreWeight(3) > ignoreWeight(1), "saying it again has to count for more");
+assert.equal(ignoreWeight(9), ignoreWeight(3), "past a point more of the same evidence adds nothing");
+assert.equal(ignoreWeight(EXPLICIT_IGNORE_SUPPORT), ignoreWeight(99), "an explicit ban enters at the ceiling");
+
+const banned = scoreRelevance({
+  change: busyRepo[0],
   keywords,
-  subjectText: "Exa search usdc payment",
-  ignoredPhrases: ["address", "paying"],
+  subjectText: "Foundry ethereum toolkit",
+  preferences: {
+    ...NOTHING_SAID,
+    ignored: [{ phrase: "commit", weight: ignoreWeight(EXPLICIT_IGNORE_SUPPORT) }],
+  },
 });
-assert.equal(dismissedPayee.relevance, "high", "a learned preference must not hide a payee change");
+assert.equal(banned.relevance, "noise", "an explicit ban has to actually silence the category");
+
+/* When several learned preferences match, the strongest one decides. Stacking
+   them would let three mild shrugs outweigh a deliberate decision. */
+const several = scoreRelevance({
+  change: busyRepo[0],
+  keywords,
+  subjectText: "Foundry ethereum toolkit",
+  preferences: {
+    ...NOTHING_SAID,
+    ignored: [
+      { phrase: "commit", weight: ignoreWeight(1) },
+      { phrase: "foundry", weight: ignoreWeight(1) },
+    ],
+  },
+});
+assert.equal(several.score, shrugged.score, "matching twice is not a stronger statement than matching once");
+
+/* Taste is evidence about what someone likes to read, not permission to hide
+   where their money goes. Nothing a person can say switches this off. */
+for (const weight of [ignoreWeight(1), ignoreWeight(EXPLICIT_IGNORE_SUPPORT)]) {
+  const dismissedPayee = scoreRelevance({
+    change: payee[0],
+    keywords,
+    subjectText: "Exa search usdc payment",
+    preferences: { ...NOTHING_SAID, ignored: [{ phrase: "address", weight }, { phrase: "paying", weight }] },
+  });
+  assert.equal(dismissedPayee.relevance, "high", "a learned preference must not hide a payee change");
+  assert.doesNotMatch(dismissedPayee.reason, /usually dismiss/, "and must not claim it tried");
+}
+
+/* Approval is the half that was missing. Without it the only thing either agent
+   could learn was what to remove, so two Novas started from the same interests
+   would converge on the same floor instead of diverging. */
+const quiet = scoreRelevance({ change: busyRepo[0], keywords: [], subjectText: "Foundry ethereum toolkit" });
+const approved = scoreRelevance({
+  change: busyRepo[0],
+  keywords: [],
+  subjectText: "Foundry ethereum toolkit",
+  preferences: { ...NOTHING_SAID, favoured: ["commits"] },
+});
+assert(approved.score > quiet.score, "marking a category useful has to raise it");
+assert.match(approved.reason, /you find commits useful/);
+
+/* Following is about one thing, not a category: the answer to "I do not care
+   about commits in general, I care about this repository". */
+const followed = scoreRelevance({
+  change: busyRepo[0],
+  keywords: [],
+  subjectText: "Foundry ethereum toolkit",
+  subjectLabel: "Foundry",
+  preferences: { ...NOTHING_SAID, followed: ["Foundry"] },
+});
+assert(followed.score > quiet.score, "following has to raise the thing followed");
+assert.match(followed.reason, /you follow Foundry/);
+
+/* And only that thing. Matching a followed name as a substring of prose is how
+   "Arc" would start following every mention of architecture. */
+const notFollowed = scoreRelevance({
+  change: busyRepo[0],
+  keywords: [],
+  subjectText: "Foundry ethereum toolkit",
+  subjectLabel: "ethereum/ERCs",
+  preferences: { ...NOTHING_SAID, followed: ["Foundry"] },
+});
+assert.equal(notFollowed.score, quiet.score, "a follow must match the subject's name, not a word inside it");
+
+/* The plan's acceptance test, at the level it can actually be checked: two
+   agents that started identically, shown the same week, must not produce the
+   same brief. Before feedback could raise anything, the only thing either could
+   learn was what to remove, so they converged on the same floor -- the more
+   either used the product, the more alike they got. */
+{
+  const week = [busyRepo[0], priced[0], railed[0]].filter(Boolean);
+
+  // One reads commits and ignores price moves.
+  const engineer = week.map((change) => scoreRelevance({
+    change,
+    keywords,
+    subjectText: "Foundry ethereum toolkit",
+    subjectLabel: "Foundry",
+    preferences: {
+      ignored: [{ phrase: "price changes", weight: ignoreWeight(EXPLICIT_IGNORE_SUPPORT) }],
+      favoured: ["commits"],
+      followed: ["Foundry"],
+    },
+  }));
+
+  // The other watches cost and does not want the commit firehose.
+  const operator = week.map((change) => scoreRelevance({
+    change,
+    keywords,
+    subjectText: "Foundry ethereum toolkit",
+    subjectLabel: "Foundry",
+    preferences: {
+      ignored: [{ phrase: "commits", weight: ignoreWeight(EXPLICIT_IGNORE_SUPPORT) }],
+      favoured: ["price changes"],
+      followed: [],
+    },
+  }));
+
+  assert.notDeepEqual(
+    engineer.map((v) => v.relevance),
+    operator.map((v) => v.relevance),
+    "two agents shown the same week must be able to disagree about it",
+  );
+  assert(
+    engineer[0].score > operator[0].score,
+    "the one who said commits are useful has to see commits above the one who banned them",
+  );
+}
 
 /* ---- ordering ---- */
 
@@ -473,4 +596,4 @@ assert(
   "tolerance this large would let consecutive ticks refresh the same agent",
 );
 
-console.log("[nova-test] passed: interests kept even when unknown, a first sighting reported as a finding rather than as news, the same commits not re-reported across refreshes, a payee change outranking everything and un-learnable away, a rail change surfaced a day before it could refuse a payment, a 3% price move kept out of the headline, a brief that caps findings so a change can never be crowded out, a tick that reads each URL once and shares its failures, and an absence measured by adding up every unattended pass rather than reporting the last one");
+console.log("[nova-test] passed: interests kept even when unknown, a first sighting reported as a finding rather than as news, the same commits not re-reported across refreshes, a payee change outranking everything and un-learnable away, a rail change surfaced a day before it could refuse a payment, a 3% price move kept out of the headline, a brief that caps findings so a change can never be crowded out, a tick that reads each URL once and shares its failures, and an absence measured by adding up every unattended pass rather than reporting the last one, and feedback that can raise as well as bury without ever silencing a payee change");

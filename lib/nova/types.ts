@@ -50,6 +50,46 @@ export const NOVA_SIGNAL_STATUS = [
 ] as const;
 export type NovaSignalStatus = (typeof NOVA_SIGNAL_STATUS)[number];
 
+/**
+ * What a person can say about one item.
+ *
+ * Dismissal alone could only ever make a brief smaller. Two agents started with
+ * the same interests would converge, not diverge, because the only thing either
+ * could learn was what to remove -- and both would end up at the same floor.
+ * These are the verbs that let a brief be shaped rather than only trimmed.
+ *
+ *   seen             read, no opinion
+ *   useful           more of this category
+ *   not_interesting  not this topic -- softer than a ban, and it accumulates
+ *   follow           this specific thing matters, whatever the category
+ *   ignore_kind      never this category again
+ *   investigating    worth paying to look deeper
+ */
+export const NOVA_FEEDBACK = [
+  "seen",
+  "useful",
+  "not_interesting",
+  "follow",
+  "ignore_kind",
+  "investigating",
+] as const;
+export type NovaFeedback = (typeof NOVA_FEEDBACK)[number];
+
+/**
+ * What Nova has learned, in the form scoring needs it.
+ *
+ * Ignores carry a weight because a single "not interesting" and a deliberate
+ * "never show me this" are different statements, and flattening them would let
+ * one impatient click bury a topic forever.
+ */
+export type NovaPreferences = {
+  ignored: Array<{ phrase: string; weight: number }>;
+  /** Categories the person has marked useful. */
+  favoured: string[];
+  /** Subject labels the person asked to follow. */
+  followed: string[];
+};
+
 export type NovaAgent = {
   publicId: string;
   name: string;

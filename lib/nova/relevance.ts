@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { NovaRelevance, NovaSignalKind, ObservedChange } from "./types.ts";
+import type { NovaPreferences, NovaRelevance, NovaSignalKind, ObservedChange } from "./types.ts";
 
 /**
  * How much a change is worth this person's attention.
@@ -32,8 +32,12 @@ export type RelevanceInput = {
    * came back equally relevant.
    */
   subjectText?: string | null;
-  /** Phrases this person has repeatedly dismissed, learned from behaviour. */
-  ignoredPhrases?: string[];
+  /** The subject's own name, for an exact match against what is followed.
+   *  A label is a thing a person picked off a list; matching it as a substring
+   *  of a sentence would make "Arc" follow every mention of architecture. */
+  subjectLabel?: string | null;
+  /** What this person has told Nova, and what Nova has learned from dismissals. */
+  preferences?: NovaPreferences;
   interest?: string | null;
 };
 
@@ -171,18 +175,49 @@ export function scoreRelevance(input: RelevanceInput): RelevanceVerdict {
   score += activity.bonus;
   if (activity.note) reasons.push(activity.note);
 
-  /* What this person has repeatedly dismissed.
+  const preferences = input.preferences;
+  const shown = `${text} ${input.change.headline}`.toLowerCase();
+
+  /* Told, not inferred. "Useful" is the person naming a category they want more
+     of, so unlike the keyword pass this is allowed to match Nova's own headline:
+     the phrase came from the signal's kind, which is machine-derived, not from
+     the sentence Nova wrote. Capped, so no amount of approval can outrank a
+     payee change. */
+  const favoured = matchedKeywords(shown, preferences?.favoured ?? []);
+  if (favoured.length > 0) {
+    score += Math.min(20, 10 * favoured.length);
+    reasons.push(`you find ${favoured[0]} useful`);
+  }
+
+  /* Following is about one thing, not a category, so it is matched on the
+     subject's own name and nothing else. It is the strongest lever a person
+     has, and deliberately so: it is the only way to say "this repository
+     matters to me" when the category it belongs to does not. */
+  const label = (input.subjectLabel ?? "").trim().toLowerCase();
+  if (label && (preferences?.followed ?? []).some((entry) => entry.trim().toLowerCase() === label)) {
+    score += 28;
+    reasons.push(`you follow ${input.subjectLabel}`);
+  }
+
+  /* What this person has dismissed, or banned outright.
      Matched against the subject AND the headline, because a preference is
      learned from items as they were shown. Unlike interest keywords this can
      only ever demote, so matching Nova's own wording here cannot inflate
-     anything -- and it still never overrides a payee change. */
-  const ignored = matchedKeywords(
-    `${text} ${input.change.headline}`.toLowerCase(),
-    input.ignoredPhrases ?? [],
-  );
-  if (ignored.length > 0 && input.change.kind !== "payee_changed") {
-    score -= 30;
-    reasons.push(`you usually dismiss ${ignored[0]}`);
+     anything -- and it still never overrides a payee change.
+
+     Weighted, because one shrug and "never show me this again" are different
+     statements. Flattening them would let a single impatient click bury a topic
+     as thoroughly as a deliberate decision. */
+  if (input.change.kind !== "payee_changed") {
+    let worst: { phrase: string; weight: number } | null = null;
+    for (const entry of preferences?.ignored ?? []) {
+      if (matchedKeywords(shown, [entry.phrase]).length === 0) continue;
+      if (!worst || entry.weight > worst.weight) worst = entry;
+    }
+    if (worst) {
+      score -= worst.weight;
+      reasons.push(`you usually dismiss ${worst.phrase}`);
+    }
   }
 
   const relevance: NovaRelevance =

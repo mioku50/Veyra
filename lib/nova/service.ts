@@ -14,7 +14,9 @@ import { observeRepositories, observeX402Catalog, type SourceObservation } from 
 import type {
   NovaAgent,
   NovaBrief,
+  NovaFeedback,
   NovaMemory,
+  NovaPreferences,
   NovaRefresh,
   NovaSignal,
   NovaStanding,
@@ -242,7 +244,7 @@ export async function runRefresh(input: {
     existing.set(`${row.kind} ${row.ref}`, row);
   }
 
-  const ignoredPhrases = await loadIgnoredPhrases(agent.agent_id);
+  const preferences = await loadPreferences(agent.agent_id);
   const keywords = keywordsForInterests(agent.interests);
 
   const signalRows: Array<Record<string, unknown>> = [];
@@ -271,7 +273,8 @@ export async function runRefresh(input: {
         change,
         keywords,
         subjectText: observation.subjectText,
-        ignoredPhrases,
+        subjectLabel: observation.label,
+        preferences,
         interest: observation.interest,
       });
       if (verdict.relevance === "noise") asNoise += 1;
@@ -373,14 +376,51 @@ function toRefresh(row: Record<string, unknown> | null): NovaRefresh {
   };
 }
 
-async function loadIgnoredPhrases(agentId: string): Promise<string[]> {
+/**
+ * Everything this person has told Nova, in the shape scoring wants.
+ *
+ * One read rather than three: preferences are a handful of rows and they are
+ * needed together on every single subject of every refresh.
+ */
+async function loadPreferences(agentId: string): Promise<NovaPreferences> {
   const { data } = await db()
     .from("nova_memory")
-    .select("summary")
+    .select("facet, summary, support_count")
     .eq("agent_id", agentId)
-    .eq("kind", "preference")
-    .eq("facet", "usually_ignores");
-  return ((data ?? []) as Array<{ summary: string }>).map((row) => row.summary);
+    .eq("kind", "preference");
+
+  const rows = (data ?? []) as Array<{ facet: string; summary: string; support_count: number }>;
+  const preferences: NovaPreferences = { ignored: [], favoured: [], followed: [] };
+  for (const row of rows) {
+    if (row.facet === "usually_ignores") {
+      preferences.ignored.push({ phrase: row.summary, weight: ignoreWeight(row.support_count) });
+    } else if (row.facet === "cares_about") {
+      preferences.favoured.push(row.summary);
+    } else if (row.facet === "follows") {
+      preferences.followed.push(row.summary);
+    }
+  }
+  return preferences;
+}
+
+/**
+ * How hard a dismissal pushes down.
+ *
+ * One shrug is not a decision, and treating it as one is how a feed ends up
+ * silently missing a whole topic because of a single impatient click on a
+ * crowded morning. Repetition is what turns a shrug into a preference, so the
+ * weight climbs with it and then stops: past a point, more evidence of the same
+ * thing should not keep making the penalty worse.
+ *
+ * An explicit "never show me this" enters at the ceiling, because it is not an
+ * inference at all -- the person said it.
+ */
+const IGNORE_WEIGHT = { floor: 18, step: 6, ceiling: 30 } as const;
+export const EXPLICIT_IGNORE_SUPPORT = 3;
+
+export function ignoreWeight(supportCount: number): number {
+  const support = Math.max(1, supportCount || 1);
+  return Math.min(IGNORE_WEIGHT.ceiling, IGNORE_WEIGHT.floor + IGNORE_WEIGHT.step * (support - 1));
 }
 
 /* ---- reading ---- */
@@ -558,50 +598,129 @@ export { quietSummary };
  */
 export const PREFERENCE_THRESHOLD = 3;
 
+/**
+ * What each verb does to the item in front of the person.
+ *
+ * Separate from what it teaches, because the two are not the same decision:
+ * following something keeps it on screen, banning a category takes it off, and
+ * both write memory. Reading the mapping in one place is how you check that a
+ * verb cannot quietly do something its label does not say.
+ */
+const FEEDBACK_STATUS: Record<NovaFeedback, "seen" | "dismissed" | "investigating"> = {
+  seen: "seen",
+  useful: "seen",
+  follow: "seen",
+  not_interesting: "dismissed",
+  ignore_kind: "dismissed",
+  investigating: "investigating",
+};
+
 export async function markSignal(input: {
   publicId: string;
   ownerSecret: string;
   signalId: string;
-  status: "seen" | "dismissed";
+  feedback: NovaFeedback;
 }): Promise<void> {
   const agent = await loadOwned(input.publicId, input.ownerSecret);
+  const status = FEEDBACK_STATUS[input.feedback];
+
   const { data } = await db()
     .from("nova_signals")
-    .update({ status: input.status, updated_at: new Date().toISOString() })
+    .update({ status, updated_at: new Date().toISOString() })
     .eq("agent_id", agent.agent_id)
     .eq("signal_id", input.signalId)
-    .select("kind")
+    .select("kind, nova_subjects(label)")
     .maybeSingle();
 
-  if (input.status !== "dismissed" || !data) return;
+  if (!data) return;
+  const row = data as { kind: string; nova_subjects?: { label?: string } | null };
+  const category = preferencePhraseFor(row.kind);
+  const label = row.nova_subjects?.label?.trim() ?? "";
 
-  const phrase = preferencePhraseFor((data as { kind: string }).kind);
-  if (!phrase) return;
+  switch (input.feedback) {
+    case "useful":
+      /* Only a category can be marked useful, and only one Nova is willing to
+         learn about. The unlearnable kinds are unlearnable in both directions:
+         if a payee change cannot be turned off, it must not be possible to
+         claim credit for turning it up either. */
+      if (category) await rememberPreference(agent.agent_id, "cares_about", category, { learnedFrom: row.kind });
+      return;
 
+    case "follow":
+      /* A subject, not a category. This is the answer to "I do not care about
+         releases in general, I care about this one repository" -- which stated
+         interests alone have no way to express. */
+      if (label) await rememberPreference(agent.agent_id, "follows", label, { learnedFrom: "follow", kind: row.kind });
+      return;
+
+    case "not_interesting":
+      /* The topic, not the category. Dismissing one noisy repository should not
+         cost the person every release notice they have. Soft, and it
+         accumulates: the weight climbs only if they keep saying it. */
+      if (label) await rememberPreference(agent.agent_id, "usually_ignores", label, { learnedFrom: "not_interesting" });
+      return;
+
+    case "ignore_kind":
+      /* The category, stated outright, so it enters at full weight rather than
+         waiting for repetition to prove something already said. */
+      if (category) {
+        await rememberPreference(
+          agent.agent_id,
+          "usually_ignores",
+          category,
+          { learnedFrom: "ignore_kind" },
+          EXPLICIT_IGNORE_SUPPORT,
+        );
+      }
+      return;
+
+    default:
+      return;
+  }
+}
+
+/**
+ * Writes a preference, or strengthens the one already there.
+ *
+ * `atLeast` is how an explicit instruction enters at the weight repetition
+ * would otherwise take days to reach, without ever weakening something the
+ * person has said more often than that.
+ */
+async function rememberPreference(
+  agentId: string,
+  facet: "cares_about" | "usually_ignores" | "follows",
+  summary: string,
+  evidence: Record<string, unknown>,
+  atLeast = 1,
+): Promise<void> {
+  const trimmed = summary.slice(0, 600);
   const { data: current } = await db()
     .from("nova_memory")
     .select("memory_id, support_count")
-    .eq("agent_id", agent.agent_id)
+    .eq("agent_id", agentId)
     .eq("kind", "preference")
-    .eq("facet", "usually_ignores")
-    .eq("summary", phrase)
+    .eq("facet", facet)
+    .eq("summary", trimmed)
     .maybeSingle();
 
   if (current) {
     const row = current as { memory_id: string; support_count: number };
     await db().from("nova_memory")
-      .update({ support_count: row.support_count + 1, updated_at: new Date().toISOString() })
+      .update({
+        support_count: Math.max(row.support_count + 1, atLeast),
+        updated_at: new Date().toISOString(),
+      })
       .eq("memory_id", row.memory_id);
     return;
   }
 
   await db().from("nova_memory").insert({
-    agent_id: agent.agent_id,
+    agent_id: agentId,
     kind: "preference",
-    facet: "usually_ignores",
-    summary: phrase,
-    evidence: { learnedFrom: (data as { kind: string }).kind },
-    support_count: 1,
+    facet,
+    summary: trimmed,
+    evidence,
+    support_count: atLeast,
   });
 }
 

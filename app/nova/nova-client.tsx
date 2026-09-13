@@ -9,7 +9,7 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { BRAND } from "@/lib/brand";
 import { INTEREST_CATALOG, MAX_INTERESTS } from "@/lib/nova/interests";
-import type { NovaBrief, NovaSignal } from "@/lib/nova/types";
+import type { NovaBrief, NovaFeedback, NovaSignal } from "@/lib/nova/types";
 
 /**
  * The personal agent, and the front door.
@@ -74,6 +74,23 @@ function parseRecoveryKey(text: string): { publicId: string; ownerSecret: string
   return { publicId, ownerSecret };
 }
 
+/**
+ * The category a signal belongs to, for the "Ignore …" verb.
+ *
+ * Mirrors preferencePhraseFor on the server, and returns null for the same
+ * kinds: a changed payee, a changed rail and an endpoint going dark are not
+ * matters of taste. The button is not disabled for those, it is absent -- an
+ * offer a person cannot take is worse than no offer, because it reads as a
+ * promise the product is refusing to keep.
+ */
+const IGNORABLE: Record<string, string> = {
+  repository_activity: "commits",
+  repository_release: "releases",
+  capability_available: "new capabilities",
+  price_changed: "price changes",
+  endpoint_recovered: "recoveries",
+};
+
 const RELEVANCE_CHIP: Record<NovaSignal["relevance"], { label: string; className: string }> = {
   high: { label: "high relevance", className: "border-state-warn/40 bg-state-warn/10 text-state-warn" },
   medium: { label: "worth reading", className: "border-primary/40 bg-primary/10 text-primary" },
@@ -124,6 +141,10 @@ export function NovaClient() {
   const [justCreated, setJustCreated] = useState(false);
   const [restoreText, setRestoreText] = useState("");
   const [restoring, setRestoring] = useState(false);
+  /* What the person has said about each item on this visit. Useful and Follow
+     keep the item on screen -- hiding something you just called useful is the
+     opposite of what the word means -- so the card has to show that it landed. */
+  const [said, setSaid] = useState<Record<string, NovaFeedback>>({});
 
   const call = useCallback(async (
     path: string,
@@ -269,23 +290,39 @@ export function NovaClient() {
     }
   };
 
-  const mark = async (signalId: string, status: "seen" | "dismissed") => {
+  /**
+   * Says one thing about one item.
+   *
+   * The two families behave differently on purpose. Rejecting something removes
+   * it, because leaving it there after you said you did not want it is the
+   * product arguing. Approving something keeps it and marks the card, because
+   * hiding what you just called useful is the opposite of what the word means.
+   */
+  const say = async (signalId: string, feedback: NovaFeedback) => {
     if (!identity || !brief) return;
-    // Removed locally first: a dismissal that waits for a round trip feels like
-    // it did not register, and the server is the record either way.
-    setBrief({
-      ...brief,
-      worthAttention: brief.worthAttention.filter((signal) => signal.signalId !== signalId),
-    });
+    const removes = feedback === "not_interesting" || feedback === "ignore_kind";
+
+    // Applied locally first: feedback that waits for a round trip feels like it
+    // did not register, and the server is the record either way.
+    if (removes) {
+      setBrief({
+        ...brief,
+        worthAttention: brief.worthAttention.filter((signal) => signal.signalId !== signalId),
+      });
+    } else {
+      setSaid((current) => ({ ...current, [signalId]: feedback }));
+    }
+
     try {
       await call(`/api/nova/v1/agents/${identity.publicId}/signals/${signalId}`, {
         method: "PATCH",
         ownerSecret: identity.ownerSecret,
-        body: JSON.stringify({ status }),
+        body: JSON.stringify({ feedback }),
       });
     } catch {
-      /* A failed dismissal reappears in the next brief, which is the honest
-         outcome: it was not recorded, so it should not look as though it was. */
+      /* Feedback that failed to record reappears in the next brief, which is
+         the honest outcome: it was not written down, so it should not look as
+         though it was. */
     }
   };
 
@@ -424,7 +461,11 @@ export function NovaClient() {
     return <Shell><Panel><p className="text-sm text-muted-foreground">No brief yet.</p></Panel></Shell>;
   }
 
-  const ignores = brief.memory.filter((entry) => entry.kind === "preference" && entry.facet === "usually_ignores");
+  const preference = (facet: string) =>
+    brief.memory.filter((entry) => entry.kind === "preference" && entry.facet === facet);
+  const ignores = preference("usually_ignores");
+  const favours = preference("cares_about");
+  const follows = preference("follows");
   const learnings = brief.memory.filter((entry) => entry.kind === "learning");
   const attention = brief.worthAttention;
   const agentName = brief.agent.name;
@@ -499,20 +540,35 @@ export function NovaClient() {
                 {"  "}{signal.relevanceReason}
               </p>
 
-              <div className="mt-4 flex flex-wrap items-center gap-3">
+              <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-3">
                 <Link
                   href={investigationLink(signal)}
+                  onClick={() => { void say(signal.signalId, "investigating"); }}
                   className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90"
                 >
                   Let {brief.agent.name} investigate
                 </Link>
-                <button
-                  type="button"
-                  onClick={() => mark(signal.signalId, "dismissed")}
-                  className="text-sm text-muted-foreground transition hover:text-foreground"
-                >
-                  Not interesting
-                </button>
+
+                {said[signal.signalId] ? (
+                  <span className="font-mono text-[11px] uppercase tracking-wider text-state-good">
+                    {said[signal.signalId] === "follow" ? "following" : "marked useful"}
+                  </span>
+                ) : (
+                  <>
+                    <Verb onClick={() => say(signal.signalId, "useful")}>Useful</Verb>
+                    <Verb onClick={() => say(signal.signalId, "follow")}>
+                      Follow {signal.subjectLabel ?? "this"}
+                    </Verb>
+                    <Verb onClick={() => say(signal.signalId, "not_interesting")}>
+                      Not interesting
+                    </Verb>
+                    {IGNORABLE[signal.kind] ? (
+                      <Verb onClick={() => say(signal.signalId, "ignore_kind")}>
+                        Ignore {IGNORABLE[signal.kind]}
+                      </Verb>
+                    ) : null}
+                  </>
+                )}
               </div>
             </Panel>
           );
@@ -575,16 +631,32 @@ export function NovaClient() {
         <Label>What {brief.agent.name} knows about you</Label>
         <dl className="mt-4 space-y-0">
           <Row label="You care about" value={brief.agent.interests.join(" · ")} />
+          {follows.length > 0 ? (
+            <Row label="You follow" value={follows.map((entry) => entry.summary).join(" · ")} tone="good" />
+          ) : null}
+          {favours.length > 0 ? (
+            <Row label="You find useful" value={favours.map((entry) => entry.summary).join(" · ")} />
+          ) : null}
           {ignores.length > 0 ? (
-            <Row label="You usually ignore" value={ignores.map((entry) => entry.summary).join(" · ")} />
+            /* Said more than once is shown as said more than once. A preference
+               asserted from a single click is a guess, and presenting it with
+               the same confidence as one a person has repeated five times is
+               how "what Nova knows about you" stops being true. */
+            <Row
+              label="You usually ignore"
+              value={ignores
+                .map((entry) => entry.supportCount > 1 ? `${entry.summary} ×${entry.supportCount}` : entry.summary)
+                .join(" · ")}
+            />
           ) : null}
           {learnings.length > 0 ? (
             <Row label={`Verified by ${BRAND.name}`} value={`${learnings.length}`} tone="good" />
           ) : null}
         </dl>
-        {ignores.length === 0 && learnings.length === 0 ? (
+        {ignores.length === 0 && favours.length === 0 && follows.length === 0 && learnings.length === 0 ? (
           <p className="mt-4 text-xs leading-relaxed text-muted-foreground">
-            Nothing learned yet. Dismissing what you do not want teaches it what to hold back.
+            Nothing learned yet. Saying what is useful, what to follow and what to hold back is
+            what makes this brief yours rather than everyone&apos;s.
           </p>
         ) : null}
       </Panel>
@@ -738,6 +810,20 @@ function RecoveryKey({
         </button>
       </div>
     </Panel>
+  );
+}
+
+/** A quiet action. These sit beside the one button that can spend money, so
+ *  none of them may look like it. */
+function Verb({ onClick, children }: { onClick: () => void; children: React.ReactNode }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="text-sm text-muted-foreground underline decoration-transparent underline-offset-4 transition hover:text-foreground hover:decoration-current"
+    >
+      {children}
+    </button>
   );
 }
 
