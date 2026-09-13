@@ -479,13 +479,18 @@ async function finish(row: ResearchRow, outcome: {
 
   const updated = (data as ResearchRow | null) ?? row;
 
-  /* The signal follows the money, not the verdict, for the execution link: a
-     payment that happened is a decision Veyra made and executed, and hiding it
-     because the answer disappointed would understate what was spent. The
-     status follows the verdict: only a verified result is an investigated one. */
+  /* Only a verified result marks the signal, and it marks it with both facts at
+     once. The brief counts Veyra decisions off this column, so filing a payment
+     whose answer failed its check -- or one the seller refused outright --
+     would inflate a number a person reads as "things Veyra saw through".
+     Nothing is lost by leaving it off: the money, the execution and the
+     transaction are all on the nova_research row either way, which is where an
+     account of what was spent belongs. */
   const signalUpdate: Record<string, unknown> = { updated_at: now };
-  if (outcome.executionPublicId) signalUpdate.execution_public_id = outcome.executionPublicId;
-  if (outcome.status === "verified") signalUpdate.status = "investigated";
+  if (outcome.status === "verified") {
+    signalUpdate.status = "investigated";
+    if (outcome.executionPublicId) signalUpdate.execution_public_id = outcome.executionPublicId;
+  }
   await db()
     .from("nova_signals")
     .update(signalUpdate)
