@@ -588,11 +588,15 @@ export function NovaClient() {
                   </button>
                 )}
 
-                {said[signal.signalId] ? (
+                {/* Nothing for "investigating": the priced proposal below is the
+                    acknowledgement, and a chip above it saying so would be the
+                    screen telling a person something the screen is already
+                    showing them. */}
+                {said[signal.signalId] === "useful" || said[signal.signalId] === "follow" ? (
                   <span className="font-mono text-[11px] uppercase tracking-wider text-state-good">
                     {said[signal.signalId] === "follow" ? "following" : "marked useful"}
                   </span>
-                ) : (
+                ) : said[signal.signalId] === "investigating" ? null : (
                   <>
                     <Verb onClick={() => say(signal.signalId, "useful")}>Useful</Verb>
                     <Verb onClick={() => say(signal.signalId, "follow")}>
