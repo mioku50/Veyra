@@ -11,10 +11,6 @@
     {
       "path": "/api/internal/monitoring/recheck",
       "schedule": "37 5 * * *"
-    },
-    {
-      "path": "/api/internal/nova/refresh",
-      "schedule": "23 * * * *"
     }
   ]
 }
