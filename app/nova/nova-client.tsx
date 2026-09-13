@@ -864,7 +864,7 @@ function RecoveryKey({
 const DECISION_LABEL: Record<string, string> = {
   ALLOW: "Allow",
   ALLOW_WITH_LIMITS: "Allow with limits",
-  REVIEW_REQUIRED: "Thin evidence",
+  REQUIRE_EVALUATOR: "Allow, answer checked",
 };
 
 /**
@@ -944,13 +944,20 @@ function DeeperResearch({
         <Row
           label={BRAND.name}
           value={DECISION_LABEL[proposal.decision] ?? proposal.decision}
-          tone={proposal.decision === "REVIEW_REQUIRED" ? "warn" : "good"}
+          tone={proposal.decision === "ALLOW" ? "good" : "warn"}
         />
       </dl>
 
       <p className="mt-4 text-sm leading-relaxed text-foreground">{proposal.verdict}</p>
       {proposal.routingNote ? (
         <p className="mt-2 text-xs leading-relaxed text-state-warn">{proposal.routingNote}</p>
+      ) : null}
+
+      {proposal.verifiedAfterPaying ? (
+        <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
+          {BRAND.name} will check the answer against what this endpoint says it returns, after
+          the payment and before {"it"} counts as a result.
+        </p>
       ) : null}
 
       {proposal.reasons.length > 0 ? (

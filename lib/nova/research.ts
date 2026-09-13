@@ -19,6 +19,7 @@
 import { getAddress, isAddress } from "viem";
 import { selectMarketplaceCounterparty } from "../counterparty-selection/marketplace.ts";
 import type { MarketplaceSelection } from "../counterparty-selection/marketplace.ts";
+import { isExecutableTrustDecision } from "../trust-gate/types.ts";
 import type { TrustDecisionLevel } from "../trust-gate/types.ts";
 import type { NovaSignal } from "./types.ts";
 
@@ -74,6 +75,9 @@ export type NovaResearchProposal = {
   /** Veyra's verdict in one sentence. */
   verdict: string;
   maxExposureUsdc: number;
+  /** Whether Veyra checks the answer against the declared schema after paying.
+   *  The reassuring half of the evaluator tier, and the half a reader can see. */
+  verifiedAfterPaying: boolean;
   /** Why this one, in the order that decided it. */
   reasons: string[];
   /** How many were looked at to get here. */
@@ -135,31 +139,29 @@ export function researchRequestFor(signal: NovaSignal): { capability: string; qu
 /**
  * What Nova is willing to put in front of a person.
  *
- * Not the same question as what Veyra would authorise unattended. A counterparty
- * nobody has ever paid gets REVIEW_REQUIRED, which is correct and is also the
- * normal state of almost every listing in a young catalogue -- measured against
- * the live market, it was every single one. Excluding it made Nova answer every
- * question with "Veyra checked eight providers and would not authorise any of
- * them", which is a true sentence that leaves a person with nothing, forever,
- * and hides a market that does exist.
+ * Veyra already answers this, and the answer is isExecutableTrustDecision. Nova
+ * had its own list, and the list was wrong twice over.
  *
- * So review is shown, and shown as review: the verdict says the evidence is
- * thinner than Veyra likes, and the person decides with that in front of them.
- * Hiding the market is not caution, it is just a product that does nothing.
+ * First it allowed only ALLOW and ALLOW_WITH_LIMITS, which against the live
+ * catalogue meant every question came back "Veyra checked eight providers and
+ * would not authorise any of them" -- three questions, two subject kinds, three
+ * refusals. A young catalogue has no payment history, so almost nothing reaches
+ * the top two tiers.
  *
- * DENY never appears -- that is Veyra refusing, and it means it. Neither does
- * REQUIRE_EVALUATOR: it means the work has to be checked before the money is
- * released, which is an ERC-8183 job rather than an x402 call, and offering
- * "pay $0.001" for it would promise a flow that does not exist here yet.
+ * Then it excluded REQUIRE_EVALUATOR on the reasoning that it means an ERC-8183
+ * job. It does not, not here: on a marketplace candidate that tier sets
+ * postCallVerificationRequired, and the settle route already verifies the
+ * response against the declared schema after paying. Veyra calls it executable;
+ * Nova was refusing to show what Veyra allows.
+ *
+ * So the shared predicate decides, and there is no second list to drift. DENY
+ * and REVIEW_REQUIRED are what it excludes, and both are right to exclude:
+ * Veyra will not execute either, and a Pay button on something Veyra will not
+ * execute is a button that exists to fail.
  */
-const SHOWABLE: ReadonlySet<TrustDecisionLevel> = new Set([
-  "ALLOW",
-  "ALLOW_WITH_LIMITS",
-  "REVIEW_REQUIRED",
-]);
-
 function vanillaFirst(selection: MarketplaceSelection) {
-  const showable = selection.candidates.filter((candidate) => SHOWABLE.has(candidate.trustDecision));
+  const showable = selection.candidates.filter((candidate) =>
+    isExecutableTrustDecision(candidate.trustDecision));
   const wallet = showable.find((candidate) => candidate.marketplace.funding === "wallet");
   if (wallet) return { winner: wallet, note: null as string | null };
 
@@ -179,10 +181,10 @@ function refusalDetail(selection: MarketplaceSelection): string {
     counts.set(candidate.trustDecision, (counts.get(candidate.trustDecision) ?? 0) + 1);
   }
   const denied = counts.get("DENY") ?? 0;
-  const evaluator = counts.get("REQUIRE_EVALUATOR") ?? 0;
+  const review = counts.get("REVIEW_REQUIRED") ?? 0;
   const parts: string[] = [];
   if (denied > 0) parts.push(`${denied} refused outright`);
-  if (evaluator > 0) parts.push(`${evaluator} would need an evaluator to check the work first`);
+  if (review > 0) parts.push(`${review} with too little evidence to act on`);
   const tail = parts.length > 0 ? `: ${parts.join(", ")}.` : ".";
   return `${BRAND_NAME} probed ${selection.probed} ${selection.probed === 1 ? "provider" : "providers"} and would not put any of them in front of you${tail}`;
 }
@@ -208,7 +210,11 @@ function verdictFor(decision: TrustDecisionLevel, maxExposureUsdc: number): stri
     case "ALLOW_WITH_LIMITS":
       return `Allow, with a ceiling of $${maxExposureUsdc.toFixed(4)}.`;
     case "REQUIRE_EVALUATOR":
-      return "Allowed only as a job an evaluator checks before the money is released.";
+      /* On an x402 call this tier does not mean an evaluator contract -- it
+         means the answer is checked against the endpoint's declared schema
+         after the money moves, which the settle path already does. Saying
+         "evaluator" to a reader would name a thing they will never see. */
+      return `Allow up to $${maxExposureUsdc.toFixed(4)}, and check the answer afterwards.`;
     case "REVIEW_REQUIRED":
       return "Worth a look before you pay. The evidence is thinner than Veyra likes.";
     default:
@@ -293,6 +299,7 @@ export async function proposeResearch(input: {
       decision,
       verdict: verdictFor(decision, maxExposureUsdc),
       maxExposureUsdc,
+      verifiedAfterPaying: decision !== "ALLOW",
       reasons: reasonsFor(winner),
       probed: selection.probed,
       routingNote: note ?? selection.recommendation.routingNote,
