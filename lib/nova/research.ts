@@ -269,18 +269,18 @@ function paymentLabelFor(funding: "wallet" | "gateway_deposit"): string {
  * next to its evidence. Here there is no evidence on screen, so the sentence
  * has to carry its own weight: what was decided, and what it costs at most.
  */
-function verdictFor(decision: TrustDecisionLevel, maxExposureUsdc: number): string {
+function verdictFor(decision: TrustDecisionLevel, authorisedUsdc: number): string {
   switch (decision) {
     case "ALLOW":
-      return `Allow. At most $${maxExposureUsdc.toFixed(4)} leaves your wallet.`;
+      return `Allow. $${authorisedUsdc.toFixed(4)} leaves your wallet, and nothing more.`;
     case "ALLOW_WITH_LIMITS":
-      return `Allow, with a ceiling of $${maxExposureUsdc.toFixed(4)}.`;
+      return `Allow, for $${authorisedUsdc.toFixed(4)} and no more.`;
     case "REQUIRE_EVALUATOR":
       /* On an x402 call this tier does not mean an evaluator contract -- it
          means the answer is checked against the endpoint's declared schema
          after the money moves, which the settle path already does. Saying
          "evaluator" to a reader would name a thing they will never see. */
-      return `Allow up to $${maxExposureUsdc.toFixed(4)}, and check the answer afterwards.`;
+      return `Allow $${authorisedUsdc.toFixed(4)}, and check the answer afterwards.`;
     case "REVIEW_REQUIRED":
       return "Worth a look before you pay. The evidence is thinner than Veyra likes.";
     default:
@@ -497,7 +497,11 @@ export async function proposeResearch(input: {
       paymentLabel: paymentLabelFor(terms.funding),
       payableNow: winner.marketplace.payableNow,
       decision,
-      verdict: verdictFor(decision, maxExposureUsdc),
+      /* Quoted at the exact amount, because that is what the clearance will
+         authorise. Naming the tier's ceiling here told a reader that up to five
+         cents could leave their wallet next to a price of one -- true of the
+         policy, false of the permission Veyra actually signs. */
+      verdict: verdictFor(decision, costUsdc),
       maxExposureUsdc,
       verifiedAfterPaying: decision !== "ALLOW",
       reasons: reasonsFor(winner),
