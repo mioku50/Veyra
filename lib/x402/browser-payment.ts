@@ -201,6 +201,33 @@ export function selectPayableAccept(
   return cheapest;
 }
 
+/**
+ * The domain type, spelled out, because a wallet asked over the raw RPC will not
+ * infer it.
+ *
+ * viem adds this automatically, which is exactly what hid the bug: every local
+ * signature in every test was valid, and every signature a person actually made
+ * in MetaMask was not. `eth_signTypedData_v4` hashes the domain with
+ * `hashStruct("EIP712Domain", ...)`, and with no EIP712Domain entry in `types`
+ * that encodes an empty struct -- a domain separator belonging to no contract on
+ * any chain. The seller recovers a stranger's address and answers
+ * `invalid_exact_evm_payload_signature`, which is the truth.
+ *
+ * The corroboration was sitting in the database: execution_attempts had never
+ * held a single row. Not one browser-signed x402 payment has ever settled,
+ * here or on /run.
+ *
+ * The order matters as much as the presence. EIP-712 encodes fields in the
+ * order they are declared, so this list has to match the domain object built
+ * below field for field.
+ */
+export const EIP712_DOMAIN_TYPE = [
+  { name: "name", type: "string" },
+  { name: "version", type: "string" },
+  { name: "chainId", type: "uint256" },
+  { name: "verifyingContract", type: "address" },
+] as const;
+
 export const TRANSFER_WITH_AUTHORIZATION_TYPES = {
   TransferWithAuthorization: [
     { name: "from", type: "address" },
@@ -244,7 +271,10 @@ export function buildPaymentTypedData(input: {
         chainId: input.accept.chainId,
         verifyingContract: input.accept.verifyingContract,
       },
-      types: TRANSFER_WITH_AUTHORIZATION_TYPES,
+      types: {
+        EIP712Domain: EIP712_DOMAIN_TYPE,
+        ...TRANSFER_WITH_AUTHORIZATION_TYPES,
+      },
       primaryType: "TransferWithAuthorization" as const,
       message: authorization,
     },

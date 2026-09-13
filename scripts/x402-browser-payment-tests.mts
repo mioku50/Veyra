@@ -5,7 +5,7 @@
 
 import assert from "node:assert/strict";
 import { privateKeyToAccount } from "viem/accounts";
-import { recoverTypedDataAddress } from "viem";
+import { hashDomain, recoverTypedDataAddress } from "viem";
 import {
   buildPaymentTypedData,
   decodePaymentResponse,
@@ -244,4 +244,54 @@ assert.throws(
   (error: unknown) => error instanceof X402PaymentError && error.code === "no_payable_accept",
 );
 
-console.log("[x402-browser-payment-test] passed: live challenge shape, rail selection, ceiling refusal, EIP-3009 domain recovery, header encoding, settlement decoding, Circle Gateway batched domain + USDC asset identity");
+/* ---- the domain the wallet is asked to hash ---- */
+
+/* The bug that made every browser payment fail while every test passed. viem
+   adds EIP712Domain to `types` on its own, so a signature produced in a test
+   was always valid; MetaMask is asked over the raw RPC, where a missing
+   EIP712Domain means hashStruct encodes an empty struct and the domain
+   separator belongs to no contract on any chain. The seller recovers a
+   stranger's address and answers invalid_exact_evm_payload_signature.
+
+   Nothing caught it because what differed was what viem did for us, not what we
+   wrote. So this asserts the payload itself. */
+{
+  const domainType = (typedData.types as Record<string, unknown>).EIP712Domain as
+    | { name: string; type: string }[]
+    | undefined;
+  assert(domainType, "types must declare EIP712Domain: a wallet over the raw RPC will not infer it");
+  assert.deepEqual(
+    domainType.map((field) => field.name),
+    ["name", "version", "chainId", "verifyingContract"],
+    "EIP-712 encodes fields in declaration order, so this must match the domain object",
+  );
+
+  const asDeclared = hashDomain({ domain: typedData.domain, types: { EIP712Domain: domainType } });
+  assert.equal(
+    asDeclared,
+    hashDomain({
+      domain: {
+        name: accept.assetName,
+        version: accept.assetVersion,
+        chainId: accept.chainId,
+        verifyingContract: accept.verifyingContract,
+      },
+      types: {
+        EIP712Domain: [
+          { name: "name", type: "string" },
+          { name: "version", type: "string" },
+          { name: "chainId", type: "uint256" },
+          { name: "verifyingContract", type: "address" },
+        ],
+      },
+    }),
+    "the separator has to be the token's own, not merely well formed",
+  );
+  assert.notEqual(
+    asDeclared,
+    hashDomain({ domain: {}, types: { EIP712Domain: [] } }),
+    "an empty struct is what a missing EIP712Domain hashes to, and it is what was being signed",
+  );
+}
+
+console.log("[x402-browser-payment-test] passed: EIP712Domain declared so a wallet hashes the token's own domain, live challenge shape, rail selection, ceiling refusal, EIP-3009 domain recovery, header encoding, settlement decoding, Circle Gateway batched domain + USDC asset identity");
