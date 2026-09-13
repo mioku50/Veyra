@@ -1,0 +1,216 @@
+/**
+ * Copyright 2026 Veyra
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+import type { NovaSubjectKind } from "./types.ts";
+
+/**
+ * Turning what a person says into something that can be observed.
+ *
+ * "Arc" is an interest. It is not observable. What is observable is a specific
+ * x402 resource in Circle's catalog and a specific repository on GitHub, both
+ * of which have a state Veyra can read twice and compare.
+ *
+ * Keeping those apart is the whole defence against a feed that invents things.
+ * An interest can be anything a person types; a subject has to be a thing with
+ * an address. Every line in the brief traces back through a subject to a real
+ * observation, and if no subject can be resolved for an interest, Nova says it
+ * is watching nothing for that interest rather than producing plausible prose.
+ */
+
+export type InterestDefinition = {
+  id: string;
+  label: string;
+  /** What to ask Circle's x402 catalog for. These are capability terms, matched
+   *  against the catalog's own capability strings. */
+  capabilityTerms: string[];
+  /** Public repositories whose activity is genuine evidence for this interest.
+   *  Shown to the person by name: Nova watching something you cannot see would
+   *  be indistinguishable from Nova making it up. */
+  repositories: Array<{ ref: string; label: string }>;
+  /** Words that make an unrelated signal relevant to this interest. */
+  keywords: string[];
+};
+
+export const INTEREST_CATALOG: readonly InterestDefinition[] = [
+  {
+    id: "agent-payments",
+    label: "Agent payments",
+    capabilityTerms: ["payment", "x402", "settlement"],
+    repositories: [
+      { ref: "coinbase/x402", label: "x402" },
+      { ref: "circlefin/stablecoin-evm", label: "Circle USDC" },
+    ],
+    keywords: ["x402", "payment", "usdc", "settle", "invoice", "escrow", "gateway"],
+  },
+  {
+    id: "arc",
+    label: "Arc",
+    capabilityTerms: ["arc", "usdc", "stablecoin"],
+    repositories: [
+      { ref: "circlefin/stablecoin-evm", label: "Circle USDC" },
+      { ref: "circlefin/evm-cctp-contracts", label: "Circle CCTP" },
+    ],
+    keywords: ["arc", "circle", "usdc", "cctp", "stablecoin", "gateway"],
+  },
+  {
+    id: "ai",
+    label: "AI",
+    capabilityTerms: ["inference", "llm", "completion", "embedding"],
+    repositories: [{ ref: "langchain-ai/langchain", label: "LangChain" }],
+    keywords: ["llm", "model", "inference", "agent", "prompt", "embedding", "ai"],
+  },
+  {
+    id: "research",
+    label: "Research & search",
+    capabilityTerms: ["web_search", "search", "research", "scrape"],
+    repositories: [],
+    keywords: ["search", "research", "crawl", "scrape", "index", "retrieval"],
+  },
+  {
+    id: "onchain",
+    label: "Onchain data",
+    capabilityTerms: ["blockchain", "onchain", "price", "market_data"],
+    repositories: [
+      { ref: "foundry-rs/foundry", label: "Foundry" },
+      { ref: "ethereum/ERCs", label: "Ethereum ERCs" },
+    ],
+    keywords: ["chain", "block", "token", "wallet", "contract", "erc", "price"],
+  },
+  {
+    id: "agent-standards",
+    label: "Agent standards",
+    capabilityTerms: ["identity", "reputation", "attestation"],
+    repositories: [
+      { ref: "ethereum/ERCs", label: "Ethereum ERCs" },
+      { ref: "ethereum/EIPs", label: "Ethereum EIPs" },
+    ],
+    keywords: ["erc-8004", "erc-8183", "identity", "reputation", "attestation", "evaluator"],
+  },
+] as const;
+
+export const MAX_INTERESTS = 6;
+
+/** Subjects per agent, and why the ceiling exists: every subject is a live HTTP
+ *  read on every refresh, and a brief that takes a minute to assemble is a brief
+ *  nobody waits for. Small and fast beats exhaustive and abandoned. */
+export const SUBJECT_LIMITS = {
+  perAgent: 12,
+  x402PerInterest: 3,
+  repositoriesPerInterest: 2,
+} as const;
+
+function normalizeText(value: string): string {
+  return value.trim().replace(/\s+/g, " ").slice(0, 40);
+}
+
+export function interestKey(value: string): string {
+  return normalizeText(value).toLowerCase();
+}
+
+export function findInterest(value: string): InterestDefinition | null {
+  const key = interestKey(value);
+  return INTEREST_CATALOG.find(
+    (entry) => entry.id === key || entry.label.toLowerCase() === key,
+  ) ?? null;
+}
+
+/**
+ * Accepts what the person actually typed, including interests Veyra has no
+ * catalog entry for.
+ *
+ * An unknown interest is kept rather than dropped. Silently discarding it would
+ * leave someone looking at a brief that ignores the thing they asked for, with
+ * nothing on screen explaining why; kept, it becomes a plain catalog query and,
+ * if that finds nothing, an honest "watching nothing for this yet".
+ */
+export function normalizeInterests(raw: unknown): string[] {
+  const values = Array.isArray(raw) ? raw : [];
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const value of values) {
+    if (typeof value !== "string") continue;
+    const text = normalizeText(value);
+    if (!text) continue;
+    const known = findInterest(text);
+    const label = known?.label ?? text;
+    const key = label.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    result.push(label);
+    if (result.length >= MAX_INTERESTS) break;
+  }
+  return result;
+}
+
+export type PlannedSubject = {
+  kind: NovaSubjectKind;
+  ref: string;
+  label: string;
+  interest: string;
+};
+
+/**
+ * The repositories Nova will watch, derived from stated interests.
+ *
+ * x402 subjects are not planned here: they come from the live catalog, because
+ * a hard-coded endpoint list would go stale the moment a provider moved, and
+ * the catalog is the thing Veyra already reads correctly.
+ */
+export function planRepositorySubjects(interests: string[]): PlannedSubject[] {
+  const planned: PlannedSubject[] = [];
+  const seen = new Set<string>();
+  for (const interest of interests) {
+    const definition = findInterest(interest);
+    if (!definition) continue;
+    let taken = 0;
+    for (const repository of definition.repositories) {
+      if (taken >= SUBJECT_LIMITS.repositoriesPerInterest) break;
+      if (seen.has(repository.ref)) continue;
+      seen.add(repository.ref);
+      taken += 1;
+      planned.push({
+        kind: "github_repository",
+        ref: repository.ref,
+        label: repository.label,
+        interest,
+      });
+    }
+  }
+  return planned;
+}
+
+/** The catalog queries to run for a set of interests, in the person's order. */
+export function capabilityQueriesForInterests(interests: string[]): Array<{ interest: string; term: string }> {
+  const queries: Array<{ interest: string; term: string }> = [];
+  const seen = new Set<string>();
+  for (const interest of interests) {
+    const definition = findInterest(interest);
+    const terms = definition?.capabilityTerms ?? [interestKey(interest)];
+    for (const term of terms) {
+      if (!term || seen.has(term)) continue;
+      seen.add(term);
+      queries.push({ interest, term });
+    }
+  }
+  return queries;
+}
+
+/** Words that make a signal relevant to this person, across all their interests. */
+export function keywordsForInterests(interests: string[]): string[] {
+  const words = new Set<string>();
+  for (const interest of interests) {
+    const definition = findInterest(interest);
+    if (definition) {
+      for (const keyword of definition.keywords) words.add(keyword);
+      words.add(definition.label.toLowerCase());
+    } else {
+      // An interest Veyra does not know still matches on its own name.
+      for (const part of interestKey(interest).split(/[^a-z0-9]+/)) {
+        if (part.length >= 3) words.add(part);
+      }
+    }
+  }
+  return [...words];
+}

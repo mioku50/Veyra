@@ -54,10 +54,30 @@ type JobStep = {
   detail: string;
 };
 
+/**
+ * What an agent asked to look into, handed over in the URL.
+ *
+ * Nova finds something worth investigating and links here with the question
+ * already written. Read once, at mount: a person who then edits the intent must
+ * not have their edit overwritten by the address bar.
+ */
+function seededFromUrl(): { intent: string; capability: string } | null {
+  if (typeof window === "undefined") return null;
+  const params = new URLSearchParams(window.location.search);
+  const intent = params.get("intent")?.trim() ?? "";
+  if (!intent) return null;
+  const asked = params.get("capability")?.trim() ?? "";
+  return {
+    intent: intent.slice(0, 400),
+    capability: CAPABILITIES.includes(asked) ? asked : CAPABILITIES[0],
+  };
+}
+
 export function RunClient() {
+  const seed = useMemo(seededFromUrl, []);
   const [rail, setRail] = useState<Rail>("api");
-  const [intent, setIntent] = useState("");
-  const [capability, setCapability] = useState(CAPABILITIES[0]);
+  const [intent, setIntent] = useState(seed?.intent ?? "");
+  const [capability, setCapability] = useState(seed?.capability ?? CAPABILITIES[0]);
   const [budget, setBudget] = useState("0.10");
   const [priority, setPriority] = useState<Priority>("trust");
 

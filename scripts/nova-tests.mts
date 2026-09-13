@@ -1,0 +1,339 @@
+/**
+ * Copyright 2026 Veyra
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+import assert from "node:assert/strict";
+import {
+  INTEREST_CATALOG,
+  capabilityQueriesForInterests,
+  keywordsForInterests,
+  normalizeInterests,
+  planRepositorySubjects,
+} from "../lib/nova/interests.ts";
+import {
+  changesForSubject,
+  repositoryDigest,
+  x402Digest,
+} from "../lib/nova/observation.ts";
+import { orderByRelevance, scoreRelevance } from "../lib/nova/relevance.ts";
+import { assembleBrief, greeting, quietSummary } from "../lib/nova/brief.ts";
+import { observeRepositories } from "../lib/nova/sources.ts";
+
+const NOW = new Date("2026-09-13T18:00:00.000Z");
+const hoursAgo = (h: number) => new Date(NOW.getTime() - h * 3_600_000).toISOString();
+
+/* ---- interests: what a person says vs what can be observed ---- */
+
+assert.deepEqual(normalizeInterests(["Arc", "arc", " AI "]), ["Arc", "AI"], "duplicates collapse, case-insensitively");
+assert.deepEqual(normalizeInterests(["ai"]), ["AI"], "a known interest is stored under its catalog label");
+
+/* An interest Veyra has no entry for is kept, not dropped. Dropping it would
+   leave a person staring at a brief that ignores what they asked for, with
+   nothing on screen explaining why. */
+const unknown = normalizeInterests(["Ambient"]);
+assert.deepEqual(unknown, ["Ambient"]);
+assert(keywordsForInterests(unknown).includes("ambient"), "an unknown interest still matches on its own name");
+
+assert.equal(normalizeInterests(["a", "b", "c", "d", "e", "f", "g"]).length, 6, "capped");
+assert.deepEqual(normalizeInterests(["", "   ", null, 7]), [], "junk in, nothing out");
+
+// Every catalog entry must resolve to something observable, or it is decoration.
+for (const entry of INTEREST_CATALOG) {
+  assert(entry.capabilityTerms.length > 0, `${entry.id} must query the catalog for something`);
+  for (const repo of entry.repositories) {
+    assert.match(repo.ref, /^[\w.-]+\/[\w.-]+$/, `${entry.id} repository ref must be owner/name`);
+  }
+}
+
+const planned = planRepositorySubjects(["Arc", "Agent payments"]);
+assert(planned.length > 0);
+assert.equal(new Set(planned.map((s) => s.ref)).size, planned.length, "a repository is watched once, not once per interest");
+assert(planned.every((s) => s.kind === "github_repository"));
+
+const queries = capabilityQueriesForInterests(["Research & search", "Research & search"]);
+assert.equal(new Set(queries.map((q) => q.term)).size, queries.length, "no duplicate catalog queries");
+
+/* ---- the first brief must not be false news ---- */
+
+/* A first sighting is a finding, and must be worded as one. Calling it "new"
+   is the tempting version and it does not survive the data: of 1139 live
+   catalog resources none was fresher than 11.9 days, so lastUpdated cannot
+   carry the claim, and stretching the window until it fires would just mean
+   calling month-old listings new. */
+const firstLook = changesForSubject({
+  label: "Orthogonal search",
+  previous: null,
+  next: x402Digest({ priceAtomic: "2000", payTo: "0xaaa", reachable: true, provider: "Orthogonal", network: "base", funding: "gateway_deposit" }),
+  now: NOW,
+  catalogUpdatedAt: hoursAgo(24 * 40),
+});
+assert.equal(firstLook.length, 1);
+assert.equal(firstLook[0].kind, "capability_available");
+assert.match(firstLook[0].headline, /\$0\.0020/);
+assert.doesNotMatch(firstLook[0].headline + firstLook[0].detail, /\bnew\b/i, "a 40-day-old listing must never be called new");
+
+const quietRepo = changesForSubject({
+  label: "Foundry",
+  previous: null,
+  next: repositoryDigest({ lastCommitAt: hoursAgo(24 * 30), commitsInWindow: 40, contributorCount: 9, latestRelease: "v1.0", stars: 10 }),
+  now: NOW,
+});
+assert.deepEqual(quietRepo, [], "a repository last touched a month ago is not this week's news");
+
+const busyRepo = changesForSubject({
+  label: "Foundry",
+  previous: null,
+  next: repositoryDigest({ lastCommitAt: hoursAgo(3), commitsInWindow: 17, contributorCount: 4, latestRelease: "v1.0", stars: 10 }),
+  now: NOW,
+});
+assert.equal(busyRepo.length, 1);
+assert.equal(busyRepo[0].kind, "repository_activity");
+assert.match(busyRepo[0].headline, /17 new commits/);
+assert.match(busyRepo[0].detail, /4 contributors/);
+
+/* ---- real deltas ---- */
+
+const before = x402Digest({ priceAtomic: "1000", payTo: "0xAAA", reachable: true, provider: "Exa", network: "base", funding: "wallet" });
+
+// The payee changing is the signal nobody else would tell you about.
+const payee = changesForSubject({
+  label: "Exa search",
+  previous: before,
+  next: x402Digest({ priceAtomic: "1000", payTo: "0xBBB", reachable: true, provider: "Exa", network: "base", funding: "wallet" }),
+  now: NOW,
+});
+assert.equal(payee.length, 1);
+assert.equal(payee[0].kind, "payee_changed");
+assert.match(payee[0].detail, /0xaaa/);
+assert.match(payee[0].detail, /0xbbb/);
+
+const priced = changesForSubject({
+  label: "Exa search",
+  previous: before,
+  next: x402Digest({ priceAtomic: "3000", payTo: "0xAAA", reachable: true, provider: "Exa", network: "base", funding: "wallet" }),
+  now: NOW,
+});
+assert.equal(priced[0].kind, "price_changed");
+assert.match(priced[0].headline, /rose/);
+
+const down = changesForSubject({
+  label: "Exa search",
+  previous: before,
+  next: x402Digest({ priceAtomic: "1000", payTo: "0xAAA", reachable: false, provider: "Exa", network: "base", funding: "wallet" }),
+  now: NOW,
+});
+assert.equal(down[0].kind, "endpoint_unreachable");
+
+// Nothing changed means nothing is said. A daily product that manufactures a
+// line every day teaches people that its lines mean nothing.
+assert.deepEqual(changesForSubject({ label: "Exa search", previous: before, next: before, now: NOW }), []);
+
+/* The same commits must not be re-reported every refresh. A rolling window
+   keeps counting work already shown, so the newest commit -- not the count --
+   is what decides whether there is anything new to say. */
+const repoBefore = repositoryDigest({ lastCommitAt: hoursAgo(5), commitsInWindow: 12, contributorCount: 3, latestRelease: "v2.0", stars: 100 });
+assert.deepEqual(
+  changesForSubject({ label: "LangChain", previous: repoBefore, next: { ...repoBefore, commitsInWindow: 11 }, now: NOW }),
+  [],
+  "a shifting window count alone is not a change",
+);
+const repoMoved = changesForSubject({
+  label: "LangChain",
+  previous: repoBefore,
+  next: repositoryDigest({ lastCommitAt: hoursAgo(1), commitsInWindow: 14, contributorCount: 3, latestRelease: "v2.0", stars: 100 }),
+  now: NOW,
+});
+assert.equal(repoMoved.length, 1);
+assert.equal(repoMoved[0].kind, "repository_activity");
+
+/* The rail moving is invisible, free, and decides whether this person can pay
+   at all. Learning it a day early is the whole point of the router having been
+   built first. */
+const railed = changesForSubject({
+  label: "Exa search",
+  previous: before,
+  next: x402Digest({ priceAtomic: "1000", payTo: "0xAAA", reachable: true, provider: "Exa", network: "base", funding: "gateway_deposit" }),
+  now: NOW,
+});
+assert.equal(railed.length, 1);
+assert.equal(railed[0].kind, "rail_changed");
+assert.match(railed[0].headline, /Gateway deposit/);
+assert.equal(scoreRelevance({ change: railed[0], keywords: [], subjectText: "Exa search" }).relevance, "medium");
+
+/* ---- relevance is arithmetic, not taste ---- */
+
+const keywords = keywordsForInterests(["Agent payments", "Arc"]);
+
+const payeeVerdict = scoreRelevance({ change: payee[0], keywords, subjectText: "Exa search web research" });
+assert.equal(payeeVerdict.relevance, "high", "a changed payee is always worth telling someone");
+
+/* Interest keywords are matched against the subject and never against the
+   sentence Nova generated. The first version scored "Circle" as an interest
+   match because Nova had itself written "Circle's catalog" into the detail
+   line, and every catalog entry came back equally relevant. */
+const selfMatch = scoreRelevance({
+  change: { kind: "capability_available", headline: "Something is available for $0.01", detail: "Listed in Circle's catalog, matching usdc and payment.", evidence: {}, observedAt: NOW.toISOString() },
+  keywords: ["circle", "usdc", "payment"],
+  subjectText: "unrelated weather feed",
+});
+assert.doesNotMatch(selfMatch.reason, /matches/, "Nova must not score its own prose as evidence of your interests");
+
+/* Whole words only. Run against the live catalog, substring matching claimed
+   Exa's search endpoint matched "arc" and "ai" -- "search" contains a-r-c and
+   "exa.ai" ends in a-i -- and printed both to the reader as the reason. A false
+   reason is worse than a missing one. */
+const substringTrap = scoreRelevance({
+  change: firstLook[0],
+  keywords: ["arc"],
+  subjectText: "Exa search neural retrieval",
+});
+assert.doesNotMatch(substringTrap.reason, /matches/, '"search" is not a match for "arc"');
+
+// A real word still matches, and so does a multi-word phrase.
+assert.match(
+  scoreRelevance({ change: firstLook[0], keywords: ["retrieval", "neural retrieval"], subjectText: "Exa search neural retrieval" }).reason,
+  /matches retrieval/,
+);
+
+// A 3% price move is a fact, not news.
+const tinyMove = changesForSubject({
+  label: "Exa search",
+  previous: before,
+  next: x402Digest({ priceAtomic: "1030", payTo: "0xAAA", reachable: true, provider: "Exa", network: "base", funding: "wallet" }),
+  now: NOW,
+});
+const tinyVerdict = scoreRelevance({ change: tinyMove[0], keywords: [], subjectText: "Exa search" });
+assert(["low", "noise"].includes(tinyVerdict.relevance), `a 3% move should not lead the brief, got ${tinyVerdict.relevance}`);
+assert.match(tinyVerdict.reason, /slightly/);
+
+const doubled = scoreRelevance({ change: priced[0], keywords, subjectText: "Exa search" });
+assert.equal(doubled.relevance, "high");
+assert.match(doubled.reason, /doubled/);
+
+/* Something payable now outranks something that needs a deposit first. Ranking
+   them equally is how a brief sends a person to the dead end the router exists
+   to route around. */
+const payable = scoreRelevance({
+  change: changesForSubject({ label: "Exa search", previous: null, now: NOW, catalogUpdatedAt: hoursAgo(48), next: x402Digest({ priceAtomic: "1000", payTo: "0xA", reachable: true, provider: "Exa", network: "base", funding: "wallet" }) })[0],
+  keywords,
+  subjectText: "Exa contents usdc payment",
+});
+const needsDeposit = scoreRelevance({ change: firstLook[0], keywords, subjectText: "Orthogonal search usdc payment" });
+assert(payable.score > needsDeposit.score, "a capability payable from the wallet must outrank one needing a deposit");
+assert.match(payable.reason, /payable from your wallet/);
+assert.match(needsDeposit.reason, /Gateway deposit first/);
+
+// Every verdict carries a reason a person could argue with.
+for (const verdict of [payeeVerdict, tinyVerdict, doubled]) {
+  assert(verdict.reason.length > 0, "a relevance decision with no stated reason is not auditable");
+}
+
+/* A learned preference demotes, but it must never suppress a payee change:
+   taste is evidence about what someone likes to read, not permission to hide
+   where their money goes. */
+const dismissedNoise = scoreRelevance({
+  change: busyRepo[0],
+  keywords,
+  subjectText: "Foundry ethereum toolkit",
+  ignoredPhrases: ["commit"],
+});
+assert.equal(dismissedNoise.relevance, "noise");
+assert.match(dismissedNoise.reason, /usually dismiss/);
+
+const dismissedPayee = scoreRelevance({
+  change: payee[0],
+  keywords,
+  subjectText: "Exa search usdc payment",
+  ignoredPhrases: ["address", "paying"],
+});
+assert.equal(dismissedPayee.relevance, "high", "a learned preference must not hide a payee change");
+
+/* ---- ordering ---- */
+
+const ordered = orderByRelevance([
+  { relevance: "low" as const, observedAt: hoursAgo(1) },
+  { relevance: "high" as const, observedAt: hoursAgo(10) },
+  { relevance: "medium" as const, observedAt: hoursAgo(2) },
+  { relevance: "high" as const, observedAt: hoursAgo(1) },
+]);
+assert.deepEqual(ordered.map((s) => s.relevance), ["high", "high", "medium", "low"]);
+assert.equal(ordered[0].observedAt, hoursAgo(1), "within a rank, newest first");
+
+/* ---- a blind source must say so ---- */
+
+/* Observed live: GitHub allows sixty requests an hour per IP without a token,
+   that budget ran out mid-run, the best item in the brief disappeared, and the
+   run still reported every source as available. Losing your strongest source
+   silently is worse than admitting you could not look. */
+const rateLimited = (async () => new Response("{}", {
+  status: 403,
+  headers: { "x-ratelimit-remaining": "0" },
+})) as unknown as typeof fetch;
+
+const blindRun = await observeRepositories({ interests: ["Arc"], now: NOW, fetchImpl: rateLimited });
+assert.deepEqual(blindRun.observations, []);
+assert.equal(blindRun.unavailable.length, 1);
+assert.match(blindRun.unavailable[0], /GitHub \(hourly request limit reached\)/);
+
+/* Even a partial read is named when it was rate limiting that cut it short:
+   repositories drop out one at a time as the budget runs down, and a shorter
+   list looks exactly like a quieter week. */
+let call = 0;
+const partial = (async (url: string) => {
+  call += 1;
+  if (call <= 3) {
+    return new Response(JSON.stringify({ pushed_at: NOW.toISOString(), stargazers_count: 5, description: "d" }), { status: 200 });
+  }
+  return new Response("{}", { status: 403, headers: { "x-ratelimit-remaining": "0" } });
+}) as unknown as typeof fetch;
+const partialRun = await observeRepositories({ interests: ["Arc"], now: NOW, fetchImpl: partial });
+assert(partialRun.observations.length >= 1, "what was read is kept");
+assert.equal(partialRun.unavailable.length, 1, "and what could not be read is still named");
+
+// A source that answers everything is not flagged.
+const healthy = (async () => new Response(JSON.stringify({ pushed_at: NOW.toISOString(), stargazers_count: 1 }), { status: 200 })) as unknown as typeof fetch;
+assert.deepEqual((await observeRepositories({ interests: ["Arc"], now: NOW, fetchImpl: healthy })).unavailable, []);
+
+/* ---- a brief is a few lines, not a list ---- */
+
+/* The first live run produced thirteen items. Thirteen items every morning is
+   how a person learns to stop opening them, and then the changed payee is the
+   one they miss. */
+const flood = [
+  ...Array.from({ length: 12 }, (_, i) => ({
+    kind: "capability_available" as const, relevance: "medium" as const, observedAt: hoursAgo(i + 2), id: `finding-${i}`,
+  })),
+  { kind: "payee_changed" as const, relevance: "high" as const, observedAt: hoursAgo(1), id: "payee" },
+  { kind: "repository_activity" as const, relevance: "low" as const, observedAt: hoursAgo(3), id: "repo" },
+  { kind: "price_changed" as const, relevance: "noise" as const, observedAt: hoursAgo(4), id: "tiny" },
+];
+const brief = assembleBrief(flood);
+assert(brief.worthAttention.length <= 5, "a brief is a few lines");
+assert.equal(brief.worthAttention[0].id, "payee", "the change leads");
+
+/* A change must never be crowded out by findings, however many there are and
+   whatever they score: findings describe the world, changes are the reason to
+   come back. */
+assert(brief.worthAttention.some((s) => s.id === "repo"), "a low-relevance change still outranks a medium finding");
+assert.equal(brief.worthAttention.filter((s) => s.kind === "capability_available").length, 3, "findings are capped");
+
+// Noise is kept, not discarded: "1 ignored as noise" has to be openable.
+assert.deepEqual(brief.noise.map((s) => s.id), ["tiny"]);
+
+// Nothing in, nothing out, no crash.
+assert.deepEqual(assembleBrief([]), { worthAttention: [], noise: [] });
+
+/* "Nothing changed" and "I could not look" produce the same empty screen and
+   mean opposite things. */
+assert.match(quietSummary({ subjectsChecked: 16, sourcesUnavailable: [] }), /Nothing moved across the 16/);
+const blind = quietSummary({ subjectsChecked: 16, sourcesUnavailable: ["GitHub"] });
+assert.match(blind, /could not reach GitHub/);
+assert.doesNotMatch(blind, /Nothing moved/, "a blind day must not be dressed as a quiet one");
+
+assert.equal(greeting(9), "Good morning");
+assert.equal(greeting(15), "Good afternoon");
+assert.equal(greeting(22), "Good evening");
+assert.equal(greeting(2), "Good evening", "2am is not morning");
+
+console.log("[nova-test] passed: interests kept even when unknown, a first sighting reported as a finding rather than as news, the same commits not re-reported across refreshes, a payee change outranking everything and un-learnable away, a rail change surfaced a day before it could refuse a payment, a 3% price move kept out of the headline, and a brief that caps findings so a change can never be crowded out");
