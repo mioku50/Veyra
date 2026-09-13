@@ -860,6 +860,13 @@ function RecoveryKey({
   );
 }
 
+/** Veyra's verdict as a person reads it, not as the policy engine names it. */
+const DECISION_LABEL: Record<string, string> = {
+  ALLOW: "Allow",
+  ALLOW_WITH_LIMITS: "Allow with limits",
+  REVIEW_REQUIRED: "Thin evidence",
+};
+
 /**
  * What Veyra found, and what it would cost.
  *
@@ -928,6 +935,16 @@ function DeeperResearch({
           label="Payment"
           value={proposal.paymentLabel}
           tone={proposal.funding === "wallet" ? "good" : "warn"}
+        />
+        {/* Veyra's own verdict, on the same list as the price, because a person
+            deciding whether to pay is weighing the two against each other and
+            should not have to hold one of them in their head. Toned, so a
+            counterparty nobody has ever paid does not read like one Veyra
+            vouches for. */}
+        <Row
+          label={BRAND.name}
+          value={DECISION_LABEL[proposal.decision] ?? proposal.decision}
+          tone={proposal.decision === "REVIEW_REQUIRED" ? "warn" : "good"}
         />
       </dl>
 

@@ -132,23 +132,62 @@ export function researchRequestFor(signal: NovaSignal): { capability: string; qu
  * re-ranks: it walks the same order and skips a rail, which is the same thing
  * routeToPayableRail does, with the threshold moved to where a human is.
  */
+/**
+ * What Nova is willing to put in front of a person.
+ *
+ * Not the same question as what Veyra would authorise unattended. A counterparty
+ * nobody has ever paid gets REVIEW_REQUIRED, which is correct and is also the
+ * normal state of almost every listing in a young catalogue -- measured against
+ * the live market, it was every single one. Excluding it made Nova answer every
+ * question with "Veyra checked eight providers and would not authorise any of
+ * them", which is a true sentence that leaves a person with nothing, forever,
+ * and hides a market that does exist.
+ *
+ * So review is shown, and shown as review: the verdict says the evidence is
+ * thinner than Veyra likes, and the person decides with that in front of them.
+ * Hiding the market is not caution, it is just a product that does nothing.
+ *
+ * DENY never appears -- that is Veyra refusing, and it means it. Neither does
+ * REQUIRE_EVALUATOR: it means the work has to be checked before the money is
+ * released, which is an ERC-8183 job rather than an x402 call, and offering
+ * "pay $0.001" for it would promise a flow that does not exist here yet.
+ */
+const SHOWABLE: ReadonlySet<TrustDecisionLevel> = new Set([
+  "ALLOW",
+  "ALLOW_WITH_LIMITS",
+  "REVIEW_REQUIRED",
+]);
+
 function vanillaFirst(selection: MarketplaceSelection) {
-  /* REQUIRE_EVALUATOR is not on this list on purpose. It means the work has to
-     be checked by an evaluator before the money is released -- an ERC-8183 job,
-     not an x402 call -- and a brief that offered "approve $0.001" for it would
-     be promising a flow that does not exist here yet. */
-  const allowed = selection.candidates.filter((candidate) =>
-    candidate.trustDecision === "ALLOW" || candidate.trustDecision === "ALLOW_WITH_LIMITS");
-  const wallet = allowed.find((candidate) => candidate.marketplace.funding === "wallet");
+  const showable = selection.candidates.filter((candidate) => SHOWABLE.has(candidate.trustDecision));
+  const wallet = showable.find((candidate) => candidate.marketplace.funding === "wallet");
   if (wallet) return { winner: wallet, note: null as string | null };
 
-  const first = allowed[0] ?? null;
+  const first = showable[0] ?? null;
   if (!first) return { winner: null, note: null as string | null };
   return {
     winner: first,
     note: "Nothing here settles from a wallet balance, so this one needs a Circle Gateway deposit before it can be paid.",
   };
 }
+
+/** What Veyra decided, counted, so a refusal can say what it refused. */
+function refusalDetail(selection: MarketplaceSelection): string {
+  if (selection.probed === 0) return "Nothing in the catalogue answers this question yet.";
+  const counts = new Map<string, number>();
+  for (const candidate of selection.candidates) {
+    counts.set(candidate.trustDecision, (counts.get(candidate.trustDecision) ?? 0) + 1);
+  }
+  const denied = counts.get("DENY") ?? 0;
+  const evaluator = counts.get("REQUIRE_EVALUATOR") ?? 0;
+  const parts: string[] = [];
+  if (denied > 0) parts.push(`${denied} refused outright`);
+  if (evaluator > 0) parts.push(`${evaluator} would need an evaluator to check the work first`);
+  const tail = parts.length > 0 ? `: ${parts.join(", ")}.` : ".";
+  return `${BRAND_NAME} probed ${selection.probed} ${selection.probed === 1 ? "provider" : "providers"} and would not put any of them in front of you${tail}`;
+}
+
+const BRAND_NAME = "Veyra";
 
 /** "Direct USDC" is what the money does. "Vanilla x402" is what we call it. */
 function paymentLabelFor(funding: "wallet" | "gateway_deposit"): string {
@@ -227,9 +266,7 @@ export async function proposeResearch(input: {
       /* Deliberately not "no results". Veyra looked and refused, which is a
          different fact and the more useful one: it is the product doing its
          job, not failing at it. */
-      detail: selection.probed > 0
-        ? `Veyra checked ${selection.probed} ${selection.probed === 1 ? "provider" : "providers"} and would not authorise any of them.`
-        : "Nothing in the catalogue answers this question yet.",
+      detail: refusalDetail(selection),
     };
   }
 
