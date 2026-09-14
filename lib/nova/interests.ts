@@ -96,10 +96,29 @@ export const MAX_INTERESTS = 6;
  *  read on every refresh, and a brief that takes a minute to assemble is a brief
  *  nobody waits for. Small and fast beats exhaustive and abandoned. */
 export const SUBJECT_LIMITS = {
+  /** Floor, for an agent with one or two interests. */
   perAgent: 12,
+  /** Ceiling, whatever the interest count. Past this a refresh stops being
+   *  something a person waits for. */
+  perAgentMax: 24,
   x402PerInterest: 3,
   repositoriesPerInterest: 2,
 } as const;
+
+/**
+ * How many paid endpoints one agent watches, given what it cares about.
+ *
+ * A flat twelve was the whole budget however many interests were chosen, so
+ * picking all six bought each of them two -- and since an endpoint already
+ * being watched produces no new card, the brief for six interests looked like
+ * the brief for two. A ceiling exists because every subject is a live read on
+ * every refresh; it should not be a ceiling that punishes saying what you care
+ * about.
+ */
+export function subjectBudgetFor(interestCount: number): number {
+  const wanted = Math.max(1, interestCount) * SUBJECT_LIMITS.x402PerInterest;
+  return Math.min(SUBJECT_LIMITS.perAgentMax, Math.max(SUBJECT_LIMITS.perAgent, wanted));
+}
 
 function normalizeText(value: string): string {
   return value.trim().replace(/\s+/g, " ").slice(0, 40);

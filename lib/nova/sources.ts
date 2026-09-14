@@ -9,6 +9,7 @@ import {
 } from "../counterparty-selection/marketplace-source.ts";
 import {
   SUBJECT_LIMITS,
+  subjectBudgetFor,
   capabilityQueriesForInterests,
   planRepositorySubjects,
 } from "./interests.ts";
@@ -100,12 +101,13 @@ export async function observeX402Catalog(input: {
   const seen = new Set<string>();
   const labels = new Set<string>();
   const takenPerInterest = new Map<string, number>();
+  const budget = subjectBudgetFor(input.interests.length);
   const queries = capabilityQueriesForInterests(input.interests);
   let anySucceeded = false;
   let anyAttempted = false;
 
   for (const query of queries) {
-    if (observations.length >= SUBJECT_LIMITS.perAgent) break;
+    if (observations.length >= budget) break;
     anyAttempted = true;
     let result;
     try {
@@ -127,7 +129,7 @@ export async function observeX402Catalog(input: {
     let takenForInterest = takenPerInterest.get(query.interest) ?? 0;
     for (const candidate of result.candidates) {
       if (takenForInterest >= SUBJECT_LIMITS.x402PerInterest) break;
-      if (observations.length >= SUBJECT_LIMITS.perAgent) break;
+      if (observations.length >= budget) break;
       if (seen.has(candidate.candidateId)) continue;
       seen.add(candidate.candidateId);
       takenForInterest += 1;
