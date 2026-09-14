@@ -488,7 +488,7 @@ export async function settleResearch(input: {
  * memory and this history, not from a model of its own. A failure to read it is
  * not a failure to buy, so it falls back to knowing nothing in particular.
  */
-async function recentLearnings(agentId: string): Promise<string[]> {
+export async function recentLearnings(agentId: string): Promise<string[]> {
   try {
     const { data } = await db()
       .from("nova_memory")

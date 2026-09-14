@@ -5,7 +5,7 @@
 
 import { NextResponse, type NextRequest } from "next/server";
 import { NOVA_HEADERS, novaErrorResponse, ownerSecretFrom } from "@/lib/nova/http";
-import { recordProposal } from "@/lib/nova/investigation";
+import { recentLearnings, recordProposal } from "@/lib/nova/investigation";
 import { loadOwned, loadSignalForOwner } from "@/lib/nova/service";
 import { proposeResearch } from "@/lib/nova/research";
 
@@ -45,7 +45,16 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
       loadSignalForOwner({ publicId, ownerSecret, signalId }),
     ]);
 
-    const outcome = await proposeResearch({ signal, wallet });
+    /* The context the question is written from. One model serves every agent;
+       what makes this question Nova's is these interests and this memory, not a
+       model of its own. */
+    const outcome = await proposeResearch({
+      signal,
+      wallet,
+      agentName: agent.name,
+      interests: agent.interests ?? [],
+      memory: await recentLearnings(agent.agent_id),
+    });
     if (!outcome.ok) {
       /* 200, not an error status. "Veyra looked and would not authorise any of
          them" is an answer, and the most useful one the product gives -- a 4xx

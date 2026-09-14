@@ -41,6 +41,7 @@ import {
 import type { NovaSignal } from "./types.ts";
 import { networkName } from "./network.ts";
 import { actionFor, type NovaAction, type NovaActionType } from "./action.ts";
+import { sharpenIntent } from "./intent.ts";
 
 /**
  * What it would cost to look deeper, and who would be paid.
@@ -469,10 +470,35 @@ export async function proposeResearch(input: {
   /** The owner's wallet when one is connected, which makes the Gateway balance
    *  a real read rather than an assumption. */
   wallet?: string | null;
+  /** Context the question is written from. One model serves every agent; what
+   *  makes a question this agent's is these interests and this memory. */
+  agentName?: string;
+  interests?: string[];
+  memory?: string[];
   now?: Date;
   fetchImpl?: typeof fetch;
+  /** The writing model, injectable the way the relay and the reader are. */
+  generateImpl?: Parameters<typeof sharpenIntent>[0]["generate"];
 }): Promise<NovaResearchOutcome> {
-  const action = actionFor(input.signal);
+  const base = actionFor(input.signal);
+
+  /* The question, before the quote.
+     x402 prices the call, so the body has to be settled before anything is
+     priced -- pricing one question and then asking another is a bug this
+     codebase has already paid for. The template stands whenever the model is
+     down, slow, or wanders off the subject, and the person reads whichever one
+     survived on the card before they sign. */
+  const sharpened = await sharpenIntent({
+    action: base,
+    headline: input.signal.headline,
+    detail: input.signal.detail,
+    agentName: input.agentName ?? "Nova",
+    interests: input.interests ?? [],
+    memory: input.memory,
+    generate: input.generateImpl,
+  }).catch(() => ({ intent: base.intent, written: false }));
+
+  const action: NovaAction = { ...base, intent: sharpened.intent };
   const { requiredCapability: capability, query, intent: question } = action;
   const requesterWallet = input.wallet && isAddress(input.wallet)
     ? getAddress(input.wallet)

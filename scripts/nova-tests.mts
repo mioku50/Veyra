@@ -26,6 +26,7 @@ import { networkName, settlementNetworkOf } from "../lib/nova/network.ts";
 import { buildRequestBody } from "../lib/x402/request-body.ts";
 import { actionFor } from "../lib/nova/action.ts";
 import { readResult } from "../lib/nova/synthesis.ts";
+import { sharpenIntent } from "../lib/nova/intent.ts";
 import {
   compareTerms,
   hashTerms,
@@ -989,4 +990,73 @@ for (const [why, generate] of [
 /* Nothing to read is not something to read. */
 assert.equal(await readResult({ ...READING_INPUT, result: "", generate: stub("CHANGED: x") as never }), null);
 
-console.log("[nova-test] passed: interests kept even when unknown, a first sighting reported as a finding rather than as news, the same commits not re-reported across refreshes, a payee change outranking everything and un-learnable away, a rail change surfaced a day before it could refuse a payment, a 3% price move kept out of the headline, a brief that caps findings so a change can never be crowded out, a tick that reads each URL once and shares its failures, and an absence measured by adding up every unattended pass rather than reporting the last one, and feedback that can raise as well as bury without ever silencing a payee change, and terms that stop a payment when the price or the payee moved between reading the card and pressing the button, and a card that names the chain its money moves on rather than letting the interest stand in for one, and a body that says it asks nothing rather than satisfying a schema with silence, and a budget every interest gets a share of before any interest gets seconds, and an action type that decides whether routing may substitute at all, and a watchlist that grows with the interests and cannot be filled by one seller, and a reading of what was bought that never speaks for the verification and never costs the receipt");
+/* ---- asking something worth the money ---- */
+
+const LISTING = actionFor(signalFor("x402_resource", "Exa search", "search"));
+const INTENT_INPUT = {
+  action: LISTING,
+  headline: "Exa search is available for $0.0070",
+  detail: "A paid capability matching your interests.",
+  agentName: "Nova",
+  interests: ["Arc", "Agent payments"],
+  memory: ["cares about payee changes"],
+};
+const says = (text: string) => async () => ({
+  ok: true as const, provider: "AgentRouter", protocol: "openai-compatible" as const,
+  model: "deepseek-v4-flash", text, attempts: 1,
+});
+
+const better = await sharpenIntent({
+  ...INTENT_INPUT,
+  generate: says('  "Which Exa search endpoints expose agent-payment data, and at what price?"  '),
+});
+assert.equal(better.written, true);
+assert.equal(better.intent, "Which Exa search endpoints expose agent-payment data, and at what price?",
+  "quotes and stray whitespace are not part of the question");
+
+/* The object of the action is never swapped, and that has to hold in language
+   as well as in routing. A model that wandered off the subject is not a smaller
+   problem than a router that wandered; it is the same problem one layer up. */
+const drifted = await sharpenIntent({
+  ...INTENT_INPUT,
+  generate: says("What are the latest changes to the Tavily API pricing?"),
+});
+assert.equal(drifted.written, false, "a question about something else is discarded");
+assert.equal(drifted.intent, LISTING.intent, "and the template stands");
+
+/* Shape, because this goes on a card next to a price and into a paid request. */
+for (const [why, text] of [
+  ["not a question", "Exa search is a web search API for agents."],
+  ["too long for a card", `Exa ${"very ".repeat(60)}long?`],
+  ["nothing at all", "   "],
+] as const) {
+  const out = await sharpenIntent({ ...INTENT_INPUT, generate: says(text) });
+  assert.equal(out.written, false, why);
+  assert.equal(out.intent, LISTING.intent, `${why}: the template stands`);
+}
+
+/* And every way the model can fail leaves the card exactly as it was. */
+for (const generate of [
+  async () => ({ ok: false as const, provider: "AgentRouter", protocol: "openai-compatible" as const, reason: "upstream_error", message: "no" }),
+  async () => { throw new Error("socket hang up"); },
+] as const) {
+  const out = await sharpenIntent({ ...INTENT_INPUT, generate: generate as never });
+  assert.equal(out.intent, LISTING.intent);
+  assert.equal(out.written, false);
+}
+
+/* A repository has no capability of its own, so the question is written for a
+   stranger and has to carry the subject's name into it. */
+const repoAction = actionFor(signalFor("github_repository", "Ethereum ERCs"));
+const forStranger = await sharpenIntent({
+  action: repoAction,
+  headline: "Ethereum ERCs: 2 new commits",
+  detail: "",
+  agentName: "Nova",
+  interests: ["Agent standards"],
+  generate: says("Which two Ethereum ERCs drafts changed, and do either touch agent payments?"),
+});
+assert.equal(forStranger.written, true);
+assert.match(forStranger.intent, /Ethereum/);
+
+console.log("[nova-test] passed: interests kept even when unknown, a first sighting reported as a finding rather than as news, the same commits not re-reported across refreshes, a payee change outranking everything and un-learnable away, a rail change surfaced a day before it could refuse a payment, a 3% price move kept out of the headline, a brief that caps findings so a change can never be crowded out, a tick that reads each URL once and shares its failures, and an absence measured by adding up every unattended pass rather than reporting the last one, and feedback that can raise as well as bury without ever silencing a payee change, and terms that stop a payment when the price or the payee moved between reading the card and pressing the button, and a card that names the chain its money moves on rather than letting the interest stand in for one, and a body that says it asks nothing rather than satisfying a schema with silence, and a budget every interest gets a share of before any interest gets seconds, and an action type that decides whether routing may substitute at all, and a watchlist that grows with the interests and cannot be filled by one seller, and a reading of what was bought that never speaks for the verification and never costs the receipt, and a question written for the event that is thrown away the moment it drifts off the subject");
