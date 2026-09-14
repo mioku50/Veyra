@@ -498,6 +498,23 @@ export async function proposeResearch(input: {
     generate: input.generateImpl,
   }).catch(() => ({ intent: base.intent, written: false }));
 
+  /* For an interaction the template is not a safe fallback, it is a bad buy.
+     "What is Exa search for, and is it worth paying for?" sent to Exa's search
+     API is a web search for the seller's own name, and that is exactly what it
+     bought: $0.0070 for ten links about Exa, none of them answering anything.
+     Where the object of the action is the endpoint itself, a question has to be
+     written for it or there is nothing worth paying for, so a model that did
+     not answer refuses the card instead of pricing a question already known to
+     be worthless. Research keeps its template -- there the subject's name is
+     genuinely what a stranger needs. */
+  if (base.actionType === "interact_with_subject" && !sharpened.written) {
+    return {
+      ok: false,
+      reason: "no_question",
+      detail: `${input.agentName ?? "Nova"} could not write a question worth sending to ${base.subject?.label ?? "this endpoint"} just now, and the stock one would only search for its name. Nothing was paid. Try again in a moment.`,
+    };
+  }
+
   const action: NovaAction = { ...base, intent: sharpened.intent };
   const { requiredCapability: capability, query, intent: question } = action;
   const requesterWallet = input.wallet && isAddress(input.wallet)

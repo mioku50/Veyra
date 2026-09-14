@@ -27,6 +27,7 @@ import { buildRequestBody } from "../lib/x402/request-body.ts";
 import { actionFor } from "../lib/nova/action.ts";
 import { readResult } from "../lib/nova/synthesis.ts";
 import { sharpenIntent } from "../lib/nova/intent.ts";
+import { proposeResearch } from "../lib/nova/research.ts";
 import {
   compareTerms,
   hashTerms,
@@ -1084,6 +1085,24 @@ for (const generate of [
   assert.equal(out.written, false);
 }
 
+/* Where the subject IS the endpoint, no written question means no purchase.
+   The template sent to Exa's search API is a web search for the seller's own
+   name, and that is what it bought: $0.0070 for ten links about Exa, none of
+   them answering anything. A model that did not answer must refuse the card,
+   not price a question already known to be worthless. */
+const mute = async () => ({ ok: false as const, provider: "AgentRouter", protocol: "openai-compatible" as const, reason: "upstream_error", message: "no" });
+const refusedForSilence = await proposeResearch({
+  signal: signalFor("x402_resource", "Exa search", "search"),
+  wallet: null,
+  agentName: "Nova",
+  interests: ["Research & search"],
+  generateImpl: mute as never,
+  fetchImpl: (async () => { throw new Error("no endpoint should ever be probed"); }) as never,
+});
+assert.equal(refusedForSilence.ok, false);
+assert.equal(refusedForSilence.ok === false && refusedForSilence.reason, "no_question");
+assert.match(refusedForSilence.ok === false ? refusedForSilence.detail : "", /only search for its name/);
+
 /* A repository has no capability of its own, so the question is written for a
    stranger and has to carry the subject's name into it. */
 const repoAction = actionFor(signalFor("github_repository", "Ethereum ERCs"));
@@ -1098,4 +1117,4 @@ const forStranger = await sharpenIntent({
 assert.equal(forStranger.written, true);
 assert.match(forStranger.intent, /Ethereum/);
 
-console.log("[nova-test] passed: interests kept even when unknown, a first sighting reported as a finding rather than as news, the same commits not re-reported across refreshes, a payee change outranking everything and un-learnable away, a rail change surfaced a day before it could refuse a payment, a 3% price move kept out of the headline, a brief that caps findings so a change can never be crowded out, a tick that reads each URL once and shares its failures, and an absence measured by adding up every unattended pass rather than reporting the last one, and feedback that can raise as well as bury without ever silencing a payee change, and terms that stop a payment when the price or the payee moved between reading the card and pressing the button, and a card that names the chain its money moves on rather than letting the interest stand in for one, and a body that says it asks nothing rather than satisfying a schema with silence, and a budget every interest gets a share of before any interest gets seconds, and an action type that decides whether routing may substitute at all, and a watchlist that grows with the interests and cannot be filled by one seller, and a reading of what was bought that never speaks for the verification and never costs the receipt, and a question written for the event that is thrown away the moment it drifts off the subject, matched as whole words so a short name is never found inside a longer one, and a verdict that says out loud it covers the exchange and not the truth of what was sold");
+console.log("[nova-test] passed: interests kept even when unknown, a first sighting reported as a finding rather than as news, the same commits not re-reported across refreshes, a payee change outranking everything and un-learnable away, a rail change surfaced a day before it could refuse a payment, a 3% price move kept out of the headline, a brief that caps findings so a change can never be crowded out, a tick that reads each URL once and shares its failures, and an absence measured by adding up every unattended pass rather than reporting the last one, and feedback that can raise as well as bury without ever silencing a payee change, and terms that stop a payment when the price or the payee moved between reading the card and pressing the button, and a card that names the chain its money moves on rather than letting the interest stand in for one, and a body that says it asks nothing rather than satisfying a schema with silence, and a budget every interest gets a share of before any interest gets seconds, and an action type that decides whether routing may substitute at all, and a watchlist that grows with the interests and cannot be filled by one seller, and a reading of what was bought that never speaks for the verification and never costs the receipt, and a question written for the event that is thrown away the moment it drifts off the subject, matched as whole words so a short name is never found inside a longer one, and a verdict that says out loud it covers the exchange and not the truth of what was sold, and an interaction that refuses rather than spend on the stock question, which for an endpoint is only a search for its own name");

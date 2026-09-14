@@ -177,4 +177,41 @@ function detailFor(result: ReturnType<typeof verifyPostCall>, id: string) {
   return result.checks.find((check) => check.id === id)?.detail ?? "";
 }
 
-console.log("[x402-post-call-verification-test] passed: delivery, error envelopes, empty bodies, settlement receipts, published schemas, latency envelope, amount binding, response commitment, a failure summary that says what happened rather than which check it was, and no check that claims a charge without a receipt");
+/* A schema Veyra cannot enforce is not a delivery that failed.
+   Measured on a real purchase: $0.0070 to Exa, the endpoint answered correctly,
+   and the card said the response did not match its published output schema --
+   because that schema used `oneOf`, and below it a `$ref`. The seller had done
+   nothing wrong. A check that cannot be run is null, which is this file's rule
+   everywhere else and was not applied to the one check that reads a stranger's
+   document. */
+const unenforceable = verifyPostCall({
+  ...BASE,
+  declaredOutputSchema: {
+    type: "object",
+    properties: { results: { type: "array", items: { $ref: "#/components/schemas/Result" } } },
+  },
+});
+assert.equal(unenforceable.verdict, "PASS", "an unreadable schema must not fail a delivered answer");
+const shape = unenforceable.checks.find((c) => c.id === "response_matches_declared_schema");
+assert.equal(shape?.passed, null, "not passed either -- nothing was checked");
+assert.match(shape?.detail ?? "", /cannot enforce/);
+/* And the verdict says so rather than claiming everything was checked. */
+assert.match(unenforceable.summary, /except the response shape/);
+
+/* The composition keywords themselves are enforced now, in both directions. */
+const union = { type: "object", properties: { content: { oneOf: [{ type: "string" }, { type: "object" }] } } };
+assert.equal(
+  verifyPostCall({ ...BASE, parsedBody: { content: "a string" }, bodyText: '{"content":"a string"}', declaredOutputSchema: union }).verdict,
+  "PASS",
+  "a value matching one branch of a union satisfies it",
+);
+const broke = verifyPostCall({
+  ...BASE, parsedBody: { content: 42 }, bodyText: '{"content":42}', declaredOutputSchema: union,
+});
+assert.equal(broke.verdict, "FAIL", "and a value matching no branch still fails, as it should");
+assert.equal(
+  broke.checks.find((c) => c.id === "response_matches_declared_schema")?.passed, false,
+  "a real mismatch is a failure, not an abstention",
+);
+
+console.log("[x402-post-call-verification-test] passed: delivery, error envelopes, empty bodies, settlement receipts, published schemas, latency envelope, amount binding, response commitment, a failure summary that says what happened rather than which check it was, and no check that claims a charge without a receipt, and a schema Veyra cannot enforce that abstains instead of blaming the seller for delivering");

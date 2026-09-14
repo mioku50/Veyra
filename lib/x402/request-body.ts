@@ -144,5 +144,12 @@ export function checkRequestBody(
   if (!inputSchema || !schemaProperties(inputSchema)) return { ok: true, checked: false };
   const result = validateJsonSchemaValue(body, inputSchema);
   if (result.ok) return { ok: true, checked: true };
+  /* A schema Veyra cannot enforce is not a body the provider called invalid.
+     Treating the two as one refused to spend on requests that were fine, on
+     the strength of a keyword this side does not implement -- the same
+     confusion that, on the way back, reported a delivered Exa answer as
+     failing its own published schema. Unchecked is the honest word, and this
+     function already has it. */
+  if (result.unsupported === true) return { ok: true, checked: false };
   return { ok: false, checked: true, path: result.path, message: result.message };
 }

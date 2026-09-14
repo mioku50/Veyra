@@ -200,13 +200,23 @@ export function verifyPostCall(input: {
 
   if (input.declaredOutputSchema) {
     const result = validateJsonSchemaValue(input.parsedBody, input.declaredOutputSchema);
+    /* "Veyra cannot enforce this schema" is not "the endpoint broke it".
+       Collapsing the two charged somebody $0.0070, let Exa answer correctly,
+       and then reported the answer as failing its published output schema --
+       because that schema used `oneOf`, and later a `$ref`. The seller had
+       done nothing wrong; the gap was here. A check that cannot be run is
+       null, which is this file's rule everywhere else and was not applied to
+       the one check that reads a stranger's document. */
+    const unenforceable = !result.ok && result.unsupported === true;
     add(
       "response_matches_declared_schema",
-      result.ok,
+      result.ok ? true : unenforceable ? null : false,
       "major",
       result.ok
         ? "Response matches the output schema the provider published."
-        : `Response does not match the published output schema at ${result.path}: ${result.message}`,
+        : unenforceable
+          ? `The provider's output schema uses ${result.path.split(".").pop()}, which Veyra cannot enforce, so the response could not be checked against it.`
+          : `Response does not match the published output schema at ${result.path}: ${result.message}`,
     );
   } else {
     add(
@@ -278,7 +288,15 @@ export function verifyPostCall(input: {
       : `${opening} and answered, but Veyra could not confirm every required check from what the endpoint returned.`;
   } else {
     verdict = "PASS";
-    summary = "Paid, delivered, and verified against everything this endpoint can be held to.";
+    /* Named, not glossed over. A schema Veyra could not enforce leaves a real
+       gap in what this verdict covers, and the sentence that claims everything
+       was checked must not be the one printed when something was not. */
+    const shapeUnchecked = checks.some(
+      (check) => check.id === "response_matches_declared_schema" && check.passed === null,
+    );
+    summary = shapeUnchecked
+      ? "Paid, delivered, and verified — except the response shape, which this endpoint publishes in a form Veyra cannot enforce."
+      : "Paid, delivered, and verified against everything this endpoint can be held to.";
   }
 
   return {
