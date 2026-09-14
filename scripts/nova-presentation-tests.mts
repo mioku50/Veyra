@@ -201,12 +201,12 @@ const allDenied = shadowSummaryFrom([
   shadowRecord({ verdict: "WOULD_DENY", wouldSpendUsdc: 0.02, failed: ["within_per_action_limit"] }),
 ], { period, dailyBudgetUsdc: 0.02 });
 mustNot(shadowSpendClaim(allDenied), /\$/, "nothing was allowed, so no figure is spent");
-must(shadowSpendClaim(allDenied), /nothing would have been spent/, "and it says so");
+must(shadowSpendClaim(allDenied), /^nothing$/, "and it says so without printing a zero");
 
 /* 20. An unknown budget is not an exhausted one, and prints no number. */
 mustNot(shadowRemainingClaim(shadowSummaryFrom([shadowRecord()], { period })), /\$/,
   "with no daily budget declared there is no remainder to show");
-must(shadowRemainingClaim(view().summary), /\$0\.0170 left/, "and with one there is");
+must(shadowRemainingClaim(view().summary), /^\$0\.0170$/, "and with one there is");
 
 /* 21. Every check has a name a tally can use. Adding a check without a label
       would print a raw code like within_daily_budget at somebody. */

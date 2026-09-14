@@ -369,18 +369,25 @@ export function shadowNightClaim(summary: ShadowSummary): Claim {
   ];
 }
 
-/** What the allowances would have cost, kept apart from what was withheld. */
+/**
+ * What the allowances would have cost, kept apart from what was withheld.
+ *
+ * Bare, because it is read under a label that already says "would spend". A
+ * sentence here would print "Would spend -- $0.0030 would have been spent",
+ * and a row that restates its own label is how a figure ends up sounding like
+ * a claim about something else.
+ */
 export function shadowSpendClaim(summary: ShadowSummary): Claim {
-  if (summary.wouldInvestigate === 0) {
-    return ["nothing would have been spent"];
-  }
-  return [figure(`$${summary.wouldSpendUsdc.toFixed(4)}`), " would have been spent"];
+  /* Not $0.0000. Nothing was allowed, and a zero in a money column reads as a
+     purchase that cost nothing rather than as an absence of purchases. */
+  if (summary.wouldInvestigate === 0) return ["nothing"];
+  return [figure(`$${summary.wouldSpendUsdc.toFixed(4)}`)];
 }
 
 /** What the limits kept. Null-safe about a budget nobody has declared. */
 export function shadowRemainingClaim(summary: ShadowSummary): Claim {
-  if (summary.remainingTodayUsdc === null) return ["no daily budget is set"];
-  return [figure(`$${summary.remainingTodayUsdc.toFixed(4)}`), " left in today's budget"];
+  if (summary.remainingTodayUsdc === null) return ["no daily budget set"];
+  return [figure(`$${summary.remainingTodayUsdc.toFixed(4)}`)];
 }
 
 /**
