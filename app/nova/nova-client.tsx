@@ -917,7 +917,12 @@ export function NovaClient({ view = "today" }: { view?: NovaView } = {}) {
             {view !== "today"
               ? VIEW_BLURB[view](agentName, brief.agent.arcIdentity !== null)
               : attention.length > 0
-                ? <>Found <span className="font-mono text-foreground">{attention.length}</span> {attention.length === 1 ? "thing" : "things"} worth your attention.</>
+                /* Not "worth your attention": the brief keeps everything that is
+                   not noise, low relevance included, and a card tagged "low
+                   relevance" directly under that sentence made the heading
+                   argue with the item. The brief says how much is in it; each
+                   card says how much it thinks of itself. */
+                ? <><span className="font-mono text-foreground">{attention.length}</span> {attention.length === 1 ? "item" : "items"} in today&apos;s brief.</>
                 : blind.length > 0
                   ? <>Could not reach {blind.join(" and ")}, so this is an incomplete look rather than a quiet day.</>
                   : <>Nothing moved across the <span className="font-mono text-foreground">{brief.lastRefresh?.subjectsChecked ?? 0}</span> things being watched for you.</>}
@@ -1392,9 +1397,10 @@ function Standing({
             <Row label="Registry" value={`eip155:${identity.chainId}:${identity.registry.slice(0, 10)}…`} />
           </dl>
           <p className="mt-3 max-w-xl text-xs leading-relaxed text-muted-foreground">
-            You own this identity. {agent.name}&apos;s memory, history and attestations belong to
-            the agent, not to the wallet — transferring the identity to another wallet changes the
-            owner and nothing else.
+            You own this identity onchain. Transferring the ERC-8004 token changes its owner on
+            Arc — but access to this {agent.name} still follows its recovery key, so a transfer
+            today moves the token and not the agent. Moving both at once needs a transfer inside{" "}
+            {BRAND.name}, which does not exist yet.
           </p>
           <a
             href={`https://testnet.arcscan.app/address/${identity.registry}`}
@@ -1410,7 +1416,7 @@ function Standing({
           <p className="mt-3 max-w-xl text-sm leading-relaxed text-muted-foreground">
             {standing.readyForArcIdentity
               ? `${agent.name} has earned eligibility through ${standing.verifiedResearch} verified ${standing.verifiedResearch === 1 ? "activity" : "activities"}. Registering on Arc now records something that already happened.`
-              : `${agent.name} can be registered on Arc once there is something for that identity to point at — one purchase that passed its delivery check.`}
+              : `${agent.name} can be registered on Arc once there is something for that identity to point at: one purchase that passed its delivery check, recorded on Arc where anyone can read it. ${standing.verifiedResearch >= 1 ? "The purchase is there — it just is not on Arc yet." : ""}`}
           </p>
           {standing.readyForArcIdentity ? (
             <div className="mt-4">
@@ -1424,9 +1430,8 @@ function Standing({
               </button>
               <p className="mt-3 max-w-xl text-xs leading-relaxed text-muted-foreground">
                 You will own this identity — your wallet mints it, and {BRAND.name} never holds it.
-                {agent.name}&apos;s memory and history stay with the agent even if you later
-                transfer the identity to another wallet. Your wallet needs to be on Arc Testnet,
-                where gas is paid in USDC (about $0.006).
+                {agent.name}&apos;s memory and history stay with the agent, not with the wallet.
+                Your wallet needs to be on Arc Testnet, where gas is paid in USDC (about $0.006).
               </p>
               {claimNote ? (
                 <p className="mt-3 max-w-xl text-xs leading-relaxed text-state-warn">{claimNote}</p>
@@ -1586,17 +1591,24 @@ function Receipts({ brief }: { brief: NovaBrief }) {
 
   const spent = settled.reduce((total, entry) => total + (entry.paidUsdc ?? 0), 0);
   const verified = settled.filter((entry) => entry.status === "verified").length;
+  const paidCalls = settled.filter((entry) => (entry.paidUsdc ?? 0) > 0).length;
 
   return (
     <Panel className="mt-4">
       <Label>What {brief.agent.name} has bought</Label>
+      {/* Three numbers, because one ratio over them was wrong. "1 of 6" counted
+          attempts where nothing moved in the same denominator as paid calls,
+          which reads as a far worse hit rate than the money bought. An attempt
+          is a decision, a payment is an exposure, a pass is a result. */}
       <dl className="mt-4 space-y-0">
-        <Row label="Spent" value={`$${spent.toFixed(4)}`} />
+        <Row label="Attempts" value={String(settled.length)} />
+        <Row label="Money actually moved" value={String(paidCalls)} />
         <Row
           label="Passed the delivery check"
-          value={`${verified} of ${settled.length}`}
+          value={paidCalls > 0 ? `${verified} of ${paidCalls} paid` : "nothing paid yet"}
           tone={verified > 0 ? "good" : "idle"}
         />
+        <Row label="Spent" value={`$${spent.toFixed(4)}`} />
       </dl>
 
       <ul className="mt-5 space-y-5">

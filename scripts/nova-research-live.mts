@@ -234,7 +234,11 @@ assert.equal(brief.standing.veyraDecisions, 3, "every settled attempt is an atte
 assert.equal(brief.standing.verifiedResearch, 1, "and only the one that passed its check is a result");
 assert.equal(brief.standing.observedOutcomes, 2, "two payments moved; the refused one did not");
 assert.ok(brief.standing.spentUsdc > 0, "money that moved is money spent");
-assert.equal(brief.standing.readyForArcIdentity, true);
+/* The fixture settles without touching Arc, so a checked purchase alone must
+   not open the identity: the attestation is the half a stranger can read. */
+assert.equal(brief.standing.attestedOnArc, 0, "the fixture never writes to Arc");
+assert.equal(brief.standing.readyForArcIdentity, false,
+  "a purchase nobody outside Veyra can read is not yet a history to point at");
 
 /* The per-counterparty record is the only evidence on a card the owner paid to
    obtain, so it has to survive the round trip through the brief. */

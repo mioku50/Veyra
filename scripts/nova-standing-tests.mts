@@ -43,7 +43,24 @@ assert.equal(mixed.attestedOnArc, 1);
 assert.equal(mixed.observedOutcomes, 2, "two payments moved; the refused one did not");
 assert.ok(mixed.veyraDecisions > mixed.observedOutcomes && mixed.observedOutcomes > mixed.verifiedResearch,
   "attempt, payment and result are three different numbers, and the funnel narrows");
-assert.equal(mixed.readyForArcIdentity, true);
+/* Eligibility needs both halves. A purchase that passed its check is the work;
+   the attestation on Arc is the part somebody other than Veyra can read, and a
+   badge Veyra grants itself off its own bookkeeping is not "earned by doing
+   things that can be checked". */
+assert.equal(mixed.readyForArcIdentity, true, "a checked purchase that is also on Arc");
+
+const unattested = standingFrom([attempt({ status: "verified", paidUsdc: 0.007, arcProof: null })]);
+assert.equal(unattested.verifiedResearch, 1);
+assert.equal(unattested.attestedOnArc, 0);
+assert.equal(unattested.readyForArcIdentity, false,
+  "a purchase nobody outside Veyra can read is not yet a history to point at");
+
+const attestedButUnchecked = standingFrom([
+  attempt({ status: "paid_unverified", paidUsdc: 0.01, arcProof: { transaction: "0x1" } as never,
+            verification: { verdict: "FAIL", summary: "no" } }),
+]);
+assert.equal(attestedButUnchecked.readyForArcIdentity, false,
+  "and an attestation without a passing check is not one either");
 assert.deepEqual(mixed.providers.map((p) => p.provider), ["StableEnrich", "Sponge", "Exa"], "newest first");
 
 /* The per-counterparty record is the only thing here that can change a
@@ -94,4 +111,4 @@ const both = standingFrom([
 assert.match(priorWith(both, "Exa")!.sentence, /1 passed the check, 1 did not/);
 assert.equal(priorWith(both, "Exa")!.tone, "warn");
 
-console.log("[nova-standing-test] passed: standing counted from settled purchases rather than three proxies for one of them, a per-counterparty record bought with the owner's own money, and counts that never turn into a rate before there is anything to average");
+console.log("[nova-standing-test] passed: standing counted from settled purchases rather than three proxies for one of them, a per-counterparty record bought with the owner's own money, counts that never turn into a rate before there is anything to average, and an Arc identity that needs both a passing check and an attestation anyone can read");

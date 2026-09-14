@@ -121,9 +121,17 @@ export function standingFrom(investigations: NovaInvestigation[]): NovaDerivedSt
        would make this the same number as veyraDecisions. What is distinct and
        worth a row is how often money actually left the wallet. */
     observedOutcomes: settled.filter((entry) => (entry.paidUsdc ?? 0) > 0).length,
-    /* Unchanged in meaning: an identity is offered once there is a history for
-       it to point at, and a purchase that was checked is that history. */
-    readyForArcIdentity: verifiedResearch >= 1,
+    /* "Becomes one by doing things that can be checked" has to mean checked by
+       somebody other than Veyra, or it is a badge Veyra grants itself for its
+       own bookkeeping. A verified purchase is the work; the attestation on Arc
+       is the part a stranger can read without asking us, and only both
+       together are a history an identity can point at.
+
+       The first Nova was minted under the weaker rule, one purchase with a
+       delivery PASS, and its attestation landed a minute later -- so the end
+       state is right and nothing is being taken back. The rule is tightened
+       for everyone after it. */
+    readyForArcIdentity: verifiedResearch >= 1 && attestedOnArc >= 1,
     spentUsdc,
     attestedOnArc,
     providers,
