@@ -40,6 +40,7 @@ import {
 } from "./research-terms.ts";
 import type { NovaSignal } from "./types.ts";
 import { networkName } from "./network.ts";
+import { actionFor, type NovaAction, type NovaActionType } from "./action.ts";
 
 /**
  * What it would cost to look deeper, and who would be paid.
@@ -102,6 +103,14 @@ export type NovaResearchProposal = {
   probed: number;
   /** Set when evidence's first choice was passed over, and why. */
   routingNote: string | null;
+  /** Whether the subject is the thing being learned about or the thing being
+   *  dealt with. An interaction is never routed to anybody else. */
+  actionType: NovaActionType;
+  /** What the card is named after, when it is named after something. */
+  subjectLabel: string | null;
+  /** The provider whose work this is, for research. Null for an interaction,
+   *  where the provider and the subject are the same party. */
+  performedVia: string | null;
   expiresAt: string;
   /** A fingerprint of the seven facts above. Carried back on approval so the
    *  market can be checked against what this card actually said, rather than
@@ -144,25 +153,8 @@ export type NovaResearchOutcome =
  * capability the market does sell.
  */
 export function researchRequestFor(signal: NovaSignal): { capability: string; query: string; question: string } {
-  const subject = (signal.evidence?.subject ?? {}) as Record<string, unknown>;
-  const capability = typeof subject.capability === "string" && subject.capability.trim()
-    ? subject.capability.trim()
-    : "research";
-  const label = signal.subjectLabel ?? "this";
-
-  if (signal.subjectKind === "github_repository") {
-    return {
-      capability: "research",
-      query: `${label} project update`,
-      question: `What changed in ${label}, and does it matter?`,
-    };
-  }
-
-  return {
-    capability,
-    query: label,
-    question: `What is ${label} for, and is it worth paying for?`,
-  };
+  const action = actionFor(signal);
+  return { capability: action.requiredCapability, query: action.query, question: action.intent };
 }
 
 /**
@@ -314,21 +306,26 @@ function verdictFor(decision: TrustDecisionLevel, authorisedUsdc: number): strin
  * costs, and using the catalogue's number on the card instead would make every
  * approval report a price change that never happened.
  */
+type PayableOutcome =
+  | {
+      kind: "payable";
+      winner: MarketplaceRankedCandidate;
+      request: ReturnType<typeof buildRequestBody>;
+      quote: X402Quote;
+      /** Set only for research bought from somebody other than the subject. */
+      skipped: string | null;
+    }
+  /** The object of the action cannot be paid, and nothing may stand in for it. */
+  | { kind: "subject_refused"; refusal: string }
+  /** Nothing in the shortlist could be asked. */
+  | { kind: "none" };
+
 async function firstPayable(input: {
   selection: MarketplaceSelection;
-  capability: string;
-  question: string;
-  /** The catalogue id of the thing the signal is about, when it is a listing
-   *  rather than a repository. Tried first. */
-  subjectRef?: string | null;
+  action: NovaAction;
   fetchImpl?: typeof fetch;
   attempts?: number;
-}): Promise<{
-  winner: MarketplaceRankedCandidate;
-  request: ReturnType<typeof buildRequestBody>;
-  quote: X402Quote;
-  skipped: string | null;
-} | null> {
+}): Promise<PayableOutcome> {
   const showable = input.selection.candidates.filter((candidate) =>
     isExecutableTrustDecision(candidate.trustDecision));
   const byRail = [
@@ -341,34 +338,53 @@ async function firstPayable(input: {
      price. The generic ranking is right when there is no obvious subject -- a
      repository does not sell anything -- and wrong the moment there is one: the
      thing best placed to say what Exa contents is for is Exa contents. */
-  const subject = input.subjectRef
-    ? byRail.find((candidate) => candidate.marketplace.candidateId === input.subjectRef) ?? null
+  const subjectRef = input.action.subject?.ref ?? null;
+  const subject = subjectRef
+    ? byRail.find((candidate) => candidate.marketplace.candidateId === subjectRef) ?? null
     : null;
-  const ordered = subject ? [subject, ...byRail.filter((c) => c !== subject)] : byRail;
 
-  /* Why the obvious endpoint is not the one being offered.
-     Preferring the subject only works if the subject survived into byRail, and
-     it can fail to twice over: the shortlist is ranked and capped, and a
-     candidate Veyra will not authorise is dropped before any of this. Either
-     way the card went on to offer a different seller with no note at all --
-     "Exa contents is available for $0.0010" quoting somebody else's Reddit
-     scraper at twenty times the price, silently. A substitution nobody
-     announced is the exact thing this product exists to refuse. */
-  const subjectNote = input.subjectRef && !subject
-    ? input.selection.candidates.some((c) => c.marketplace.candidateId === input.subjectRef)
-      ? `${BRAND_NAME} would not authorise the endpoint this is about, so the answer would come from a different seller.`
-      : `The endpoint this is about did not come back among the candidates for this capability, so the answer would come from a different seller.`
-    : null;
+  /* The object of the action is never swapped for another one.
+     An interaction is named after its counterparty: the card says "Exa contents
+     is available for $0.0010", the price on it is Exa's price, and the only
+     honest thing to do with it is deal with Exa. Buying an answer about Exa
+     from somebody else's Reddit scraper is not a cheaper version of that, it is
+     a different thing -- and it happened, at twenty times the price, with no
+     note on the card at all. If Veyra will not authorise the endpoint, the
+     answer is no. Not somebody else.
+
+     Research is the other case, and it is genuinely a routing decision: a
+     repository sells nothing, so the work has to be bought from somebody, and
+     any approved provider may do it as long as the card says whose work it
+     is. */
+  if (input.action.actionType === "interact_with_subject") {
+    if (!subject) {
+      return {
+        kind: "subject_refused",
+        refusal: subjectRef && input.selection.candidates.some((c) => c.marketplace.candidateId === subjectRef)
+          ? `${BRAND_NAME} would not pay this endpoint.`
+          : `${BRAND_NAME} could not reach the terms of this endpoint to authorise it.`,
+      };
+    }
+  }
+
+  const ordered = subject ? [subject, ...byRail.filter((c) => c !== subject)] : byRail;
 
   /* The reason the first candidate was passed over, if one was. Rank-neutral
      wording, because the walk is in rank order and "a higher-ranked endpoint"
      is true of every skip -- "the best-ranked one" is true only of the first,
      and a sentence that is right most of the time is the wrong kind of
      explanation for a screen about money. */
-  let skipped: string | null = subjectNote;
+  let skipped: string | null = null;
   const note = (reason: string) => { skipped ??= `${BRAND_NAME} passed over a higher-ranked endpoint: ${reason}`; };
 
-  for (const candidate of ordered.slice(0, input.attempts ?? 4)) {
+  /* One candidate for an interaction, by definition. The walk exists to find a
+     usable seller among several; here there is only ever one that is allowed to
+     be paid, and "try the next one" is the bug. */
+  const walk = input.action.actionType === "interact_with_subject"
+    ? [subject!]
+    : ordered.slice(0, input.attempts ?? 4);
+
+  for (const candidate of walk) {
     /* A path template Nova cannot fill. Circle's catalogue publishes these
        literally -- x402.api.agentmail.to/v0/domains/{domain_id} -- and they are
        endpoints for a caller that already knows which record it means. Nova
@@ -379,8 +395,8 @@ async function firstPayable(input: {
     }
 
     const request = buildRequestBody({
-      intent: input.question,
-      capability: input.capability,
+      intent: input.action.intent,
+      capability: input.action.requiredCapability,
       inputSchema: (candidate.marketplace.inputSchema ?? null) as JsonSchema | null,
     });
     /* An endpoint whose published vocabulary has nowhere to put the question.
@@ -426,6 +442,7 @@ async function firstPayable(input: {
     }
 
     return {
+      kind: "payable",
       winner: candidate,
       request,
       quote: quoted.quote,
@@ -438,10 +455,13 @@ async function firstPayable(input: {
       /* The subject note survives even when the ranking stood, because there it
          is not an apology for departing from the order -- it is the reason the
          order does not contain the thing the card is named after. */
-      skipped: candidate === ordered[0] ? subjectNote : skipped,
+      /* Research bought from somebody other than the subject is named on the
+         card. An interaction has nothing to say here: its provider IS its
+         subject, which is the whole point. */
+      skipped: candidate === walk[0] ? null : skipped,
     };
   }
-  return null;
+  return { kind: "none" };
 }
 
 export async function proposeResearch(input: {
@@ -452,7 +472,8 @@ export async function proposeResearch(input: {
   now?: Date;
   fetchImpl?: typeof fetch;
 }): Promise<NovaResearchOutcome> {
-  const { capability, query, question } = researchRequestFor(input.signal);
+  const action = actionFor(input.signal);
+  const { requiredCapability: capability, query, intent: question } = action;
   const requesterWallet = input.wallet && isAddress(input.wallet)
     ? getAddress(input.wallet)
     : NO_WALLET;
@@ -504,12 +525,19 @@ export async function proposeResearch(input: {
      surface whose whole premise is that nobody has to know what a schema is. */
   const attempt = await firstPayable({
     selection,
-    capability,
-    question,
-    subjectRef: input.signal.subjectKind === "x402_resource" ? input.signal.subjectRef : null,
+    action,
     fetchImpl: input.fetchImpl,
   });
-  if (!attempt) {
+
+  /* An interaction Veyra will not authorise ends here, and says so in one
+     sentence. There is no shortlist to fall back to because there is nothing a
+     fallback could mean: the card is named after this endpoint and its price is
+     this endpoint's price. */
+  if (attempt.kind === "subject_refused") {
+    return { ok: false, reason: "subject_refused", detail: `${attempt.refusal} Nothing was paid.` };
+  }
+
+  if (attempt.kind === "none") {
     const allowed = selection.candidates.filter((candidate) =>
       isExecutableTrustDecision(candidate.trustDecision)).length;
     return {
@@ -553,6 +581,15 @@ export async function proposeResearch(input: {
       signalId: input.signal.signalId,
       question,
       capability,
+      /* What kind of thing this card is asking to do, said on the card rather
+         than inferred from it. Routing is only allowed to choose after this is
+         fixed, and the reader is entitled to the same distinction: whose work
+         this is, versus who is being dealt with. */
+      actionType: action.actionType,
+      subjectLabel: action.subject?.label ?? null,
+      /* Named only when somebody other than the subject did the work, which can
+         only happen for research. An interaction's provider is its subject. */
+      performedVia: action.actionType === "research_subject" ? terms.provider : null,
       provider: terms.provider,
       resource: terms.resource,
       costUsdc,
@@ -570,7 +607,13 @@ export async function proposeResearch(input: {
       verifiedAfterPaying: decision !== "ALLOW",
       reasons: reasonsFor(winner),
       probed: selection.probed,
-      routingNote: skipped ?? selection.recommendation.routingNote,
+      /* Only research has routing to explain. An interaction was never routed:
+         the winner is the subject, chosen because the card is named after it,
+         and printing the engine's note about which candidate it would otherwise
+         have recommended describes a decision that was not Veyra's to make. */
+      routingNote: action.actionType === "interact_with_subject"
+        ? null
+        : skipped ?? selection.recommendation.routingNote,
       expiresAt: selection.expiresAt,
       termsHash: hashTerms(terms),
     },

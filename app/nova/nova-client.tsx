@@ -1362,15 +1362,34 @@ function DeeperResearch({
 
   return (
     <Section>
-      <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
-        {BRAND.name} looked at{" "}
-        <span className="font-mono text-foreground">{proposal.probed}</span>{" "}
-        {proposal.probed === 1 ? "provider" : "providers"} and picked the best one this wallet
-        can pay. {agentName} would ask: <span className="text-foreground">{proposal.question}</span>
-      </p>
+      {/* Two different sentences, because they are two different things.
+          Research is bought from whoever does it best, and the card says whose
+          work it is. An interaction is a deal with one named counterparty and
+          nobody else was considered -- saying "picked the best of 8" there
+          would describe a choice that was never Veyra's to make. */}
+      {proposal.actionType === "interact_with_subject" ? (
+        <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
+          This is {proposal.subjectLabel ?? proposal.provider} itself, not a report about it.
+          {" "}{agentName} would ask it:{" "}
+          <span className="text-foreground">{proposal.question}</span>
+        </p>
+      ) : (
+        <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
+          {BRAND.name} looked at{" "}
+          <span className="font-mono text-foreground">{proposal.probed}</span>{" "}
+          {proposal.probed === 1 ? "provider" : "providers"} and picked the best one this wallet
+          can pay. {agentName} would ask: <span className="text-foreground">{proposal.question}</span>
+        </p>
+      )}
 
       <dl className="mt-4 space-y-0">
-        <Row label="Provider" value={proposal.provider} />
+        {proposal.performedVia ? (
+          /* Whose work this is. The subject of the question and the party being
+             paid are different here, and a card that prints one provider name
+             lets a reader believe they are the same. */
+          <Row label="Research performed via" value={proposal.performedVia} />
+        ) : null}
+        <Row label={proposal.performedVia ? "Paid to" : "Provider"} value={proposal.provider} />
         <Row label="Cost" value={cost} />
         <Row label="Trust" value={`${proposal.trustScore}/100`} />
         <Row

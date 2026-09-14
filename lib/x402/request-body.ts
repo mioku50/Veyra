@@ -20,6 +20,9 @@ import { validateJsonSchemaValue, type JsonSchema } from "../seller/json-schema.
  */
 
 /** Field names that carry a free-text query, most conventional first. */
+/** Word stems that mark a field as carrying words rather than an identifier. */
+const INTENT_WORDS = ["query", "search", "question", "prompt", "keyword", "text", "message", "content", "topic"];
+
 const QUERY_FIELDS = [
   "q", "query", "search", "searchQuery", "text", "prompt", "input",
   "question", "term", "keywords", "url",
@@ -78,9 +81,20 @@ export function buildRequestBody(input: {
   // The published schema decides the field name, in its own vocabulary.
   const intentField = QUERY_FIELDS.find((candidate) =>
     names.some((name) => name.toLowerCase() === candidate.toLowerCase()))
-    ?? required.find((name) => {
+    /* A provider's own spelling, when it is recognisably a field for words:
+       searchQuery, userQuestion, inputText. Not "any required string" -- that
+       was the rule, and it put "What changed in Ethereum EIPs, and does it
+       matter?" into StableEmail's `messageId`, which is an identifier for a
+       message somebody else already has. An identifier is not a question with
+       an unusual name, and a request built that way is bought and wasted. */
+    ?? names.find((name) => {
       const type = (properties[name] as { type?: unknown } | undefined)?.type;
-      return type === "string";
+      if (type !== "string") return false;
+      const lower = name.toLowerCase();
+      /* An identifier, however it is spelled. "messageId" contains "message"
+         and is not a message; the suffix is what settles it. */
+      if (/(?:id|ids|key|token|hash|uuid|address|slug|ref)$/.test(lower)) return false;
+      return INTENT_WORDS.some((word) => lower.includes(word));
     })
     ?? null;
 

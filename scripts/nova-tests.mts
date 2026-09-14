@@ -22,7 +22,7 @@ import { observeRepositories } from "../lib/nova/sources.ts";
 import { EXPLICIT_IGNORE_SUPPORT, ignoreWeight, summariseAway } from "../lib/nova/service.ts";
 import { networkName, settlementNetworkOf } from "../lib/nova/network.ts";
 import { buildRequestBody } from "../lib/x402/request-body.ts";
-import { capabilityQueriesForInterests } from "../lib/nova/interests.ts";
+import { actionFor } from "../lib/nova/action.ts";
 import {
   compareTerms,
   hashTerms,
@@ -838,4 +838,36 @@ const interestsSeen = new Set(fairQueries.map((q) => q.interest));
 assert.equal(interestsSeen.size, 4, "no interest is dropped by the interleave");
 assert.ok(fairQueries.length > 4, "second and third capability terms are still asked");
 
-console.log("[nova-test] passed: interests kept even when unknown, a first sighting reported as a finding rather than as news, the same commits not re-reported across refreshes, a payee change outranking everything and un-learnable away, a rail change surfaced a day before it could refuse a payment, a 3% price move kept out of the headline, a brief that caps findings so a change can never be crowded out, a tick that reads each URL once and shares its failures, and an absence measured by adding up every unattended pass rather than reporting the last one, and feedback that can raise as well as bury without ever silencing a payee change, and terms that stop a payment when the price or the payee moved between reading the card and pressing the button, and a card that names the chain its money moves on rather than letting the interest stand in for one, and a body that says it asks nothing rather than satisfying a schema with silence, and a budget every interest gets a share of before any interest gets seconds");
+/* ---- what the card is asking to do ---- */
+
+function signalFor(kind: "x402_resource" | "github_repository", label: string, capability?: string) {
+  return {
+    signalId: "s1", subjectId: "sub1", subjectLabel: label, subjectRef: "x402:aff46c21",
+    subjectKind: kind, interest: "Arc", kind: "capability_available",
+    headline: `${label} is available`, detail: "", relevance: "high", relevanceReason: "",
+    status: "new", executionPublicId: null, observedAt: "2026-09-14T00:00:00.000Z",
+    evidence: capability ? { subject: { capability } } : {},
+  } as never;
+}
+
+/* A catalogue listing is a seller. The card is named after it, the price on the
+   card is its price, and nobody else may be paid instead -- that substitution
+   happened, at twenty times the price, silently. */
+const exa = actionFor(signalFor("x402_resource", "Exa contents", "search"));
+assert.equal(exa.actionType, "interact_with_subject");
+assert.equal(exa.requiredCapability, "search", "an interaction needs the subject's own capability");
+assert.equal(exa.subject?.ref, "x402:aff46c21", "routing is pinned to the subject");
+
+/* A repository sells nothing, so the work has to be bought from somebody and
+   which somebody is a real routing decision. */
+const repo = actionFor(signalFor("github_repository", "Ethereum EIPs"));
+assert.equal(repo.actionType, "research_subject");
+assert.equal(repo.requiredCapability, "research");
+assert.match(repo.intent, /What changed in Ethereum EIPs/);
+
+/* An x402 listing with no capability recorded is still an interaction. The
+   capability falls back; the action type does not, because what may be paid is
+   not a function of how well the evidence was filled in. */
+assert.equal(actionFor(signalFor("x402_resource", "Sponge fast sdxl")).actionType, "interact_with_subject");
+
+console.log("[nova-test] passed: interests kept even when unknown, a first sighting reported as a finding rather than as news, the same commits not re-reported across refreshes, a payee change outranking everything and un-learnable away, a rail change surfaced a day before it could refuse a payment, a 3% price move kept out of the headline, a brief that caps findings so a change can never be crowded out, a tick that reads each URL once and shares its failures, and an absence measured by adding up every unattended pass rather than reporting the last one, and feedback that can raise as well as bury without ever silencing a payee change, and terms that stop a payment when the price or the payee moved between reading the card and pressing the button, and a card that names the chain its money moves on rather than letting the interest stand in for one, and a body that says it asks nothing rather than satisfying a schema with silence, and a budget every interest gets a share of before any interest gets seconds, and an action type that decides whether routing may substitute at all");
