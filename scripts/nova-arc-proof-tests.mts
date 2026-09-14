@@ -57,4 +57,32 @@ assert.equal(await recordPurchaseOnArc({ ...BASE, amountAtomic: BigInt(0) }), nu
 assert.equal(await recordPurchaseOnArc({ ...BASE, buyer: "" }), null, "a proof needs a buyer");
 assert.equal(await recordPurchaseOnArc({ ...BASE, seller: "not-an-address" }), null, "and a seller");
 
-console.log("[nova-arc-proof-test] passed: a request hash that pins the method, endpoint and body together, and a writer that returns an absence rather than costing a purchase when Arc cannot be written to");
+/* Already registered is success, and has to be persisted as success.
+   The sequence it exists for: the transaction lands on Arc, the receipt is
+   lost to a timeout before Veyra stores it, and every later attempt reads
+   isRegistered and gives up -- leaving the row saying "not on Arc yet"
+   forever, because the registry will never accept the duplicate. So the
+   recovery path must return a proof, and the three sources must stay
+   distinguishable: only "written" means this process sent a transaction. */
+type Proof = NonNullable<Awaited<ReturnType<typeof recordPurchaseOnArc>>>;
+const sources: Array<Proof["source"]> = ["written", "recovered", "present"];
+assert.equal(new Set(sources).size, 3, "the three ways a record exists stay distinct");
+
+/* A record whose transaction is unknown is still a record. Anything that reads
+   these rows has to treat a null transaction as "on Arc, pointer missing" and
+   never as "not on Arc" -- the second is what kept the backfill looping. */
+const present: Proof = {
+  receiptId: HASH,
+  transaction: null,
+  chainId: 5_042_002,
+  registry: BASE.seller as `0x${string}`,
+  attester: null,
+  explorerUrl: "https://testnet.arcscan.app/address/0x0",
+  registeredAt: new Date().toISOString(),
+  source: "present",
+};
+assert.notEqual(present, null, "a registration without a locatable transaction is not an absence");
+assert.equal(present.transaction, null);
+assert.ok(present.explorerUrl.includes("/address/"), "it points at the registry, since the tx is what is missing");
+
+console.log("[nova-arc-proof-test] passed: a request hash that pins the method, endpoint and body together, a writer that returns an absence rather than costing a purchase when Arc cannot be written to, and an already-registered receipt that comes back as a recorded proof rather than as nothing at all");

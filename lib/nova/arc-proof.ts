@@ -8,6 +8,7 @@ import { arcTestnet } from "viem/chains";
 import {
   ARC_TESTNET_CHAIN_ID,
   configuredAttesterAccount,
+  configuredDeploymentBlock,
   configuredExplorerUrl,
   configuredRegistryAddress,
   proofRegistryAbi,
@@ -25,8 +26,17 @@ import {
  *
  * So a purchase that passed its delivery check is written to the proof
  * registry on Arc: who paid, who was paid, how much, and the two hashes that
- * pin down what was asked and what came back. After that the claim stops being
- * Veyra's word. Anyone can read it from the chain and compare.
+ * pin down what was asked and what came back.
+ *
+ * What that does and does not buy, precisely. It does not make the verdict
+ * independent of Veyra -- Veyra reached it and Veyra's attester signs it, and a
+ * trust product that blurs this is selling the one assurance it has not got.
+ * What it buys is that the attestation becomes public and tamper-evident: it
+ * cannot be quietly revised the way a row in Veyra's own database can, and
+ * anyone can read the amount, the parties and the hashes straight off the chain
+ * and compare them against what the page claims. The source of the claim stays
+ * Veyra; the durability and the readability of the record stop depending on
+ * Veyra, and that is the part Postgres could never provide.
  *
  * Three rules.
  *
@@ -43,18 +53,34 @@ import {
  * attester, so recording the history costs the person nothing and needs no
  * wallet on a second chain. What is being attested is Veyra's own verdict --
  * which is the thing Veyra is answerable for, and the reason it is the one
- * signing.
+ * signing. It is also the reason this is an attestation and not a proof of
+ * anything Veyra did not decide.
  */
 
 export type NovaArcProof = {
   /** keccak256 of the execution id: the proof's key in the registry. */
   receiptId: `0x${string}`;
-  transaction: `0x${string}`;
+  /** Null only where the registration is on Arc but its transaction could not
+   *  be located in the log window. The proof exists; the pointer to it does
+   *  not, and saying so beats implying the proof does not exist. */
+  transaction: `0x${string}` | null;
   chainId: number;
   registry: `0x${string}`;
-  attester: `0x${string}`;
+  attester: `0x${string}` | null;
   explorerUrl: string;
   registeredAt: string;
+  /**
+   * How this record came about.
+   *
+   *   written    this call sent the transaction
+   *   recovered  it was already registered, and its log gave us the transaction
+   *   present    it was already registered, and the transaction is not locatable
+   *
+   * The distinction is the whole point of the idempotency. A registration this
+   * process did not witness is still a registration, and a system that can only
+   * record the ones it personally sent will keep trying to send them again.
+   */
+  source: "written" | "recovered" | "present";
 };
 
 /** What was asked, hashed the way the registry's other writers hash it. */
@@ -66,6 +92,66 @@ export function novaRequestHash(input: {
   const body = toBytes(JSON.stringify(input.body ?? {}));
   const context = toBytes(`${input.method}\n${input.resource}\n\n`);
   return keccak256(concat([context, body]));
+}
+
+/**
+ * What Arc already holds for a receipt this process did not witness being written.
+ *
+ * The registry stores the proof but not the transaction that carried it, so the
+ * pointer comes from the `ProofRegistered` log, where `receiptId` is indexed.
+ * Where the log is outside the searchable window the registration is still
+ * reported -- with a null transaction and `source: "present"` -- because the
+ * alternative is to call a proof that demonstrably exists an absence, and then
+ * try to write it again against a registry that will never accept a duplicate.
+ */
+async function recoverRegistration(input: {
+  publicClient: ReturnType<typeof createPublicClient>;
+  registry: `0x${string}`;
+  receiptId: `0x${string}`;
+  now?: Date;
+}): Promise<NovaArcProof> {
+  const base = {
+    receiptId: input.receiptId,
+    chainId: ARC_TESTNET_CHAIN_ID,
+    registry: input.registry,
+    registeredAt: (input.now ?? new Date()).toISOString(),
+  };
+
+  try {
+    const latest = await input.publicClient.getBlockNumber();
+    const lookback = BigInt(100_000);
+    const fromBlock = configuredDeploymentBlock()
+      ?? (latest > lookback ? latest - lookback : BigInt(0));
+    const logs = await input.publicClient.getLogs({
+      address: input.registry,
+      event: proofRegistryAbi[3] as never,
+      args: { receiptId: input.receiptId } as never,
+      fromBlock,
+      toBlock: "latest",
+    });
+    const log = logs.at(-1) as { transactionHash?: `0x${string}`; args?: { attester?: string } } | undefined;
+    if (log?.transactionHash) {
+      return {
+        ...base,
+        transaction: log.transactionHash,
+        attester: (log.args?.attester as `0x${string}`) ?? null,
+        explorerUrl: `${configuredExplorerUrl()}/tx/${log.transactionHash}`,
+        source: "recovered",
+      };
+    }
+  } catch {
+    /* A log search that fails does not unregister anything. */
+  }
+
+  return {
+    ...base,
+    transaction: null,
+    attester: null,
+    /* The registry itself, since the transaction is what is missing, not the
+       record. A reader can still call getProof with the receipt id. */
+    explorerUrl: `${configuredExplorerUrl()}/address/${input.registry}`,
+    source: "present",
+  };
 }
 
 export async function recordPurchaseOnArc(input: {
@@ -94,15 +180,25 @@ export async function recordPurchaseOnArc(input: {
     const transport = http(process.env.ARC_TESTNET_RPC_URL ?? arcTestnet.rpcUrls.default.http[0]);
     const publicClient = createPublicClient({ chain: arcTestnet, transport });
 
-    /* Already there is success, not a collision. A retry after a timeout must
-       not read as a failed purchase, and the registry rejects duplicates. */
+    /* Already registered is success, not a collision -- and it has to be
+       returned as success, which is the bug this comment used to describe
+       while the code did the opposite.
+
+       The sequence that breaks it: the transaction lands on Arc, the receipt
+       is lost to a timeout before Veyra stores it, and every later attempt
+       reads isRegistered, returns nothing, and leaves the row saying "not on
+       Arc yet" -- forever, since the registry will never accept a duplicate.
+       Idempotency exists for exactly that path, so the answer is to recover
+       the registration rather than to report an absence. */
     const registered = await publicClient.readContract({
       address: registry,
       abi: proofRegistryAbi,
       functionName: "isRegistered",
       args: [receiptId],
     }) as boolean;
-    if (registered) return null;
+    if (registered) {
+      return recoverRegistration({ publicClient, registry, receiptId, now: input.now });
+    }
 
     const { request } = await publicClient.simulateContract({
       account,
@@ -133,6 +229,7 @@ export async function recordPurchaseOnArc(input: {
       attester: account.address,
       explorerUrl: `${configuredExplorerUrl()}/tx/${transaction}`,
       registeredAt: (input.now ?? new Date()).toISOString(),
+      source: "written",
     };
   } catch {
     /* A proof records something that already happened. Failing to record it
@@ -157,13 +254,26 @@ export async function recordPurchaseOnArc(input: {
 export async function publishMissingArcProofs(input: {
   db: { from: (table: string) => any };
   limit?: number;
-}): Promise<Array<{ executionPublicId: string; provider: string; published: boolean; explorerUrl?: string }>> {
+}): Promise<Array<{
+  executionPublicId: string;
+  provider: string;
+  published: boolean;
+  /** Which of the three ways this row ended up recorded, or absent. */
+  source: NovaArcProof["source"] | "unreachable";
+  explorerUrl?: string;
+}>> {
   const { data } = await input.db.from("nova_research")
     .select("research_id, status, terms, request_body, request_method, payer_wallet, paid_usdc, execution_public_id, verification, result, arc_proof")
     .eq("status", "verified")
     .limit(input.limit ?? 25);
 
-  const done: Array<{ executionPublicId: string; provider: string; published: boolean; explorerUrl?: string }> = [];
+  const done: Array<{
+    executionPublicId: string;
+    provider: string;
+    published: boolean;
+    source: NovaArcProof["source"] | "unreachable";
+    explorerUrl?: string;
+  }> = [];
   for (const row of (data ?? []) as any[]) {
     if (row.arc_proof || !row.payer_wallet) continue;
 
@@ -190,6 +300,7 @@ export async function publishMissingArcProofs(input: {
       executionPublicId: row.execution_public_id ?? row.research_id,
       provider: row.terms?.provider ?? "unknown",
       published: Boolean(proof),
+      source: proof?.source ?? ("unreachable" as const),
       explorerUrl: proof?.explorerUrl,
     };
     if (proof) {

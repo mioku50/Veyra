@@ -1266,8 +1266,10 @@ function Standing({ brief }: { brief: NovaBrief }) {
           <p className="mt-3 max-w-xl text-sm leading-relaxed text-muted-foreground">
             {proofs.length === 1 ? "One purchase is" : `${proofs.length} purchases are`} recorded in
             the proof registry on Arc: who paid, who was paid, how much, and the hashes of what was
-            asked and what came back. {BRAND.name} signed {proofs.length === 1 ? "it" : "them"};
-            reading {proofs.length === 1 ? "it" : "them"} needs nothing from {BRAND.name}.
+            asked and what came back. These are {BRAND.name}&apos;s attestations — {BRAND.name}
+            reached the verdict and signed it. Arc does not make the verdict independent of{" "}
+            {BRAND.name}; it makes the record tamper-evident, and readable by anyone without{" "}
+            {BRAND.name}&apos;s help.
           </p>
           <ul className="mt-4 space-y-2">
             {proofs.map((entry) => (
@@ -1282,7 +1284,9 @@ function Standing({ brief }: { brief: NovaBrief }) {
                   rel="noreferrer noopener"
                   className="ml-auto font-mono text-[11px] text-link underline underline-offset-4"
                 >
-                  {entry.arcProof!.transaction.slice(0, 10)}…
+                  {entry.arcProof!.transaction
+                    ? `${entry.arcProof!.transaction.slice(0, 10)}…`
+                    : "in the registry"}
                 </a>
               </li>
             ))}
@@ -1404,10 +1408,14 @@ function Receipts({ brief }: { brief: NovaBrief }) {
                     rel="noreferrer noopener"
                     className="text-link underline underline-offset-4"
                   >
-                    {entry.arcProof.transaction.slice(0, 10)}…{entry.arcProof.transaction.slice(-6)}
+                    {entry.arcProof.transaction
+                      ? `${entry.arcProof.transaction.slice(0, 10)}…${entry.arcProof.transaction.slice(-6)}`
+                      : `receipt ${entry.arcProof.receiptId.slice(0, 10)}…`}
                   </a>{" "}
                   — who paid, who was paid, how much, and the hashes of what was asked and what
-                  came back. Signed by {BRAND.name}, readable without it.
+                  came back. This is {BRAND.name}&apos;s own attestation: {BRAND.name} decided the
+                  verdict and signed it. What Arc adds is that the record cannot be quietly
+                  changed and anyone can read it back without asking {BRAND.name}.
                 </p>
               ) : entry.status === "verified" ? (
                 <p className="mt-3 text-xs leading-relaxed text-muted-foreground">

@@ -220,7 +220,7 @@ function configuredAddress(name: string) {
   return value && isAddress(value) ? getAddress(value) : null;
 }
 
-function configuredDeploymentBlock() {
+export function configuredDeploymentBlock() {
   const value = process.env.AGENT_COMMERCE_PROOF_REGISTRY_DEPLOYMENT_BLOCK;
   if (!value || !/^\d+$/.test(value)) return null;
   return BigInt(value);

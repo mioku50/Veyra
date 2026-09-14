@@ -293,12 +293,15 @@ export type NovaInvestigation = {
    *  the chain could not be reached -- which never costs the purchase. */
   arcProof: {
     receiptId: string;
-    transaction: string;
+    /** Null where the registration is on Arc but its transaction could not be
+     *  located. The proof exists; the pointer to it does not. */
+    transaction: string | null;
     chainId: number;
     registry: string;
-    attester: string;
+    attester: string | null;
     explorerUrl: string;
     registeredAt: string;
+    source: "written" | "recovered" | "present";
   } | null;
   result: unknown;
   failure: string | null;

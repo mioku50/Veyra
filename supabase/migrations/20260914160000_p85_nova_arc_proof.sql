@@ -9,7 +9,10 @@
 --
 -- This column holds the receipt for the other half: the registry, the chain,
 -- the attester and the transaction that recorded who paid whom, how much, and
--- the hashes of what was asked and what came back.
+-- the hashes of what was asked and what came back. It is Veyra's attestation,
+-- not an independent verdict -- Veyra decided and Veyra signed. What Arc adds
+-- is that the record cannot be quietly revised and needs nobody's permission
+-- to read.
 --
 -- Nullable, and it stays nullable. Arc can be down, the attester can be
 -- unfunded, the transaction can revert, and none of that may take away a

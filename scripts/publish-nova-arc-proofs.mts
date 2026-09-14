@@ -69,10 +69,12 @@ for (const row of (data ?? []) as any[]) {
   });
   if (!proof) { console.log(`          -> Arc could not record it; the receipt stands`); continue; }
 
+  /* Written, recovered or merely present -- all three are on Arc, and all
+     three get stored. Only the first is a transaction this run sent. */
   await db().from("nova_research")
     .update({ arc_proof: { ...proof, responseHashSource } })
     .eq("research_id", row.research_id);
-  console.log(`          -> ${proof.explorerUrl}`);
+  console.log(`          -> ${proof.source}: ${proof.explorerUrl}`);
   published += 1;
 }
 
