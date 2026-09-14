@@ -305,6 +305,7 @@ const DECLINE_LABELS: Record<string, [one: string, many: string]> = {
   within_total_budget: ["over this mandate's total", "over this mandate's total"],
   attempts_remaining: ["today's attempts already used", "today's attempts already used"],
   payable_unattended: ["needing a deposit you would have to make", "needing deposits you would have to make"],
+  evaluator_where_required: ["an unchecked answer above your evaluator threshold", "unchecked answers above your evaluator threshold"],
 };
 
 /** The codes that have been given words. A check missing from here still
@@ -335,9 +336,31 @@ export const NO_MONEY_MOVED = "No money moved.";
  * agents have signed nothing, which is the correct default for a product that
  * spends other people's money.
  */
+const BLOCK_REASON: Record<string, string> = {
+  mandate_version_predates_autonomy:
+    "The limits you signed predate unattended decisions, so they do not grant any.",
+  mandate_expired: "The limits you signed have expired.",
+  mandate_revoked: "You revoked the limits you signed.",
+  mandate_timezone_unusable:
+    "The limits you signed name a timezone this server cannot read, so there is no budget day to measure.",
+  mandate_sets_terms_shadow_cannot_check:
+    "The limits you signed include a confidence floor or a verified-identity requirement, and neither is something a decision here can check yet.",
+};
+
+/** Block reasons that have been given words, asserted against AUTONOMY_BLOCKS
+ *  for the same reason the decline labels are: the fallback would hide a gap. */
+export const EXPLAINED_BLOCKS = new Set(Object.keys(BLOCK_REASON));
+
 export function autonomyStateClaim(view: NovaShadowView, name: string): Claim {
   if (view.state === "off") {
-    return [`${name} asks before every paid action.`];
+    /* Something signed and not usable is not the same as nothing signed. Left
+       to the plain "asks before every paid action", somebody who had just
+       signed limits would read that their agent was working as intended while
+       their mandate was in fact being ignored. */
+    const why = view.blocked ? BLOCK_REASON[view.blocked] : null;
+    return why
+      ? [`${name} asks before every paid action. `, why]
+      : [`${name} asks before every paid action.`];
   }
   const limits = view.limits;
   if (!limits) return [`${name} is watching, and nothing is authorised yet.`];

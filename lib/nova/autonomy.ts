@@ -48,6 +48,7 @@ export const AUTONOMY_CHECKS = [
   "within_total_budget",
   "attempts_remaining",
   "payable_unattended",
+  "evaluator_where_required",
 ] as const;
 export type AutonomyCheckCode = (typeof AUTONOMY_CHECKS)[number];
 
@@ -73,10 +74,10 @@ export type AutonomyReadiness =
 export const AUTONOMY_BLOCKS = [
   "no_mandate",
   "mandate_version_predates_autonomy",
-  "mandate_mode_not_autopilot",
   "mandate_expired",
   "mandate_revoked",
   "mandate_timezone_unusable",
+  "mandate_sets_terms_shadow_cannot_check",
 ] as const;
 export type AutonomyBlock = (typeof AUTONOMY_BLOCKS)[number];
 
@@ -122,6 +123,31 @@ export type ShadowDecision = {
   attemptNumber: number;
   period: BudgetPeriod;
 };
+
+/**
+ * A chain named the way a mandate names one.
+ *
+ * Branded, because the two spellings of a network in this codebase are a trap
+ * that has already been walked into: a mandate says `eip155:8453` and the brief
+ * says `Base`, and comparing them is false for every chain there is. That is
+ * what was happening -- every priced signal would have been denied for a
+ * network mismatch on whichever chain the mandate named -- and the check's own
+ * test passed CAIP-2 in by hand, so it proved the comparator and never the
+ * wiring.
+ *
+ * So the comparison takes a type only `asCaip2` can produce, and handing it a
+ * display name no longer compiles.
+ */
+declare const caip2: unique symbol;
+export type Caip2 = string & { readonly [caip2]: true };
+
+/** Null for anything that is not a chain id, including a display name. A
+ *  network shadow cannot parse is reported as unknown, which skips the check
+ *  rather than failing it: refusing everything would be worse than admitting
+ *  there is something here we cannot read. */
+export function asCaip2(value: string | null | undefined): Caip2 | null {
+  return typeof value === "string" && /^eip155:\d+$/.test(value) ? (value as Caip2) : null;
+}
 
 export function isValidTimezone(zone: string): boolean {
   if (!zone) return false;
@@ -214,13 +240,16 @@ export function mandateReadiness(
       detail: "This mandate was signed before unattended limits existed, so it does not grant them.",
     };
   }
-  if (mandate.mode !== "AUTOPILOT") {
-    return {
-      ready: false,
-      reason: "mandate_mode_not_autopilot",
-      detail: `This mandate is for ${mandate.mode.toLowerCase()}, not for acting unattended.`,
-    };
-  }
+  /* Mode is not checked here, and that is deliberate.
+   *
+   * Mode gates paying, not deciding, and every mode permits Veyra to look at a
+   * price and form an opinion. Shadow autonomy is what a PREVIEW mandate is
+   * for, and requiring AUTOPILOT would have meant asking somebody to sign a
+   * real unattended-spending permission in order to watch a rehearsal --
+   * a signature that would have become live the moment an operational wallet
+   * existed, with no new consent. lib/execution/executor.ts is where the mode
+   * is enforced, because that is where the money is.
+   */
   if (mandate.revokedAt) {
     return { ready: false, reason: "mandate_revoked", detail: "You revoked this mandate." };
   }
@@ -235,6 +264,24 @@ export function mandateReadiness(
       ready: false,
       reason: "mandate_timezone_unusable",
       detail: "The budget day in this mandate names a timezone this server cannot read.",
+    };
+  }
+  /* Terms that are signed and cannot be honoured.
+   *
+   * A mandate signs minimumConfidence and requireVerifiedIdentity, and a
+   * shadow decision has neither number to check against: a marketplace
+   * proposal carries a trust score and no confidence, and nothing in it
+   * attests the seller's identity. Ignoring them would put a limit on a screen
+   * that is not a limit, which is the exact failure this codebase keeps
+   * finding. So a mandate that sets either one is refused rather than acted on
+   * partially, and the screen that issues D0 mandates leaves both neutral.
+   */
+  if (mandate.minimumConfidence > 0 || mandate.requireVerifiedIdentity) {
+    return {
+      ready: false,
+      reason: "mandate_sets_terms_shadow_cannot_check",
+      detail: "This mandate sets a confidence floor or demands a verified identity, and neither "
+        + "is something a shadow decision can check yet.",
     };
   }
   return { ready: true, mandate: mandate as VerifiedMandate };
@@ -257,8 +304,9 @@ export function evaluateShadow(input: {
   period: BudgetPeriod;
   /** The rail this would settle on. x402 today; named rather than assumed. */
   rail?: string;
-  /** The chain the money would move on, as a CAIP-2 string. */
-  network?: string;
+  /** The chain the money would move on. Only `asCaip2` makes one of these,
+   *  which is what stops a display name being compared against a mandate. */
+  network?: Caip2 | null;
 }): ShadowDecision {
   const { mandate, proposal, usage, period } = input;
   const rail = input.rail ?? "x402";
@@ -328,6 +376,19 @@ export function evaluateShadow(input: {
   add("payable_unattended", payableOk, payableOk
     ? "settles directly in USDC"
     : "needs a Circle Gateway deposit, which cannot happen while you are away");
+
+  /* The one term of the three that a proposal can actually answer. Above the
+     threshold the owner signed, the answer has to be checked after paying --
+     and `verifiedAfterPaying` is precisely whether Veyra will do that. Below
+     it, the term does not apply and the check passes by saying so. */
+  const evaluatorNeeded = mandate.evaluatorThresholdUsdc > 0
+    && cost >= mandate.evaluatorThresholdUsdc;
+  const evaluatorOk = !evaluatorNeeded || proposal.verifiedAfterPaying;
+  add("evaluator_where_required", evaluatorOk, evaluatorNeeded
+    ? evaluatorOk
+      ? `over ${money(mandate.evaluatorThresholdUsdc)}, and the answer would be checked`
+      : `over ${money(mandate.evaluatorThresholdUsdc)}, and this answer would not be checked`
+    : "under the amount that would demand a checked answer");
 
   const failed = checks.filter((check) => !check.ok).map((check) => check.code);
   return {

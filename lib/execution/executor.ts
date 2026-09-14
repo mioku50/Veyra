@@ -536,6 +536,37 @@ export async function executePreparedIntent(params: {
 /**
  * Executes a task autonomously under an active EIP-712 Mandate (AUTOPILOT Mode).
  */
+/**
+ * Whether this signed mandate permits paying unattended at all.
+ *
+ * Exported so the rule can be exercised directly. The alternative is testing it
+ * through runAutopilotExecution, which would mean standing up discovery and a
+ * counterparty selection to assert something that must hold before either runs.
+ */
+export function assertMandateAuthorizesAutopilot(mandate: {
+  mandateId: string;
+  mode: string;
+  expiresAt: string;
+  revokedAt?: string | null;
+}, now: Date = new Date()): void {
+  if (mandate.mode !== "AUTOPILOT") {
+    throw new ExecutionError(
+      `Mandate ${mandate.mandateId} is ${mandate.mode}, which does not authorise unattended `
+        + "payment. Acting unattended needs a mandate signed for AUTOPILOT.",
+      "MANDATE_MODE_FORBIDS_AUTOPILOT",
+      403,
+    );
+  }
+  if (mandate.revokedAt) {
+    throw new ExecutionError(`Mandate ${mandate.mandateId} was revoked`, "MANDATE_REVOKED", 403);
+  }
+  if (new Date(mandate.expiresAt).getTime() <= now.getTime()) {
+    throw new ExecutionError(
+      `Mandate ${mandate.mandateId} expired at ${mandate.expiresAt}`, "MANDATE_EXPIRED", 403,
+    );
+  }
+}
+
 export async function runAutopilotExecution(params: {
   mandateId: string;
   capability: string;
@@ -556,6 +587,23 @@ export async function runAutopilotExecution(params: {
   if (!mandate) {
     throw new ExecutionError(`Mandate ${params.mandateId} not found`, "MANDATE_NOT_FOUND", 404);
   }
+
+  /**
+   * The mode is the permission, not a label on it.
+   *
+   * This ran on any mandate it could load. A PREVIEW mandate -- signed by
+   * somebody agreeing to let Veyra look and report, which is exactly what
+   * shadow autonomy asks for -- would have authorised a live payment here, and
+   * so would one its owner had revoked or let expire. Nothing downstream
+   * looked at any of the three: the attempt was simply stamped
+   * `mode: "AUTOPILOT"` and carried on.
+   *
+   * So the sentence a person is asked to believe -- "a PREVIEW mandate can
+   * never authorise a live payment, and real autonomy needs a fresh
+   * signature" -- is enforced here, where the money is, rather than asserted
+   * on a screen.
+   */
+  assertMandateAuthorizesAutopilot(mandate);
 
   // Autonomous discovery and counterparty selection under mandate
   const selectionResult = await selectCounterparty({

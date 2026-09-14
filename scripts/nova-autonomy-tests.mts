@@ -10,14 +10,19 @@ import assert from "node:assert/strict";
 import {
   buildMandateEip712Message, computeCanonicalMandateHash, mandateTypesFor,
   EIP712_MANDATE_TYPES, EIP712_MANDATE_TYPES_V2, MANDATE_VERSION_V2,
+  VEYRA_EXECUTION_EIP712_DOMAIN,
 } from "../lib/execution/canonical.ts";
 import {
-  AUTONOMY_CHECKS, budgetPeriodFor, consumesAttempt, evaluateShadow, isValidTimezone,
+  asCaip2, AUTONOMY_CHECKS, budgetPeriodFor, consumesAttempt, evaluateShadow, isValidTimezone,
   mandateReadiness, shadowSummaryFrom, spendOf,
   type ShadowRecord, type VerifiedMandate,
 } from "../lib/nova/autonomy.ts";
 import type { ExecutionMandate } from "../lib/execution/types.ts";
-import type { NovaResearchProposal } from "../lib/nova/research.ts";
+import { termsFromCandidate, type NovaResearchProposal } from "../lib/nova/research.ts";
+import { settlementNetworkOf } from "../lib/nova/network.ts";
+import { recoverMandateSigner } from "../lib/execution/mandate.ts";
+import { assertMandateAuthorizesAutopilot } from "../lib/execution/executor.ts";
+import { privateKeyToAccount } from "viem/accounts";
 
 /* ------------------------------------------------------------------ v1 froze */
 
@@ -45,6 +50,10 @@ const fixture = {
   requireVerifiedIdentity: true, evaluatorThresholdUsdc: 0,
   nonce: 0, issuedAt: "2026-09-14T00:00:00.000Z", expiresAt: "2026-12-14T00:00:00.000Z",
 };
+
+/* What a shadow mandate may say. The two terms a shadow decision cannot check
+   are left neutral, and readiness refuses one that does not. */
+const SHADOW_TERMS = { minimumConfidence: 0, requireVerifiedIdentity: false } as const;
 
 const v1 = buildMandateEip712Message({ ...fixture, version: "v1" });
 assert.equal(Object.keys(v1).join(","), V1_KEYS, "a v1 message grew or lost a field");
@@ -76,7 +85,7 @@ assert.equal(v2Names[v2Names.indexOf("budgetTimezone") + 1], "maxAutonomousAttem
 const now = new Date("2026-09-14T03:00:00.000Z");
 function mandate(over: Partial<ExecutionMandate> = {}): ExecutionMandate {
   return {
-    ...fixture, mode: "AUTOPILOT", version: MANDATE_VERSION_V2,
+    ...fixture, ...SHADOW_TERMS, mode: "PREVIEW", version: MANDATE_VERSION_V2,
     budgetTimezone: "Europe/Berlin", maxAutonomousAttemptsPerDay: 4,
     canonicalHash: "0xhash", signature: "0xsig" as `0x${string}`,
     createdAt: fixture.issuedAt, revokedAt: null,
@@ -89,9 +98,25 @@ const noV1 = mandateReadiness(mandate({ version: "v1" }), now);
 assert.equal(noV1.ready, false);
 assert.equal(noV1.ready === false && noV1.reason, "mandate_version_predates_autonomy",
   "a signature given before unattended limits existed does not grant them");
+/* Mode gates paying, not deciding, so every mode may be shadowed. Requiring
+   AUTOPILOT would have meant asking somebody to sign a real unattended-spending
+   permission in order to watch a rehearsal -- a signature that would have gone
+   live the moment an operational wallet existed, with no new consent. */
+for (const mode of ["PREVIEW", "PREPARE", "AUTOPILOT"] as const) {
+  assert.equal(mandateReadiness(mandate({ mode: mode as never }), now).ready, true,
+    `${mode} permits deciding without paying`);
+}
+
+/* A term that is signed and cannot be honoured is refused, not half-applied.
+   A confidence floor and a verified-identity demand are both things a shadow
+   decision has nothing to check against, and showing them as limits that work
+   is the failure this codebase keeps finding. */
 assert.equal(
-  (mandateReadiness(mandate({ mode: "PREPARE" as never }), now) as { reason: string }).reason,
-  "mandate_mode_not_autopilot");
+  (mandateReadiness(mandate({ minimumConfidence: 0.5 }), now) as { reason: string }).reason,
+  "mandate_sets_terms_shadow_cannot_check");
+assert.equal(
+  (mandateReadiness(mandate({ requireVerifiedIdentity: true }), now) as { reason: string }).reason,
+  "mandate_sets_terms_shadow_cannot_check");
 assert.equal(
   (mandateReadiness(mandate({ revokedAt: "2026-09-13T00:00:00Z" }), now) as { reason: string }).reason,
   "mandate_revoked");
@@ -225,7 +250,7 @@ const wrongCapability = evaluateShadow({
 assert.deepEqual(wrongCapability.failed, ["capability_allowed"]);
 
 const wrongNetwork = evaluateShadow({
-  mandate: verified, proposal: proposal(), usage: idle, period, network: "eip155:5042002",
+  mandate: verified, proposal: proposal(), usage: idle, period, network: asCaip2("eip155:5042002"),
 });
 assert.deepEqual(wrongNetwork.failed, ["network_matches_mandate"]);
 
@@ -238,6 +263,137 @@ const reviewed = evaluateShadow({
   mandate: verified, proposal: proposal({ decision: "REVIEW_REQUIRED" }), usage: idle, period,
 });
 assert.deepEqual(reviewed.failed, ["veyra_decision_allows"]);
+
+/* --------------------------------------------- the evaluator, wired for real */
+
+/* Of the three terms a mandate signs that shadow did not read, this is the one
+   a proposal can answer: above the threshold the owner set, the answer has to
+   be checked after paying, and verifiedAfterPaying is exactly that. */
+const withEvaluator = mandateReadiness(
+  mandate({ evaluatorThresholdUsdc: 0.002 }), now) as { mandate: VerifiedMandate };
+const unchecked = evaluateShadow({
+  mandate: withEvaluator.mandate, usage: idle, period,
+  proposal: proposal({ costUsdc: 0.003, verifiedAfterPaying: false }),
+});
+assert.deepEqual(unchecked.failed, ["evaluator_where_required"],
+  "over the threshold, an answer nobody would check is not allowed");
+assert.equal(evaluateShadow({
+  mandate: withEvaluator.mandate, usage: idle, period,
+  proposal: proposal({ costUsdc: 0.001, verifiedAfterPaying: false }),
+}).verdict, "WOULD_ALLOW", "and under it the term does not apply");
+assert.equal(evaluateShadow({
+  mandate: verified, usage: idle, period,
+  proposal: proposal({ verifiedAfterPaying: false }),
+}).verdict, "WOULD_ALLOW", "a zero threshold demands nothing");
+
+/* ------------------------------------------------ networks are one namespace */
+
+/**
+ * The mandate spells a network as CAIP-2 and the brief spells it for a person,
+ * and the two must never be compared.
+ *
+ * evaluateShadow was being handed `signal.settlesOn`, which is "Base", against
+ * a mandate saying "eip155:8453". Every priced signal would have been denied
+ * for a network mismatch, on any chain. The comparator was right and its one
+ * test passed CAIP-2 in by hand, so the test proved the comparator and never
+ * the wiring -- which is where the mistake was.
+ */
+const display = settlementNetworkOf({
+  kind: "x402_resource", priceAtomic: "3000", payTo: "0x6d6E", reachable: true,
+  provider: "Exa", network: "eip155:8453", funding: "wallet",
+});
+assert.equal(display, "Base", "the brief's network is a name");
+assert.notEqual(display, "eip155:8453");
+assert.doesNotMatch(String(display), /^eip155:/,
+  "nothing a person reads belongs on the mandate side of a comparison");
+const quoted = termsFromCandidate(
+  { marketplace: { provider: { name: "Exa" }, resource: "https://x", priceUsdc: 0.003,
+    payTo: "0x6d6e", network: "eip155:8453", funding: "wallet" } } as never,
+  "research",
+);
+assert.match(quoted.network, /^eip155:\d+$/, "the quote's network is CAIP-2");
+/* And the two namespaces cannot be mixed by accident any more: only asCaip2
+   makes the type the comparison takes, and it refuses a display name. */
+assert.equal(asCaip2(display), null, "a name a person reads is not a chain id");
+assert.equal(asCaip2("eip155:8453"), "eip155:8453");
+assert.equal(asCaip2(null), null);
+assert.equal(asCaip2("base"), null);
+assert.equal(evaluateShadow({
+  mandate: verified, proposal: proposal(), usage: idle, period, network: asCaip2(quoted.network),
+}).failed.includes("network_matches_mandate"), false,
+  "and it is the one shadow-run passes, so a Base quote under a Base mandate passes");
+
+/* ------------------------------------------ a v2 signature survives the trip */
+
+/**
+ * What the prepare route builds, a wallet signs, and the activate route
+ * verifies -- at the layer both routes use.
+ *
+ * activate pinned version: "v1" unconditionally, so a mandate signed under the
+ * v2 struct was rebuilt and checked as v1, recovered a stranger's address and
+ * was rejected as forged. Nobody could have signed a working v2 mandate.
+ */
+const owner = privateKeyToAccount(
+  "0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d");
+const v2Terms = {
+  ...fixture, ...SHADOW_TERMS, ownerWallet: owner.address, mode: "PREVIEW",
+  version: MANDATE_VERSION_V2, budgetTimezone: "Europe/Berlin", maxAutonomousAttemptsPerDay: 4,
+};
+const offered = buildMandateEip712Message(v2Terms);
+const signature = await owner.signTypedData({
+  domain: VEYRA_EXECUTION_EIP712_DOMAIN,
+  types: mandateTypesFor(MANDATE_VERSION_V2) as never,
+  primaryType: "ExecutionMandate",
+  message: offered as never,
+});
+const recovered = await recoverMandateSigner(
+  { ...v2Terms, allowedCapabilities: v2Terms.allowedCapabilities,
+    allowedRails: v2Terms.allowedRails } as never,
+  v2Terms.mandateId, signature);
+assert.equal(recovered.toLowerCase(), owner.address.toLowerCase(),
+  "a v2 mandate signed under the v2 struct verifies as its owner");
+
+/* And the same bytes checked as v1 do not, which is what was happening. */
+const asV1 = await recoverMandateSigner(
+  { ...v2Terms, version: "v1" } as never, v2Terms.mandateId, signature);
+assert.notEqual(asV1.toLowerCase(), owner.address.toLowerCase(),
+  "verifying a v2 signature under the v1 struct recovers a stranger");
+
+/* ---------------------------------------- a PREVIEW mandate never pays ------ */
+
+/**
+ * The invariant the whole shadow phase is worth signing for.
+ *
+ * runAutopilotExecution loaded a mandate by id and never looked at its mode,
+ * revocation or expiry. So the PREVIEW mandate somebody signs for a rehearsal
+ * would have authorised a live payment the moment an operational wallet
+ * existed and VEYRA_AUTOPILOT_ENABLED was set -- no new signature, no new
+ * consent. It is enforced next to the money now, and asserted here.
+ */
+const live = {
+  mandateId: "mnd_live", mode: "AUTOPILOT",
+  expiresAt: "2026-12-14T00:00:00.000Z", revokedAt: null,
+};
+assert.doesNotThrow(() => assertMandateAuthorizesAutopilot(live, now));
+
+for (const mode of ["PREVIEW", "PREPARE"]) {
+  assert.throws(
+    () => assertMandateAuthorizesAutopilot({ ...live, mode }, now),
+    /MANDATE_MODE_FORBIDS_AUTOPILOT|does not authorise unattended payment/,
+    `${mode} must never authorise a live payment`,
+  );
+}
+assert.throws(() => assertMandateAuthorizesAutopilot(
+  { ...live, revokedAt: "2026-09-13T00:00:00Z" }, now), /revoked/);
+assert.throws(() => assertMandateAuthorizesAutopilot(
+  { ...live, expiresAt: "2026-09-13T00:00:00Z" }, now), /expired/);
+
+/* And the two halves agree on what D0 signs: a PREVIEW v2 mandate is ready to
+   be shadowed and is refused by the thing that pays. */
+const d0 = mandate({ mode: "PREVIEW" as never });
+assert.equal(mandateReadiness(d0, now).ready, true, "shadow accepts it");
+assert.throws(() => assertMandateAuthorizesAutopilot(d0 as never, now),
+  /does not authorise unattended payment/, "and money refuses it");
 
 /* ------------------------------------------------------------- the morning */
 

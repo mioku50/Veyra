@@ -18,11 +18,14 @@ import {
   agentAccessState, arcIdentityState, briefSummary, identityExplanation, identityHeadline,
   arcViewBlurb, autonomyStateClaim, declineReasonLabel, plain, purchaseStanding, purchaseSummary,
   shadowDeclineClaims, shadowNightClaim, shadowRemainingClaim, shadowSpendClaim,
-  shadowVerdictClaim, transferWarning, LABELLED_DECLINE_CODES, NO_MONEY_MOVED,
+  shadowVerdictClaim, transferWarning, EXPLAINED_BLOCKS, LABELLED_DECLINE_CODES,
+  NO_MONEY_MOVED,
   type ArcIdentityState, type Claim,
 } from "../lib/nova/presentation.ts";
 import { standingFrom } from "../lib/nova/standing.ts";
-import { AUTONOMY_CHECKS, shadowSummaryFrom, type ShadowRecord } from "../lib/nova/autonomy.ts";
+import {
+  AUTONOMY_BLOCKS, AUTONOMY_CHECKS, shadowSummaryFrom, type ShadowRecord,
+} from "../lib/nova/autonomy.ts";
 import type { NovaShadowView } from "../lib/nova/types.ts";
 import type { NovaArcIdentity, NovaDerivedStanding, NovaInvestigation } from "../lib/nova/types.ts";
 
@@ -194,6 +197,18 @@ mustNot(autonomyStateClaim(off, "Nova"), /would have been spent|decides as if/,
   "an agent that cannot act unattended does not describe acting unattended");
 mustNot(autonomyStateClaim(view(), "Nova"), /asks before every paid action/,
   "and one that is rehearsing does not claim it still asks");
+
+/* 18b. Something signed and unusable is not the same as nothing signed. Every
+       block except "no mandate" says which, or somebody who just signed limits
+       reads that everything is fine while their mandate is ignored. */
+for (const block of AUTONOMY_BLOCKS) {
+  if (block === "no_mandate") continue;
+  assert.ok(EXPLAINED_BLOCKS.has(block), `${block} has no explanation for the owner`);
+  const claim = autonomyStateClaim({ ...off, blocked: block }, "Nova");
+  assert.notEqual(plain(claim), plain(autonomyStateClaim(off, "Nova")),
+    `${block} reads exactly like having signed nothing`);
+  read(claim);
+}
 
 /* 19. Allowances and denials are opposite facts. A night that allowed nothing
       never says an amount was spent. */

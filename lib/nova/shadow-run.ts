@@ -7,7 +7,7 @@ import { proposeResearch } from "./research.ts";
 import { db, signalFromRow, SIGNAL_COLUMNS } from "./service.ts";
 import { recentLearnings } from "./investigation.ts";
 import {
-  budgetPeriodFor, evaluateShadow, mandateReadiness, consumesAttempt, spendOf,
+  asCaip2, budgetPeriodFor, evaluateShadow, mandateReadiness, consumesAttempt, spendOf,
   type AutonomyBlock, type AutonomyUsage, type ShadowDecision,
 } from "./autonomy.ts";
 import { alreadyDecided, autonomyMandateFor, recordShadowDecision, usageFor } from "./autonomy-db.ts";
@@ -162,12 +162,19 @@ export async function runShadowPass(input: {
       continue;
     }
 
+    /* The network as the mandate spells it, which is CAIP-2.
+       `signal.settlesOn` is the display name -- "Base" -- because it is written
+       for a person, and comparing it against `eip155:8453` is false for every
+       chain there is. It was doing exactly that: every priced signal would have
+       been denied for a network mismatch, whichever chain the mandate named.
+       The quote knows the real one. */
+    const settlesOn = asCaip2(outcome.plan.terms.network);
     const decision: ShadowDecision = evaluateShadow({
       mandate: verified,
       proposal: outcome.proposal,
       usage: running,
       period,
-      network: signal.settlesOn ?? undefined,
+      network: settlesOn,
     });
 
     const written = await recordShadowDecision({
@@ -181,7 +188,7 @@ export async function runShadowPass(input: {
       provider: outcome.proposal.provider ?? null,
       resource: outcome.proposal.resource ?? null,
       rail: "x402",
-      network: signal.settlesOn ?? null,
+      network: settlesOn,
       trustScore: outcome.proposal.trustScore,
     });
 

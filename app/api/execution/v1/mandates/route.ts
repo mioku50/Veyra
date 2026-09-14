@@ -9,9 +9,12 @@ import { authenticateExecutionCaller } from "@/lib/execution/auth";
 import {
   buildMandateEip712Message,
   computeCanonicalMandateHash,
-  EIP712_MANDATE_TYPES,
+  mandateTypesFor,
+  MANDATE_VERSION_V1,
+  MANDATE_VERSION_V2,
   VEYRA_EXECUTION_EIP712_DOMAIN,
 } from "@/lib/execution/canonical";
+import { isValidTimezone } from "@/lib/nova/autonomy";
 import { listExecutionMandatesByOwner } from "@/lib/execution/db";
 import { sanitizeMandate } from "@/lib/execution/types";
 
@@ -48,6 +51,9 @@ export async function POST(req: Request) {
       requireVerifiedIdentity = true,
       evaluatorThresholdUsdc = 0,
       expiresAt,
+      version = MANDATE_VERSION_V1,
+      budgetTimezone,
+      maxAutonomousAttemptsPerDay,
     } = body;
 
     if (!ownerWallet || !/^0x[0-9a-f]{40}$/i.test(ownerWallet)) {
@@ -75,6 +81,41 @@ export async function POST(req: Request) {
     if (!expiresAt) {
       return NextResponse.json({ error: "expiresAt ISO timestamp is required" }, { status: 400 });
     }
+    if (version !== MANDATE_VERSION_V1 && version !== MANDATE_VERSION_V2) {
+      return NextResponse.json(
+        { error: `Unknown mandate version. Allowed: ${MANDATE_VERSION_V1}, ${MANDATE_VERSION_V2}` },
+        { status: 400 }
+      );
+    }
+    /* v2 signs two more terms, and both have to be real before anything is put
+       in front of a wallet. A mandate offered for signature with a timezone
+       this server cannot read would produce a budget day nobody could compute
+       and a signature nobody could act on. */
+    if (version === MANDATE_VERSION_V2) {
+      if (typeof budgetTimezone !== "string" || !isValidTimezone(budgetTimezone)) {
+        return NextResponse.json(
+          { error: "budgetTimezone must be an IANA zone, such as Europe/Berlin" },
+          { status: 400 }
+        );
+      }
+      if (
+        !Number.isInteger(maxAutonomousAttemptsPerDay) ||
+        maxAutonomousAttemptsPerDay < 0 ||
+        maxAutonomousAttemptsPerDay > 100
+      ) {
+        return NextResponse.json(
+          { error: "maxAutonomousAttemptsPerDay must be a whole number between 0 and 100" },
+          { status: 400 }
+        );
+      }
+    } else if (budgetTimezone !== undefined || maxAutonomousAttemptsPerDay !== undefined) {
+      /* Refused rather than dropped. Silently discarding a term somebody asked
+         for would hand them a signature that does not say what they think. */
+      return NextResponse.json(
+        { error: "budgetTimezone and maxAutonomousAttemptsPerDay require version v2" },
+        { status: 400 }
+      );
+    }
 
     const mandateId = `vman_${randomUUID().replace(/-/g, "").slice(0, 16)}`;
     const issuedAt = new Date().toISOString();
@@ -95,6 +136,9 @@ export async function POST(req: Request) {
       minimumConfidence,
       requireVerifiedIdentity,
       evaluatorThresholdUsdc,
+      budgetTimezone,
+      maxAutonomousAttemptsPerDay,
+      version,
       issuedAt,
       expiresAt,
     });
@@ -105,7 +149,11 @@ export async function POST(req: Request) {
       mandateId,
       canonicalHash,
       eip712Domain: VEYRA_EXECUTION_EIP712_DOMAIN,
-      eip712Types: EIP712_MANDATE_TYPES,
+      /* The struct this version is signed under. Returning the v1 types for a
+         v2 message would have the wallet hash a different statement from the
+         one the server later verifies, and the signature would recover a
+         stranger. */
+      eip712Types: mandateTypesFor(version),
       eip712Message,
       instructions: "Sign the EIP-712 typed data with ownerWallet and submit to /api/execution/v1/mandates/{mandateId}/activate",
     });
