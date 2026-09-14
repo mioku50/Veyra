@@ -68,11 +68,14 @@ function askedOf(action: NovaAction): string {
       ].join(" ");
 }
 
+/** Whole words, lowercased, so both sides are cut the same way. */
+function words(text: string): string[] {
+  return text.toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
+}
+
 /** Meaningful words of the subject's name, for checking the question stayed on it. */
 function subjectTokens(label: string): string[] {
-  return label
-    .toLowerCase()
-    .split(/[^a-z0-9]+/)
+  return words(label)
     .filter((word) => word.length >= 3 && !["the", "and", "for", "api", "new", "app"].includes(word));
 }
 
@@ -83,12 +86,28 @@ function subjectTokens(label: string): string[] {
  * would silently disable this for exactly the subjects with the plainest names.
  * Where there is something to check, at least one real word of the subject has
  * to survive into the question.
+ *
+ * As whole words. This was a substring test, and a substring test on short
+ * names accepts almost anything: "arc" is inside "search", so for the Arc
+ * interest every question about searching for something else passed the guard
+ * that exists to stop exactly that -- and searching is most of what this agent
+ * does. "exa" is inside "example" and "exact"; "fast" is inside "breakfast".
+ * Five of six drifted questions written against real subject labels were kept.
+ *
+ * Singular and plural count as the same word, because the cost of splitting
+ * them falls on good questions: a card named "Ethereum EIPs" whose question
+ * says "which EIP drafts changed" is on its subject by any reading, and
+ * throwing it away for the template would make the guard quietly expensive.
  */
 function staysOnSubject(question: string, label: string): boolean {
   const tokens = subjectTokens(label);
   if (tokens.length === 0) return true;
-  const asked = question.toLowerCase();
-  return tokens.some((token) => asked.includes(token));
+  const asked = new Set(words(question));
+  const named = (token: string) =>
+    asked.has(token)
+    || asked.has(`${token}s`)
+    || (token.endsWith("s") && asked.has(token.slice(0, -1)));
+  return tokens.some(named);
 }
 
 export async function sharpenIntent(input: {
