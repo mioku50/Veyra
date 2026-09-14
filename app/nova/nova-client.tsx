@@ -211,6 +211,8 @@ export function NovaClient({ view = "today" }: { view?: NovaView } = {}) {
      refuses to believe the browser about its outcome. */
   const [claiming, setClaiming] = useState(false);
   const [claimNote, setClaimNote] = useState<string | null>(null);
+  const [attesting, setAttesting] = useState(false);
+  const [attestNote, setAttestNote] = useState<string | null>(null);
   const [draftInterests, setDraftInterests] = useState<string[] | null>(null);
   const [savingInterests, setSavingInterests] = useState(false);
   const [interestsNote, setInterestsNote] = useState<string | null>(null);
@@ -847,6 +849,40 @@ export function NovaClient({ view = "today" }: { view?: NovaView } = {}) {
     }
   };
 
+  /**
+   * Asks for this agent's verified purchases to be recorded on Arc.
+   *
+   * A purchase attests itself as it settles, so this only ever has anything to
+   * do where Arc was unreachable at that moment -- which must never cost the
+   * purchase, and does not. The owner secret is the whole authority needed: it
+   * is their history, and getting it onto the chain should not require a
+   * deployment secret.
+   */
+  const attestOnArc = async () => {
+    if (!identity) return;
+    setAttestNote(null);
+    setAttesting(true);
+    try {
+      const payload = await call(
+        `/api/nova/v1/agents/${identity.publicId}/arc-proofs`,
+        { method: "POST", ownerSecret: identity.ownerSecret },
+      ) as { published: number; considered: number; unreachable: string[] };
+
+      if (payload.published > 0) {
+        await loadBrief(identity);
+        setAttestNote(null);
+      } else if (payload.considered === 0) {
+        setAttestNote("Everything that passed its check is already on Arc.");
+      } else {
+        setAttestNote("Arc could not be written to just now. Nothing was lost — the purchases and their checks stand either way.");
+      }
+    } catch (cause) {
+      setAttestNote((cause as Error).message);
+    } finally {
+      setAttesting(false);
+    }
+  };
+
   const priorFor = (signalId: string) => {
     const state = research[signalId];
     const provider = state && "proposal" in state ? state.proposal?.provider ?? null : null;
@@ -1251,6 +1287,9 @@ export function NovaClient({ view = "today" }: { view?: NovaView } = {}) {
           onClaim={() => void claimIdentity()}
           claiming={claiming}
           claimNote={claimNote}
+          onAttest={() => void attestOnArc()}
+          attesting={attesting}
+          attestNote={attestNote}
         />
           {/* Said here because the brief cannot avoid raising it: somebody picks
               Arc as an interest, gets shown a payment, and the payment settles
@@ -1296,11 +1335,17 @@ function Standing({
   onClaim,
   claiming,
   claimNote,
+  onAttest,
+  attesting,
+  attestNote,
 }: {
   brief: NovaBrief;
   onClaim: () => void;
   claiming: boolean;
   claimNote: string | null;
+  onAttest: () => void;
+  attesting: boolean;
+  attestNote: string | null;
 }) {
   const { standing, agent } = brief;
   const identity = agent.arcIdentity;
@@ -1323,6 +1368,8 @@ function Standing({
      separate blocks is the point -- a page that mixed them would be asking to
      be believed about the half that needs no belief. */
   const proofs = brief.investigations.filter((entry) => entry.arcProof);
+  const unattested = brief.investigations
+    .filter((entry) => entry.status === "verified" && !entry.arcProof).length;
 
   return (
     <Panel className="mt-4">
@@ -1429,6 +1476,33 @@ function Standing({
               </li>
             ))}
           </ul>
+        </div>
+      ) : null}
+
+      {/* Verified, and not yet on Arc. A purchase attests itself as it settles,
+          so anything here is a moment when the chain could not be reached --
+          which never costs the purchase, and leaves something worth finishing. */}
+      {unattested > 0 ? (
+        <div className="mt-6 border-t border-border/60 pt-5">
+          <Label>Not yet on Arc</Label>
+          <p className="mt-3 max-w-xl text-sm leading-relaxed text-muted-foreground">
+            {unattested === 1
+              ? "One purchase passed its check but is not recorded on Arc yet."
+              : `${unattested} purchases passed their checks but are not recorded on Arc yet.`}{" "}
+            Recording costs you nothing: {BRAND.name} signs its own attestation, and your wallet is
+            not involved.
+          </p>
+          <button
+            type="button"
+            onClick={onAttest}
+            disabled={attesting}
+            className="mt-4 rounded-lg border border-border px-4 py-2 text-sm font-medium transition hover:bg-foreground/5 disabled:opacity-60"
+          >
+            {attesting ? "Recording…" : "Record on Arc"}
+          </button>
+          {attestNote ? (
+            <p className="mt-3 max-w-xl text-xs leading-relaxed text-muted-foreground">{attestNote}</p>
+          ) : null}
         </div>
       ) : null}
 

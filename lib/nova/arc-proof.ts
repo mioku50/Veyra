@@ -253,6 +253,9 @@ export async function recordPurchaseOnArc(input: {
  */
 export async function publishMissingArcProofs(input: {
   db: { from: (table: string) => any };
+  /** Scopes the sweep to one agent. Given when the person who paid is asking
+   *  for their own purchases to be attested, which needs no shared secret. */
+  agentId?: string;
   limit?: number;
 }): Promise<Array<{
   executionPublicId: string;
@@ -262,10 +265,11 @@ export async function publishMissingArcProofs(input: {
   source: NovaArcProof["source"] | "unreachable";
   explorerUrl?: string;
 }>> {
-  const { data } = await input.db.from("nova_research")
+  let query = input.db.from("nova_research")
     .select("research_id, status, terms, request_body, request_method, payer_wallet, paid_usdc, execution_public_id, verification, result, arc_proof")
-    .eq("status", "verified")
-    .limit(input.limit ?? 25);
+    .eq("status", "verified");
+  if (input.agentId) query = query.eq("agent_id", input.agentId);
+  const { data } = await query.limit(input.limit ?? 25);
 
   const done: Array<{
     executionPublicId: string;
