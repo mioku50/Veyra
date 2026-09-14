@@ -227,9 +227,21 @@ if (refusedSignal) {
 }
 
 const brief = await loadBrief({ publicId: agent.agent.publicId, ownerSecret: agent.ownerSecret, hourOfDay: 9 });
-assert.equal(brief.standing.verifiedResearch, 1);
-assert.equal(brief.standing.observedOutcomes, 1);
-assert.equal(brief.standing.veyraDecisions, 1, "only the verified purchase counts on the brief");
+/* Standing is counted from the purchases now, not from proxies for them.
+   Three settlements were driven above -- verified, paid-and-failed, refused --
+   and each is an attempt Veyra decided on. Only one is a result. */
+assert.equal(brief.standing.veyraDecisions, 3, "every settled attempt is an attempt");
+assert.equal(brief.standing.verifiedResearch, 1, "and only the one that passed its check is a result");
+assert.equal(brief.standing.observedOutcomes, 2, "two payments moved; the refused one did not");
+assert.ok(brief.standing.spentUsdc > 0, "money that moved is money spent");
+assert.equal(brief.standing.readyForArcIdentity, true);
+
+/* The per-counterparty record is the only evidence on a card the owner paid to
+   obtain, so it has to survive the round trip through the brief. */
+assert.ok(brief.standing.providers.length > 0, "a counterparty record comes back with the brief");
+const dealt = brief.standing.providers[0];
+assert.equal(dealt.attempts, dealt.paid + dealt.nothingMoved, "every attempt is one or the other");
+assert.equal(dealt.paid, dealt.passed + dealt.failedAfterPaying, "and every payment landed somewhere");
 assert.equal(brief.investigations.length, 3, "every investigation comes back with the brief");
 
 /* A receipt outlives the card that produced it.

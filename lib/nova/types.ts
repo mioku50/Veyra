@@ -21,6 +21,8 @@
  * other Veyra purchase. "Nova wants to investigate" is a request, not a debit.
  */
 
+import type { NovaDerivedStanding } from "./standing.ts";
+
 export const NOVA_SUBJECT_KINDS = ["x402_resource", "github_repository"] as const;
 export type NovaSubjectKind = (typeof NOVA_SUBJECT_KINDS)[number];
 
@@ -248,13 +250,9 @@ export type NovaRefresh = {
  * account was created. These counts are the alternative — identity is offered
  * once there is a history for it to point at.
  */
-export type NovaStanding = {
-  verifiedResearch: number;
-  veyraDecisions: number;
-  observedOutcomes: number;
-  /** True once every one of the above is at least one. */
-  readyForArcIdentity: boolean;
-};
+/** Derived in lib/nova/standing.ts from the settled purchases themselves.
+ *  Type-only, so the cycle between the two files costs nothing at runtime. */
+export type { NovaDerivedStanding as NovaStanding, NovaProviderRecord } from "./standing.ts";
 
 /**
  * One paid investigation, as the brief shows it.
@@ -330,5 +328,5 @@ export type NovaBrief = {
    *  the card that produced it after a reload and not only in the session that
    *  bought it. */
   investigations: NovaInvestigation[];
-  standing: NovaStanding;
+  standing: NovaDerivedStanding;
 };

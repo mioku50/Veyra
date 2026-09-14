@@ -12,6 +12,7 @@ import { changesForSubject } from "./observation.ts";
 import { categoryPhraseFor, scoreRelevance } from "./relevance.ts";
 import { observeRepositories, observeX402Catalog, type SourceObservation } from "./sources.ts";
 import { settlementNetworkOf } from "./network.ts";
+import { standingFrom } from "./standing.ts";
 import type {
   NovaAgent,
   NovaBrief,
@@ -635,7 +636,10 @@ export async function loadBrief(input: {
     wokeFromDormancy,
     memory,
     investigations,
-    standing: standingFrom(signals, memory),
+    /* From the purchases, not from proxies for them. Counting signals that
+       carry an execution id and memory rows that mention one made three
+       numbers out of a single fact. */
+    standing: standingFrom(investigations),
   };
 }
 
@@ -682,24 +686,6 @@ export function summariseAway(
   };
 }
 
-/**
- * What Nova has earned.
- *
- * Registering an on-chain identity at signup certifies that an account was
- * created and nothing else. These three counts are the alternative: identity is
- * offered once there is a history for it to point at.
- */
-export function standingFrom(signals: NovaSignal[], memory: NovaMemory[]): NovaStanding {
-  const verifiedResearch = memory.filter((entry) => entry.kind === "learning").length;
-  const veyraDecisions = signals.filter((signal) => signal.executionPublicId !== null).length;
-  const observedOutcomes = signals.filter((signal) => signal.status === "investigated").length;
-  return {
-    verifiedResearch,
-    veyraDecisions,
-    observedOutcomes,
-    readyForArcIdentity: verifiedResearch >= 1 && veyraDecisions >= 1 && observedOutcomes >= 1,
-  };
-}
 
 export { quietSummary };
 

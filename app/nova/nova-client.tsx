@@ -15,6 +15,7 @@ import { INTEREST_CATALOG, MAX_INTERESTS } from "@/lib/nova/interests";
    going dark -- so the button is absent rather than disabled: an offer a
    person cannot take reads as a promise the product is refusing to keep. */
 import { categoryPhraseFor } from "@/lib/nova/relevance";
+import { priorWith } from "@/lib/nova/standing";
 import type { NovaBrief, NovaFeedback, NovaInvestigation, NovaSignal } from "@/lib/nova/types";
 import type { NovaResearchProposal } from "@/lib/nova/research";
 import type { TermsChange } from "@/lib/nova/research-terms";
@@ -785,6 +786,15 @@ export function NovaClient({ view = "today" }: { view?: NovaView } = {}) {
     brief.memory.filter((entry) => entry.kind === "preference" && entry.facet === facet);
   const ignores = preference("usually_ignores");
   const favours = preference("cares_about");
+  /* What this agent already paid to learn about whoever this card would pay.
+     Read from the proposal in front of the person rather than from the signal,
+     because the counterparty is only decided once a proposal exists. */
+  const priorFor = (signalId: string) => {
+    const state = research[signalId];
+    const provider = state && "proposal" in state ? state.proposal?.provider ?? null : null;
+    return provider ? priorWith(brief.standing, provider) : null;
+  };
+
   const follows = preference("follows");
   const attention = brief.worthAttention;
   const agentName = brief.agent.name;
@@ -924,6 +934,7 @@ export function NovaClient({ view = "today" }: { view?: NovaView } = {}) {
                   onPay={(acknowledge) => void pay(signal, acknowledge)}
                   refusedAt={signal.refusal?.at ?? null}
                   onLookAgain={() => void price(signal)}
+                  prior={priorFor(signal.signalId)}
                 />
               ) : null}
             </Panel>
@@ -1113,6 +1124,7 @@ export function NovaClient({ view = "today" }: { view?: NovaView } = {}) {
                         onPay={(acknowledge) => void pay(signal, acknowledge)}
                         refusedAt={signal.refusal?.at ?? null}
                         onLookAgain={() => void price(signal)}
+                        prior={priorFor(signal.signalId)}
                       />
                     ) : (
                       <div className="mt-2">
@@ -1228,10 +1240,15 @@ function Standing({ brief }: { brief: NovaBrief }) {
     );
   }
 
+  /* Counted from the purchases, not from three proxies for one of them. The
+     old row printed "verified research 1 / decision 1 / outcome 1" off a
+     single Exa call, which reads as a history and is one line of it. */
   const steps = [
-    { label: "Verified research", value: standing.verifiedResearch },
-    { label: `${BRAND.name} decision`, value: standing.veyraDecisions },
-    { label: "Observed outcome", value: standing.observedOutcomes },
+    { label: "Attempts", value: String(standing.veyraDecisions) },
+    { label: "Money actually moved", value: String(standing.observedOutcomes) },
+    { label: "Passed the delivery check", value: String(standing.verifiedResearch) },
+    { label: "Spent", value: `$${standing.spentUsdc.toFixed(4)}` },
+    { label: "Attested on Arc", value: String(standing.attestedOnArc) },
   ];
 
   /* What is actually on Arc, as opposed to what Veyra says about itself. The
@@ -1254,11 +1271,45 @@ function Standing({ brief }: { brief: NovaBrief }) {
           <Row
             key={step.label}
             label={step.label}
-            value={String(step.value)}
-            tone={step.value > 0 ? "good" : "idle"}
+            value={step.value}
+            tone={step.value === "0" ? "idle" : "good"}
           />
         ))}
       </dl>
+
+      {standing.providers.length > 0 ? (
+        <div className="mt-6 border-t border-border/60 pt-5">
+          <Label>Who {agent.name} has dealt with</Label>
+          <p className="mt-3 max-w-xl text-sm leading-relaxed text-muted-foreground">
+            Bought with your money, not inferred from a catalogue. This is the only part of{" "}
+            {BRAND.name}&apos;s view of a seller that {agent.name} paid to learn.
+          </p>
+          <ul className="mt-4 space-y-2">
+            {standing.providers.map((record) => (
+              <li key={record.provider} className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+                <span className="text-sm text-foreground">{record.provider}</span>
+                <span className="font-mono text-[11px] text-muted-foreground">
+                  ${record.spentUsdc.toFixed(4)}
+                </span>
+                <span
+                  className={`ml-auto font-mono text-[11px] uppercase tracking-wider ${
+                    record.passed > 0 && record.failedAfterPaying === 0
+                      ? "text-state-good"
+                      : record.paid === 0 ? "text-state-idle" : "text-state-warn"
+                  }`}
+                >
+                  {/* Counts, never a percentage. One bad morning is not a rate,
+                      and printing it as one would invent a confidence nobody
+                      has earned yet. */}
+                  {record.paid === 0
+                    ? `${record.nothingMoved} signed, nothing moved`
+                    : `${record.passed} of ${record.paid} passed`}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
 
       {proofs.length > 0 ? (
         <div className="mt-6 border-t border-border/60 pt-5">
@@ -1594,6 +1645,7 @@ function DeeperResearch({
   onPay,
   refusedAt,
   onLookAgain,
+  prior,
 }: {
   state: ResearchState;
   agentName: string;
@@ -1605,6 +1657,8 @@ function DeeperResearch({
   /** When Veyra last looked and declined, so an old no reads as an old no. */
   refusedAt?: string | null;
   onLookAgain: () => void;
+  /** What this agent already paid to learn about this counterparty. */
+  prior?: { tone: "good" | "warn" | "idle"; sentence: string } | null;
 }) {
   if (state.stage === "looking") {
     return (
@@ -1713,6 +1767,23 @@ function DeeperResearch({
       <p className="mt-4 text-sm leading-relaxed text-foreground">{proposal.verdict}</p>
       {proposal.routingNote ? (
         <p className="mt-2 text-xs leading-relaxed text-state-warn">{proposal.routingNote}</p>
+      ) : null}
+
+      {/* What happened last time this agent paid this seller, before the
+          signature -- the only moment it can change anything. Every other
+          number on this card comes from a catalogue or a probe; this one was
+          bought, and it is the only evidence here that cost the person money
+          to obtain. */}
+      {prior ? (
+        <p
+          className={`mt-2 text-xs leading-relaxed ${
+            prior.tone === "good"
+              ? "text-state-good"
+              : prior.tone === "warn" ? "text-state-warn" : "text-muted-foreground"
+          }`}
+        >
+          {prior.sentence}
+        </p>
       ) : null}
 
       {proposal.verifiedAfterPaying ? (
