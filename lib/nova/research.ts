@@ -557,6 +557,29 @@ export async function proposeResearch(input: {
   }
   const { winner, request, quote, skipped } = attempt;
 
+  /* A payment this wallet cannot make must not be offered.
+     AIsa API's live challenge settles through a Circle Gateway deposit on
+     Ethereum mainnet. Veyra priced it, wrote payableNow: false, labelled it
+     "Circle Gateway deposit on Ethereum" -- and left the button enabled. So a
+     person signed a batched authorisation against a deposit that does not
+     exist and got "Payment verification failed" from the seller.
+
+     Knowing a payment cannot succeed and asking for a signature anyway is
+     worse than not knowing: it spends the one thing this product asks people
+     to trust it with, which is their willingness to sign. Only an explicit
+     false refuses; null means no wallet was given, and "connect a wallet
+     first" is a different sentence from "you cannot pay this". */
+  if (winner.marketplace.payableNow === false) {
+    return {
+      ok: false,
+      reason: "not_payable",
+      detail: `This one settles through ${paymentLabelFor(
+        quote.accept.gatewayBatched ? "gateway_deposit" : "wallet",
+        quote.accept.network,
+      )}, which this wallet cannot pay from right now. Nothing was signed.`,
+    };
+  }
+
   const decision = winner.trustDecision;
   /* The winner's own ceiling, not the selection's recommendation object: they
      are usually the same counterparty now, but quoting a number that belongs to

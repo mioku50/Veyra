@@ -1503,7 +1503,16 @@ function DeeperResearch({
       {state.stage === "signing" ? <SigningPanel terms={state.terms} note={state.note} /> : null}
 
       <div className="mt-4 flex flex-wrap items-center gap-4">
-        {state.stage === "ready" || state.stage === "failed" ? (
+        {/* A payment the wallet cannot make is refused before this card is
+            drawn. The check is repeated here because the cost of missing it is
+            a signature somebody gave for nothing, and a disabled button that
+            says why is a better failure than an enabled one that does not. */}
+        {(state.stage === "ready" || state.stage === "failed") && proposal.payableNow === false ? (
+          <p className="text-sm leading-relaxed text-state-warn">
+            {proposal.paymentLabel} — this wallet cannot pay that right now, so there is nothing
+            here to sign.
+          </p>
+        ) : state.stage === "ready" || state.stage === "failed" ? (
           walletAddress ? (
             <button
               type="button"
