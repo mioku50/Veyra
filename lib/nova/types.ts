@@ -23,6 +23,7 @@
 
 import type { NovaDerivedStanding } from "./standing.ts";
 import type { NovaArcIdentity } from "./identity.ts";
+import type { ShadowRecord, ShadowSummary } from "./autonomy.ts";
 
 export const NOVA_SUBJECT_KINDS = ["x402_resource", "github_repository"] as const;
 export type NovaSubjectKind = (typeof NOVA_SUBJECT_KINDS)[number];
@@ -257,6 +258,7 @@ export type NovaRefresh = {
  *  Type-only, so the cycle between the two files costs nothing at runtime. */
 export type { NovaDerivedStanding as NovaStanding, NovaProviderRecord } from "./standing.ts";
 export type { NovaArcIdentity } from "./identity.ts";
+export type { ShadowRecord, ShadowSummary, AutonomyCheck } from "./autonomy.ts";
 
 /**
  * One paid investigation, as the brief shows it.
@@ -333,4 +335,29 @@ export type NovaBrief = {
    *  bought it. */
   investigations: NovaInvestigation[];
   standing: NovaDerivedStanding;
+  /** What Nova would have bought while nobody was watching, and what Veyra
+   *  would have ruled. Decisions only: no row behind this moved money, and the
+   *  type has no field that could say otherwise. */
+  shadow: NovaShadowView;
+};
+
+/**
+ * Shadow autonomy, as the brief shows it.
+ *
+ * `blocked` is not an error. Most agents are in it -- nothing signed, or a
+ * mandate that predates unattended limits -- and a page that treated the
+ * ordinary state as a fault would alarm everybody about the default.
+ */
+export type NovaShadowView = {
+  state: "off" | "watching";
+  blocked: string | null;
+  summary: ShadowSummary;
+  decisions: ShadowRecord[];
+  /** The limits in force, read off the signed mandate rather than a setting. */
+  limits: {
+    perActionUsdc: number;
+    dailyUsdc: number;
+    attemptsPerDay: number;
+    timezone: string;
+  } | null;
 };

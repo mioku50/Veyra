@@ -5,6 +5,7 @@
 
 import { getByoaClient } from "../byoa/service.ts";
 import type { BudgetPeriod, BudgetReservationResult } from "./budget.ts";
+import { MANDATE_VERSION_V2 } from "./canonical.ts";
 import { validateStateTransition } from "./state-machine.ts";
 import type { ExecutionAttempt, ExecutionMandate, ExecutionState } from "./types.ts";
 
@@ -73,7 +74,18 @@ export async function saveExecutionMandate(mandate: ExecutionMandate): Promise<v
   }
 
   const supabase = getByoaClient();
+  /* The two v2 columns are written only by a v2 mandate. A v1 mandate has no
+     value to put in them -- they were not in the struct its owner signed -- and
+     sending them as explicit nulls would also make every v1 insert depend on a
+     migration that has nothing to do with v1. */
+  const autonomyColumns = mandate.version === MANDATE_VERSION_V2
+    ? {
+        budget_timezone: mandate.budgetTimezone ?? null,
+        max_autonomous_attempts_per_day: mandate.maxAutonomousAttemptsPerDay ?? null,
+      }
+    : {};
   const { error } = await supabase.from("execution_mandates").insert({
+    ...autonomyColumns,
     mandate_id: mandate.mandateId,
     owner_wallet: mandate.ownerWallet.toLowerCase(),
     subject_agent_id: mandate.subjectAgentId,
@@ -138,6 +150,10 @@ export async function getExecutionMandate(mandateId: string): Promise<ExecutionM
     minimumConfidence: Number(data.minimum_confidence),
     requireVerifiedIdentity: data.require_verified_identity,
     evaluatorThresholdUsdc: Number(data.evaluator_threshold_usdc),
+    budgetTimezone: data.budget_timezone ?? null,
+    maxAutonomousAttemptsPerDay: data.max_autonomous_attempts_per_day === null
+      || data.max_autonomous_attempts_per_day === undefined
+      ? null : Number(data.max_autonomous_attempts_per_day),
     canonicalHash: data.canonical_hash,
     signature: data.signature as `0x${string}`,
     nonce: Number(data.nonce),
@@ -184,6 +200,10 @@ export async function listExecutionMandatesByOwner(ownerWallet: string): Promise
     minimumConfidence: Number(row.minimum_confidence),
     requireVerifiedIdentity: row.require_verified_identity,
     evaluatorThresholdUsdc: Number(row.evaluator_threshold_usdc),
+    budgetTimezone: row.budget_timezone ?? null,
+    maxAutonomousAttemptsPerDay: row.max_autonomous_attempts_per_day === null
+      || row.max_autonomous_attempts_per_day === undefined
+      ? null : Number(row.max_autonomous_attempts_per_day),
     canonicalHash: row.canonical_hash,
     signature: row.signature as `0x${string}`,
     nonce: Number(row.nonce),

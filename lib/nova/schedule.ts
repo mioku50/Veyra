@@ -19,6 +19,7 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { getServerSupabaseConfig } from "../supabase/server-env.ts";
 import { runRefresh } from "./service.ts";
+import { runShadowPass } from "./shadow-run.ts";
 
 /**
  * Nova, working while nobody is looking.
@@ -68,6 +69,16 @@ export const REFRESH_INTERVAL_HOURS = 6;
 export const DUE_TOLERANCE_MINUTES = 45;
 
 /**
+ * Room a shadow pass needs before it is allowed to start.
+ *
+ * Discovery probes live endpoints and a model writes a question, so one pass is
+ * seconds rather than milliseconds. Starting one with the tick almost spent
+ * would push the run past its budget and strand the agents still queued behind
+ * it -- claimed, unrefreshed, and not due again for six hours.
+ */
+export const SHADOW_HEADROOM_MS = 60_000;
+
+/**
  * After two weeks with nobody opening the brief, the scheduler stops.
  *
  * Two weeks rather than a few days because the failure mode is asymmetric: a
@@ -86,7 +97,12 @@ export const TICK_BUDGET_MS = 210_000;
 type DueAgent = {
   agent_id: string;
   public_id: string;
+  name: string;
   interests: string[];
+  /* Read here because the shadow pass needs it: a mandate is keyed by the
+     owner's wallet, and an agent that has never connected one has nothing
+     signed and therefore no autonomy to shadow. */
+  owner_wallet: string | null;
   last_scheduled_refresh_at: string | null;
 };
 
@@ -96,6 +112,12 @@ export type TickOutcome = {
   refreshed: number;
   failed: number;
   signalsKept: number;
+  /** Shadow autonomy, across every agent this tick touched. Decisions only --
+   *  nothing in this tick can move money, and these counts are the evidence
+   *  for that rather than a summary of spending. */
+  shadowDecided: number;
+  shadowWouldAllow: number;
+  shadowWouldSpendUsdc: number;
   /** Set when the tick stopped because of the clock rather than the queue. */
   stoppedEarly: boolean;
   durationMs: number;
@@ -200,7 +222,7 @@ export async function findDue(now: Date, limit = MAX_AGENTS_PER_TICK): Promise<D
   const cutoff = new Date(
     now.getTime() - REFRESH_INTERVAL_HOURS * 3_600_000 + DUE_TOLERANCE_MINUTES * 60_000,
   ).toISOString();
-  const columns = "agent_id, public_id, interests, last_scheduled_refresh_at";
+  const columns = "agent_id, public_id, name, interests, owner_wallet, last_scheduled_refresh_at";
 
   /* Two queries rather than one `or(...)`. PostgREST takes that filter as a
      string, and the value here is an ISO timestamp full of the dots and colons
@@ -291,6 +313,9 @@ export async function runScheduledTick(input?: {
   let failed = 0;
   let signalsKept = 0;
   let stoppedEarly = false;
+  let shadowDecided = 0;
+  let shadowWouldAllow = 0;
+  let shadowWouldSpendUsdc = 0;
 
   for (const agent of due) {
     if (refreshed + failed >= maxAgents) break;
@@ -308,6 +333,34 @@ export async function runScheduledTick(input?: {
       });
       refreshed += 1;
       signalsKept += result.newSignals;
+
+      /* Shadow autonomy runs after the refresh and on its findings, which is
+         the only order that means anything: deciding about yesterday's signals
+         would not be the unattended pass this is meant to rehearse.
+
+         Only while there is real room left. A decision costs live discovery and
+         a model call, so twelve agents at two decisions each would overrun the
+         tick and leave the last few agents refreshed but unclaimed. Briefs come
+         first: a rehearsal that costs somebody their morning is worse than a
+         rehearsal that waits six hours.
+
+         Failures here are swallowed deliberately, for the same reason. */
+      const shadow = Date.now() - started > budgetMs - SHADOW_HEADROOM_MS ? null : await runShadowPass({
+        agent: {
+          agentId: agent.agent_id,
+          publicId: agent.public_id,
+          name: agent.name,
+          interests: agent.interests ?? [],
+          ownerWallet: agent.owner_wallet,
+        },
+        now: new Date(),
+        fetchImpl: reader,
+      }).catch(() => null);
+      if (shadow) {
+        shadowDecided += shadow.decided;
+        shadowWouldAllow += shadow.wouldAllow;
+        shadowWouldSpendUsdc += shadow.wouldSpendUsdc;
+      }
     } catch {
       /* One agent's bad pass is not the tick's. The claim is released so it is
          due again, and the loop continues -- a single unreachable source must
@@ -323,6 +376,9 @@ export async function runScheduledTick(input?: {
     refreshed,
     failed,
     signalsKept,
+    shadowDecided,
+    shadowWouldAllow,
+    shadowWouldSpendUsdc,
     stoppedEarly,
     durationMs: Date.now() - started,
   };

@@ -40,6 +40,13 @@ export interface ExecutionMandate {
   maxPerTransactionUsdc: number;
   maxPerDayUsdc: number;
   maxTotalUsdc: number;
+  /** v2 only. The IANA zone a "day" is measured in, so a daily budget resets
+   *  on the owner's midnight rather than on UTC's. Null under v1, where the
+   *  field was never signed and must not be invented. */
+  budgetTimezone?: string | null;
+  /** v2 only. How many times Nova may reach the point of paying in one budget
+   *  day, whether or not money moved. Null under v1. */
+  maxAutonomousAttemptsPerDay?: number | null;
   minimumTrustScore: number;
   minimumConfidence: number;
   requireVerifiedIdentity: boolean;
@@ -67,6 +74,8 @@ export interface ExecutionMandateInput {
   subjectWallet: `0x${string}`;
   mode: ExecutionMode;
   network: string;
+  budgetTimezone?: string | null;
+  maxAutonomousAttemptsPerDay?: number | null;
   allowedCapabilities: string[];
   allowedRails: ExecutionRail[];
   maxPerTransactionUsdc: number;

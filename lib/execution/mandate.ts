@@ -6,7 +6,7 @@
 import { recoverTypedDataAddress, type Hex } from "viem";
 import {
   buildMandateEip712Message,
-  EIP712_MANDATE_TYPES,
+  mandateTypesFor,
   VEYRA_EXECUTION_EIP712_DOMAIN,
 } from "./canonical.ts";
 import type { ExecutionMandate, ExecutionMandateInput } from "./types.ts";
@@ -42,19 +42,26 @@ export async function recoverMandateSigner(
     minimumConfidence: mandate.minimumConfidence,
     requireVerifiedIdentity: mandate.requireVerifiedIdentity,
     evaluatorThresholdUsdc: mandate.evaluatorThresholdUsdc,
+    budgetTimezone: mandate.budgetTimezone ?? undefined,
+    maxAutonomousAttemptsPerDay: mandate.maxAutonomousAttemptsPerDay ?? undefined,
     nonce: mandate.nonce ?? 0,
     version: mandate.version ?? "v1",
     issuedAt: "issuedAt" in mandate ? mandate.issuedAt : new Date().toISOString(),
     expiresAt: mandate.expiresAt,
   });
 
+  /* Recovered under the struct this mandate says it was signed under. A v2
+     mandate verified against the v1 types would recover a different address
+     and read as forged; a v1 mandate verified against v2 likewise. The version
+     is itself a signed field, so it cannot be switched without breaking the
+     signature it is being used to check. */
   return recoverTypedDataAddress({
     domain,
-    types: EIP712_MANDATE_TYPES,
+    types: mandateTypesFor(mandate.version),
     primaryType: "ExecutionMandate",
     message,
     signature,
-  });
+  } as Parameters<typeof recoverTypedDataAddress>[0]);
 }
 
 /**

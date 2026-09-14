@@ -16,10 +16,14 @@
 import assert from "node:assert/strict";
 import {
   agentAccessState, arcIdentityState, briefSummary, identityExplanation, identityHeadline,
-  arcViewBlurb, plain, purchaseStanding, purchaseSummary, transferWarning,
+  arcViewBlurb, autonomyStateClaim, declineReasonLabel, plain, purchaseStanding, purchaseSummary,
+  shadowDeclineClaims, shadowNightClaim, shadowRemainingClaim, shadowSpendClaim,
+  shadowVerdictClaim, transferWarning, LABELLED_DECLINE_CODES, NO_MONEY_MOVED,
   type ArcIdentityState, type Claim,
 } from "../lib/nova/presentation.ts";
 import { standingFrom } from "../lib/nova/standing.ts";
+import { AUTONOMY_CHECKS, shadowSummaryFrom, type ShadowRecord } from "../lib/nova/autonomy.ts";
+import type { NovaShadowView } from "../lib/nova/types.ts";
 import type { NovaArcIdentity, NovaDerivedStanding, NovaInvestigation } from "../lib/nova/types.ts";
 
 const seen: Claim[] = [];
@@ -153,6 +157,83 @@ must(briefSummary({ inBrief: 0, unreachable: [], watched: 1 }), /1 thing being/,
 const blind = briefSummary({ inBrief: 0, unreachable: ["GitHub"], watched: 4 });
 mustNot(blind, /Nothing moved/, "an unread source is not a quiet morning");
 must(blind, /incomplete look/, "it says so");
+
+/* ---- shadow autonomy: the one claim the whole phase rests on ------------ */
+
+const period = { start: "2026-09-13T22:00:00.000Z", end: "2026-09-14T22:00:00.000Z", timezone: "Europe/Berlin" };
+let shadowSeq = 0;
+const shadowRecord = (over: Partial<ShadowRecord> = {}): ShadowRecord => {
+  shadowSeq += 1;
+  return {
+    decisionId: `d${shadowSeq}`, signalId: `s${shadowSeq}`, verdict: "WOULD_ALLOW", question: "?",
+    capability: "research", provider: "Exa", resource: "https://x", rail: "x402", network: null,
+    trustScore: 96, wouldSpendUsdc: 0.003, checks: [], failed: [], attemptNumber: 1, period,
+    ownerFeedback: null, decidedAt: "2026-09-14T03:00:00.000Z", ...over,
+  };
+};
+const view = (over: Partial<NovaShadowView> = {}): NovaShadowView => ({
+  state: "watching", blocked: null,
+  summary: shadowSummaryFrom([shadowRecord()], { period, dailyBudgetUsdc: 0.02 }),
+  decisions: [], limits: { perActionUsdc: 0.005, dailyUsdc: 0.02, attemptsPerDay: 4, timezone: "Europe/Berlin" },
+  ...over,
+});
+
+/* 17. Nothing describing the night may reach a person without saying that
+      nothing was bought. A shadow decision read as a purchase is the only way
+      this phase can actually hurt somebody. */
+must(autonomyStateClaim(view(), "Nova"), new RegExp(NO_MONEY_MOVED), "the state says it");
+must(shadowNightClaim(view().summary), new RegExp(NO_MONEY_MOVED), "and so does the night");
+must(shadowNightClaim(shadowSummaryFrom([], { period })), new RegExp(NO_MONEY_MOVED),
+  "including a night where nothing happened");
+
+/* 18. Off is the ordinary state, and it promises nothing. */
+const off = view({ state: "off", blocked: "no_mandate", limits: null,
+  summary: shadowSummaryFrom([], { period }) });
+must(autonomyStateClaim(off, "Nova"), /asks before every paid action/, "off says what off means");
+mustNot(autonomyStateClaim(off, "Nova"), /would have been spent|decides as if/,
+  "an agent that cannot act unattended does not describe acting unattended");
+mustNot(autonomyStateClaim(view(), "Nova"), /asks before every paid action/,
+  "and one that is rehearsing does not claim it still asks");
+
+/* 19. Allowances and denials are opposite facts. A night that allowed nothing
+      never says an amount was spent. */
+const allDenied = shadowSummaryFrom([
+  shadowRecord({ verdict: "WOULD_DENY", wouldSpendUsdc: 0.02, failed: ["within_per_action_limit"] }),
+], { period, dailyBudgetUsdc: 0.02 });
+mustNot(shadowSpendClaim(allDenied), /\$/, "nothing was allowed, so no figure is spent");
+must(shadowSpendClaim(allDenied), /nothing would have been spent/, "and it says so");
+
+/* 20. An unknown budget is not an exhausted one, and prints no number. */
+mustNot(shadowRemainingClaim(shadowSummaryFrom([shadowRecord()], { period })), /\$/,
+  "with no daily budget declared there is no remainder to show");
+must(shadowRemainingClaim(view().summary), /\$0\.0170 left/, "and with one there is");
+
+/* 21. Every check has a name a tally can use. Adding a check without a label
+      would print a raw code like within_daily_budget at somebody. */
+for (const code of AUTONOMY_CHECKS) {
+  /* Against the map, not against the rendered string: declineReasonLabel falls
+     back to the code with its underscores removed, so an output-only assertion
+     is satisfied by the fallback and proves nothing. This was caught by
+     deliberately adding a check and watching the suite stay green. */
+  assert.ok(LABELLED_DECLINE_CODES.has(code), `${code} has no decline label`);
+  for (const count of [1, 2]) {
+    assert.ok(declineReasonLabel(code, count).length > 0);
+  }
+}
+
+/* 22. A decision that would have been allowed still says it was not paid for. */
+must(shadowVerdictClaim("WOULD_ALLOW", "Nova"), /did not pay/,
+  "'would allow' is the sentence closest to reading as a purchase");
+mustNot(shadowVerdictClaim("WOULD_DENY", "Nova"), /did not pay|allow this/, "and a stop is a stop");
+
+/* 23. The tally can exceed the number of decisions, because one decision can
+      fail two ways -- and both matter to whoever is tuning the limits. */
+const twoWays = shadowSummaryFrom([
+  shadowRecord({ verdict: "WOULD_DENY", failed: ["within_per_action_limit", "trust_at_least_minimum"] }),
+], { period });
+const declines = shadowDeclineClaims(twoWays);
+assert.equal(declines.length, 2, "both reasons are shown");
+for (const claim of declines) read(claim);
 
 /* 16. Everything above, read as prose: no gaps left by a dropped separator and
       no figure rendered empty. */

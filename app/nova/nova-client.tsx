@@ -22,6 +22,8 @@ import { priorWith } from "@/lib/nova/standing";
 import {
   agentAccessState, arcIdentityState, arcViewBlurb, briefSummary, identityExplanation,
   identityHeadline, plain, purchaseStanding, purchaseSummary, transferWarning,
+  autonomyStateClaim, shadowDeclineClaims, shadowNightClaim, shadowRemainingClaim,
+  shadowSpendClaim, shadowVerdictClaim,
   type ArcIdentityState, type Claim,
 } from "@/lib/nova/presentation";
 import { IDENTITY_REGISTER_ABI, NOVA_IDENTITY_REGISTRY } from "@/lib/nova/identity";
@@ -443,6 +445,25 @@ export function NovaClient({ view = "today" }: { view?: NovaView } = {}) {
       setBusy(false);
     }
   };
+
+  /**
+   * The owner's verdict on a decision Nova would have paid for.
+   *
+   * Deliberately does not reload the brief. The panel keeps its own optimistic
+   * state, and refetching would redraw the whole morning under somebody who is
+   * halfway through reading it.
+   */
+  const rateDecision = useCallback(async (
+    decisionId: string,
+    feedback: "useful" | "not_worth_it",
+  ) => {
+    if (!identity) return;
+    await call(`/api/nova/v1/agents/${identity.publicId}/autonomy/${decisionId}`, {
+      method: "PATCH",
+      ownerSecret: identity.ownerSecret,
+      body: JSON.stringify({ feedback }),
+    });
+  }, [call, identity]);
 
   const refresh = async () => {
     if (!identity) return;
@@ -1109,6 +1130,29 @@ export function NovaClient({ view = "today" }: { view?: NovaView } = {}) {
         </Panel>
       ) : null}
 
+      {view === "today" ? <ShadowNight brief={brief} onFeedback={rateDecision} /> : null}
+
+      {view === "agent" ? (
+        <Panel className="mt-4">
+          <Label>Autonomy</Label>
+          <p className="mt-3 max-w-xl text-sm leading-relaxed text-muted-foreground">
+            <Said claim={autonomyStateClaim(brief.shadow, brief.agent.name)} />
+          </p>
+          {brief.shadow.state === "off" ? (
+            /* No button. Turning this on means signing a mandate with limits in
+               it, and offering it as a toggle would imply Veyra could grant
+               itself the permission -- which is exactly what the signature
+               exists to prevent. */
+            <p className="mt-3 max-w-xl text-xs leading-relaxed text-muted-foreground">
+              Letting {brief.agent.name} decide unattended means signing limits with your wallet:
+              what it may spend on one thing, what it may spend in a day, and how many times it may
+              try. {BRAND.name} cannot grant itself that, which is why it is a signature and not a
+              switch.
+            </p>
+          ) : null}
+        </Panel>
+      ) : null}
+
       {view === "agent" ? (
         <Panel className="mt-4">
           <Label>What {brief.agent.name} watches</Label>
@@ -1569,6 +1613,143 @@ function Standing({
 
 /** A machine value against its name, hairline-separated. Values are monospace
  *  because they are meant to be compared, not read. */
+/**
+ * What Nova would have bought while nobody was watching.
+ *
+ * The whole unattended path ran for real -- live discovery, a live quote,
+ * Veyra's trust decision, the owner's signed mandate -- and stopped one step
+ * before the step that costs money. So this panel sits beside the receipts and
+ * never among them, and every sentence in it says that nothing was bought.
+ *
+ * The two buttons are the point. Counts can tell somebody whether their limits
+ * were right; only they can say whether Nova's judgement was worth funding, and
+ * that is the question a week of this is being run to answer.
+ */
+function ShadowNight({
+  brief,
+  onFeedback,
+}: {
+  brief: NovaBrief;
+  onFeedback: (decisionId: string, feedback: "useful" | "not_worth_it") => Promise<void>;
+}) {
+  const shadow = brief.shadow;
+  const [sent, setSent] = useState<Record<string, "useful" | "not_worth_it">>({});
+  const [failed, setFailed] = useState<string | null>(null);
+
+  const say = useCallback(async (decisionId: string, feedback: "useful" | "not_worth_it") => {
+    setSent((current) => ({ ...current, [decisionId]: feedback }));
+    setFailed(null);
+    try {
+      await onFeedback(decisionId, feedback);
+    } catch {
+      /* Put it back rather than leave a button looking pressed. An opinion the
+         server never received is not an opinion anybody recorded. */
+      setSent((current) => {
+        const next = { ...current };
+        delete next[decisionId];
+        return next;
+      });
+      setFailed("That did not save. Try again in a moment.");
+    }
+  }, [onFeedback]);
+
+  if (shadow.state === "off") return null;
+
+  const { summary, decisions } = shadow;
+  const today = decisions.filter(
+    (entry) => summary.period && entry.period.start === summary.period.start,
+  );
+
+  return (
+    <Panel className="mt-4">
+      <Label>While you were away</Label>
+      <p className="mt-3 max-w-xl text-sm leading-relaxed text-muted-foreground">
+        <Said claim={shadowNightClaim(summary)} />
+      </p>
+      <dl className="mt-4 space-y-0">
+        <Row label="Would investigate" value={String(summary.wouldInvestigate)}
+          tone={summary.wouldInvestigate > 0 ? "good" : "idle"} />
+        <Row label="Would decline" value={String(summary.wouldDecline)} />
+        <Row label="Would spend" value={plain(shadowSpendClaim(summary))} />
+        <Row label="Left today" value={plain(shadowRemainingClaim(summary))} />
+      </dl>
+
+      {summary.declinedBecause.length > 0 ? (
+        <div className="mt-5 border-t border-border/60 pt-4">
+          <Label>Why {BRAND.name} stopped the others</Label>
+          {/* Built once and read by index: the claims come back in the order
+              of declinedBecause, and matching them any other way would be two
+              derivations of one list. */}
+          <ul className="mt-3 space-y-1.5">
+            {shadowDeclineClaims(summary).map((claim, index) => (
+              <li key={summary.declinedBecause[index]?.code ?? index}
+                  className="text-sm text-muted-foreground">
+                <Said claim={claim} />
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+
+      {today.length > 0 ? (
+        <ul className="mt-6 space-y-6 border-t border-border/60 pt-5">
+          {today.map((entry) => {
+            const opinion = sent[entry.decisionId] ?? entry.ownerFeedback;
+            return (
+              <li key={entry.decisionId}>
+                <p className="text-sm text-foreground">{entry.question}</p>
+                <p className="mt-1.5 text-xs text-muted-foreground">
+                  {entry.provider ?? "an endpoint"} · ${entry.wouldSpendUsdc.toFixed(4)}
+                  {entry.trustScore !== null ? ` · trust ${entry.trustScore}` : ""}
+                </p>
+                <p className={`mt-3 text-sm ${
+                  entry.verdict === "WOULD_ALLOW" ? "text-state-good" : "text-state-warn"}`}>
+                  <Said claim={shadowVerdictClaim(entry.verdict, brief.agent.name)} />
+                </p>
+                <ul className="mt-2 space-y-1">
+                  {entry.checks.map((check) => (
+                    <li key={check.code} className="text-xs text-muted-foreground">
+                      <span className={check.ok ? "text-state-good" : "text-state-warn"}>
+                        {check.ok ? "✓" : "✕"}
+                      </span>{" "}
+                      {check.detail}
+                    </li>
+                  ))}
+                </ul>
+                {opinion ? (
+                  <p className="mt-3 text-xs text-muted-foreground">
+                    {opinion === "useful"
+                      ? "You said this would have been worth it."
+                      : "You said you would not have paid for this."}
+                  </p>
+                ) : (
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={() => say(entry.decisionId, "useful")}
+                      className="rounded-lg border border-border px-3 py-1.5 text-xs transition hover:bg-muted"
+                    >
+                      This looks useful
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => say(entry.decisionId, "not_worth_it")}
+                      className="rounded-lg border border-border px-3 py-1.5 text-xs transition hover:bg-muted"
+                    >
+                      I wouldn&apos;t pay for this
+                    </button>
+                  </div>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+      ) : null}
+      {failed ? <p className="mt-4 text-xs text-state-warn">{failed}</p> : null}
+    </Panel>
+  );
+}
+
 /**
  * Everything that was paid for, kept where it cannot disappear.
  *

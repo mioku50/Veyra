@@ -13,6 +13,8 @@ import { categoryPhraseFor, scoreRelevance } from "./relevance.ts";
 import { observeRepositories, observeX402Catalog, type SourceObservation } from "./sources.ts";
 import { settlementNetworkOf } from "./network.ts";
 import { standingFrom } from "./standing.ts";
+import { budgetPeriodFor, mandateReadiness, shadowSummaryFrom } from "./autonomy.ts";
+import { autonomyMandateFor, shadowDecisionsFor } from "./autonomy-db.ts";
 import type {
   NovaAgent,
   NovaBrief,
@@ -23,6 +25,7 @@ import type {
   NovaRefresh,
   NovaArcIdentity,
   NovaRefusal,
+  NovaShadowView,
   NovaSignal,
   NovaStanding,
   NovaWhileAway,
@@ -536,7 +539,7 @@ export async function loadBrief(input: {
 
   const [signalResult, refreshResult, awayResult, memoryResult, researchResult] = await Promise.all([
     db().from("nova_signals")
-      .select("signal_id, subject_id, kind, headline, detail, relevance, relevance_reason, evidence, status, execution_public_id, observed_at, refusal, nova_subjects(label, kind, interest, ref, last_digest)")
+      .select(SIGNAL_COLUMNS)
       .eq("agent_id", agent.agent_id)
       .in("status", ["new", "seen", "investigating", "investigated"])
       .order("observed_at", { ascending: false })
@@ -624,6 +627,12 @@ export async function loadBrief(input: {
       settledAt: row.settled_at,
     }));
 
+  /* Shadow autonomy. Read after the purchases and kept apart from them: these
+     are decisions, the investigations above are receipts, and a page that
+     merged them would be counting money that never moved. A failure here costs
+     the block on the page and nothing else. */
+  const shadow = await shadowViewFor(agent, new Date()).catch(() => offShadow());
+
   const lastRefreshRow = (refreshResult.data ?? [])[0] as Record<string, unknown> | undefined;
   const whileAway = summariseAway(
     (awayResult.data ?? []) as Array<Record<string, unknown>>,
@@ -655,6 +664,55 @@ export async function loadBrief(input: {
        carry an execution id and memory rows that mention one made three
        numbers out of a single fact. */
     standing: standingFrom(investigations),
+    shadow,
+  };
+}
+
+function offShadow(): NovaShadowView {
+  return {
+    state: "off",
+    blocked: "no_mandate",
+    summary: shadowSummaryFrom([]),
+    decisions: [],
+    limits: null,
+  };
+}
+
+/**
+ * What the brief says about unattended work.
+ *
+ * The limits come off the signed mandate rather than out of a settings row,
+ * because the mandate is the only place they are true: a settings row is what
+ * Veyra believes, and a signature is what the owner agreed to.
+ */
+async function shadowViewFor(
+  agent: Record<string, any>,
+  now: Date,
+): Promise<NovaShadowView> {
+  const mandate = await autonomyMandateFor({
+    ownerWallet: agent.owner_wallet ?? null,
+    agentPublicId: agent.public_id,
+    now,
+  });
+  const readiness = mandateReadiness(mandate, now);
+  if (!readiness.ready) {
+    return { ...offShadow(), blocked: readiness.reason };
+  }
+
+  const live = readiness.mandate;
+  const period = budgetPeriodFor(now, live.budgetTimezone as string);
+  const decisions = await shadowDecisionsFor(agent.agent_id, 20);
+  return {
+    state: "watching",
+    blocked: null,
+    summary: shadowSummaryFrom(decisions, { period, dailyBudgetUsdc: live.maxPerDayUsdc }),
+    decisions,
+    limits: {
+      perActionUsdc: live.maxPerTransactionUsdc,
+      dailyUsdc: live.maxPerDayUsdc,
+      attemptsPerDay: live.maxAutonomousAttemptsPerDay ?? 0,
+      timezone: period.timezone,
+    },
   };
 }
 
@@ -738,21 +796,12 @@ const FEEDBACK_STATUS: Record<NovaFeedback, "seen" | "dismissed" | "investigatin
  * asking -- and loading the whole brief to answer a question about one line of
  * it would re-read sixty rows to use one.
  */
-export async function loadSignalForOwner(input: {
-  publicId: string;
-  ownerSecret: string;
-  signalId: string;
-}): Promise<NovaSignal> {
-  const agent = await loadOwned(input.publicId, input.ownerSecret);
-  const { data } = await db()
-    .from("nova_signals")
-    .select("signal_id, subject_id, kind, headline, detail, relevance, relevance_reason, evidence, status, execution_public_id, observed_at, refusal, nova_subjects(label, kind, interest, ref, last_digest)")
-    .eq("agent_id", agent.agent_id)
-    .eq("signal_id", input.signalId)
-    .maybeSingle();
+/** The columns a NovaSignal is built from, named once so two readers of the
+ *  same rows cannot drift into reading different ones. */
+export const SIGNAL_COLUMNS = "signal_id, subject_id, kind, headline, detail, relevance, relevance_reason, evidence, status, execution_public_id, observed_at, refusal, nova_subjects(label, kind, interest, ref, last_digest)";
 
-  if (!data) throw new NovaError("No such item.", "not_found", 404);
-  const row = data as Record<string, any>;
+/** One signal row, as the rest of the product understands a signal. */
+export function signalFromRow(row: Record<string, any>): NovaSignal {
   return {
     signalId: row.signal_id,
     subjectId: row.subject_id,
@@ -772,6 +821,23 @@ export async function loadSignalForOwner(input: {
     observedAt: row.observed_at,
     refusal: row.refusal ?? null,
   };
+}
+
+export async function loadSignalForOwner(input: {
+  publicId: string;
+  ownerSecret: string;
+  signalId: string;
+}): Promise<NovaSignal> {
+  const agent = await loadOwned(input.publicId, input.ownerSecret);
+  const { data } = await db()
+    .from("nova_signals")
+    .select(SIGNAL_COLUMNS)
+    .eq("agent_id", agent.agent_id)
+    .eq("signal_id", input.signalId)
+    .maybeSingle();
+
+  if (!data) throw new NovaError("No such item.", "not_found", 404);
+  return signalFromRow(data as Record<string, any>);
 }
 
 /**

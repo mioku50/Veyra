@@ -4,6 +4,8 @@
  */
 
 import type { NovaArcIdentity } from "./identity.ts";
+import type { NovaShadowView } from "./types.ts";
+import type { ShadowSummary } from "./autonomy.ts";
 import type { NovaDerivedStanding } from "./standing.ts";
 
 /**
@@ -282,3 +284,129 @@ export function briefSummary(state: BriefState): Claim {
     count(state.watched, " thing", " things"), " being watched for you.",
   ];
 }
+
+/* ------------------------------------------------------------------ shadow */
+
+/**
+ * Generic names for the checks, for counting rather than for one decision.
+ *
+ * A decision's own `detail` carries the numbers -- "Trust 62 < 90" -- because
+ * it is about that purchase. A tally is about three of them at once, so it can
+ * only say the kind of thing that went wrong.
+ */
+const DECLINE_LABELS: Record<string, [one: string, many: string]> = {
+  capability_allowed: ["a capability you did not allow", "capabilities you did not allow"],
+  rail_allowed: ["a rail you did not allow", "rails you did not allow"],
+  network_matches_mandate: ["the wrong chain", "the wrong chain"],
+  veyra_decision_allows: ["Veyra's own decision", "Veyra's own decision"],
+  trust_at_least_minimum: ["trust below your minimum", "trust below your minimum"],
+  within_per_action_limit: ["over your per-action limit", "over your per-action limit"],
+  within_daily_budget: ["over today's budget", "over today's budget"],
+  within_total_budget: ["over this mandate's total", "over this mandate's total"],
+  attempts_remaining: ["today's attempts already used", "today's attempts already used"],
+  payable_unattended: ["needing a deposit you would have to make", "needing deposits you would have to make"],
+};
+
+/** The codes that have been given words. A check missing from here still
+ *  renders, but renders as its own name -- so the set is exported and asserted
+ *  against the list of checks, because a test that only inspected the output
+ *  would be satisfied by the fallback and prove nothing. */
+export const LABELLED_DECLINE_CODES = new Set(Object.keys(DECLINE_LABELS));
+
+export function declineReasonLabel(code: string, count: number): string {
+  const pair = DECLINE_LABELS[code];
+  if (!pair) return code.replace(/_/g, " ");
+  return count === 1 ? pair[0] : pair[1];
+}
+
+/**
+ * The sentence the whole phase rests on.
+ *
+ * Exported as one value used everywhere rather than typed out per screen. A
+ * shadow decision that reached a person without this line beside it would be
+ * indistinguishable from a purchase, and the difference is the entire point.
+ */
+export const NO_MONEY_MOVED = "No money moved.";
+
+/**
+ * Whether Nova is rehearsing, and what that means.
+ *
+ * "Off" is the ordinary state and is written as a fact, not as a fault. Most
+ * agents have signed nothing, which is the correct default for a product that
+ * spends other people's money.
+ */
+export function autonomyStateClaim(view: NovaShadowView, name: string): Claim {
+  if (view.state === "off") {
+    return [`${name} asks before every paid action.`];
+  }
+  const limits = view.limits;
+  if (!limits) return [`${name} is watching, and nothing is authorised yet.`];
+  return [
+    `${name} decides as if it could pay, and stops before it can. Up to `,
+    figure(`$${limits.perActionUsdc.toFixed(4)}`), " an action and ",
+    figure(`$${limits.dailyUsdc.toFixed(4)}`), " a day, on your ",
+    figure(limits.timezone), " clock. ", NO_MONEY_MOVED,
+  ];
+}
+
+/**
+ * The night, in three numbers and a disclaimer.
+ *
+ * "Would spend" counts only the allowances. The denials are reported as what
+ * they withheld, because those are opposite facts and a single figure covering
+ * both would be the "1 of 6" mistake with money in it.
+ */
+export function shadowNightClaim(summary: ShadowSummary): Claim {
+  if (summary.decisions === 0) {
+    return ["Nothing came up that was worth a decision. ", NO_MONEY_MOVED];
+  }
+  return [
+    figure(summary.wouldInvestigate),
+    summary.wouldInvestigate === 1 ? " thing" : " things",
+    " worth investigating, ",
+    figure(summary.wouldDecline), " stopped by your limits. ",
+    NO_MONEY_MOVED,
+  ];
+}
+
+/** What the allowances would have cost, kept apart from what was withheld. */
+export function shadowSpendClaim(summary: ShadowSummary): Claim {
+  if (summary.wouldInvestigate === 0) {
+    return ["nothing would have been spent"];
+  }
+  return [figure(`$${summary.wouldSpendUsdc.toFixed(4)}`), " would have been spent"];
+}
+
+/** What the limits kept. Null-safe about a budget nobody has declared. */
+export function shadowRemainingClaim(summary: ShadowSummary): Claim {
+  if (summary.remainingTodayUsdc === null) return ["no daily budget is set"];
+  return [figure(`$${summary.remainingTodayUsdc.toFixed(4)}`), " left in today's budget"];
+}
+
+/**
+ * Why the others were stopped.
+ *
+ * Reported in full rather than as a headline count, because a person tuning
+ * limits needs to know which limit did the stopping -- and because a decision
+ * stopped by two of them appears under both, so the counts here can sum to
+ * more than the number of decisions. That is correct and worth showing.
+ */
+export function shadowDeclineClaims(summary: ShadowSummary): Claim[] {
+  return summary.declinedBecause.map((entry) => [
+    figure(entry.count), " ", declineReasonLabel(entry.code, entry.count),
+  ]);
+}
+
+/** One decision's verdict, in the words the card shows above its checks. */
+export function shadowVerdictClaim(
+  verdict: "WOULD_ALLOW" | "WOULD_DENY",
+  name: string,
+): Claim {
+  return verdict === "WOULD_ALLOW"
+    ? [`${BRAND_NAME} would allow this, and ${name} did not pay for it.`]
+    : [`${BRAND_NAME} would stop this.`];
+}
+
+/* Named here rather than imported, so this module stays free of anything that
+   reaches a network or a database and can be exercised on its own. */
+const BRAND_NAME = "Veyra";
