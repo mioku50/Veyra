@@ -67,10 +67,15 @@ const VIEW_TITLE: Record<Exclude<NovaView, "today">, string> = {
 /* Written in the second person and about the agent, not about the feature. A
    page called Memory that opens by explaining what memory is has described its
    own navigation label back to the reader. */
-const VIEW_BLURB: Record<Exclude<NovaView, "today">, (name: string) => string> = {
+const VIEW_BLURB: Record<Exclude<NovaView, "today">, (name: string, claimed: boolean) => string> = {
   agent: (name) => `Who ${name} is, what it watches on your behalf, and the key that proves it is yours.`,
   memory: (name) => `${name} starts from what you told it and changes from what you do. This is the difference so far.`,
-  arc: (name) => `${name} is not an identity on Arc yet. It becomes one by doing things that can be checked, not by signing up.`,
+  /* It stopped being true the moment somebody claimed one, and it sat directly
+     above a panel reading "Nova · ERC-8004 Agent #895012". A page heading that
+     contradicts the thing under it teaches a reader to skip headings. */
+  arc: (name, claimed) => claimed
+    ? `${name} has an identity on Arc, and a record of what it did to earn one.`
+    : `${name} is not an identity on Arc yet. It becomes one by doing things that can be checked, not by signing up.`,
 };
 
 type Stage = "loading" | "create" | "working" | "brief";
@@ -910,7 +915,7 @@ export function NovaClient({ view = "today" }: { view?: NovaView } = {}) {
           </h1>
           <p className="mt-2 max-w-xl text-sm text-muted-foreground">
             {view !== "today"
-              ? VIEW_BLURB[view](agentName)
+              ? VIEW_BLURB[view](agentName, brief.agent.arcIdentity !== null)
               : attention.length > 0
                 ? <>Found <span className="font-mono text-foreground">{attention.length}</span> {attention.length === 1 ? "thing" : "things"} worth your attention.</>
                 : blind.length > 0
