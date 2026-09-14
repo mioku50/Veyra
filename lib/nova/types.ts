@@ -271,6 +271,10 @@ export type NovaBrief = {
   greeting: string;
   worthAttention: NovaSignal[];
   noise: NovaSignal[];
+  /** Relevant, over the brief's cap, and reachable under My Agent. The brief
+   *  stays short because a brief nobody finishes is worse than no brief; the
+   *  market it was drawn from should still have a page. */
+  watchlist: NovaSignal[];
   lastRefresh: NovaRefresh | null;
   whileAway: NovaWhileAway | null;
   /**

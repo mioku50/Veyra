@@ -19,7 +19,7 @@ import {
   x402Digest,
 } from "../lib/nova/observation.ts";
 import { orderByRelevance, scoreRelevance } from "../lib/nova/relevance.ts";
-import { assembleBrief, greeting, quietSummary } from "../lib/nova/brief.ts";
+import { BRIEF_LIMITS, assembleBrief, greeting, quietSummary } from "../lib/nova/brief.ts";
 import { observeRepositories } from "../lib/nova/sources.ts";
 import { EXPLICIT_IGNORE_SUPPORT, ignoreWeight, summariseAway } from "../lib/nova/service.ts";
 import { networkName, settlementNetworkOf } from "../lib/nova/network.ts";
@@ -537,7 +537,30 @@ assert.equal(brief.worthAttention.filter((s) => s.kind === "capability_available
 assert.deepEqual(brief.noise.map((s) => s.id), ["tiny"]);
 
 // Nothing in, nothing out, no crash.
-assert.deepEqual(assembleBrief([]), { worthAttention: [], noise: [] });
+assert.deepEqual(assembleBrief([]), { worthAttention: [], noise: [], overflow: [] });
+
+/* A finding that lost only the cap has to be reachable. It used to be in
+   neither list: "held back" means relevance rejected it, and an item the cap
+   dropped was simply absent -- twenty-two paid endpoints watched, five that
+   could be seen, and "Things watched: 34" a number nobody could open. */
+const manyFindings = Array.from({ length: 9 }, (_, i) => ({
+  kind: "capability_available" as const,
+  relevance: "high" as const,
+  observedAt: `2026-09-14T0${i}:00:00.000Z`,
+}));
+const cappedFindings = assembleBrief(manyFindings);
+assert.equal(cappedFindings.worthAttention.length, BRIEF_LIMITS.findings, "the brief still caps hard");
+assert.equal(cappedFindings.noise.length, 0, "nothing here was rejected for relevance");
+assert.equal(
+  cappedFindings.overflow.length,
+  manyFindings.length - BRIEF_LIMITS.findings,
+  "everything the cap dropped stays reachable",
+);
+assert.equal(
+  new Set([...cappedFindings.worthAttention, ...cappedFindings.overflow]).size,
+  manyFindings.length,
+  "shown plus reachable accounts for every relevant signal, with no double count",
+);
 
 /* "Nothing changed" and "I could not look" produce the same empty screen and
    mean opposite things. */

@@ -574,7 +574,7 @@ export async function loadBrief(input: {
     observedAt: row.observed_at,
   }));
 
-  const { worthAttention, noise } = assembleBrief(signals);
+  const { worthAttention, noise, overflow } = assembleBrief(signals);
   const memory: NovaMemory[] = ((memoryResult.data ?? []) as Array<Record<string, any>>).map((row) => ({
     memoryId: row.memory_id,
     kind: row.kind,
@@ -625,6 +625,7 @@ export async function loadBrief(input: {
     greeting: greeting(input.hourOfDay),
     worthAttention,
     noise,
+    watchlist: overflow,
     lastRefresh: lastRefreshRow ? toRefresh(lastRefreshRow) : null,
     whileAway,
     wokeFromDormancy,

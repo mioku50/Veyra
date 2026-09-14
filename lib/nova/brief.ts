@@ -45,6 +45,15 @@ export type AssembledBrief<T extends BriefCandidate> = {
   /** Everything Nova looked at and decided against, kept so that "4 ignored as
    *  noise" is a claim someone can open rather than a number on a screen. */
   noise: T[];
+  /** Relevant, and over the cap.
+   *
+   *  These were going nowhere. `noise` is what relevance rejected, so a finding
+   *  that lost only the cap was neither shown nor held back -- it was absent,
+   *  and "Things watched: 34" was a number nobody could open. Twenty-two paid
+   *  endpoints were being watched and five could be seen, which is the right
+   *  brief and the wrong product: the cap is there so a daily read stays a
+   *  daily read, not so the market becomes unreachable. */
+  overflow: T[];
 };
 
 export function assembleBrief<T extends BriefCandidate>(
@@ -77,7 +86,10 @@ export function assembleBrief<T extends BriefCandidate>(
     worthAttention.push(finding);
   }
 
-  return { worthAttention, noise };
+  const shown = new Set(worthAttention);
+  const overflow = eligible.filter((signal) => !shown.has(signal));
+
+  return { worthAttention, noise, overflow };
 }
 
 /**

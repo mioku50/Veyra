@@ -1058,6 +1058,60 @@ export function NovaClient({ view = "today" }: { view?: NovaView } = {}) {
             <p className="mt-4 text-xs leading-relaxed text-state-warn">{interestsNote}</p>
           ) : null}
 
+          {/* Everything else Nova watches.
+              The brief caps at five so a daily read stays a daily read, and
+              that is right. What was wrong is that the rest went nowhere:
+              relevance-rejected items land in "held back", but an item that
+              lost only the cap was neither shown nor held back, and "Things
+              watched: 34" was a number nobody could open. Twenty-two paid
+              endpoints, five reachable. */}
+          {brief.watchlist.length > 0 && draftInterests === null ? (
+            <div className="mt-6 border-t border-border/60 pt-5">
+              <Label>Also watching</Label>
+              <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
+                {brief.watchlist.length} more {brief.watchlist.length === 1 ? "thing" : "things"} that
+                did not make today&apos;s brief. The brief stays short on purpose; this is the rest
+                of it.
+              </p>
+              <ul className="mt-4 space-y-3">
+                {brief.watchlist.map((signal) => (
+                  <li key={signal.signalId} className="border-t border-border/40 pt-3 first:border-t-0 first:pt-0">
+                    <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+                      <span className="text-sm text-foreground">{signal.headline}</span>
+                      {signal.settlesOn ? (
+                        <span className="font-mono text-[11px] text-muted-foreground">
+                          pays on {signal.settlesOn}
+                        </span>
+                      ) : null}
+                      {signal.interest ? (
+                        <span className="ml-auto font-mono text-[11px] uppercase tracking-wider text-muted-foreground">
+                          {signal.interest}
+                        </span>
+                      ) : null}
+                    </div>
+                    {research[signal.signalId] ? (
+                      <DeeperResearch
+                        state={research[signal.signalId]}
+                        agentName={brief.agent.name}
+                        fallbackHref={investigationLink(signal)}
+                        walletAddress={wallet.address}
+                        onConnect={() => void wallet.connect()}
+                        connecting={wallet.connecting}
+                        onPay={(acknowledge) => void pay(signal, acknowledge)}
+                      />
+                    ) : (
+                      <div className="mt-2">
+                        <Verb onClick={() => price(signal)}>
+                          Let {brief.agent.name} investigate
+                        </Verb>
+                      </div>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+
           <p className="mt-4 text-xs leading-relaxed text-muted-foreground">
             {brief.agent.name} looks on a schedule, whether or not anyone is reading. It stops
             after a fortnight with nobody here, and starts again the moment you come back — an
