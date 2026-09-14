@@ -69,7 +69,18 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
     }
 
     const signing = previewMandateSigningRequest(terms);
-    return NextResponse.json({ terms, signing }, { headers: NOVA_HEADERS });
+    /* The wire form, because an EIP-712 uint256 is a bigint here and JSON has
+       no bigint: sending `signing.message` made NextResponse.json throw, and
+       the route answered 500 to every attempt to sign. */
+    return NextResponse.json({
+      terms,
+      signing: {
+        domain: signing.domain,
+        types: signing.wireTypes,
+        primaryType: signing.primaryType,
+        message: signing.wireMessage,
+      },
+    }, { headers: NOVA_HEADERS });
   } catch (error) {
     return novaErrorResponse(error);
   }

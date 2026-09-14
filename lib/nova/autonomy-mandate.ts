@@ -114,6 +114,50 @@ export function previewMandateTerms(input: {
   };
 }
 
+/**
+ * The same message a browser can be handed.
+ *
+ * An EIP-712 uint256 is a bigint on this side and a decimal string on the
+ * wire, because JSON has no bigint: `NextResponse.json` throws on one, and so
+ * does the `JSON.stringify` the wallet hook does before
+ * `eth_signTypedData_v4`. Both ends agree on the value, so the signature is the
+ * same -- it is the encoding that cannot cross.
+ *
+ * This is the shape every dapp sends. It is separated rather than made the
+ * only form because viem needs the bigints to hash and recover, and a single
+ * form would mean converting back on the side where a mistake is silent.
+ */
+function onTheWire(message: Record<string, unknown>): Record<string, unknown> {
+  return Object.fromEntries(
+    Object.entries(message).map(([key, value]) =>
+      [key, typeof value === "bigint" ? value.toString() : value]),
+  );
+}
+
+/**
+ * The domain type, spelled out, because a wallet asked over the raw RPC will
+ * not infer it.
+ *
+ * The same trap lib/x402/browser-payment.ts documents, and it would have been
+ * walked into again. viem adds this entry itself, so every local signature and
+ * every test here would have been valid while every signature a person
+ * actually made in MetaMask was not: `eth_signTypedData_v4` hashes the domain
+ * with `hashStruct("EIP712Domain", ...)`, and with no EIP712Domain in `types`
+ * that is an empty struct -- a separator belonging to no chain. The owner would
+ * have signed, and the server would have recovered a stranger and told them
+ * their own signature was not theirs.
+ *
+ * Three fields, not four: this domain has no verifyingContract, because a
+ * mandate is a statement between a person and Veyra rather than a call to a
+ * contract. The order matches VEYRA_EXECUTION_EIP712_DOMAIN field for field,
+ * which EIP-712 requires.
+ */
+export const MANDATE_DOMAIN_TYPE = [
+  { name: "name", type: "string" },
+  { name: "version", type: "string" },
+  { name: "chainId", type: "uint256" },
+] as const;
+
 /** Exactly what the wallet is asked to sign. */
 export function previewMandateSigningRequest(terms: PreviewMandateTerms) {
   const message = buildMandateEip712Message({
@@ -124,8 +168,14 @@ export function previewMandateSigningRequest(terms: PreviewMandateTerms) {
   return {
     domain: VEYRA_EXECUTION_EIP712_DOMAIN,
     types: mandateTypesFor(terms.version),
+    /** What the browser must be sent: the same types with the domain declared,
+     *  which viem supplies on this side and a raw RPC call does not. */
+    wireTypes: { EIP712Domain: MANDATE_DOMAIN_TYPE, ...mandateTypesFor(terms.version) },
     primaryType: "ExecutionMandate" as const,
+    /** Bigints. For hashing and recovery on this side. */
     message,
+    /** Decimal strings. For JSON, and therefore for the wallet. */
+    wireMessage: onTheWire(message),
     canonicalHash: computeCanonicalMandateHash(message),
   };
 }

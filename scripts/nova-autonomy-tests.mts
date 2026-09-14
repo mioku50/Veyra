@@ -27,6 +27,7 @@ import {
   PREVIEW_MANDATE,
 } from "../lib/nova/autonomy-mandate.ts";
 import { privateKeyToAccount } from "viem/accounts";
+import { hashTypedData } from "viem";
 
 /* ------------------------------------------------------------------ v1 froze */
 
@@ -423,6 +424,58 @@ assert.equal(
 assert.ok(isPreviewMandate(d0Terms));
 
 const request = previewMandateSigningRequest(d0Terms);
+
+/**
+ * The response has to survive JSON, and the wallet has to sign the same thing.
+ *
+ * An EIP-712 uint256 is a bigint here and JSON has no bigint, so sending the
+ * message as built made NextResponse.json throw -- every attempt to sign
+ * answered 500, and the library tests never saw it because they never
+ * serialised anything. The route sends decimal strings, and these two
+ * assertions are the ones that were missing: the payload is serialisable, and
+ * a wallet signing the serialised form signs the identical digest.
+ */
+const wirePayload = {
+  terms: d0Terms,
+  signing: {
+    domain: request.domain, types: request.wireTypes,
+    primaryType: request.primaryType, message: request.wireMessage,
+  },
+};
+
+/**
+ * And the domain type has to be in it.
+ *
+ * eth_signTypedData_v4 does not infer EIP712Domain; viem does. Without the
+ * entry MetaMask hashes an empty domain struct -- a separator belonging to no
+ * chain -- so the owner signs, the server recovers a stranger, and the page
+ * tells them their own signature is not theirs. Every test here would have
+ * passed, because they all go through viem. lib/x402/browser-payment.ts
+ * documents the same trap from the last time.
+ */
+assert.ok("EIP712Domain" in wirePayload.signing.types, "the wallet is told what a domain is");
+assert.deepEqual(
+  (wirePayload.signing.types.EIP712Domain as ReadonlyArray<{ name: string }>).map((f) => f.name),
+  Object.keys(request.domain),
+  "and the declaration matches the domain field for field, in order, as EIP-712 requires",
+);
+assert.doesNotThrow(() => JSON.stringify(wirePayload), "the route's response must be JSON");
+for (const value of Object.values(request.wireMessage)) {
+  assert.notEqual(typeof value, "bigint", "no bigint may reach the wire");
+}
+const overTheWire = JSON.parse(JSON.stringify(wirePayload)) as typeof wirePayload;
+assert.equal(
+  hashTypedData({
+    domain: overTheWire.signing.domain as never, types: overTheWire.signing.types as never,
+    primaryType: "ExecutionMandate", message: overTheWire.signing.message as never,
+  }),
+  hashTypedData({
+    domain: request.domain, types: request.types as never,
+    primaryType: "ExecutionMandate", message: request.message as never,
+  }),
+  "what the browser signs and what the server verifies are the same digest",
+);
+
 const d0Signature = await owner.signTypedData({
   domain: request.domain, types: request.types as never,
   primaryType: request.primaryType, message: request.message as never,
