@@ -22,11 +22,12 @@ import { priorWith } from "@/lib/nova/standing";
 import {
   agentAccessState, arcIdentityState, arcViewBlurb, briefSummary, identityExplanation,
   identityHeadline, plain, purchaseStanding, purchaseSummary, transferWarning,
-  autonomyStateClaim, shadowDeclineClaims, shadowNightClaim, shadowRemainingClaim,
-  shadowSpendClaim, shadowVerdictClaim,
+  autonomyStateClaim, previewOnlyWarning, shadowDeclineClaims, shadowNightClaim,
+  shadowRemainingClaim, shadowSpendClaim, shadowVerdictClaim,
   type ArcIdentityState, type Claim,
 } from "@/lib/nova/presentation";
 import { IDENTITY_REGISTER_ABI, NOVA_IDENTITY_REGISTRY } from "@/lib/nova/identity";
+import { PREVIEW_MANDATE, type PreviewMandateTerms } from "@/lib/nova/autonomy-mandate";
 import type { NovaBrief, NovaFeedback, NovaInvestigation, NovaSignal } from "@/lib/nova/types";
 import type { NovaResearchProposal } from "@/lib/nova/research";
 import type { TermsChange } from "@/lib/nova/research-terms";
@@ -232,6 +233,8 @@ export function NovaClient({ view = "today" }: { view?: NovaView } = {}) {
   /* Claiming an Arc identity: one wallet transaction, then a server that
      refuses to believe the browser about its outcome. */
   const [claiming, setClaiming] = useState(false);
+  const [signingMandate, setSigningMandate] = useState(false);
+  const [mandateNote, setMandateNote] = useState<string | null>(null);
   const [claimNote, setClaimNote] = useState<string | null>(null);
   const [attesting, setAttesting] = useState(false);
   const [attestNote, setAttestNote] = useState<string | null>(null);
@@ -464,6 +467,62 @@ export function NovaClient({ view = "today" }: { view?: NovaView } = {}) {
       body: JSON.stringify({ feedback }),
     });
   }, [call, identity]);
+
+  /**
+   * Signing the limits Nova rehearses under.
+   *
+   * Two round trips and one wallet prompt. The server builds the terms and
+   * hands back the exact typed data; the wallet shows it; the signature goes
+   * back and is verified against the same message rebuilt server-side.
+   *
+   * No transaction, no approval, no allowance. The wallet is asked for a
+   * signature over a document and nothing else, which is why the screen says
+   * so before the prompt opens -- MetaMask will show eleven numeric fields and
+   * no indication that none of them can be spent.
+   */
+  const signPreviewMandate = async () => {
+    if (!identity) return;
+    setMandateNote(null);
+    setSigningMandate(true);
+    try {
+      if (!wallet.address) await wallet.connect();
+      if (!wallet.isArcTestnet) await wallet.switchToArc();
+      const address = wallet.address;
+      if (!address) throw new Error("Connect a wallet to sign these limits.");
+
+      const prepared = await call(`/api/nova/v1/agents/${identity.publicId}/autonomy`, {
+        method: "POST",
+        ownerSecret: identity.ownerSecret,
+        body: JSON.stringify({
+          wallet: address,
+          /* The browser's own zone. It is what makes the budget day the
+             owner's day rather than UTC's, and it is a signed term. */
+          budgetTimezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+        }),
+      }) as {
+        terms: PreviewMandateTerms;
+        signing: { domain: unknown; types: unknown; primaryType: string; message: unknown };
+      };
+
+      const signature = await wallet.signTypedData({
+        domain: prepared.signing.domain as never,
+        types: prepared.signing.types as never,
+        primaryType: prepared.signing.primaryType,
+        message: prepared.signing.message as never,
+      });
+
+      await call(`/api/nova/v1/agents/${identity.publicId}/autonomy`, {
+        method: "PUT",
+        ownerSecret: identity.ownerSecret,
+        body: JSON.stringify({ terms: prepared.terms, signature }),
+      });
+      await loadBrief(identity);
+    } catch (cause) {
+      setMandateNote((cause as Error).message);
+    } finally {
+      setSigningMandate(false);
+    }
+  };
 
   const refresh = async () => {
     if (!identity) return;
@@ -1133,24 +1192,12 @@ export function NovaClient({ view = "today" }: { view?: NovaView } = {}) {
       {view === "today" ? <ShadowNight brief={brief} onFeedback={rateDecision} /> : null}
 
       {view === "agent" ? (
-        <Panel className="mt-4">
-          <Label>Autonomy</Label>
-          <p className="mt-3 max-w-xl text-sm leading-relaxed text-muted-foreground">
-            <Said claim={autonomyStateClaim(brief.shadow, brief.agent.name)} />
-          </p>
-          {brief.shadow.state === "off" ? (
-            /* No button. Turning this on means signing a mandate with limits in
-               it, and offering it as a toggle would imply Veyra could grant
-               itself the permission -- which is exactly what the signature
-               exists to prevent. */
-            <p className="mt-3 max-w-xl text-xs leading-relaxed text-muted-foreground">
-              Letting {brief.agent.name} decide unattended means signing limits with your wallet:
-              what it may spend on one thing, what it may spend in a day, and how many times it may
-              try. {BRAND.name} cannot grant itself that, which is why it is a signature and not a
-              switch.
-            </p>
-          ) : null}
-        </Panel>
+        <AutonomyPanel
+          brief={brief}
+          onSign={() => void signPreviewMandate()}
+          signing={signingMandate}
+          note={mandateNote}
+        />
       ) : null}
 
       {view === "agent" ? (
@@ -1613,6 +1660,110 @@ function Standing({
 
 /** A machine value against its name, hairline-separated. Values are monospace
  *  because they are meant to be compared, not read. */
+/**
+ * The limits Nova rehearses under, before and after they are signed.
+ *
+ * The offer is a fixed set of terms rather than a form. Every number here is
+ * one somebody has to reason about with no evidence yet -- this is the week
+ * that produces the evidence -- and a form would ask them to guess seven times
+ * before they have seen a single decision. After a week of real decisions the
+ * brief says what these should have been, and that is when they become
+ * editable.
+ *
+ * Two things are said out loud that the wallet will not say. The mode is
+ * PREVIEW, so no money can move under this signature at all; and enabling real
+ * spending later takes a new one. MetaMask shows eleven numeric fields and no
+ * indication of either.
+ */
+function AutonomyPanel({
+  brief,
+  onSign,
+  signing,
+  note,
+}: {
+  brief: NovaBrief;
+  onSign: () => void;
+  signing: boolean;
+  note: string | null;
+}) {
+  const shadow = brief.shadow;
+  const limits = shadow.limits;
+  const days = PREVIEW_MANDATE.daysValid;
+
+  return (
+    <Panel className="mt-4">
+      <Label>{shadow.state === "watching" ? "Autonomy preview · on" : "Autonomy preview"}</Label>
+      <p className="mt-3 max-w-xl text-sm leading-relaxed text-muted-foreground">
+        <Said claim={autonomyStateClaim(shadow, brief.agent.name)} />
+      </p>
+
+      {shadow.state === "watching" && limits ? (
+        <dl className="mt-4 space-y-0">
+          <Row label="Signed by" value={`${limits.signedBy.slice(0, 6)}…${limits.signedBy.slice(-4)}`} tone="good" />
+          <Row label="Mode" value={limits.mode} />
+          <Row label="Expires" value={new Date(limits.expiresAt).toLocaleDateString()} />
+          <Row label="Per investigation" value={`$${limits.perActionUsdc.toFixed(4)}`} />
+          <Row label="Daily budget" value={`$${limits.dailyUsdc.toFixed(4)}`} />
+          <Row label="Total preview budget" value={`$${limits.totalUsdc.toFixed(4)}`} />
+          <Row label="Attempts per day" value={String(limits.attemptsPerDay)} />
+          <Row label="Minimum trust" value={String(limits.minimumTrustScore)} />
+          <Row label="Budget day" value={limits.timezone} />
+        </dl>
+      ) : (
+        <>
+          <p className="mt-4 max-w-xl text-sm leading-relaxed text-muted-foreground">
+            See what {brief.agent.name} would do with money before giving it any. It decides for
+            real — live prices, {BRAND.name}&apos;s own trust decision, your limits — and stops one
+            step before the step that costs anything.
+          </p>
+          <div className="mt-5">
+            <Label>Allowed</Label>
+            <p className="mt-2 text-sm text-muted-foreground">
+              Research &amp; search · x402 · Base
+            </p>
+          </div>
+          <dl className="mt-4 space-y-0">
+            <Row label="Max per investigation" value={`$${PREVIEW_MANDATE.maxPerTransactionUsdc.toFixed(4)}`} />
+            <Row label="Daily budget" value={`$${PREVIEW_MANDATE.maxPerDayUsdc.toFixed(4)}`} />
+            <Row label="Total preview budget" value={`$${PREVIEW_MANDATE.maxTotalUsdc.toFixed(4)}`} />
+            <Row label="Attempts per day" value={String(PREVIEW_MANDATE.maxAutonomousAttemptsPerDay)} />
+            <Row label="Minimum trust" value={String(PREVIEW_MANDATE.minimumTrustScore)} />
+            <Row label="Budget day" value={browserTimezone()} />
+            <Row label="Expires" value={`in ${days} days`} />
+          </dl>
+          <button
+            type="button"
+            onClick={onSign}
+            disabled={signing}
+            className="mt-5 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:opacity-60"
+          >
+            {signing ? "Waiting for your wallet…" : "Sign preview mandate"}
+          </button>
+          <p className="mt-3 max-w-xl text-xs leading-relaxed text-muted-foreground">
+            <Said claim={previewOnlyWarning()} />
+          </p>
+          <p className="mt-2 max-w-xl text-xs leading-relaxed text-muted-foreground">
+            Your wallet will ask for a signature, not a transaction: nothing is approved, nothing is
+            sent, and no allowance is granted.
+          </p>
+        </>
+      )}
+      {note ? <p className="mt-4 max-w-xl text-xs leading-relaxed text-state-warn">{note}</p> : null}
+    </Panel>
+  );
+}
+
+/* Read at render rather than imported: the budget day is the owner's day, and
+   only the browser knows which one that is. Falls back to UTC on the server
+   pass, where the panel is re-rendered before anybody can click. */
+function browserTimezone(): string {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+  } catch {
+    return "UTC";
+  }
+}
+
 /**
  * What Nova would have bought while nobody was watching.
  *

@@ -357,7 +357,15 @@ export type NovaShadowView = {
   limits: {
     perActionUsdc: number;
     dailyUsdc: number;
+    totalUsdc: number;
     attemptsPerDay: number;
+    minimumTrustScore: number;
     timezone: string;
+    /** PREVIEW while this is a rehearsal. The screen says "no money can move",
+     *  and that sentence is only true of this mode, so it is carried rather
+     *  than assumed. */
+    mode: string;
+    expiresAt: string;
+    signedBy: string;
   } | null;
 };

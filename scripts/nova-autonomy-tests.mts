@@ -22,6 +22,10 @@ import { termsFromCandidate, type NovaResearchProposal } from "../lib/nova/resea
 import { settlementNetworkOf } from "../lib/nova/network.ts";
 import { recoverMandateSigner } from "../lib/execution/mandate.ts";
 import { assertMandateAuthorizesAutopilot } from "../lib/execution/executor.ts";
+import {
+  isPreviewMandate, mandateFrom, previewMandateSigningRequest, previewMandateTerms,
+  PREVIEW_MANDATE,
+} from "../lib/nova/autonomy-mandate.ts";
 import { privateKeyToAccount } from "viem/accounts";
 
 /* ------------------------------------------------------------------ v1 froze */
@@ -394,6 +398,74 @@ const d0 = mandate({ mode: "PREVIEW" as never });
 assert.equal(mandateReadiness(d0, now).ready, true, "shadow accepts it");
 assert.throws(() => assertMandateAuthorizesAutopilot(d0 as never, now),
   /does not authorise unattended payment/, "and money refuses it");
+
+/* ------------------------------------------- the mandate the screen offers */
+
+const d0Terms = previewMandateTerms({
+  mandateId: "vman_d0", ownerWallet: owner.address, agentPublicId: "nva_t12w6so1sfo5qdsclujv",
+  budgetTimezone: "Europe/Berlin", now,
+});
+
+assert.equal(d0Terms.mode, "PREVIEW");
+assert.equal(d0Terms.version, MANDATE_VERSION_V2);
+/* Nova has no operational wallet, and inventing an address to fill a signed
+   field would put a name in the document that names nothing. */
+assert.equal(d0Terms.subjectWallet, "0x0000000000000000000000000000000000000000");
+/* Where the money would move, which is not where the signature lives. */
+assert.equal(d0Terms.network, "eip155:8453");
+assert.equal(VEYRA_EXECUTION_EIP712_DOMAIN.chainId, 5042002, "signed in the Arc domain");
+/* Neutral, because a shadow decision cannot check either of them. */
+assert.equal(d0Terms.minimumConfidence, 0);
+assert.equal(d0Terms.requireVerifiedIdentity, false);
+assert.equal(
+  Math.round((Date.parse(d0Terms.expiresAt) - Date.parse(d0Terms.issuedAt)) / 86_400_000),
+  PREVIEW_MANDATE.daysValid);
+assert.ok(isPreviewMandate(d0Terms));
+
+const request = previewMandateSigningRequest(d0Terms);
+const d0Signature = await owner.signTypedData({
+  domain: request.domain, types: request.types as never,
+  primaryType: request.primaryType, message: request.message as never,
+});
+const d0Mandate = mandateFrom(d0Terms, d0Signature, request.canonicalHash, now);
+assert.equal(
+  (await recoverMandateSigner(d0Mandate, d0Terms.mandateId, d0Signature)).toLowerCase(),
+  owner.address.toLowerCase(), "what the screen offers is what the wallet can sign");
+
+/* The two halves of the phase, on the same signature. */
+assert.equal(mandateReadiness(d0Mandate, now).ready, true, "shadow will act on it");
+assert.throws(() => assertMandateAuthorizesAutopilot(d0Mandate, now),
+  /does not authorise unattended payment/,
+  "and no amount of it authorises a payment -- real autonomy needs a new signature");
+
+/* Terms that are not the offer are refused before the signature is even
+   checked, because "that is not what the card said" is a better answer than a
+   signature error. */
+for (const tampered of [
+  { ...d0Terms, maxPerTransactionUsdc: 1 },
+  { ...d0Terms, maxPerDayUsdc: 10 },
+  { ...d0Terms, maxAutonomousAttemptsPerDay: 999 },
+  { ...d0Terms, mode: "AUTOPILOT" },
+  { ...d0Terms, version: "v1" },
+  { ...d0Terms, network: "eip155:5042002" },
+  { ...d0Terms, subjectWallet: owner.address },
+  { ...d0Terms, requireVerifiedIdentity: true },
+  { ...d0Terms, minimumConfidence: 0.9 },
+  { ...d0Terms, allowedRails: ["erc8183"] },
+  { ...d0Terms, allowedCapabilities: ["token_transfer"] },
+  { ...d0Terms, budgetTimezone: "Mars/Olympus" },
+]) {
+  assert.equal(isPreviewMandate(tampered), false,
+    `a mandate with ${JSON.stringify(Object.entries(tampered).find(
+      ([key, value]) => JSON.stringify((d0Terms as Record<string, unknown>)[key]) !== JSON.stringify(value))?.[0])} changed is not the offer`);
+}
+
+/* And a limit altered after signing does not verify, which is the guarantee
+   underneath the shape check rather than a substitute for it. */
+const raised = { ...d0Terms, maxPerDayUsdc: 10 };
+assert.notEqual(
+  (await recoverMandateSigner(raised as never, raised.mandateId, d0Signature)).toLowerCase(),
+  owner.address.toLowerCase(), "changing a limit after signing recovers a stranger");
 
 /* ------------------------------------------------------------- the morning */
 

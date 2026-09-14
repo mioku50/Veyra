@@ -710,8 +710,13 @@ async function shadowViewFor(
     limits: {
       perActionUsdc: live.maxPerTransactionUsdc,
       dailyUsdc: live.maxPerDayUsdc,
+      totalUsdc: live.maxTotalUsdc,
       attemptsPerDay: live.maxAutonomousAttemptsPerDay ?? 0,
+      minimumTrustScore: live.minimumTrustScore,
       timezone: period.timezone,
+      mode: live.mode,
+      expiresAt: live.expiresAt,
+      signedBy: live.ownerWallet,
     },
   };
 }

@@ -18,8 +18,8 @@ import {
   agentAccessState, arcIdentityState, briefSummary, identityExplanation, identityHeadline,
   arcViewBlurb, autonomyStateClaim, declineReasonLabel, plain, purchaseStanding, purchaseSummary,
   shadowDeclineClaims, shadowNightClaim, shadowRemainingClaim, shadowSpendClaim,
-  shadowVerdictClaim, transferWarning, EXPLAINED_BLOCKS, LABELLED_DECLINE_CODES,
-  NO_MONEY_MOVED,
+  shadowVerdictClaim, transferWarning, previewOnlyWarning, EXPLAINED_BLOCKS,
+  LABELLED_DECLINE_CODES, NO_MONEY_CAN_MOVE, NO_MONEY_MOVED,
   type ArcIdentityState, type Claim,
 } from "../lib/nova/presentation.ts";
 import { standingFrom } from "../lib/nova/standing.ts";
@@ -177,14 +177,25 @@ const shadowRecord = (over: Partial<ShadowRecord> = {}): ShadowRecord => {
 const view = (over: Partial<NovaShadowView> = {}): NovaShadowView => ({
   state: "watching", blocked: null,
   summary: shadowSummaryFrom([shadowRecord()], { period, dailyBudgetUsdc: 0.02 }),
-  decisions: [], limits: { perActionUsdc: 0.005, dailyUsdc: 0.02, attemptsPerDay: 4, timezone: "Europe/Berlin" },
+  decisions: [],
+  limits: {
+    perActionUsdc: 0.005, dailyUsdc: 0.02, totalUsdc: 0.15, attemptsPerDay: 4,
+    minimumTrustScore: 90, timezone: "Europe/Berlin", mode: "PREVIEW",
+    expiresAt: "2026-09-21T00:00:00.000Z", signedBy: "0x9b57b2aCf3242db458B5EadD5e2026eaccB33dAD",
+  },
   ...over,
 });
+
+const autopilotView = view({ limits: { ...view().limits!, mode: "AUTOPILOT" } });
 
 /* 17. Nothing describing the night may reach a person without saying that
       nothing was bought. A shadow decision read as a purchase is the only way
       this phase can actually hurt somebody. */
-must(autonomyStateClaim(view(), "Nova"), new RegExp(NO_MONEY_MOVED), "the state says it");
+/* Either sentence satisfies this: PREVIEW says money cannot move, a live
+   mandate says none moved tonight. What is not allowed is neither. */
+must(autonomyStateClaim(view(), "Nova"), /No money (moved|can move)/, "the state says it");
+must(autonomyStateClaim(autopilotView, "Nova"), /No money (moved|can move)/,
+  "and so does a live one");
 must(shadowNightClaim(view().summary), new RegExp(NO_MONEY_MOVED), "and so does the night");
 must(shadowNightClaim(shadowSummaryFrom([], { period })), new RegExp(NO_MONEY_MOVED),
   "including a night where nothing happened");
@@ -197,6 +208,19 @@ mustNot(autonomyStateClaim(off, "Nova"), /would have been spent|decides as if/,
   "an agent that cannot act unattended does not describe acting unattended");
 mustNot(autonomyStateClaim(view(), "Nova"), /asks before every paid action/,
   "and one that is rehearsing does not claim it still asks");
+
+/* 17b. "No money can move" is true of PREVIEW and of nothing else. The moment
+       somebody signs an AUTOPILOT mandate the sentence is false, and a screen
+       that kept it would be the most expensive stale claim in the product. */
+must(autonomyStateClaim(view(), "Nova"), new RegExp(NO_MONEY_CAN_MOVE), "preview says it cannot");
+mustNot(autonomyStateClaim(autopilotView, "Nova"), /No money can move/,
+  "a live mandate must never claim money cannot move");
+must(autonomyStateClaim(autopilotView, "Nova"), new RegExp(NO_MONEY_MOVED),
+  "it says only that this rehearsal moved none");
+
+/* 17c. And the warning before the wallet opens says what the wallet will not. */
+must(previewOnlyWarning(), /simulation only/, "signing limits is not turning spending on");
+must(previewOnlyWarning(), /new signature/, "and enabling it later needs another signature");
 
 /* 18b. Something signed and unusable is not the same as nothing signed. Every
        block except "no mandate" says which, or somebody who just signed limits

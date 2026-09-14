@@ -330,6 +330,31 @@ export function declineReasonLabel(code: string, count: number): string {
 export const NO_MONEY_MOVED = "No money moved.";
 
 /**
+ * The stronger sentence, and the one that is only true in PREVIEW.
+ *
+ * "No money moved" is about a night that has happened. This is about what the
+ * signature permits, and it stops being true the moment somebody signs an
+ * AUTOPILOT mandate -- so it is never written next to a mode that is not
+ * PREVIEW, and there is an invariant that says so.
+ */
+export const NO_MONEY_CAN_MOVE = "No money can move in Preview.";
+
+/**
+ * What the wallet prompt does not say, shown before the wallet opens.
+ *
+ * A person about to sign spending limits is entitled to know that signing them
+ * is not the thing that turns spending on. MetaMask will show an EIP-712
+ * message with eleven numeric fields in it and no indication of which mode
+ * they belong to.
+ */
+export function previewOnlyWarning(): Claim {
+  return [
+    "This signature authorizes simulation only. Enabling real autonomous spending later will ",
+    "require a new signature.",
+  ];
+}
+
+/**
  * Whether Nova is rehearsing, and what that means.
  *
  * "Off" is the ordinary state and is written as a fact, not as a fault. Most
@@ -364,12 +389,16 @@ export function autonomyStateClaim(view: NovaShadowView, name: string): Claim {
   }
   const limits = view.limits;
   if (!limits) return [`${name} is watching, and nothing is authorised yet.`];
-  return [
+  const head: Claim = [
     `${name} decides as if it could pay, and stops before it can. Up to `,
     figure(`$${limits.perActionUsdc.toFixed(4)}`), " an action and ",
     figure(`$${limits.dailyUsdc.toFixed(4)}`), " a day, on your ",
-    figure(limits.timezone), " clock. ", NO_MONEY_MOVED,
+    figure(limits.timezone), " clock. ",
   ];
+  /* The mode decides which sentence is true. Under PREVIEW nothing can move;
+     under a live mandate the honest statement is only about this rehearsal
+     having moved nothing, which is a smaller claim. */
+  return [...head, limits.mode === "PREVIEW" ? NO_MONEY_CAN_MOVE : NO_MONEY_MOVED];
 }
 
 /**
