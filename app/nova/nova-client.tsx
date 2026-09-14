@@ -17,6 +17,13 @@ import { INTEREST_CATALOG, MAX_INTERESTS } from "@/lib/nova/interests";
    person cannot take reads as a promise the product is refusing to keep. */
 import { categoryPhraseFor } from "@/lib/nova/relevance";
 import { priorWith } from "@/lib/nova/standing";
+/* The sentences that assert a state live next to the state they assert, so a
+   heading cannot go stale against the panel under it. See the module header. */
+import {
+  agentAccessState, arcIdentityState, arcViewBlurb, briefSummary, identityExplanation,
+  identityHeadline, plain, purchaseStanding, purchaseSummary, transferWarning,
+  type ArcIdentityState, type Claim,
+} from "@/lib/nova/presentation";
 import { IDENTITY_REGISTER_ABI, NOVA_IDENTITY_REGISTRY } from "@/lib/nova/identity";
 import type { NovaBrief, NovaFeedback, NovaInvestigation, NovaSignal } from "@/lib/nova/types";
 import type { NovaResearchProposal } from "@/lib/nova/research";
@@ -64,18 +71,26 @@ const VIEW_TITLE: Record<Exclude<NovaView, "today">, string> = {
   arc: "What it has earned",
 };
 
+/* One claim, rendered the way the invariant tests read it. Figures are set
+   apart as they always were; what changed is that they now arrive inside the
+   sentence instead of being re-derived beside it. */
+function Said({ claim }: { claim: Claim }) {
+  return (
+    <>
+      {claim.map((part, index) => (typeof part === "string"
+        ? <span key={index}>{part}</span>
+        : <span key={index} className="font-mono text-foreground">{part.figure}</span>))}
+    </>
+  );
+}
+
 /* Written in the second person and about the agent, not about the feature. A
    page called Memory that opens by explaining what memory is has described its
    own navigation label back to the reader. */
-const VIEW_BLURB: Record<Exclude<NovaView, "today">, (name: string, claimed: boolean) => string> = {
-  agent: (name) => `Who ${name} is, what it watches on your behalf, and the key that proves it is yours.`,
-  memory: (name) => `${name} starts from what you told it and changes from what you do. This is the difference so far.`,
-  /* It stopped being true the moment somebody claimed one, and it sat directly
-     above a panel reading "Nova · ERC-8004 Agent #895012". A page heading that
-     contradicts the thing under it teaches a reader to skip headings. */
-  arc: (name, claimed) => claimed
-    ? `${name} has an identity on Arc, and a record of what it did to earn one.`
-    : `${name} is not an identity on Arc yet. It becomes one by doing things that can be checked, not by signing up.`,
+const VIEW_BLURB: Record<Exclude<NovaView, "today">, (name: string, state: ArcIdentityState) => Claim> = {
+  agent: (name) => [`Who ${name} is, what it watches on your behalf, and the key that proves it is yours.`],
+  memory: (name) => [`${name} starts from what you told it and changes from what you do. This is the difference so far.`],
+  arc: (name, state) => arcViewBlurb(state, name),
 };
 
 type Stage = "loading" | "create" | "working" | "brief";
@@ -914,18 +929,13 @@ export function NovaClient({ view = "today" }: { view?: NovaView } = {}) {
             {view === "today" ? `${brief.greeting}.` : VIEW_TITLE[view]}
           </h1>
           <p className="mt-2 max-w-xl text-sm text-muted-foreground">
-            {view !== "today"
-              ? VIEW_BLURB[view](agentName, brief.agent.arcIdentity !== null)
-              : attention.length > 0
-                /* Not "worth your attention": the brief keeps everything that is
-                   not noise, low relevance included, and a card tagged "low
-                   relevance" directly under that sentence made the heading
-                   argue with the item. The brief says how much is in it; each
-                   card says how much it thinks of itself. */
-                ? <><span className="font-mono text-foreground">{attention.length}</span> {attention.length === 1 ? "item" : "items"} in today&apos;s brief.</>
-                : blind.length > 0
-                  ? <>Could not reach {blind.join(" and ")}, so this is an incomplete look rather than a quiet day.</>
-                  : <>Nothing moved across the <span className="font-mono text-foreground">{brief.lastRefresh?.subjectsChecked ?? 0}</span> things being watched for you.</>}
+            <Said claim={view !== "today"
+              ? VIEW_BLURB[view](agentName, arcIdentityState(brief.agent.arcIdentity, brief.standing))
+              : briefSummary({
+                  inBrief: attention.length,
+                  unreachable: blind,
+                  watched: brief.lastRefresh?.subjectsChecked ?? 0,
+                })} />
           </p>
         </div>
         {view === "today" ? (
@@ -1359,6 +1369,10 @@ function Standing({
 }) {
   const { standing, agent } = brief;
   const identity = agent.arcIdentity;
+  /* One value with three cases, so the heading, the explanation and the button
+     cannot disagree about which of them this agent is in. */
+  const identityState = arcIdentityState(identity, standing);
+  const access = agentAccessState(identity);
 
 
   /* Counted from the purchases, not from three proxies for one of them. The
@@ -1384,26 +1398,26 @@ function Standing({
   return (
     <Panel className="mt-4">
       <Label>Arc identity</Label>
-      {identity ? (
+      {identityState.kind === "claimed" ? (
         /* A registry and an agent id, which is what an ERC-8004 identity is.
            The owner is shown separately and on purpose: it is the part that can
            change, and the agent does not change with it. */
         <>
           <p className="mt-3 text-lg font-medium leading-snug">
-            {agent.name} · ERC-8004 Agent #{identity.agentId}
+            <Said claim={identityHeadline(identityState, agent.name)} />
+          </p>
+          <p className="mt-2 max-w-xl text-xs leading-relaxed text-muted-foreground">
+            <Said claim={identityExplanation(identityState, agent.name)} />
           </p>
           <dl className="mt-4 space-y-0">
-            <Row label="Owned by" value={`${identity.owner.slice(0, 6)}…${identity.owner.slice(-4)}`} tone="good" />
-            <Row label="Registry" value={`eip155:${identity.chainId}:${identity.registry.slice(0, 10)}…`} />
+            <Row label="Owned by" value={`${identityState.owner.slice(0, 6)}…${identityState.owner.slice(-4)}`} tone="good" />
+            <Row label="Registry" value={`eip155:${identityState.chainId}:${identityState.registry.slice(0, 10)}…`} />
           </dl>
           <p className="mt-3 max-w-xl text-xs leading-relaxed text-muted-foreground">
-            You own this identity onchain. Transferring the ERC-8004 token changes its owner on
-            Arc — but access to this {agent.name} still follows its recovery key, so a transfer
-            today moves the token and not the agent. Moving both at once needs a transfer inside{" "}
-            {BRAND.name}, which does not exist yet.
+            <Said claim={transferWarning(access, agent.name, BRAND.name)} />
           </p>
           <a
-            href={`https://testnet.arcscan.app/address/${identity.registry}`}
+            href={`https://testnet.arcscan.app/address/${identityState.registry}`}
             target="_blank"
             rel="noreferrer noopener"
             className="mt-3 inline-block text-sm text-link underline underline-offset-4"
@@ -1414,11 +1428,9 @@ function Standing({
       ) : (
         <>
           <p className="mt-3 max-w-xl text-sm leading-relaxed text-muted-foreground">
-            {standing.readyForArcIdentity
-              ? `${agent.name} has earned eligibility through ${standing.verifiedResearch} verified ${standing.verifiedResearch === 1 ? "activity" : "activities"}. Registering on Arc now records something that already happened.`
-              : `${agent.name} can be registered on Arc once there is something for that identity to point at: one purchase that passed its delivery check, recorded on Arc where anyone can read it. ${standing.verifiedResearch >= 1 ? "The purchase is there — it just is not on Arc yet." : ""}`}
+            <Said claim={identityExplanation(identityState, agent.name)} />
           </p>
-          {standing.readyForArcIdentity ? (
+          {identityState.kind === "earned_not_claimed" ? (
             <div className="mt-4">
               <button
                 type="button"
@@ -1589,9 +1601,10 @@ function Receipts({ brief }: { brief: NovaBrief }) {
     );
   }
 
-  const spent = settled.reduce((total, entry) => total + (entry.paidUsdc ?? 0), 0);
-  const verified = settled.filter((entry) => entry.status === "verified").length;
-  const paidCalls = settled.filter((entry) => (entry.paidUsdc ?? 0) > 0).length;
+  /* Read from the one place these are derived rather than counted again off
+     the same rows. Two counts of one fact is one more chance to print a number
+     the rest of the screen disagrees with. */
+  const counts = purchaseStanding(brief.standing);
 
   return (
     <Panel className="mt-4">
@@ -1601,14 +1614,14 @@ function Receipts({ brief }: { brief: NovaBrief }) {
           which reads as a far worse hit rate than the money bought. An attempt
           is a decision, a payment is an exposure, a pass is a result. */}
       <dl className="mt-4 space-y-0">
-        <Row label="Attempts" value={String(settled.length)} />
-        <Row label="Money actually moved" value={String(paidCalls)} />
+        <Row label="Attempts" value={String(counts.attempts)} />
+        <Row label="Money actually moved" value={String(counts.paid)} />
         <Row
           label="Passed the delivery check"
-          value={paidCalls > 0 ? `${verified} of ${paidCalls} paid` : "nothing paid yet"}
-          tone={verified > 0 ? "good" : "idle"}
+          value={plain(purchaseSummary(counts))}
+          tone={counts.passed > 0 ? "good" : "idle"}
         />
-        <Row label="Spent" value={`$${spent.toFixed(4)}`} />
+        <Row label="Spent" value={`$${counts.spentUsdc.toFixed(4)}`} />
       </dl>
 
       <ul className="mt-5 space-y-5">

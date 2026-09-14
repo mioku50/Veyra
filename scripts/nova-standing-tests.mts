@@ -44,8 +44,10 @@ assert.equal(mixed.observedOutcomes, 2, "two payments moved; the refused one did
 assert.ok(mixed.veyraDecisions > mixed.observedOutcomes && mixed.observedOutcomes > mixed.verifiedResearch,
   "attempt, payment and result are three different numbers, and the funnel narrows");
 /* Eligibility needs both halves. A purchase that passed its check is the work;
-   the attestation on Arc is the part somebody other than Veyra can read, and a
-   badge Veyra grants itself off its own bookkeeping is not "earned by doing
+   the attestation is that claim made public and tamper-evident on Arc, which is
+   the part a stranger can read without asking us. Arc does not re-check the
+   verdict -- it makes it externally readable evidence rather than Veyra's own
+   bookkeeping, and a badge granted off bookkeeping is not "earned by doing
    things that can be checked". */
 assert.equal(mixed.readyForArcIdentity, true, "a checked purchase that is also on Arc");
 
@@ -53,7 +55,7 @@ const unattested = standingFrom([attempt({ status: "verified", paidUsdc: 0.007, 
 assert.equal(unattested.verifiedResearch, 1);
 assert.equal(unattested.attestedOnArc, 0);
 assert.equal(unattested.readyForArcIdentity, false,
-  "a purchase nobody outside Veyra can read is not yet a history to point at");
+  "a purchase with no externally readable record is not yet a history to point at");
 
 const attestedButUnchecked = standingFrom([
   attempt({ status: "paid_unverified", paidUsdc: 0.01, arcProof: { transaction: "0x1" } as never,

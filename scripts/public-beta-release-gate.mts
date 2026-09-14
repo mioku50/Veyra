@@ -167,6 +167,10 @@ runStep("Nova Standing Tests", () => {
   execSync("npm run nova-standing:test", { cwd: root, stdio: "inherit" });
 });
 
+runStep("Nova Presentation Invariants", () => {
+  execSync("npm run nova-presentation:test", { cwd: root, stdio: "inherit" });
+});
+
 runStep("Nova Arc Proof Tests", () => {
   execSync("npm run nova-arc-proof:test", { cwd: root, stdio: "inherit" });
 });
