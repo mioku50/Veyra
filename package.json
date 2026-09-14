@@ -155,7 +155,9 @@
     "x402-gateway:test": "node --experimental-transform-types --no-warnings scripts/x402-gateway-tests.mts",
     "payment-rail:test": "node --experimental-transform-types --no-warnings scripts/payment-rail-tests.mts",
     "nova:test": "node --experimental-transform-types --no-warnings scripts/nova-tests.mts",
+    "nova-arc-proof:test": "node --experimental-transform-types --no-warnings scripts/nova-arc-proof-tests.mts",
     "p84:production-migrate": "node --experimental-transform-types --no-warnings --env-file-if-exists=.env.local scripts/apply-p84-production-migration.mts",
+    "nova:arc:publish": "node --experimental-transform-types --no-warnings --env-file-if-exists=.env.local scripts/publish-nova-arc-proofs.mts",
     "nova:research:live": "node --experimental-transform-types --no-warnings --env-file-if-exists=.env.local scripts/nova-research-live.mts"
   },
   "dependencies": {

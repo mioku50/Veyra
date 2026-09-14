@@ -550,7 +550,7 @@ export async function loadBrief(input: {
        module for the owner check. One narrow query is a smaller price than an
        import cycle between the two files that write the same agent's rows. */
     db().from("nova_research")
-      .select("research_id, signal_id, status, question, proposal, terms, execution_public_id, paid_usdc, transaction_hash, verification, result, failure, reading, settled_at")
+      .select("research_id, signal_id, status, question, proposal, terms, execution_public_id, paid_usdc, transaction_hash, verification, result, failure, reading, arc_proof, settled_at")
       .eq("agent_id", agent.agent_id)
       .order("created_at", { ascending: false })
       .limit(60),
@@ -602,6 +602,7 @@ export async function loadBrief(input: {
       transaction: row.transaction_hash,
       verification: row.verification ?? null,
       reading: row.reading ?? null,
+      arcProof: row.arc_proof ?? null,
       result: row.result ?? null,
       failure: row.failure,
       settledAt: row.settled_at,

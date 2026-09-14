@@ -151,6 +151,22 @@ runStep("Trust-Routed Execution Product & Anti-Cheat V4 Tests", () => {
 });
 
 // 7. Foundry Smart Contract Test Suite
+/* Nova's own suites, which this gate did not run.
+   They exist and they pass, and nothing here checked them -- so a stale
+   assertion in the live script went out with a push whose gate was green. A
+   test the release gate does not run is a test that stops being true quietly. */
+runStep("Nova Agent Tests", () => {
+  execSync("npm run nova:test", { cwd: root, stdio: "inherit" });
+});
+
+runStep("Nova Arc Proof Tests", () => {
+  execSync("npm run nova-arc-proof:test", { cwd: root, stdio: "inherit" });
+});
+
+runStep("x402 Post-Call Verification Tests", () => {
+  execSync("npm run x402-verification:test", { cwd: root, stdio: "inherit" });
+});
+
 runStep("Foundry Smart Contract Tests (forge test)", () => {
   execSync("forge test", { cwd: resolve(root, "contracts"), stdio: "inherit" });
 });

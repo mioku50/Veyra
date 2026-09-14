@@ -277,7 +277,7 @@ export type NovaInvestigation = {
   executionPublicId: string | null;
   paidUsdc: number | null;
   transaction: string | null;
-  verification: { verdict: string; summary: string } | null;
+  verification: { verdict: string; summary: string; responseHash?: string } | null;
   /** Prose a model wrote about what was bought. Kept apart from `verification`,
    *  which is a check Veyra ran itself: one is a reading, the other is evidence,
    *  and a screen that blends them teaches people to trust the wrong half. */
@@ -288,6 +288,17 @@ export type NovaInvestigation = {
     provenance: string;
     writtenBy: string | null;
     generatedAt: string;
+  } | null;
+  /** Where Arc recorded this purchase, once it passed its check. Absent when
+   *  the chain could not be reached -- which never costs the purchase. */
+  arcProof: {
+    receiptId: string;
+    transaction: string;
+    chainId: number;
+    registry: string;
+    attester: string;
+    explorerUrl: string;
+    registeredAt: string;
   } | null;
   result: unknown;
   failure: string | null;

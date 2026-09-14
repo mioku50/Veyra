@@ -1234,6 +1234,13 @@ function Standing({ brief }: { brief: NovaBrief }) {
     { label: "Observed outcome", value: standing.observedOutcomes },
   ];
 
+  /* What is actually on Arc, as opposed to what Veyra says about itself. The
+     three numbers above are read out of Veyra's own database; these are
+     transactions anyone can fetch from the chain and check. Keeping them in
+     separate blocks is the point -- a page that mixed them would be asking to
+     be believed about the half that needs no belief. */
+  const proofs = brief.investigations.filter((entry) => entry.arcProof);
+
   return (
     <Panel className="mt-4">
       <Label>{standing.readyForArcIdentity ? "Ready for an Arc identity" : "On the way to an Arc identity"}</Label>
@@ -1252,6 +1259,36 @@ function Standing({ brief }: { brief: NovaBrief }) {
           />
         ))}
       </dl>
+
+      {proofs.length > 0 ? (
+        <div className="mt-6 border-t border-border/60 pt-5">
+          <Label>Already on Arc</Label>
+          <p className="mt-3 max-w-xl text-sm leading-relaxed text-muted-foreground">
+            {proofs.length === 1 ? "One purchase is" : `${proofs.length} purchases are`} recorded in
+            the proof registry on Arc: who paid, who was paid, how much, and the hashes of what was
+            asked and what came back. {BRAND.name} signed {proofs.length === 1 ? "it" : "them"};
+            reading {proofs.length === 1 ? "it" : "them"} needs nothing from {BRAND.name}.
+          </p>
+          <ul className="mt-4 space-y-2">
+            {proofs.map((entry) => (
+              <li key={entry.researchId} className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+                <span className="text-sm text-foreground">{entry.provider ?? "an endpoint"}</span>
+                <span className="font-mono text-[11px] text-muted-foreground">
+                  ${(entry.paidUsdc ?? 0).toFixed(4)}
+                </span>
+                <a
+                  href={entry.arcProof!.explorerUrl}
+                  target="_blank"
+                  rel="noreferrer noopener"
+                  className="ml-auto font-mono text-[11px] text-link underline underline-offset-4"
+                >
+                  {entry.arcProof!.transaction.slice(0, 10)}…
+                </a>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
     </Panel>
   );
 }
@@ -1353,6 +1390,31 @@ function Receipts({ brief }: { brief: NovaBrief }) {
                 ) : null}
                 {entry.transaction ? <Row label="Transaction" value={entry.transaction} /> : null}
               </dl>
+
+              {/* The other half of the receipt, and the only half that is not
+                  Veyra's word. Postgres is a record Veyra owns; this one anyone
+                  can read off the chain and compare against what the page
+                  claims. */}
+              {entry.arcProof ? (
+                <p className="mt-3 text-xs leading-relaxed text-muted-foreground">
+                  Recorded on Arc ·{" "}
+                  <a
+                    href={entry.arcProof.explorerUrl}
+                    target="_blank"
+                    rel="noreferrer noopener"
+                    className="text-link underline underline-offset-4"
+                  >
+                    {entry.arcProof.transaction.slice(0, 10)}…{entry.arcProof.transaction.slice(-6)}
+                  </a>{" "}
+                  — who paid, who was paid, how much, and the hashes of what was asked and what
+                  came back. Signed by {BRAND.name}, readable without it.
+                </p>
+              ) : entry.status === "verified" ? (
+                <p className="mt-3 text-xs leading-relaxed text-muted-foreground">
+                  Not on Arc yet. The purchase and its check stand either way — a chain that could
+                  not be reached never takes away a result somebody paid for.
+                </p>
+              ) : null}
 
               {entry.reading ? (
                 <details className="mt-3">

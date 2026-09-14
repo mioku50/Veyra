@@ -210,7 +210,7 @@ export function configuredExplorerUrl() {
   ).replace(/\/$/, "");
 }
 
-function configuredRegistryAddress() {
+export function configuredRegistryAddress() {
   const value = process.env.AGENT_COMMERCE_PROOF_REGISTRY_ADDRESS;
   return value && isAddress(value) ? getAddress(value) : null;
 }
@@ -226,7 +226,7 @@ function configuredDeploymentBlock() {
   return BigInt(value);
 }
 
-function configuredAttesterAccount() {
+export function configuredAttesterAccount() {
   const value = process.env.AGENT_COMMERCE_PROOF_ATTESTER_PRIVATE_KEY;
   if (!value || !/^0x[0-9a-fA-F]{64}$/.test(value)) return null;
   return privateKeyToAccount(value as Hex);

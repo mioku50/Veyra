@@ -21,6 +21,7 @@ import { hashTerms, type NovaResearchTerms, type TermsChange } from "./research-
 import { db, loadOwned, NovaError } from "./service.ts";
 import type { NovaInvestigation } from "./types.ts";
 import { readResult, type NovaReading } from "./synthesis.ts";
+import { novaRequestHash, recordPurchaseOnArc, type NovaArcProof } from "./arc-proof.ts";
 
 /**
  * One investigation, from a price on a brief to a result underneath it.
@@ -88,7 +89,7 @@ type ApprovalRecord = {
 };
 
 const ROW_COLUMNS =
-  "research_id, agent_id, signal_id, status, question, terms, terms_hash, request_body, request_method, input_schema, output_schema, verification_required, proposal, approval, payer_wallet, clearance_digest, selection_id, execution_public_id, paid_usdc, transaction_hash, verification, result, failure, reading, settled_at";
+  "research_id, agent_id, signal_id, status, question, terms, terms_hash, request_body, request_method, input_schema, output_schema, verification_required, proposal, approval, payer_wallet, clearance_digest, selection_id, execution_public_id, paid_usdc, transaction_hash, verification, result, failure, reading, arc_proof, settled_at";
 
 function toInvestigation(row: ResearchRow): NovaInvestigation {
   return {
@@ -107,6 +108,7 @@ function toInvestigation(row: ResearchRow): NovaInvestigation {
     paidUsdc: row.paid_usdc === null ? null : Number(row.paid_usdc),
     transaction: row.transaction_hash,
     verification: row.verification,
+    arcProof: (row as Record<string, any>).arc_proof ?? null,
     reading: row.reading ?? null,
     result: row.result,
     failure: row.failure,
@@ -426,6 +428,10 @@ export async function settleResearch(input: {
   const verification = {
     verdict: settled.verification.verdict,
     summary: settled.verification.summary,
+    /* Kept because Arc commits to it. The registry records a hash of what came
+       back, and a hash Veyra cannot re-derive from its own row is a commitment
+       nobody can check later -- which is the opposite of what a proof is for. */
+    responseHash: settled.verification.responseHash,
   };
   /* Two facts, kept apart. `paid` is what the seller receipted; `settled` folds
      in the verification verdict. Money can move and the answer still fail, and
@@ -452,6 +458,25 @@ export async function settleResearch(input: {
       generate: input.generateImpl,
     }).catch(() => null);
 
+    /* And it goes on Arc. Until now a verified purchase existed only in
+       Postgres, where Veyra is the only witness -- the one arrangement a trust
+       product cannot defend, since the party making the claim also owns the
+       record. Written after the reading and before the row is closed, so a
+       chain that is down costs nothing but the proof. */
+    const arcProof = await recordPurchaseOnArc({
+      executionPublicId: settled.executionId ?? row.research_id,
+      resource: row.terms.resource,
+      buyer: row.payer_wallet ?? "",
+      seller: row.terms.payTo,
+      amountAtomic: BigInt(Math.round(settled.paidUsdc * 1_000_000)),
+      requestHash: novaRequestHash({
+        method: row.request_method ?? "POST",
+        resource: row.terms.resource,
+        body: row.request_body,
+      }),
+      responseHash: settled.verification.responseHash,
+    }).catch(() => null);
+
     return finish(row, {
       status: "verified",
       executionPublicId: settled.executionId,
@@ -460,6 +485,7 @@ export async function settleResearch(input: {
       verification,
       result: settled.result ?? settled.body,
       reading,
+      arcProof,
     });
   }
 
@@ -552,11 +578,13 @@ async function finish(row: ResearchRow, outcome: {
   executionPublicId?: string | null;
   paidUsdc?: number | null;
   transaction?: string | null;
-  verification?: { verdict: string; summary: string } | null;
+  verification?: { verdict: string; summary: string; responseHash?: string } | null;
   result?: unknown;
   failure?: string | null;
   /** Written only for a verified result, and only if a model answered. */
   reading?: NovaReading | null;
+  /** Where Arc recorded it, when Arc could be reached. */
+  arcProof?: NovaArcProof | null;
 }): Promise<NovaSettlement> {
   const now = new Date().toISOString();
   const { data } = await db()
@@ -567,6 +595,7 @@ async function finish(row: ResearchRow, outcome: {
       paid_usdc: outcome.paidUsdc ?? null,
       transaction_hash: outcome.transaction ?? null,
       verification: outcome.verification ?? null,
+      arc_proof: outcome.arcProof ?? null,
       result: outcome.result ?? null,
       reading: outcome.reading ?? null,
       failure: outcome.failure ? outcome.failure.slice(0, 600) : null,
