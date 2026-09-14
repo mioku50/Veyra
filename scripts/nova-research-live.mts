@@ -232,6 +232,39 @@ assert.equal(brief.standing.observedOutcomes, 1);
 assert.equal(brief.standing.veyraDecisions, 1, "only the verified purchase counts on the brief");
 assert.equal(brief.investigations.length, 3, "every investigation comes back with the brief");
 
+/* A receipt outlives the card that produced it.
+   Investigations used to be rendered only under their signal, and signals age
+   out of the brief, get dismissed, or fall past its cap -- so the verified
+   purchase this product exists to produce survived exactly as long as the item
+   that happened to occasion it. Afterwards the only trace on screen was a
+   counter reading "1", over a row that held the provider, the endpoint, the
+   amount, the verdict and the transaction. */
+const bought = brief.investigations.find((entry) => entry.status === "verified");
+assert.ok(bought, "a verified purchase to check against");
+await db().from("nova_signals")
+  .update({ status: "dismissed" })
+  .eq("agent_id", owned.agent_id).eq("signal_id", bought.signalId);
+
+const afterDismissal = await loadBrief({
+  publicId: agent.agent.publicId, ownerSecret: agent.ownerSecret, hourOfDay: 9,
+});
+const cardGone = ![...afterDismissal.worthAttention, ...afterDismissal.noise, ...afterDismissal.watchlist]
+  .some((s) => s.signalId === bought.signalId);
+assert.ok(cardGone, "the card is off the brief");
+const receipt = afterDismissal.investigations.find((entry) => entry.researchId === bought.researchId);
+assert.ok(receipt, "and the receipt is still here");
+assert.equal(receipt.status, "verified");
+assert.equal(receipt.paidUsdc, bought.paidUsdc, "with the amount that was actually paid");
+assert.ok(receipt.transaction, "and the transaction behind it");
+assert.ok(receipt.reading, "and what Nova made of it");
+
+/* Put the card back: later checks read this agent's signals as a fixture, and
+   a test that leaves the world different from how it found it is a test that
+   breaks the next one for reasons that have nothing to do with it. */
+await db().from("nova_signals")
+  .update({ status: "investigated" })
+  .eq("agent_id", owned.agent_id).eq("signal_id", bought.signalId);
+
 // re-settling a terminal row must be refused
 await assert.rejects(
   () => settleResearch({
@@ -322,4 +355,4 @@ for (const table of ["nova_research", "nova_memory", "nova_signals", "nova_subje
     .eq("agent_id", owned.agent_id);
   assert.equal(count ?? 0, 0, `${table} left orphans`);
 }
-console.log("[research-live] passed — verified / paid_unverified / unpaid, a refusal that survives a reload and is cleared when it stops being true, one learning with a receipt, no double settle, no cross-wallet signature, a reading only where the check passed, interests changed without losing a receipt, 0 orphans");
+console.log("[research-live] passed — verified / paid_unverified / unpaid, a refusal that survives a reload and is cleared when it stops being true, a receipt that outlives the card that produced it, one learning with a receipt, no double settle, no cross-wallet signature, a reading only where the check passed, interests changed without losing a receipt, 0 orphans");

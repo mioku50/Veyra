@@ -786,7 +786,6 @@ export function NovaClient({ view = "today" }: { view?: NovaView } = {}) {
   const ignores = preference("usually_ignores");
   const favours = preference("cares_about");
   const follows = preference("follows");
-  const learnings = brief.memory.filter((entry) => entry.kind === "learning");
   const attention = brief.worthAttention;
   const agentName = brief.agent.name;
   const away = brief.whileAway;
@@ -1158,11 +1157,13 @@ export function NovaClient({ view = "today" }: { view?: NovaView } = {}) {
                 .join(" · ")}
             />
           ) : null}
-          {learnings.length > 0 ? (
-            <Row label={`Verified by ${BRAND.name}`} value={`${learnings.length}`} tone="good" />
-          ) : null}
         </dl>
-        {ignores.length === 0 && favours.length === 0 && follows.length === 0 && learnings.length === 0 ? (
+        {/* What was bought is no longer counted here. It has a panel below that
+            shows the purchases themselves, and a number standing in for them
+            was the whole problem: the row behind "Verified by Veyra — 1" held
+            the provider, the endpoint, the amount, the verdict and the
+            transaction, and this page rendered its length. */}
+        {ignores.length === 0 && favours.length === 0 && follows.length === 0 ? (
           <p className="mt-4 text-xs leading-relaxed text-muted-foreground">
             Nothing learned yet. Saying what is useful, what to follow and what to hold back is
             what makes this brief yours rather than everyone&apos;s.
@@ -1170,6 +1171,8 @@ export function NovaClient({ view = "today" }: { view?: NovaView } = {}) {
         ) : null}
       </Panel>
       ) : null}
+
+      {view === "memory" ? <Receipts brief={brief} /> : null}
 
       {view === "arc" ? (
         <>
@@ -1257,6 +1260,147 @@ function Standing({ brief }: { brief: NovaBrief }) {
 
 /** A machine value against its name, hairline-separated. Values are monospace
  *  because they are meant to be compared, not read. */
+/**
+ * Everything that was paid for, kept where it cannot disappear.
+ *
+ * A receipt used to live under the card that produced it, and cards age out of
+ * the brief. So a verified purchase -- the thing this whole product exists to
+ * produce -- survived exactly as long as the item that happened to occasion it,
+ * and after that the only trace on screen was a counter reading "1". The row
+ * behind that counter already held the provider, the endpoint, the amount, the
+ * verdict and the transaction; the page called "what it has learned" was
+ * rendering its length.
+ *
+ * Refusals belong here too. A signature that was asked for and produced nothing
+ * is part of an honest account of what this agent has cost somebody, and
+ * leaving it out would make the ledger flattering rather than true.
+ */
+function Receipts({ brief }: { brief: NovaBrief }) {
+  const settled = brief.investigations
+    .filter((entry) => entry.status === "verified" || entry.status === "paid_unverified" || entry.status === "unpaid")
+    .sort((left, right) => (right.settledAt ?? "").localeCompare(left.settledAt ?? ""));
+
+  if (settled.length === 0) {
+    return (
+      <Panel className="mt-4">
+        <Label>What {brief.agent.name} has bought</Label>
+        <p className="mt-4 text-xs leading-relaxed text-muted-foreground">
+          Nothing yet. When {brief.agent.name} pays for an answer, the receipt stays here — what
+          was asked, who was paid, what {BRAND.name} made of it and the transaction behind it.
+        </p>
+      </Panel>
+    );
+  }
+
+  const spent = settled.reduce((total, entry) => total + (entry.paidUsdc ?? 0), 0);
+  const verified = settled.filter((entry) => entry.status === "verified").length;
+
+  return (
+    <Panel className="mt-4">
+      <Label>What {brief.agent.name} has bought</Label>
+      <dl className="mt-4 space-y-0">
+        <Row label="Spent" value={`$${spent.toFixed(4)}`} />
+        <Row
+          label="Passed the delivery check"
+          value={`${verified} of ${settled.length}`}
+          tone={verified > 0 ? "good" : "idle"}
+        />
+      </dl>
+
+      <ul className="mt-5 space-y-5">
+        {settled.map((entry) => {
+          const proposal = entry.proposal as { subjectLabel?: string | null } | null;
+          const subject = proposal?.subjectLabel?.trim() || entry.provider || "an endpoint";
+          const paid = entry.paidUsdc ?? 0;
+          return (
+            <li key={entry.researchId} className="border-t border-border/40 pt-4 first:border-t-0 first:pt-0">
+              <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+                <span className="text-sm text-foreground">{subject}</span>
+                <span
+                  className={`font-mono text-[11px] uppercase tracking-wider ${
+                    entry.status === "verified"
+                      ? "text-state-good"
+                      : entry.status === "paid_unverified" ? "text-state-warn" : "text-state-idle"
+                  }`}
+                >
+                  {entry.status === "verified"
+                    ? "verified"
+                    : entry.status === "paid_unverified" ? "paid, not verified" : "nothing was paid"}
+                </span>
+                {entry.settledAt ? (
+                  <span className="ml-auto font-mono text-[11px] text-muted-foreground">
+                    {new Date(entry.settledAt).toLocaleDateString()}
+                  </span>
+                ) : null}
+              </div>
+
+              <p className="mt-1.5 text-sm leading-relaxed text-muted-foreground">{entry.question}</p>
+
+              <dl className="mt-3 space-y-0">
+                <Row label="Provider" value={entry.provider ?? "unknown"} />
+                {/* Named either way. An authorisation that took nothing still
+                    has a number on it, and that number is the first thing
+                    somebody checks against their wallet. */}
+                <Row
+                  label={paid > 0 ? "Paid" : "You signed for"}
+                  value={paid > 0
+                    ? `$${paid.toFixed(4)}`
+                    : `$${(entry.authorisedUsdc ?? 0).toFixed(4)} — still in your wallet`}
+                  tone={paid > 0 ? "plain" : "idle"}
+                />
+                {entry.executionPublicId ? (
+                  <Row label="Execution" value={entry.executionPublicId} />
+                ) : null}
+                {entry.transaction ? <Row label="Transaction" value={entry.transaction} /> : null}
+              </dl>
+
+              {entry.reading ? (
+                <details className="mt-3">
+                  <summary className="cursor-pointer text-xs text-muted-foreground hover:text-foreground">
+                    What {brief.agent.name} made of it
+                  </summary>
+                  <div className="mt-3 space-y-3 border-l border-border/60 pl-4">
+                    <div>
+                      <Label>What changed</Label>
+                      <p className="mt-1.5 text-sm leading-relaxed text-foreground">
+                        {entry.reading.whatChanged}
+                      </p>
+                    </div>
+                    {entry.reading.whyItMatters ? (
+                      <div>
+                        <Label>Why it matters</Label>
+                        <p className="mt-1.5 text-sm leading-relaxed text-muted-foreground">
+                          {entry.reading.whyItMatters}
+                        </p>
+                      </div>
+                    ) : null}
+                    {entry.reading.watchNext ? (
+                      <div>
+                        <Label>What {brief.agent.name} suggests watching next</Label>
+                        <p className="mt-1.5 text-sm leading-relaxed text-muted-foreground">
+                          {entry.reading.watchNext}
+                        </p>
+                      </div>
+                    ) : null}
+                    <div>
+                      <Label>Source and verification</Label>
+                      <p className="mt-1.5 text-xs leading-relaxed text-muted-foreground">
+                        {entry.reading.provenance}
+                      </p>
+                    </div>
+                  </div>
+                </details>
+              ) : entry.failure ? (
+                <p className="mt-3 text-sm leading-relaxed text-state-warn">{entry.failure}</p>
+              ) : null}
+            </li>
+          );
+        })}
+      </ul>
+    </Panel>
+  );
+}
+
 function Row({
   label,
   value,
