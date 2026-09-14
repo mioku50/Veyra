@@ -19,12 +19,50 @@ observed outcome becomes new reputation on Arc.
 `ERC-8004` · `ERC-8183` · `x402` · `Gateway Nanopayments` · `USDC` · `Arc`
 
 **Live on Arc Testnet — [agent-commerce-six.vercel.app](https://agent-commerce-six.vercel.app)**
-· [Run a decision](https://agent-commerce-six.vercel.app/run), the flow below end to
-end in the browser
-· [Decision log](https://agent-commerce-six.vercel.app/executions), every trust-routed
-action, authorization and onchain settlement as it happened
+· [Create an agent](https://agent-commerce-six.vercel.app), the front door — a
+personal agent, its brief, and what it has earned on Arc
+· [Choose and pay yourself](https://agent-commerce-six.vercel.app/run), the same
+decision driven by hand
+· [Decision log](https://agent-commerce-six.vercel.app/executions), every
+trust-routed action, authorization and onchain settlement as it happened
 
-## The one flow
+## The agent in front of it
+
+The front door creates **Nova**, a personal agent owned by the person who made it.
+Nova watches the part of the world Veyra can actually measure, brings back what
+changed, and asks before spending anything. When it wants to spend, what it asks
+is the decision engine below.
+
+```text
+WATCH      repositories · Circle's x402 catalogue              every six hours
+              ↓
+NOTICE     a price moved · a payee changed · an endpoint came back
+           every line is a difference between two recorded states, never prose
+              ↓
+ASK        a question written for that change, not a template
+              ↓
+PRICE      discovery · live 402 probe · Veyra's verdict        four numbers
+              ↓
+SIGN       the owner signs with their own wallet               Nova holds no key
+              ↓
+VERIFY     the answer is re-fetched and re-hashed
+              ↓
+ATTEST     amount, parties, request hash, response hash → Arc proof registry
+              ↓
+IDENTITY   one verified purchase carrying a public attestation → ERC-8004
+```
+
+Nova never holds money and there is no signing path in its code. It can want to
+spend and it says so, with a price and a verdict on the item; the payment goes
+through the same selection, clearance and wallet signature as any other Veyra
+purchase.
+
+An identity is earned, not granted. The rule is a verified purchase **and** an
+attestation somebody else can read — not because Arc re-checks Veyra's verdict
+(it does not; the verdict stays Veyra's) but because a claim that lives only in
+Veyra's database is a claim whose only witness is the party making it.
+
+## The decision underneath
 
 ```text
 INTENT     "Research the latest developments in Ambient"
@@ -45,6 +83,47 @@ LEARN      observed outcome → reputation on Arc
 
 One decision core. Two ways to spend. Every score traceable to the evidence that
 produced it.
+
+## Shadow autonomy
+
+Nova is currently rehearsing a kind of spending it cannot do.
+
+The owner signs an `ExecutionMandate` — EIP-712, v2, `mode: PREVIEW` — naming the
+capabilities, rails, per-action, per-day and total ceilings, attempts per day,
+minimum trust score and budget timezone a rehearsal runs under. On every
+scheduled pass the whole path then runs for real: a model notices something, a
+question is written for it, discovery runs, an endpoint quotes a live price,
+Veyra decides, and the signed mandate is evaluated against all of it. Then it
+stops, one step before the only step that costs anything.
+
+No payment authorization is built, no EIP-3009 signature is produced, and no
+wallet is touched. The decision table has no column for a signature, a clearance,
+a transaction or a settled amount, so a bug cannot write one into it.
+
+All eleven checks run on every proposal, including the ones after the first
+failure, so a refusal names everything that was wrong rather than the first thing
+— which matters, because raising the limit would not have helped if the trust
+score was also too low:
+
+```text
+capability_allowed · rail_allowed · network_matches_mandate · veyra_decision_allows
+trust_at_least_minimum · within_per_action_limit · within_daily_budget
+within_total_budget · attempts_remaining · payable_unattended · evaluator_where_required
+```
+
+> **A PREVIEW mandate can never authorize a live payment.** Execution refuses any
+> mode but `AUTOPILOT`, and `subjectWallet` is the zero address, deliberately —
+> Nova has no operational wallet, and inventing one would put an address naming
+> nothing into a signed document. Enabling real autonomy later requires a fresh
+> signature on a mandate that names a real wallet.
+
+It exists because the honest way to decide whether an agent should be funded is
+to watch what it would have done, for a week, with nothing at risk. The record
+that produces — what it would have bought, what Veyra refused, what the market
+would not price at all — is what the real limits get set from.
+
+Deterministic evaluator: [`lib/nova/autonomy.ts`](lib/nova/autonomy.ts) · the one
+mandate it issues: [`lib/nova/autonomy-mandate.ts`](lib/nova/autonomy-mandate.ts)
 
 ## Why this exists
 
@@ -83,9 +162,13 @@ the candidate source and the shape of the evidence.
 | Execute | x402 / Gateway Nanopayments | ERC-8183 job with USDC escrow |
 | Verify | response validity, settlement | independent evaluator verdict, signed EIP-712 |
 
-Discovery may see the whole Circle marketplace; executable policy may still
-require a Gateway-compatible route, so payment is funded from the agent's Arc
-balance wherever the endpoint lives.
+Circle's catalogue publishes zero resources on Arc — measured, not assumed — so an
+x402 purchase settles wherever the endpoint lives, usually Base, while identity,
+authorization, attestation and escrow stay on Arc. The product says which chain a
+price is on rather than letting the Arc heading imply one. Settlement is a
+property of the endpoint too: 74 of the 389 catalogue resources take a batched
+Gateway accept, which spends a deposit already sitting in Circle's GatewayWallet
+on that chain rather than the wallet's balance, 289 do not, and none offers both.
 
 A trust score is worth nothing if you cannot see what produced it, so every
 decision exposes its evidence: the live 402 challenge against the advertised one,
@@ -99,19 +182,23 @@ The standards Veyra is built on, in the role each one actually plays:
 
 | Primitive | Role |
 | :--- | :--- |
+| **Nova** | The personal agent in front of all of it — watches, proposes, holds no key |
 | **ERC-8004** | Agent identity and reputation registries on Arc |
 | **ERC-8183** | Job lifecycle: escrow, deliverable, evaluation, settlement |
 | **Veyra Trust Gate** | EIP-712 clearance, verified and consumed onchain |
 | **Veyra Evaluator** | Independent, fail-closed verdicts that authorize ERC-8183 payout |
-| **x402 / Nanopayments** | Gas-free USDC payment for API calls, settled in batches via Gateway |
-| **Mandates** | Standing budget and capability limits an agent operates under |
+| **x402 / Nanopayments** | Gas-free USDC payment for an API call — a direct EIP-3009 authorization, or a batched Gateway accept where the endpoint takes one |
+| **Mandates** | EIP-712 budget and capability limits an agent operates under — `PREVIEW` rehearses, `AUTOPILOT` pays |
+| **Arc Proof Registry** | Verified purchases written onchain: parties, amount, request and response hashes |
 
 ### LLM forms the intent. Veyra makes the financial decision.
 
 The language model turns a request into a structured intent — capability, budget,
-priority. It does not choose who gets paid. Ranking, policy, exposure limits and
-the signed authorization are deterministic and reproducible from the evidence, so
-the same inputs always produce the same decision, and it can be audited later.
+priority — and decides what is worth asking. It does not choose who gets paid and
+it cannot reach the evaluator's inputs except by producing a proposal the market
+priced. Ranking, policy, exposure limits and the signed authorization are
+deterministic and reproducible from the evidence, so the same inputs always
+produce the same decision, and it can be audited later.
 
 ### Veyra is itself an x402 resource
 
@@ -186,8 +273,15 @@ The deterministic suite runs locally with no secrets — every `*:test` script i
 npm run lint && npm run build
 npm run erc8004:test && npm run erc8183:test && npm run trust-gate:test
 npm run x402-payment:test && npm run x402-trust-api:test
+npm run nova:test && npm run nova-standing:test && npm run nova-identity:test
+npm run nova-presentation:test && npm run nova-autonomy:test && npm run nova-arc-proof:test
 (cd contracts && forge test)
 ```
+
+`nova-autonomy:test` pins the v1 canonical mandate hash against a golden value
+taken before v2 was written, so adding fields cannot silently change what an
+already-signed mandate covers, and asserts that twelve tampered variants of the
+preview mandate are rejected before a wallet is ever asked to sign one.
 
 ## Documentation
 
@@ -205,6 +299,8 @@ npm run x402-payment:test && npm run x402-trust-api:test
 
 - **Testnet only.** Never use keys that control real assets.
 - **Unaudited.** Contracts and protocol implementations are experimental.
+- **No custody.** Nova holds no key and cannot sign a payment; an owner is proven
+  by a secret whose SHA-256 is all the database stores.
 - **Disclosure.** See [SECURITY.md](SECURITY.md) — no public issues for active vulnerabilities.
 - **Scope.** External seller commerce remains an internal capability. It is not the
   primary catalog or product positioning.
