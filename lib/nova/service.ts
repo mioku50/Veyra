@@ -21,6 +21,7 @@ import type {
   NovaMemory,
   NovaPreferences,
   NovaRefresh,
+  NovaArcIdentity,
   NovaRefusal,
   NovaSignal,
   NovaStanding,
@@ -89,7 +90,11 @@ export type AgentRow = {
   name: string;
   interests: string[];
   owner_wallet: string | null;
-  arc_identity_address: string | null;
+  arc_identity_registry: string | null;
+  arc_identity_agent_id: string | null;
+  arc_identity_owner: string | null;
+  arc_identity_chain_id: number | null;
+  arc_identity_tx: string | null;
   arc_identity_registered_at: string | null;
   last_brief_at: string | null;
   last_opened_at: string | null;
@@ -103,15 +108,25 @@ function toAgent(row: AgentRow): NovaAgent {
     name: row.name,
     interests: row.interests ?? [],
     ownerWallet: row.owner_wallet,
-    arcIdentityAddress: row.arc_identity_address,
-    arcIdentityRegisteredAt: row.arc_identity_registered_at,
+    /* Present only when all of it is: a registry without an agent id names
+       nothing, and half an identity on screen is worse than none. */
+    arcIdentity: row.arc_identity_registry && row.arc_identity_agent_id && row.arc_identity_owner
+      ? {
+          registry: row.arc_identity_registry,
+          agentId: row.arc_identity_agent_id,
+          chainId: row.arc_identity_chain_id ?? 5_042_002,
+          owner: row.arc_identity_owner,
+          transaction: row.arc_identity_tx,
+          registeredAt: row.arc_identity_registered_at ?? "",
+        }
+      : null,
     lastBriefAt: row.last_brief_at,
     createdAt: row.created_at,
   };
 }
 
 const AGENT_COLUMNS =
-  "agent_id, public_id, name, interests, owner_wallet, arc_identity_address, arc_identity_registered_at, last_brief_at, last_opened_at, dormant_since, created_at";
+  "agent_id, public_id, name, interests, owner_wallet, arc_identity_registry, arc_identity_agent_id, arc_identity_owner, arc_identity_chain_id, arc_identity_tx, arc_identity_registered_at, last_brief_at, last_opened_at, dormant_since, created_at";
 
 /* ---- creating ---- */
 
@@ -782,6 +797,32 @@ export async function recordSignalRefusal(input: {
     .update({ refusal: input.refusal, updated_at: new Date().toISOString() })
     .eq("agent_id", input.agentId)
     .eq("signal_id", input.signalId);
+}
+
+/**
+ * Records an ERC-8004 identity the owner claimed, after Arc has confirmed it.
+ *
+ * Written only from a confirmation read off the registry, never from what a
+ * browser reported. The owner address is stored beside the pair rather than as
+ * the identity, because it is the part expected to change: transferring the
+ * token moves ownership and leaves the agent -- its memory, its history, its
+ * attestations -- exactly where it was.
+ */
+export async function recordArcIdentity(input: {
+  agentId: string;
+  identity: NovaArcIdentity;
+}): Promise<void> {
+  await db()
+    .from("nova_agents")
+    .update({
+      arc_identity_registry: input.identity.registry,
+      arc_identity_agent_id: input.identity.agentId,
+      arc_identity_owner: input.identity.owner,
+      arc_identity_chain_id: input.identity.chainId,
+      arc_identity_tx: input.identity.transaction,
+      arc_identity_registered_at: input.identity.registeredAt,
+    })
+    .eq("agent_id", input.agentId);
 }
 
 export async function markSignal(input: {

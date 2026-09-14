@@ -22,6 +22,7 @@
  */
 
 import type { NovaDerivedStanding } from "./standing.ts";
+import type { NovaArcIdentity } from "./identity.ts";
 
 export const NOVA_SUBJECT_KINDS = ["x402_resource", "github_repository"] as const;
 export type NovaSubjectKind = (typeof NOVA_SUBJECT_KINDS)[number];
@@ -97,8 +98,10 @@ export type NovaAgent = {
   name: string;
   interests: string[];
   ownerWallet: string | null;
-  arcIdentityAddress: string | null;
-  arcIdentityRegisteredAt: string | null;
+  /** The ERC-8004 identity, once claimed: a registry and an agent id, never an
+   *  address. The owner is a field inside it and may change without the agent
+   *  changing -- which is the whole reason it is not stored as an address. */
+  arcIdentity: NovaArcIdentity | null;
   lastBriefAt: string | null;
   createdAt: string;
 };
@@ -253,6 +256,7 @@ export type NovaRefresh = {
 /** Derived in lib/nova/standing.ts from the settled purchases themselves.
  *  Type-only, so the cycle between the two files costs nothing at runtime. */
 export type { NovaDerivedStanding as NovaStanding, NovaProviderRecord } from "./standing.ts";
+export type { NovaArcIdentity } from "./identity.ts";
 
 /**
  * One paid investigation, as the brief shows it.

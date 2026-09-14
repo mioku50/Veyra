@@ -7,6 +7,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
+import { encodeFunctionData } from "viem";
 import { BRAND } from "@/lib/brand";
 import { INTEREST_CATALOG, MAX_INTERESTS } from "@/lib/nova/interests";
 /* The same mapping the scorer uses. A third copy would be a third chance for
@@ -16,6 +17,7 @@ import { INTEREST_CATALOG, MAX_INTERESTS } from "@/lib/nova/interests";
    person cannot take reads as a promise the product is refusing to keep. */
 import { categoryPhraseFor } from "@/lib/nova/relevance";
 import { priorWith } from "@/lib/nova/standing";
+import { IDENTITY_REGISTER_ABI, NOVA_IDENTITY_REGISTRY } from "@/lib/nova/identity";
 import type { NovaBrief, NovaFeedback, NovaInvestigation, NovaSignal } from "@/lib/nova/types";
 import type { NovaResearchProposal } from "@/lib/nova/research";
 import type { TermsChange } from "@/lib/nova/research-terms";
@@ -205,6 +207,10 @@ export function NovaClient({ view = "today" }: { view?: NovaView } = {}) {
   /* Editing what the agent watches. Null when nobody is editing, because an
      empty array is a legitimate mid-edit state -- somebody clearing every chip
      before picking new ones -- and the two must not be the same value. */
+  /* Claiming an Arc identity: one wallet transaction, then a server that
+     refuses to believe the browser about its outcome. */
+  const [claiming, setClaiming] = useState(false);
+  const [claimNote, setClaimNote] = useState<string | null>(null);
   const [draftInterests, setDraftInterests] = useState<string[] | null>(null);
   const [savingInterests, setSavingInterests] = useState(false);
   const [interestsNote, setInterestsNote] = useState<string | null>(null);
@@ -789,6 +795,58 @@ export function NovaClient({ view = "today" }: { view?: NovaView } = {}) {
   /* What this agent already paid to learn about whoever this card would pay.
      Read from the proposal in front of the person rather than from the signal,
      because the counterparty is only decided once a proposal exists. */
+  /**
+   * Mints the ERC-8004 identity from the owner's own wallet.
+   *
+   * `register(metadataURI)` mints to whoever calls it, so the call is made here
+   * and not on a server: the person owns the token because the person sent the
+   * transaction. Veyra never holds it, and no key is derived from the recovery
+   * secret to stand in for one.
+   *
+   * The server is then told, and refuses to believe it -- it reads ownerOf off
+   * Arc and stores only what the registry confirms.
+   */
+  const claimIdentity = async () => {
+    if (!identity || !brief) return;
+    setClaimNote(null);
+    setClaiming(true);
+    try {
+      if (!wallet.address) await wallet.connect();
+      if (!wallet.isArcTestnet) await wallet.switchToArc();
+      const address = wallet.address;
+      if (!address) throw new Error("Connect a wallet to claim the identity.");
+
+      const metadataUri = `${window.location.origin}/api/nova/v1/agents/${identity.publicId}/card`;
+      const transaction = await wallet.sendTransaction({
+        to: NOVA_IDENTITY_REGISTRY as `0x${string}`,
+        data: encodeFunctionData({
+          abi: IDENTITY_REGISTER_ABI,
+          functionName: "register",
+          args: [metadataUri],
+        }),
+      });
+
+      const payload = await call(
+        `/api/nova/v1/agents/${identity.publicId}/identity`,
+        {
+          method: "POST",
+          ownerSecret: identity.ownerSecret,
+          body: JSON.stringify({ transaction, wallet: address }),
+        },
+      ) as { ok: boolean; detail?: string };
+
+      if (!payload.ok) {
+        setClaimNote(payload.detail ?? "Arc did not confirm the registration.");
+      } else {
+        await loadBrief(identity);
+      }
+    } catch (cause) {
+      setClaimNote((cause as Error).message);
+    } finally {
+      setClaiming(false);
+    }
+  };
+
   const priorFor = (signalId: string) => {
     const state = research[signalId];
     const provider = state && "proposal" in state ? state.proposal?.provider ?? null : null;
@@ -1188,7 +1246,12 @@ export function NovaClient({ view = "today" }: { view?: NovaView } = {}) {
 
       {view === "arc" ? (
         <>
-          <Standing brief={brief} />
+          <Standing
+          brief={brief}
+          onClaim={() => void claimIdentity()}
+          claiming={claiming}
+          claimNote={claimNote}
+        />
           {/* Said here because the brief cannot avoid raising it: somebody picks
               Arc as an interest, gets shown a payment, and the payment settles
               on Base. That looks like a contradiction until you know which half
@@ -1228,17 +1291,20 @@ export function NovaClient({ view = "today" }: { view?: NovaView } = {}) {
  * outcome was observed, it points at a history -- which is the only thing that
  * makes a reputation worth reading.
  */
-function Standing({ brief }: { brief: NovaBrief }) {
+function Standing({
+  brief,
+  onClaim,
+  claiming,
+  claimNote,
+}: {
+  brief: NovaBrief;
+  onClaim: () => void;
+  claiming: boolean;
+  claimNote: string | null;
+}) {
   const { standing, agent } = brief;
+  const identity = agent.arcIdentity;
 
-  if (agent.arcIdentityAddress) {
-    return (
-      <Panel className="mt-4">
-        <Label>Arc identity</Label>
-        <p className="mt-3 break-all font-mono text-sm text-foreground">{agent.arcIdentityAddress}</p>
-      </Panel>
-    );
-  }
 
   /* Counted from the purchases, not from three proxies for one of them. The
      old row printed "verified research 1 / decision 1 / outcome 1" off a
@@ -1260,12 +1326,67 @@ function Standing({ brief }: { brief: NovaBrief }) {
 
   return (
     <Panel className="mt-4">
-      <Label>{standing.readyForArcIdentity ? "Ready for an Arc identity" : "On the way to an Arc identity"}</Label>
-      <p className="mt-3 max-w-xl text-sm leading-relaxed text-muted-foreground">
-        {standing.readyForArcIdentity
-          ? `${agent.name} has a history to point at. Registering on Arc now records something that already happened.`
-          : `${agent.name} can be registered on Arc once there is something for that identity to point at.`}
-      </p>
+      <Label>Arc identity</Label>
+      {identity ? (
+        /* A registry and an agent id, which is what an ERC-8004 identity is.
+           The owner is shown separately and on purpose: it is the part that can
+           change, and the agent does not change with it. */
+        <>
+          <p className="mt-3 text-lg font-medium leading-snug">
+            {agent.name} · ERC-8004 Agent #{identity.agentId}
+          </p>
+          <dl className="mt-4 space-y-0">
+            <Row label="Owned by" value={`${identity.owner.slice(0, 6)}…${identity.owner.slice(-4)}`} tone="good" />
+            <Row label="Registry" value={`eip155:${identity.chainId}:${identity.registry.slice(0, 10)}…`} />
+          </dl>
+          <p className="mt-3 max-w-xl text-xs leading-relaxed text-muted-foreground">
+            You own this identity. {agent.name}&apos;s memory, history and attestations belong to
+            the agent, not to the wallet — transferring the identity to another wallet changes the
+            owner and nothing else.
+          </p>
+          <a
+            href={`https://testnet.arcscan.app/address/${identity.registry}`}
+            target="_blank"
+            rel="noreferrer noopener"
+            className="mt-3 inline-block text-sm text-link underline underline-offset-4"
+          >
+            View on Arc ↗
+          </a>
+        </>
+      ) : (
+        <>
+          <p className="mt-3 max-w-xl text-sm leading-relaxed text-muted-foreground">
+            {standing.readyForArcIdentity
+              ? `${agent.name} has earned eligibility through ${standing.verifiedResearch} verified ${standing.verifiedResearch === 1 ? "activity" : "activities"}. Registering on Arc now records something that already happened.`
+              : `${agent.name} can be registered on Arc once there is something for that identity to point at — one purchase that passed its delivery check.`}
+          </p>
+          {standing.readyForArcIdentity ? (
+            <div className="mt-4">
+              <button
+                type="button"
+                onClick={onClaim}
+                disabled={claiming}
+                className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:opacity-60"
+              >
+                {claiming ? "Claiming…" : "Claim Arc identity"}
+              </button>
+              <p className="mt-3 max-w-xl text-xs leading-relaxed text-muted-foreground">
+                You will own this identity — your wallet mints it, and {BRAND.name} never holds it.
+                {agent.name}&apos;s memory and history stay with the agent even if you later
+                transfer the identity to another wallet. Your wallet needs to be on Arc Testnet,
+                where gas is paid in USDC (about $0.006).
+              </p>
+              {claimNote ? (
+                <p className="mt-3 max-w-xl text-xs leading-relaxed text-state-warn">{claimNote}</p>
+              ) : null}
+            </div>
+          ) : null}
+        </>
+      )}
+
+      <div className="mt-6 border-t border-border/60 pt-5">
+        <Label>What it has earned</Label>
+      </div>
       <dl className="mt-4 space-y-0">
         {steps.map((step) => (
           <Row

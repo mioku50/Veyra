@@ -159,6 +159,10 @@ runStep("Nova Agent Tests", () => {
   execSync("npm run nova:test", { cwd: root, stdio: "inherit" });
 });
 
+runStep("Nova Arc Identity Tests", () => {
+  execSync("npm run nova-identity:test", { cwd: root, stdio: "inherit" });
+});
+
 runStep("Nova Standing Tests", () => {
   execSync("npm run nova-standing:test", { cwd: root, stdio: "inherit" });
 });
