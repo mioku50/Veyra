@@ -1705,8 +1705,13 @@ function Outcome({
           />
         ) : null}
         {investigation.verification ? (
+          /* "Verification PASS" was read as "this answer is correct", which is
+             not what any of the nine checks behind it establish: they compare
+             the payment to the quote and the response to the shape the seller
+             published. Naming what was checked keeps the strong word for the
+             claim it can actually carry. */
           <Row
-            label="Verification"
+            label="Delivery check"
             value={investigation.verification.verdict}
             tone={investigation.verification.verdict === "PASS"
               ? "good"

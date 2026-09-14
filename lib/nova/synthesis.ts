@@ -175,7 +175,14 @@ function provenanceLine(input: {
   })();
   const parts = [
     `${input.provider} (${host}), $${input.paidUsdc.toFixed(4)}.`,
-    `Veyra checked the answer against what this endpoint publishes: ${input.verdict}.`,
+    /* What the verdict covers, said in the same breath as the verdict.
+       "Veyra checked the answer: PASS" is read as "this answer is right", and
+       not one of the nine checks behind it asks that. They ask whether the
+       payment matched the quote and whether what came back has the shape the
+       seller published. A screen that lets PASS stand for truth is teaching
+       someone to trust the wrong half of it. */
+    `Veyra checked the exchange itself — the payment against the quote, and the answer against the shape this endpoint publishes: ${input.verdict}.`,
+    "That is a check on delivery, not on whether what the seller wrote is true.",
     input.verificationSummary?.trim() || null,
     input.executionPublicId ? `Execution ${input.executionPublicId}.` : null,
   ];

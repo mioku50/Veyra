@@ -966,10 +966,19 @@ assert.equal(bleed.watchNext, "ask whether the deprecated path has a removal dat
 /* The verification line is Veyra's, composed from facts the caller already
    holds. A model asked to report on the trustworthiness of text it was handed
    is a model marking its own source's homework, so it is never asked. */
-assert.match(bleed.provenance, /Veyra checked the answer/);
+assert.match(bleed.provenance, /Veyra checked the exchange itself/);
 assert.match(bleed.provenance, /PASS/);
 assert.match(bleed.provenance, /vexec_1/);
 assert.match(bleed.provenance, /api\.exa\.ai/);
+
+/* And it says what PASS does not cover, next to the PASS. None of the nine
+   post-call checks asks whether the seller told the truth -- they compare the
+   payment to the quote and the response to the published shape. A verdict
+   printed without its scope gets read as "this answer is correct", which is
+   the one thing it was never evidence for. This very reading is the example:
+   the model found two items where the question was about twenty-two commits,
+   and the exchange still passed, correctly. */
+assert.match(bleed.provenance, /not on whether what the seller wrote is true/);
 assert.equal(bleed.writtenBy, "AgentRouter · deepseek-v4-flash");
 
 /* A reading is a convenience on top of a receipt. Every way the model can let
@@ -1024,6 +1033,36 @@ const drifted = await sharpenIntent({
 assert.equal(drifted.written, false, "a question about something else is discarded");
 assert.equal(drifted.intent, LISTING.intent, "and the template stands");
 
+/* As whole words. This guard was a substring test, and a substring test on
+   short names lets almost anything through: "arc" is inside "search", so for
+   the Arc interest every question about searching for something else passed
+   the check that exists to stop exactly that -- and searching is most of what
+   this agent does. Five of six drifted questions written against real subject
+   labels were kept. */
+for (const [label, drift] of [
+  ["Arc", "What should Nova search for in agent payments next week?"],
+  ["Arc", "What changed in the architecture of agent frameworks this week?"],
+  ["Exa search", "What are the most relevant examples of agent payment APIs?"],
+  ["Exa search", "What is the exact settlement latency of Tavily?"],
+  ["Sponge fast sdxl", "What did Tavily ship at breakfast time?"],
+] as const) {
+  const action = actionFor(signalFor("x402_resource", label, "search"));
+  const out = await sharpenIntent({ ...INTENT_INPUT, action, generate: says(drift) });
+  assert.equal(out.written, false, `"${label}" must not be found inside another word`);
+  assert.equal(out.intent, action.intent);
+}
+
+/* Singular and plural are the same word, because the cost of splitting them
+   falls on good questions: "which EIP drafts changed" is on the subject of a
+   card named "Ethereum EIPs" by any reading. */
+const plural = actionFor(signalFor("github_repository", "Ethereum EIPs"));
+const onSubject = await sharpenIntent({
+  ...INTENT_INPUT,
+  action: plural,
+  generate: says("Which EIP drafts changed, and do any of them touch agent payments?"),
+});
+assert.equal(onSubject.written, true, "a plural subject named in the singular is still the subject");
+
 /* Shape, because this goes on a card next to a price and into a paid request. */
 for (const [why, text] of [
   ["not a question", "Exa search is a web search API for agents."],
@@ -1059,4 +1098,4 @@ const forStranger = await sharpenIntent({
 assert.equal(forStranger.written, true);
 assert.match(forStranger.intent, /Ethereum/);
 
-console.log("[nova-test] passed: interests kept even when unknown, a first sighting reported as a finding rather than as news, the same commits not re-reported across refreshes, a payee change outranking everything and un-learnable away, a rail change surfaced a day before it could refuse a payment, a 3% price move kept out of the headline, a brief that caps findings so a change can never be crowded out, a tick that reads each URL once and shares its failures, and an absence measured by adding up every unattended pass rather than reporting the last one, and feedback that can raise as well as bury without ever silencing a payee change, and terms that stop a payment when the price or the payee moved between reading the card and pressing the button, and a card that names the chain its money moves on rather than letting the interest stand in for one, and a body that says it asks nothing rather than satisfying a schema with silence, and a budget every interest gets a share of before any interest gets seconds, and an action type that decides whether routing may substitute at all, and a watchlist that grows with the interests and cannot be filled by one seller, and a reading of what was bought that never speaks for the verification and never costs the receipt, and a question written for the event that is thrown away the moment it drifts off the subject");
+console.log("[nova-test] passed: interests kept even when unknown, a first sighting reported as a finding rather than as news, the same commits not re-reported across refreshes, a payee change outranking everything and un-learnable away, a rail change surfaced a day before it could refuse a payment, a 3% price move kept out of the headline, a brief that caps findings so a change can never be crowded out, a tick that reads each URL once and shares its failures, and an absence measured by adding up every unattended pass rather than reporting the last one, and feedback that can raise as well as bury without ever silencing a payee change, and terms that stop a payment when the price or the payee moved between reading the card and pressing the button, and a card that names the chain its money moves on rather than letting the interest stand in for one, and a body that says it asks nothing rather than satisfying a schema with silence, and a budget every interest gets a share of before any interest gets seconds, and an action type that decides whether routing may substitute at all, and a watchlist that grows with the interests and cannot be filled by one seller, and a reading of what was bought that never speaks for the verification and never costs the receipt, and a question written for the event that is thrown away the moment it drifts off the subject, matched as whole words so a short name is never found inside a longer one, and a verdict that says out loud it covers the exchange and not the truth of what was sold");
