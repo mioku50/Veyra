@@ -287,7 +287,6 @@ preview mandate are rejected before a wallet is ever asked to sign one.
 
 | | |
 | :--- | :--- |
-| [Architecture](docs/architecture.md) | How the decision core, rails, and evidence loop fit together |
 | [Proof of live ERC-8183](docs/PROOF_OF_LIVE_ERC8183.md) | Transaction-level record of a settled job on Arc |
 | [Trust-routed execution](docs/trust-routed-execution.md) | Clearance, mandates, and the execution state machine |
 | [Contracts](docs/contracts.md) | Deployed addresses, ABIs, and verification |

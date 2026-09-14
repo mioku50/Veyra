@@ -40,7 +40,6 @@ runStep("Required Documentation & Notice Files", () => {
     "SECURITY.md",
     "CONTRIBUTING.md",
     "CHANGELOG.md",
-    "docs/architecture.md",
     "docs/contracts.md",
     "public/openapi/veyra-agent-api-v1.json",
   ];
