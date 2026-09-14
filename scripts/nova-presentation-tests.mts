@@ -198,7 +198,11 @@ must(autonomyStateClaim(autopilotView, "Nova"), /No money (moved|can move)/,
   "and so does a live one");
 must(shadowNightClaim(view().summary), new RegExp(NO_MONEY_MOVED), "and so does the night");
 must(shadowNightClaim(shadowSummaryFrom([], { period })), new RegExp(NO_MONEY_MOVED),
-  "including a night where nothing happened");
+  "including a night where nothing was decided");
+/* And a night with no decisions must not claim the market was empty: on the
+   first real night eight things came up and none could be priced. */
+mustNot(shadowNightClaim(shadowSummaryFrom([], { period })), /[Nn]othing came up/,
+  "no decisions is not the same as nothing to decide about");
 
 /* 18. Off is the ordinary state, and it promises nothing. */
 const off = view({ state: "off", blocked: "no_mandate", limits: null,

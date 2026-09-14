@@ -56,6 +56,10 @@ export type ShadowPass = {
   wouldDeny: number;
   /** Candidates Veyra could not put a price on, which is not a refusal. */
   unpriced: number;
+  /** And why, counted. "8 unpriced" with nothing behind it is a number nobody
+   *  can act on: a market where no endpoint takes a plain question and a model
+   *  that timed out are opposite problems, and only one of them is ours. */
+  unpricedReasons: Record<string, number>;
   /** Already ruled on today under these terms. */
   skipped: number;
   wouldSpendUsdc: number;
@@ -63,7 +67,7 @@ export type ShadowPass = {
 
 const EMPTY: ShadowPass = {
   ran: false, blocked: null, considered: 0, decided: 0, wouldAllow: 0,
-  wouldDeny: 0, unpriced: 0, skipped: 0, wouldSpendUsdc: 0,
+  wouldDeny: 0, unpriced: 0, unpricedReasons: {}, skipped: 0, wouldSpendUsdc: 0,
 };
 
 /** Worth deciding about, in the order Nova would care. */
@@ -130,7 +134,7 @@ export async function runShadowPass(input: {
     (input.maxDecisions ?? MAX_DECISIONS_PER_PASS) * 4,
   );
 
-  const pass: ShadowPass = { ...EMPTY, ran: true };
+  const pass: ShadowPass = { ...EMPTY, ran: true, unpricedReasons: {} };
   let running = { ...usage };
 
   for (const signal of candidates) {
@@ -159,6 +163,8 @@ export async function runShadowPass(input: {
 
     if (!outcome.ok) {
       pass.unpriced += 1;
+      const why = outcome.reason || "unknown";
+      pass.unpricedReasons[why] = (pass.unpricedReasons[why] ?? 0) + 1;
       continue;
     }
 

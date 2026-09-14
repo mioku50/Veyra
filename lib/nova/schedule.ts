@@ -118,6 +118,9 @@ export type TickOutcome = {
   shadowDecided: number;
   shadowWouldAllow: number;
   shadowWouldSpendUsdc: number;
+  /** Why candidates could not be priced, across the tick. A pass that decided
+   *  nothing is uninformative without it. */
+  shadowUnpriced: Record<string, number>;
   /** Set when the tick stopped because of the clock rather than the queue. */
   stoppedEarly: boolean;
   durationMs: number;
@@ -316,6 +319,7 @@ export async function runScheduledTick(input?: {
   let shadowDecided = 0;
   let shadowWouldAllow = 0;
   let shadowWouldSpendUsdc = 0;
+  const shadowUnpriced: Record<string, number> = {};
 
   for (const agent of due) {
     if (refreshed + failed >= maxAgents) break;
@@ -360,6 +364,9 @@ export async function runScheduledTick(input?: {
         shadowDecided += shadow.decided;
         shadowWouldAllow += shadow.wouldAllow;
         shadowWouldSpendUsdc += shadow.wouldSpendUsdc;
+        for (const [reason, count] of Object.entries(shadow.unpricedReasons)) {
+          shadowUnpriced[reason] = (shadowUnpriced[reason] ?? 0) + count;
+        }
       }
     } catch {
       /* One agent's bad pass is not the tick's. The claim is released so it is
@@ -379,6 +386,7 @@ export async function runScheduledTick(input?: {
     shadowDecided,
     shadowWouldAllow,
     shadowWouldSpendUsdc,
+    shadowUnpriced,
     stoppedEarly,
     durationMs: Date.now() - started,
   };

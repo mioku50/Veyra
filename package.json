@@ -159,6 +159,7 @@
     "nova-standing:test": "node --experimental-transform-types --no-warnings scripts/nova-standing-tests.mts",
     "nova-presentation:test": "node --experimental-transform-types --no-warnings scripts/nova-presentation-tests.mts",
     "nova-autonomy:test": "node --experimental-transform-types --no-warnings scripts/nova-autonomy-tests.mts",
+    "nova:shadow:run": "node --experimental-transform-types --no-warnings --env-file-if-exists=.env.local scripts/nova-shadow-run.mts",
     "nova:p87:apply": "node --experimental-transform-types --no-warnings --env-file-if-exists=.env.local scripts/apply-p87-production-migration.mts",
     "nova-arc-proof:test": "node --experimental-transform-types --no-warnings scripts/nova-arc-proof-tests.mts",
     "p84:production-migrate": "node --experimental-transform-types --no-warnings --env-file-if-exists=.env.local scripts/apply-p84-production-migration.mts",

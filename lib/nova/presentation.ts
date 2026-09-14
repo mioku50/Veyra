@@ -410,7 +410,11 @@ export function autonomyStateClaim(view: NovaShadowView, name: string): Claim {
  */
 export function shadowNightClaim(summary: ShadowSummary): Claim {
   if (summary.decisions === 0) {
-    return ["Nothing came up that was worth a decision. ", NO_MONEY_MOVED];
+    /* Not "nothing came up". Things came up on the night this was written and
+       Veyra could price none of them -- no endpoint took a plain question, and
+       the model that writes them was timing out. A brief that reported an
+       empty market would have been the screen inventing a quiet day again. */
+    return ["No decision was reached today. ", NO_MONEY_MOVED];
   }
   return [
     figure(summary.wouldInvestigate),
