@@ -6,6 +6,8 @@
 import assert from "node:assert/strict";
 import {
   INTEREST_CATALOG,
+  SUBJECT_LIMITS,
+  subjectBudgetFor,
   capabilityQueriesForInterests,
   keywordsForInterests,
   normalizeInterests,
@@ -870,4 +872,31 @@ assert.match(repo.intent, /What changed in Ethereum EIPs/);
    not a function of how well the evidence was filled in. */
 assert.equal(actionFor(signalFor("x402_resource", "Sponge fast sdxl")).actionType, "interact_with_subject");
 
-console.log("[nova-test] passed: interests kept even when unknown, a first sighting reported as a finding rather than as news, the same commits not re-reported across refreshes, a payee change outranking everything and un-learnable away, a rail change surfaced a day before it could refuse a payment, a 3% price move kept out of the headline, a brief that caps findings so a change can never be crowded out, a tick that reads each URL once and shares its failures, and an absence measured by adding up every unattended pass rather than reporting the last one, and feedback that can raise as well as bury without ever silencing a payee change, and terms that stop a payment when the price or the payee moved between reading the card and pressing the button, and a card that names the chain its money moves on rather than letting the interest stand in for one, and a body that says it asks nothing rather than satisfying a schema with silence, and a budget every interest gets a share of before any interest gets seconds, and an action type that decides whether routing may substitute at all");
+/* ---- the brief has to be a market, not a catalogue page ---- */
+
+/* Three per interest were requested and three were kept, so every filter --
+   a templated path, a schema with nowhere to put a question, a seller already
+   holding its share -- came out of the interest's own share. Measured: asking
+   for exactly what is kept left Research & search with nothing, because its
+   first three were all one provider that had already filled up. */
+assert.ok(
+  SUBJECT_LIMITS.candidatesPerQuery > SUBJECT_LIMITS.x402PerInterest,
+  "the catalogue must be asked for more than will be kept, or filtering costs the share",
+);
+assert.ok(
+  SUBJECT_LIMITS.perProvider < SUBJECT_LIMITS.x402PerInterest * 2,
+  "one seller must not be able to fill two interests by itself",
+);
+
+/* The budget follows the interests. A flat ceiling meant choosing all six got
+   each of them two, and an endpoint already watched produces no new card, so
+   the brief for six looked like the brief for two. */
+assert.equal(subjectBudgetFor(1), SUBJECT_LIMITS.perAgent, "a single interest still gets the floor");
+assert.equal(subjectBudgetFor(5), 15, "five interests get three each");
+assert.equal(
+  subjectBudgetFor(50),
+  SUBJECT_LIMITS.perAgentMax,
+  "and it stops somewhere, because every subject is a live read on every refresh",
+);
+
+console.log("[nova-test] passed: interests kept even when unknown, a first sighting reported as a finding rather than as news, the same commits not re-reported across refreshes, a payee change outranking everything and un-learnable away, a rail change surfaced a day before it could refuse a payment, a 3% price move kept out of the headline, a brief that caps findings so a change can never be crowded out, a tick that reads each URL once and shares its failures, and an absence measured by adding up every unattended pass rather than reporting the last one, and feedback that can raise as well as bury without ever silencing a payee change, and terms that stop a payment when the price or the payee moved between reading the card and pressing the button, and a card that names the chain its money moves on rather than letting the interest stand in for one, and a body that says it asks nothing rather than satisfying a schema with silence, and a budget every interest gets a share of before any interest gets seconds, and an action type that decides whether routing may substitute at all, and a watchlist that grows with the interests and cannot be filled by one seller");

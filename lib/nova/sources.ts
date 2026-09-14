@@ -15,6 +15,8 @@ import {
 } from "./interests.ts";
 import { repositoryDigest, x402Digest } from "./observation.ts";
 import type { SubjectDigest } from "./types.ts";
+import { buildRequestBody } from "../x402/request-body.ts";
+import type { JsonSchema } from "../seller/json-schema.ts";
 
 /**
  * Reading the two things Nova can honestly watch for free.
@@ -101,6 +103,7 @@ export async function observeX402Catalog(input: {
   const seen = new Set<string>();
   const labels = new Set<string>();
   const takenPerInterest = new Map<string, number>();
+  const takenPerProvider = new Map<string, number>();
   const budget = subjectBudgetFor(input.interests.length);
   const queries = capabilityQueriesForInterests(input.interests);
   let anySucceeded = false;
@@ -113,7 +116,12 @@ export async function observeX402Catalog(input: {
     try {
       result = await discoverMarketplaceCandidates({
         capability: query.term,
-        limit: input.limitPerQuery ?? SUBJECT_LIMITS.x402PerInterest,
+        /* Ask for more than will be kept. Three were requested and three were
+           kept, so any filter applied afterwards -- a templated path, a schema
+           with nowhere to put a question, a seller already holding its share --
+           came out of the interest's own share rather than out of the surplus,
+           and an interest whose first three all failed got nothing at all. */
+        limit: input.limitPerQuery ?? SUBJECT_LIMITS.candidatesPerQuery,
         fetchImpl: input.fetchImpl,
       });
     } catch {
@@ -132,6 +140,25 @@ export async function observeX402Catalog(input: {
       if (observations.length >= budget) break;
       if (seen.has(candidate.candidateId)) continue;
       seen.add(candidate.candidateId);
+      /* Watch only what could be bought from a brief.
+         Three per interest were taken by catalogue rank, and rank says nothing
+         about whether a person could ever press the button: of 148 listings
+         reachable through this vocabulary, 22 are published as path templates
+         and 47 declare no field a question fits in. Both are decidable from the
+         listing itself, without a request, and a card offering neither an
+         answer nor a reason is worse than no card. */
+      if (!worthWatching(candidate)) continue;
+      /* One seller may not be the whole brief.
+         Ranking is per query and a provider with a large catalogue wins it
+         repeatedly: Research & search came back as three Orthogonal endpoints
+         and Agent payments as three more, so an agent watching five interests
+         was really watching two sellers. Variety is not a nicety here -- the
+         point of the brief is that a person sees the market, and a market with
+         one name in it is a catalogue page. */
+      const provider = candidate.provider?.name ?? "unknown";
+      const held = takenPerProvider.get(provider) ?? 0;
+      if (held >= SUBJECT_LIMITS.perProvider) continue;
+      takenPerProvider.set(provider, held + 1);
       takenForInterest += 1;
       takenPerInterest.set(query.interest, takenForInterest);
       observations.push({
@@ -180,6 +207,34 @@ export async function observeX402Catalog(input: {
     observations,
     unavailable: anyAttempted && !anySucceeded ? ["Circle x402 catalog"] : [],
   };
+}
+
+/**
+ * Whether a listing could ever be the subject of a purchase from the brief.
+ *
+ * Two disqualifications, both readable off the catalogue entry:
+ *
+ * A templated path -- x402.api.agentmail.to/v0/domains/{domain_id} -- is an
+ * endpoint for a caller that already knows which record it means. A brief does
+ * not, and the braces are published literally.
+ *
+ * A schema with nowhere to put a question cannot be asked one. Alchemy's
+ * token-price call declares `addresses` and nothing else, so the body built
+ * from it is `{}` -- valid, and carrying not one word of what was asked. That
+ * cost a real tenth of a cent before it was caught at purchase time; caught
+ * here, the card is never drawn.
+ *
+ * Neither check costs a request, which is why both belong at the point where
+ * subjects are chosen rather than at the point where money is.
+ */
+function worthWatching(candidate: { resource: string; inputSchema?: unknown }): boolean {
+  if (/[{}]/.test(candidate.resource)) return false;
+  const plan = buildRequestBody({
+    intent: "what is this for",
+    capability: "research",
+    inputSchema: (candidate.inputSchema ?? null) as JsonSchema | null,
+  });
+  return plan.guessed || plan.intentField !== null;
 }
 
 /* ---- GitHub ---- */

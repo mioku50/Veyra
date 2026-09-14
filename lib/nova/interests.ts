@@ -102,6 +102,12 @@ export const SUBJECT_LIMITS = {
    *  something a person waits for. */
   perAgentMax: 24,
   x402PerInterest: 3,
+  /** How many the catalogue is asked for per query, before filtering. Larger
+   *  than what is kept, so the filters spend surplus rather than the share. */
+  candidatesPerQuery: 12,
+  /** How many endpoints one seller may hold across the whole agent. Orthogonal
+   *  publishes enough of the catalogue to win every query it appears in. */
+  perProvider: 2,
   repositoriesPerInterest: 2,
 } as const;
 
