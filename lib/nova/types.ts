@@ -195,6 +195,23 @@ export type NovaSignal = ObservedChange & {
   relevanceReason: string;
   status: NovaSignalStatus;
   executionPublicId: string | null;
+  /** Why Veyra looked and would not price this, when that is what happened.
+   *  Stored rather than held in the page, because the alternative is a card
+   *  that forgets on every reload and offers the same live probe to reach the
+   *  same no. */
+  refusal?: NovaRefusal | null;
+};
+
+/**
+ * Veyra having looked and declined. Not a failure and not a payment: nothing
+ * was spent to learn it, which is exactly why it is worth keeping.
+ */
+export type NovaRefusal = {
+  /** The machine-readable cause, the same one the route returns. */
+  reason: string;
+  /** What to tell the person, in the words the card will show. */
+  detail: string;
+  at: string;
 };
 
 export type NovaMemory = {

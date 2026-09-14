@@ -20,6 +20,7 @@ import type {
   NovaMemory,
   NovaPreferences,
   NovaRefresh,
+  NovaRefusal,
   NovaSignal,
   NovaStanding,
   NovaWhileAway,
@@ -519,7 +520,7 @@ export async function loadBrief(input: {
 
   const [signalResult, refreshResult, awayResult, memoryResult, researchResult] = await Promise.all([
     db().from("nova_signals")
-      .select("signal_id, subject_id, kind, headline, detail, relevance, relevance_reason, evidence, status, execution_public_id, observed_at, nova_subjects(label, kind, interest, ref, last_digest)")
+      .select("signal_id, subject_id, kind, headline, detail, relevance, relevance_reason, evidence, status, execution_public_id, observed_at, refusal, nova_subjects(label, kind, interest, ref, last_digest)")
       .eq("agent_id", agent.agent_id)
       .in("status", ["new", "seen", "investigating", "investigated"])
       .order("observed_at", { ascending: false })
@@ -572,6 +573,7 @@ export async function loadBrief(input: {
     status: row.status,
     executionPublicId: row.execution_public_id,
     observedAt: row.observed_at,
+    refusal: row.refusal ?? null,
   }));
 
   const { worthAttention, noise, overflow } = assembleBrief(signals);
@@ -742,7 +744,7 @@ export async function loadSignalForOwner(input: {
   const agent = await loadOwned(input.publicId, input.ownerSecret);
   const { data } = await db()
     .from("nova_signals")
-    .select("signal_id, subject_id, kind, headline, detail, relevance, relevance_reason, evidence, status, execution_public_id, observed_at, nova_subjects(label, kind, interest, ref, last_digest)")
+    .select("signal_id, subject_id, kind, headline, detail, relevance, relevance_reason, evidence, status, execution_public_id, observed_at, refusal, nova_subjects(label, kind, interest, ref, last_digest)")
     .eq("agent_id", agent.agent_id)
     .eq("signal_id", input.signalId)
     .maybeSingle();
@@ -766,7 +768,33 @@ export async function loadSignalForOwner(input: {
     status: row.status,
     executionPublicId: row.execution_public_id,
     observedAt: row.observed_at,
+    refusal: row.refusal ?? null,
   };
+}
+
+/**
+ * What Veyra found when it looked, when what it found was no.
+ *
+ * Pricing a card probes live endpoints, and the answer is often that none of
+ * them can be paid: the subject settles on a rail this wallet cannot reach, or
+ * publishes no field a question fits in, or has moved above the ceiling. That
+ * is a real answer and it used to live only in the page, so a reload put the
+ * card back untouched and the same probe ran again to hear the same thing.
+ *
+ * Passing null clears it, which is what a later attempt that does produce a
+ * proposal must do -- a price moves back, a rail appears, and a stale refusal
+ * sitting under a live offer would be the screen contradicting itself.
+ */
+export async function recordSignalRefusal(input: {
+  agentId: string;
+  signalId: string;
+  refusal: NovaRefusal | null;
+}): Promise<void> {
+  await db()
+    .from("nova_signals")
+    .update({ refusal: input.refusal, updated_at: new Date().toISOString() })
+    .eq("agent_id", input.agentId)
+    .eq("signal_id", input.signalId);
 }
 
 export async function markSignal(input: {

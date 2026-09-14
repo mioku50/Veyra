@@ -251,6 +251,15 @@ export function NovaClient({ view = "today" }: { view?: NovaView } = {}) {
           ? { stage: "ready", researchId: entry.researchId, proposal }
           : { stage: "settled", researchId: entry.researchId, proposal, investigation: entry };
       }
+      /* And a refusal belongs there too. Veyra looking and declining is the
+         same kind of fact as Veyra looking and pricing -- it cost a round of
+         live probes to establish, and forgetting it means paying for that
+         round again to be told the same thing, in front of a card that looks
+         untouched in the meantime. */
+      for (const signal of [...payload.worthAttention, ...payload.noise, ...payload.watchlist]) {
+        if (restored[signal.signalId] || !signal.refusal) continue;
+        restored[signal.signalId] = { stage: "refused", detail: signal.refusal.detail };
+      }
       return restored;
     });
     setStage("brief");
@@ -458,7 +467,10 @@ export function NovaClient({ view = "today" }: { view?: NovaView } = {}) {
              product doing its job. */
           : { stage: "refused", detail: payload.detail ?? "Veyra would not authorise any of them." },
       }));
-      void say(signal.signalId, "investigating");
+      /* Only a card with a price is being investigated. Marking a refused one
+         as under investigation put it in a state the brief reads as live work
+         and the card renders as an acknowledgement, with nothing behind it. */
+      if (payload.ok) void say(signal.signalId, "investigating");
     } catch (cause) {
       setResearch((current) => ({
         ...current,
@@ -911,6 +923,8 @@ export function NovaClient({ view = "today" }: { view?: NovaView } = {}) {
                   onConnect={() => void wallet.connect()}
                   connecting={wallet.connecting}
                   onPay={(acknowledge) => void pay(signal, acknowledge)}
+                  refusedAt={signal.refusal?.at ?? null}
+                  onLookAgain={() => void price(signal)}
                 />
               ) : null}
             </Panel>
@@ -1098,6 +1112,8 @@ export function NovaClient({ view = "today" }: { view?: NovaView } = {}) {
                         onConnect={() => void wallet.connect()}
                         connecting={wallet.connecting}
                         onPay={(acknowledge) => void pay(signal, acknowledge)}
+                        refusedAt={signal.refusal?.at ?? null}
+                        onLookAgain={() => void price(signal)}
                       />
                     ) : (
                       <div className="mt-2">
@@ -1362,6 +1378,8 @@ function DeeperResearch({
   onConnect,
   connecting,
   onPay,
+  refusedAt,
+  onLookAgain,
 }: {
   state: ResearchState;
   agentName: string;
@@ -1370,6 +1388,9 @@ function DeeperResearch({
   onConnect: () => void;
   connecting: boolean;
   onPay: (acknowledge?: string) => void;
+  /** When Veyra last looked and declined, so an old no reads as an old no. */
+  refusedAt?: string | null;
+  onLookAgain: () => void;
 }) {
   if (state.stage === "looking") {
     return (
@@ -1382,9 +1403,21 @@ function DeeperResearch({
   }
 
   if (state.stage === "refused") {
+    /* A refusal is kept, so it has to carry its own age and a way out. Prices
+       move, rails appear, and a seller that could not be paid in the morning
+       sometimes can be by the evening -- a permanent no with no button would
+       turn one bad moment into a card that is wrong forever. */
     return (
       <Section>
         <p className="mt-2 text-sm leading-relaxed text-muted-foreground">{state.detail}</p>
+        <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2">
+          <Verb onClick={onLookAgain}>Look again</Verb>
+          {refusedAt ? (
+            <span className="font-mono text-[11px] uppercase tracking-wider text-muted-foreground/70">
+              checked {formatAway(refusedAt)}
+            </span>
+          ) : null}
+        </div>
       </Section>
     );
   }

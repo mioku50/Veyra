@@ -22,7 +22,7 @@
  */
 
 import assert from "node:assert/strict";
-import { createNova, db, loadBrief, loadOwned, refreshNova, updateNova } from "../lib/nova/service.ts";
+import { createNova, db, loadBrief, loadOwned, recordSignalRefusal, refreshNova, updateNova } from "../lib/nova/service.ts";
 import { recordProposal, settleResearch, approveResearch } from "../lib/nova/investigation.ts";
 import { hashTerms } from "../lib/nova/research-terms.ts";
 
@@ -63,6 +63,9 @@ const { data: signals } = await db().from("nova_signals")
   .select("signal_id").eq("agent_id", owned.agent_id).limit(3);
 const rows = (signals ?? []) as { signal_id: string }[];
 assert(rows.length >= 3, "need three signals to drive three outcomes");
+/* The three that get proposals, so the refusal below lands on a fourth and
+   never on a card that already has terms of its own. */
+const seeded = new Set(rows.map((r) => r.signal_id));
 
 const WALLET = "0x742d35Cc6634C0532925a3b844Bc454e4438f44e";
 
@@ -181,12 +184,46 @@ for (const row of (readings ?? []) as any[]) {
   if (row.status === "verified") {
     assert.ok(row.reading, "a verified purchase is read back");
     assert.equal(row.reading.whatChanged, "the fixture changed.");
-    assert.match(row.reading.provenance, /Veyra checked the answer/,
+    assert.match(row.reading.provenance, /Veyra checked the exchange itself/,
       "the provenance line is Veyra's own, not the model's");
+    assert.match(row.reading.provenance, /not on whether what the seller wrote is true/,
+      "and it says what the verdict does not cover, next to the verdict");
   } else {
     assert.equal(row.reading, null,
       `${row.status}: a reading of something that failed its check would explain material Veyra just said could not be trusted`);
   }
+}
+
+/* A refusal is an answer and survives a reload.
+   Pricing a card probes live endpoints, and Veyra often comes back with "none
+   of these can be paid". That used to live only in the page: measured on the
+   live agent, thirteen signals sat marked investigating with five proposals
+   between them and eight carrying nothing at all, so every visit offered the
+   same probe to reach the same no in front of a card that looked untouched. */
+const refusedSignal = (await loadBrief({
+  publicId: agent.agent.publicId, ownerSecret: agent.ownerSecret, hourOfDay: 9,
+})).worthAttention.find((s) => !seeded.has(s.signalId));
+
+if (refusedSignal) {
+  await recordSignalRefusal({
+    agentId: owned.agent_id,
+    signalId: refusedSignal.signalId,
+    refusal: { reason: "not_payable", detail: "Nobody on a rail this wallet can settle.", at: new Date().toISOString() },
+  });
+  const afterRefusal = await loadBrief({ publicId: agent.agent.publicId, ownerSecret: agent.ownerSecret, hourOfDay: 9 });
+  const kept = [...afterRefusal.worthAttention, ...afterRefusal.noise, ...afterRefusal.watchlist]
+    .find((s) => s.signalId === refusedSignal.signalId);
+  assert.ok(kept?.refusal, "a refusal comes back with the brief");
+  assert.equal(kept?.refusal?.reason, "not_payable");
+  assert.match(kept?.refusal?.detail ?? "", /rail this wallet/);
+
+  /* And it is cleared the moment Veyra would price it, because a stale no
+     underneath a live offer is the screen contradicting itself. */
+  await recordSignalRefusal({ agentId: owned.agent_id, signalId: refusedSignal.signalId, refusal: null });
+  const afterPricing = await loadBrief({ publicId: agent.agent.publicId, ownerSecret: agent.ownerSecret, hourOfDay: 9 });
+  const cleared = [...afterPricing.worthAttention, ...afterPricing.noise, ...afterPricing.watchlist]
+    .find((s) => s.signalId === refusedSignal.signalId);
+  assert.equal(cleared?.refusal ?? null, null, "a refusal does not outlive the reason for it");
 }
 
 const brief = await loadBrief({ publicId: agent.agent.publicId, ownerSecret: agent.ownerSecret, hourOfDay: 9 });
@@ -285,4 +322,4 @@ for (const table of ["nova_research", "nova_memory", "nova_signals", "nova_subje
     .eq("agent_id", owned.agent_id);
   assert.equal(count ?? 0, 0, `${table} left orphans`);
 }
-console.log("[research-live] passed — verified / paid_unverified / unpaid, one learning with a receipt, no double settle, no cross-wallet signature, a reading only where the check passed, interests changed without losing a receipt, 0 orphans");
+console.log("[research-live] passed — verified / paid_unverified / unpaid, a refusal that survives a reload and is cleared when it stops being true, one learning with a receipt, no double settle, no cross-wallet signature, a reading only where the check passed, interests changed without losing a receipt, 0 orphans");

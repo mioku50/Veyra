@@ -6,7 +6,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { NOVA_HEADERS, novaErrorResponse, ownerSecretFrom } from "@/lib/nova/http";
 import { recentLearnings, recordProposal } from "@/lib/nova/investigation";
-import { loadOwned, loadSignalForOwner } from "@/lib/nova/service";
+import { loadOwned, loadSignalForOwner, recordSignalRefusal } from "@/lib/nova/service";
 import { proposeResearch } from "@/lib/nova/research";
 
 export const dynamic = "force-dynamic";
@@ -59,9 +59,20 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
       /* 200, not an error status. "Veyra looked and would not authorise any of
          them" is an answer, and the most useful one the product gives -- a 4xx
          would make the client render it as a failure of Nova rather than a
-         decision by Veyra. */
+         decision by Veyra.
+
+         And it is written down. An answer that exists only in the page is one
+         reload away from costing another round of live probes to hear again,
+         and the person meanwhile sees a card indistinguishable from one nobody
+         has looked at yet. */
+      const refusal = {
+        reason: outcome.reason,
+        detail: outcome.detail,
+        at: new Date().toISOString(),
+      };
+      await recordSignalRefusal({ agentId: agent.agent_id, signalId, refusal });
       return NextResponse.json(
-        { ok: false, reason: outcome.reason, detail: outcome.detail },
+        { ok: false, ...refusal },
         { headers: NOVA_HEADERS },
       );
     }
@@ -72,6 +83,10 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
       proposal: outcome.proposal,
       plan: outcome.plan,
     });
+    /* A price that came back, a rail that appeared. Whatever Veyra refused for
+       last time is no longer true, and leaving it on the row would put a stale
+       no underneath a live offer. */
+    await recordSignalRefusal({ agentId: agent.agent_id, signalId, refusal: null });
 
     return NextResponse.json(
       { ok: true, researchId, proposal: outcome.proposal },
