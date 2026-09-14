@@ -25,6 +25,7 @@ import { EXPLICIT_IGNORE_SUPPORT, ignoreWeight, summariseAway } from "../lib/nov
 import { networkName, settlementNetworkOf } from "../lib/nova/network.ts";
 import { buildRequestBody } from "../lib/x402/request-body.ts";
 import { actionFor } from "../lib/nova/action.ts";
+import { readResult } from "../lib/nova/synthesis.ts";
 import {
   compareTerms,
   hashTerms,
@@ -922,4 +923,70 @@ assert.equal(
   "and it stops somewhere, because every subject is a live read on every refresh",
 );
 
-console.log("[nova-test] passed: interests kept even when unknown, a first sighting reported as a finding rather than as news, the same commits not re-reported across refreshes, a payee change outranking everything and un-learnable away, a rail change surfaced a day before it could refuse a payment, a 3% price move kept out of the headline, a brief that caps findings so a change can never be crowded out, a tick that reads each URL once and shares its failures, and an absence measured by adding up every unattended pass rather than reporting the last one, and feedback that can raise as well as bury without ever silencing a payee change, and terms that stop a payment when the price or the payee moved between reading the card and pressing the button, and a card that names the chain its money moves on rather than letting the interest stand in for one, and a body that says it asks nothing rather than satisfying a schema with silence, and a budget every interest gets a share of before any interest gets seconds, and an action type that decides whether routing may substitute at all, and a watchlist that grows with the interests and cannot be filled by one seller");
+/* ---- reading back what was bought ---- */
+
+const READING_INPUT = {
+  agentName: "Nova",
+  interests: ["Arc"],
+  memory: ["cares about payee changes"],
+  question: "What changed?",
+  provider: "Exa",
+  resource: "https://api.exa.ai/search",
+  paidUsdc: 0.007,
+  verdict: "PASS",
+  verificationSummary: "Paid, delivered, and verified.",
+  executionPublicId: "vexec_1",
+  transaction: "0xabc",
+  result: { results: [{ title: "a release" }] },
+};
+
+const stub = (text: string) => async () => ({
+  ok: true as const, provider: "AgentRouter", protocol: "openai-compatible" as const,
+  model: "deepseek-v4-flash", text, attempts: 1,
+});
+
+/* A label is only a label at the start of a line. Matching the bare word
+   anywhere swallowed prose: a MATTERS paragraph containing "sits right next to
+   agent payments" was read as the start of NEXT, so the card printed the tail
+   of one answer as the whole of another. */
+const bleed = await readResult({
+  ...READING_INPUT,
+  generate: stub([
+    "CHANGED: two items, not twenty-two commits.",
+    "MATTERS: a metering bug, which sits right next to agent payments and billing.",
+    "NEXT: ask whether the deprecated path has a removal date.",
+  ].join("\n")),
+});
+assert.ok(bleed);
+assert.equal(bleed.whatChanged, "two items, not twenty-two commits.");
+assert.equal(bleed.whyItMatters, "a metering bug, which sits right next to agent payments and billing.");
+assert.equal(bleed.watchNext, "ask whether the deprecated path has a removal date.");
+
+/* The verification line is Veyra's, composed from facts the caller already
+   holds. A model asked to report on the trustworthiness of text it was handed
+   is a model marking its own source's homework, so it is never asked. */
+assert.match(bleed.provenance, /Veyra checked the answer/);
+assert.match(bleed.provenance, /PASS/);
+assert.match(bleed.provenance, /vexec_1/);
+assert.match(bleed.provenance, /api\.exa\.ai/);
+assert.equal(bleed.writtenBy, "AgentRouter · deepseek-v4-flash");
+
+/* A reading is a convenience on top of a receipt. Every way the model can let
+   us down leaves the purchase exactly as it was. */
+for (const [why, generate] of [
+  ["the model refused", async () => ({ ok: false as const, provider: "AgentRouter", protocol: "openai-compatible" as const, reason: "upstream_error", message: "no" })],
+  ["it answered nothing", stub("")],
+  ["it ignored the shape", stub("Here is a summary of the release notes in prose.")],
+  ["it threw", async () => { throw new Error("socket hang up"); }],
+] as const) {
+  assert.equal(
+    await readResult({ ...READING_INPUT, generate: generate as never }),
+    null,
+    `${why}: the receipt stands and the reading is simply absent`,
+  );
+}
+
+/* Nothing to read is not something to read. */
+assert.equal(await readResult({ ...READING_INPUT, result: "", generate: stub("CHANGED: x") as never }), null);
+
+console.log("[nova-test] passed: interests kept even when unknown, a first sighting reported as a finding rather than as news, the same commits not re-reported across refreshes, a payee change outranking everything and un-learnable away, a rail change surfaced a day before it could refuse a payment, a 3% price move kept out of the headline, a brief that caps findings so a change can never be crowded out, a tick that reads each URL once and shares its failures, and an absence measured by adding up every unattended pass rather than reporting the last one, and feedback that can raise as well as bury without ever silencing a payee change, and terms that stop a payment when the price or the payee moved between reading the card and pressing the button, and a card that names the chain its money moves on rather than letting the interest stand in for one, and a body that says it asks nothing rather than satisfying a schema with silence, and a budget every interest gets a share of before any interest gets seconds, and an action type that decides whether routing may substitute at all, and a watchlist that grows with the interests and cannot be filled by one seller, and a reading of what was bought that never speaks for the verification and never costs the receipt");

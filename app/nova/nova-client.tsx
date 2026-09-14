@@ -1411,7 +1411,7 @@ function DeeperResearch({
      matters is what came back and whether it held up, so the proposal collapses
      to one line and the result takes the space. */
   if (state.stage === "settled") {
-    return <Outcome investigation={state.investigation} proposal={proposal} />;
+    return <Outcome investigation={state.investigation} proposal={proposal} agentName={agentName} />;
   }
 
   return (
@@ -1671,9 +1671,11 @@ function SigningPanel({ terms, note }: { terms: SigningTerms | null; note: strin
 function Outcome({
   investigation,
   proposal,
+  agentName,
 }: {
   investigation: NovaInvestigation;
   proposal: NovaResearchProposal;
+  agentName: string;
 }) {
   const paid = investigation.paidUsdc ?? 0;
   const verified = investigation.status === "verified";
@@ -1744,19 +1746,68 @@ function Outcome({
         </details>
       ) : null}
 
-      {verified ? (
+      {/* What was bought, read back.
+          A verified purchase used to end at a <pre> full of JSON: Veyra had
+          priced it, cleared it and checked it, and then handed over the raw
+          body, which is where the flow stops looking like an agent doing work.
+          The prose is a model's; the provenance line under it is Veyra's own,
+          composed from facts rather than asked of the model. They are kept
+          visibly apart because one is a reading and the other is evidence. */}
+      {verified && investigation.reading ? (
+        <div className="mt-4 space-y-3 border-t border-border/60 pt-4">
+          <div>
+            <Label>What changed</Label>
+            <p className="mt-1.5 text-sm leading-relaxed text-foreground">
+              {investigation.reading.whatChanged}
+            </p>
+          </div>
+          {investigation.reading.whyItMatters ? (
+            <div>
+              <Label>Why it matters</Label>
+              <p className="mt-1.5 text-sm leading-relaxed text-muted-foreground">
+                {investigation.reading.whyItMatters}
+              </p>
+            </div>
+          ) : null}
+          {investigation.reading.watchNext ? (
+            <div>
+              <Label>What {agentName} suggests watching next</Label>
+              <p className="mt-1.5 text-sm leading-relaxed text-muted-foreground">
+                {investigation.reading.watchNext}
+              </p>
+            </div>
+          ) : null}
+          <div>
+            <Label>Source and verification</Label>
+            <p className="mt-1.5 text-xs leading-relaxed text-muted-foreground">
+              {investigation.reading.provenance}
+            </p>
+            {investigation.reading.writtenBy ? (
+              <p className="mt-1 font-mono text-[11px] text-muted-foreground/70">
+                Read back by {investigation.reading.writtenBy}. The words above are its reading of
+                what the seller sent; the line before them is {BRAND.name}&apos;s own check.
+              </p>
+            ) : null}
+          </div>
+        </div>
+      ) : verified ? (
         <p className="mt-3 text-xs leading-relaxed text-muted-foreground">
           {BRAND.name} checked the answer against what this endpoint declares it returns, after
-          the payment. It is in what {"Nova"} knows, with the execution behind it.
+          the payment. It is in what {agentName} knows, with the execution behind it.
         </p>
       ) : null}
 
       {verified && investigation.result !== null && investigation.result !== undefined ? (
-        <pre className="mt-3 max-h-80 overflow-auto rounded-lg border border-border/60 bg-background/40 p-3 font-mono text-[11px] leading-relaxed text-muted-foreground">
-          {typeof investigation.result === "string"
-            ? investigation.result
-            : JSON.stringify(investigation.result, null, 2)}
-        </pre>
+        <details className="mt-3">
+          <summary className="cursor-pointer text-xs text-muted-foreground hover:text-foreground">
+            What the endpoint sent back
+          </summary>
+          <pre className="mt-2 max-h-80 overflow-auto rounded-lg border border-border/60 bg-background/40 p-3 font-mono text-[11px] leading-relaxed text-muted-foreground">
+            {typeof investigation.result === "string"
+              ? investigation.result
+              : JSON.stringify(investigation.result, null, 2)}
+          </pre>
+        </details>
       ) : null}
     </div>
   );

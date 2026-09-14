@@ -261,6 +261,17 @@ export type NovaInvestigation = {
   paidUsdc: number | null;
   transaction: string | null;
   verification: { verdict: string; summary: string } | null;
+  /** Prose a model wrote about what was bought. Kept apart from `verification`,
+   *  which is a check Veyra ran itself: one is a reading, the other is evidence,
+   *  and a screen that blends them teaches people to trust the wrong half. */
+  reading: {
+    whatChanged: string;
+    whyItMatters: string;
+    watchNext: string;
+    provenance: string;
+    writtenBy: string | null;
+    generatedAt: string;
+  } | null;
   result: unknown;
   failure: string | null;
   settledAt: string | null;

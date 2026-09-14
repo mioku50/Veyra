@@ -132,6 +132,7 @@
     "counterparty:production-verify": "node --experimental-transform-types --no-warnings --env-file-if-exists=.env.local scripts/verify-production-p55-schema.mts",
     "security-audit:production-migrate": "node --experimental-transform-types --no-warnings --env-file-if-exists=.env.local scripts/apply-security-audit-production-migration.mts",
     "p82c:production-migrate": "node --experimental-transform-types --no-warnings --env-file-if-exists=.env.local scripts/apply-p82c-production-migration.mts",
+    "p83:production-migrate": "node --experimental-transform-types --no-warnings --env-file-if-exists=.env.local scripts/apply-p83-production-migration.mts",
     "security-audit:production-verify": "node --experimental-transform-types --no-warnings --env-file-if-exists=.env.local scripts/verify-production-security-audit-schema.mts",
     "counterparty:bootstrap": "node --experimental-transform-types --no-warnings --env-file-if-exists=.env.local scripts/bootstrap-p55-counterparties.mts",
     "execution:test": "node --experimental-transform-types --no-warnings scripts/execution-unit-tests.mts",

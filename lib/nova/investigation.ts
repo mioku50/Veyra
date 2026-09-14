@@ -20,6 +20,7 @@ import { loadSignalForOwner } from "./service.ts";
 import { hashTerms, type NovaResearchTerms, type TermsChange } from "./research-terms.ts";
 import { db, loadOwned, NovaError } from "./service.ts";
 import type { NovaInvestigation } from "./types.ts";
+import { readResult, type NovaReading } from "./synthesis.ts";
 
 /**
  * One investigation, from a price on a brief to a result underneath it.
@@ -69,6 +70,7 @@ type ResearchRow = {
   paid_usdc: string | number | null;
   transaction_hash: string | null;
   verification: { verdict: string; summary: string } | null;
+  reading: NovaReading | null;
   result: unknown;
   failure: string | null;
   settled_at: string | null;
@@ -86,7 +88,7 @@ type ApprovalRecord = {
 };
 
 const ROW_COLUMNS =
-  "research_id, agent_id, signal_id, status, question, terms, terms_hash, request_body, request_method, input_schema, output_schema, verification_required, proposal, approval, payer_wallet, clearance_digest, selection_id, execution_public_id, paid_usdc, transaction_hash, verification, result, failure, settled_at";
+  "research_id, agent_id, signal_id, status, question, terms, terms_hash, request_body, request_method, input_schema, output_schema, verification_required, proposal, approval, payer_wallet, clearance_digest, selection_id, execution_public_id, paid_usdc, transaction_hash, verification, result, failure, reading, settled_at";
 
 function toInvestigation(row: ResearchRow): NovaInvestigation {
   return {
@@ -105,6 +107,7 @@ function toInvestigation(row: ResearchRow): NovaInvestigation {
     paidUsdc: row.paid_usdc === null ? null : Number(row.paid_usdc),
     transaction: row.transaction_hash,
     verification: row.verification,
+    reading: row.reading ?? null,
     result: row.result,
     failure: row.failure,
     settledAt: row.settled_at,
@@ -337,6 +340,9 @@ export async function settleResearch(input: {
    *  money did not move at all -- cannot be reached on purpose against a live
    *  endpoint without either spending or getting lucky. */
   settleImpl?: typeof settleX402Call;
+  /** The reading model, injectable the way the relay is: a test must be able to
+   *  reach the verified branch without a network and without a bill. */
+  generateImpl?: Parameters<typeof readResult>[0]["generate"];
 }): Promise<NovaSettlement> {
   const agent = await loadOwned(input.publicId, input.ownerSecret);
   const row = await loadById(agent.agent_id, input.researchId);
@@ -427,6 +433,25 @@ export async function settleResearch(input: {
   const moneyMoved = settled.paid === true || settled.paidUsdc > 0;
 
   if (settled.settled) {
+    /* Only here. A reading of something that failed its check would be a model
+       explaining material Veyra just said could not be trusted, printed in the
+       same place a reader looks for what they bought. */
+    const reading = await readResult({
+      agentName: agent.name,
+      interests: agent.interests ?? [],
+      memory: await recentLearnings(agent.agent_id),
+      question: row.question,
+      provider: row.terms.provider,
+      resource: row.terms.resource,
+      paidUsdc: settled.paidUsdc,
+      verdict: verification.verdict,
+      verificationSummary: verification.summary,
+      executionPublicId: settled.executionId,
+      transaction: settled.transaction,
+      result: settled.result ?? settled.body,
+      generate: input.generateImpl,
+    }).catch(() => null);
+
     return finish(row, {
       status: "verified",
       executionPublicId: settled.executionId,
@@ -434,6 +459,7 @@ export async function settleResearch(input: {
       transaction: settled.transaction,
       verification,
       result: settled.result ?? settled.body,
+      reading,
     });
   }
 
@@ -452,6 +478,30 @@ export async function settleResearch(input: {
       ? `The payment went through and the answer did not pass ${"Veyra"}'s check: ${settled.verification.summary} ${sellerReason(settled.result ?? settled.body)}`.trim()
       : `${settled.verification.summary || "The endpoint did not answer with a usable result."} ${sellerReason(settled.result ?? settled.body)}`.trim(),
   });
+}
+
+/**
+ * What this agent has already learned about its owner, as plain sentences.
+ *
+ * The context is what makes a reading Nova's rather than anyone else's. One
+ * model serves every agent; individuality comes from these interests, this
+ * memory and this history, not from a model of its own. A failure to read it is
+ * not a failure to buy, so it falls back to knowing nothing in particular.
+ */
+async function recentLearnings(agentId: string): Promise<string[]> {
+  try {
+    const { data } = await db()
+      .from("nova_memory")
+      .select("summary")
+      .eq("agent_id", agentId)
+      .order("updated_at", { ascending: false })
+      .limit(8);
+    return ((data ?? []) as Array<{ summary?: unknown }>)
+      .map((row) => (typeof row.summary === "string" ? row.summary.trim() : ""))
+      .filter(Boolean);
+  } catch {
+    return [];
+  }
 }
 
 /**
@@ -505,6 +555,8 @@ async function finish(row: ResearchRow, outcome: {
   verification?: { verdict: string; summary: string } | null;
   result?: unknown;
   failure?: string | null;
+  /** Written only for a verified result, and only if a model answered. */
+  reading?: NovaReading | null;
 }): Promise<NovaSettlement> {
   const now = new Date().toISOString();
   const { data } = await db()
@@ -516,6 +568,7 @@ async function finish(row: ResearchRow, outcome: {
       transaction_hash: outcome.transaction ?? null,
       verification: outcome.verification ?? null,
       result: outcome.result ?? null,
+      reading: outcome.reading ?? null,
       failure: outcome.failure ? outcome.failure.slice(0, 600) : null,
       settled_at: now,
       updated_at: now,

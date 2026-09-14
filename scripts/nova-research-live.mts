@@ -125,9 +125,17 @@ function relay(verdict: string, paid: boolean | null, settled: boolean) {
 
 // 1. verified
 const r1 = await seed(rows[0].signal_id);
+/* The reading model, stubbed. The verified branch must be reachable without a
+   network and without a bill, and what is under test here is the bookkeeping
+   around the reading, not the prose. */
+const reader = async () => ({
+  ok: true as const, provider: "stub", protocol: "openai-compatible" as const, model: "stub", attempts: 1,
+  text: "CHANGED: the fixture changed.\nMATTERS: it is a fixture.\nNEXT: nothing.",
+});
+
 const out1 = await settleResearch({
   publicId: agent.agent.publicId, ownerSecret: agent.ownerSecret, researchId: r1,
-  authorization, signature, settleImpl: relay("PASS", true, true) as any,
+  authorization, signature, settleImpl: relay("PASS", true, true) as any, generateImpl: reader as never,
 });
 assert.equal(out1.status, "verified", "a passing verification is a verified investigation");
 
@@ -165,6 +173,21 @@ assert.equal(byId.get(rows[0].signal_id).status, "investigated");
 assert.equal(byId.get(rows[1].signal_id).status !== "investigated", true, "a failed check is not an investigated item");
 assert.equal(byId.get(rows[1].signal_id).execution_public_id, null, "a failed check does not count as a Veyra decision on the brief");
 assert.equal(byId.get(rows[2].signal_id).execution_public_id, null, "nothing paid, nothing filed");
+
+/* The reading is written for a verified purchase, and only for that one. */
+const { data: readings } = await db().from("nova_research")
+  .select("status, reading").eq("agent_id", owned.agent_id);
+for (const row of (readings ?? []) as any[]) {
+  if (row.status === "verified") {
+    assert.ok(row.reading, "a verified purchase is read back");
+    assert.equal(row.reading.whatChanged, "the fixture changed.");
+    assert.match(row.reading.provenance, /Veyra checked the answer/,
+      "the provenance line is Veyra's own, not the model's");
+  } else {
+    assert.equal(row.reading, null,
+      `${row.status}: a reading of something that failed its check would explain material Veyra just said could not be trusted`);
+  }
+}
 
 const brief = await loadBrief({ publicId: agent.agent.publicId, ownerSecret: agent.ownerSecret, hourOfDay: 9 });
 assert.equal(brief.standing.verifiedResearch, 1);
@@ -262,4 +285,4 @@ for (const table of ["nova_research", "nova_memory", "nova_signals", "nova_subje
     .eq("agent_id", owned.agent_id);
   assert.equal(count ?? 0, 0, `${table} left orphans`);
 }
-console.log("[research-live] passed — verified / paid_unverified / unpaid, one learning with a receipt, no double settle, no cross-wallet signature, interests changed without losing a receipt, 0 orphans");
+console.log("[research-live] passed — verified / paid_unverified / unpaid, one learning with a receipt, no double settle, no cross-wallet signature, a reading only where the check passed, interests changed without losing a receipt, 0 orphans");
