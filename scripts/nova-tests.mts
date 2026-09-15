@@ -888,6 +888,13 @@ const CATALOGUE: Array<[string, string, string]> = [
   ["inference", "https://fal.x402.paysponge.com/fal-ai/flux/schnell", "Submit a FLUX Schnell image generation request"],
   // reads
   ["identity", "https://api.arkm.com/x402/intelligence/entity", "Get Arkham intelligence for an entity"],
+  ["identity", "https://stableenrich.dev/api/minerva/resolve", "Resolve person identity to a Minerva record"],
+  /* `entity` is how providers say "the thing this row is about", not "a party
+     whose identity is at stake". Reading it as identity filed StableTravel's
+     flight-disruption counts under identity -- and that was the only card in
+     the agent's live pool a mandate could have authorised, so the one value the
+     owner would have signed against was the wrong one. */
+  ["data", "https://stabletravel.dev/api/flightaware/disruption-counts/entity-type", "Get disruption stats by entity type (airline, origin)"],
   ["data", "https://api.arkm.com/x402/marketdata/altcoin-index", "Get Arkham Altcoin Index"],
   ["data", "https://x402.alchemy.com/prices/v1/tokens/by-symbol", "Prices API - current token prices by symbol"],
   ["research", "https://api.exa.ai/search", "Search the web with Exa and return ranked results"],

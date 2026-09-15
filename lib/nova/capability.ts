@@ -87,16 +87,23 @@ const ROUTE_TOKENS: Array<[PolicyCapability, Set<string>]> = [
     "generation", "generations", "inference", "render", "transcribe", "transcription",
     "summarize", "summarise", "llm", "sdxl", "flux", "diffusion", "imagine",
   ])],
+  /* `entity` is not in this list, and was. It is the word providers use for
+     "the thing this row is about", not for a party whose identity is at stake:
+     it put StableTravel's flight-disruption counts under identity, which is
+     the only card in the agent's pool a mandate could have authorised. Arkham's
+     entity routes still read as identity, through `intelligence`, which is what
+     they actually publish. */
   ["identity", new Set([
     "identity", "identities", "reputation", "attestation", "attestations",
     "credential", "credentials", "kyc", "did", "verify", "verification",
-    "intelligence", "entity", "entities", "profile", "profiles",
+    "intelligence", "profile", "profiles",
     "people", "person", "resolve", "enrich",
   ])],
   ["data", new Set([
     "marketdata", "price", "prices", "quote", "quotes", "ohlc", "candle", "candles",
     "metric", "metrics", "balance", "balances", "holdings", "history", "historical",
-    "stats", "statistics", "index", "indices", "feed", "feeds", "volume", "vwap",
+    "stats", "statistics", "count", "counts", "index", "indices", "feed", "feeds",
+    "volume", "vwap",
     "portfolio", "portfolios", "summary", "bidask",
   ])],
   ["research", new Set([
@@ -116,8 +123,8 @@ const ROUTE_TOKENS: Array<[PolicyCapability, Set<string>]> = [
 const TEXT_RULES: Array<[PolicyCapability, RegExp]> = [
   ["payments", /\b(top[- ]?up|settle(ment)?|transfer|payout|withdraw(al)?|deposit|invoice|checkout|swap|bridg(e|ing)|refund|book a|reservation)\b/i],
   ["inference", /\b(chat|completion|embedding|generat(e|ion)|inference|render(ed|ing)?|transcribe|summari[sz]e|image generation|llm)\b/i],
-  ["identity", /\b(identity|reputation|attestation|credential|kyc|verif(y|ication)|intelligence|entity|profile)\b/i],
-  ["data", /\b(price|prices|market data|marketdata|ohlc|candle|metric|metrics|balance|holdings|historical|index|ranking|rankings|sentiment|statistics|portfolio)\b/i],
+  ["identity", /\b(identity|reputation|attestation|credential|kyc|verif(y|ication)|intelligence|profile)\b/i],
+  ["data", /\b(price|prices|market data|marketdata|ohlc|candle|metric|metrics|balance|holdings|historical|index|ranking|rankings|sentiment|stats|statistics|portfolio)\b/i],
   ["research", /\b(search|content|contents|extract|scrape|crawl|news|scholar|patent|patents|tweet|tweets|article|articles|research|answer|answers)\b/i],
 ];
 
