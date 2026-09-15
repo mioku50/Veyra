@@ -127,6 +127,20 @@ export function getLlmSynthesisDiagnostic(
   environment: NodeJS.ProcessEnv = process.env,
 ) {
   const resolution = resolveLlmConfig(environment);
+  /* Which settings are missing, by name and never by value.
+     `configured: false` on its own cost an afternoon: a deployment answered
+     every question with "could not write a question just now" -- thirty of them
+     in ten seconds, which is not a model being slow but a model never being
+     called -- and this diagnostic, whose whole job is to say why, said only
+     that something was wrong. Four settings are required and it named none of
+     them. A name is not a secret; a value would be, and no value is read here. */
+  const required: Array<[string, string | null]> = [
+    ["LLM_PROVIDER", normalizedEnvironmentValue(environment.LLM_PROVIDER) ?? null],
+    ["LLM_BASE_URL", normalizedEnvironmentValue(environment.LLM_BASE_URL) ?? null],
+    ["LLM_API_KEY", normalizedEnvironmentValue(environment.LLM_API_KEY)
+      ?? normalizedEnvironmentValue(environment.OPENROUTER_API_KEY) ?? null],
+    ["LLM_MODEL", normalizedEnvironmentValue(environment.LLM_MODEL) ?? null],
+  ];
   return {
     provider: resolution.configured
       ? resolution.config.provider
@@ -134,6 +148,14 @@ export function getLlmSynthesisDiagnostic(
     protocol: LLM_PROVIDER_PROTOCOL,
     configured: resolution.configured,
     model: resolution.configured ? resolution.config.model : resolution.model,
+    /** Set only when it is not configured. The names of the settings that have
+     *  no value, and -- when every one of them does -- the fact that
+     *  LLM_PROVIDER holds something other than the one protocol supported. */
+    missing: resolution.configured
+      ? []
+      : required.filter(([, value]) => !value).map(([name]) => name),
+    unsupportedProvider: !resolution.configured
+      && (resolution as { reason?: string }).reason === "unsupported_provider",
     externalProcessing: true,
     deterministicFallback: true,
     legacyOpenAiKeyUsed: false,

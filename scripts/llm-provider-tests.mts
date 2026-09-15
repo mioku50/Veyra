@@ -341,4 +341,61 @@ if (process.argv.includes("--live")) {
   assert.equal(withoutUa.config.provider, "AgentRouter");
 }
 
-console.log("[llm-provider-test] passed: OpenAI-compatible request boundary, routed provider label and User-Agent header, model config, timeout, 429 retry, response bounds, malformed output, legacy-key rejection, secret-safe prompt, input-leak fallback, AI metadata, deterministic fallback, and partial failure");
+/* ---- a diagnostic that says which setting is missing ---- */
+
+/* "configured: false" on its own cost an afternoon. A deployment answered every
+   question with "could not write a question just now" -- thirty of them in ten
+   seconds, which is a model never called rather than a model being slow -- and
+   the diagnostic whose job is to say why named none of the four settings it
+   needs. */
+const noneSet = getLlmSynthesisDiagnostic({} as NodeJS.ProcessEnv);
+assert.equal(noneSet.configured, false);
+assert.deepEqual(noneSet.missing,
+  ["LLM_PROVIDER", "LLM_BASE_URL", "LLM_API_KEY", "LLM_MODEL"],
+  "all four are named when none is set");
+
+const partly = getLlmSynthesisDiagnostic({
+  LLM_PROVIDER: "openai-compatible",
+  LLM_MODEL: "ministral-8b-latest",
+  LLM_PROVIDER_LABEL: "AgentRouter",
+} as NodeJS.ProcessEnv);
+assert.equal(partly.configured, false);
+assert.deepEqual(partly.missing, ["LLM_BASE_URL", "LLM_API_KEY"],
+  "and only the ones actually missing, which is the case a half-migrated "
+  + "environment is in");
+
+/* Names, never values. A missing setting is a fact about configuration; its
+   value would be a credential, and none is read to produce this list. */
+const withKey = getLlmSynthesisDiagnostic({
+  LLM_PROVIDER: "openai-compatible",
+  LLM_BASE_URL: "https://api.example.test/v1",
+  LLM_API_KEY: "sk-do-not-leak-this",
+  LLM_MODEL: "example-model-1",
+} as NodeJS.ProcessEnv);
+assert.equal(withKey.configured, true);
+assert.deepEqual(withKey.missing, [], "nothing is named when nothing is missing");
+assert.ok(!JSON.stringify(withKey).includes("sk-do-not-leak-this"),
+  "the diagnostic never carries a value");
+
+/* The legacy key still counts as the key, so an environment that has not been
+   migrated is not reported as missing one. */
+assert.deepEqual(getLlmSynthesisDiagnostic({
+  LLM_PROVIDER: "openai-compatible",
+  LLM_BASE_URL: "https://api.example.test/v1",
+  OPENROUTER_API_KEY: "legacy",
+  LLM_MODEL: "example-model-1",
+} as NodeJS.ProcessEnv).missing, []);
+
+/* A provider set to something this client cannot speak is its own answer, and
+   is not the same as a setting nobody filled in. */
+const wrongProtocol = getLlmSynthesisDiagnostic({
+  LLM_PROVIDER: "anthropic",
+  LLM_BASE_URL: "https://api.example.test/v1",
+  LLM_API_KEY: "k",
+  LLM_MODEL: "example-model-1",
+} as NodeJS.ProcessEnv);
+assert.equal(wrongProtocol.configured, false);
+assert.deepEqual(wrongProtocol.missing, [], "nothing is missing");
+assert.equal(wrongProtocol.unsupportedProvider, true, "the value is simply wrong");
+
+console.log("[llm-provider-test] passed: OpenAI-compatible request boundary, routed provider label and User-Agent header, and a diagnostic that names the settings it needs without carrying one of their values, model config, timeout, 429 retry, response bounds, malformed output, legacy-key rejection, secret-safe prompt, input-leak fallback, AI metadata, deterministic fallback, and partial failure");
