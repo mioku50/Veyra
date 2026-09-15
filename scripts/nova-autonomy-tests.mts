@@ -20,6 +20,7 @@ import {
 import type { ExecutionMandate } from "../lib/execution/types.ts";
 import { termsFromCandidate, type NovaResearchProposal } from "../lib/nova/research.ts";
 import { settlementNetworkOf } from "../lib/nova/network.ts";
+import { isExecutableTrustDecision, type TrustDecisionLevel } from "../lib/trust-gate/types.ts";
 import { recoverMandateSigner } from "../lib/execution/mandate.ts";
 import { assertMandateAuthorizesAutopilot } from "../lib/execution/executor.ts";
 import {
@@ -269,6 +270,49 @@ const reviewed = evaluateShadow({
 });
 assert.deepEqual(reviewed.failed, ["veyra_decision_allows"]);
 
+/* ------------------------------------------------- one predicate, not a copy */
+
+/* Shadow used to keep its own list of the decisions it would act on, and the
+   list disagreed with isExecutableTrustDecision about REQUIRE_EVALUATOR --
+   which meant research could price and show a card that shadow would then
+   refuse on a rule the card never mentioned. Asserted across every tier rather
+   than on the one that broke, because the point is that there is no second
+   list to drift, not that this tier is handled. */
+const EVERY_TIER: TrustDecisionLevel[] = [
+  "ALLOW", "ALLOW_WITH_LIMITS", "REQUIRE_EVALUATOR", "REVIEW_REQUIRED", "DENY",
+];
+for (const tier of EVERY_TIER) {
+  const shadow = evaluateShadow({
+    mandate: verified, usage: idle, period,
+    proposal: proposal({ decision: tier, verifiedAfterPaying: tier !== "ALLOW" }),
+  });
+  assert.equal(
+    !shadow.failed.includes("veyra_decision_allows"),
+    isExecutableTrustDecision(tier),
+    `shadow and the marketplace must agree about ${tier}`,
+  );
+}
+
+/* The tier that was being refused, allowed -- and allowed against the
+   verification rather than against the label. */
+const evaluatorTier = evaluateShadow({
+  mandate: verified, usage: idle, period,
+  proposal: proposal({ decision: "REQUIRE_EVALUATOR", verifiedAfterPaying: true }),
+});
+assert.equal(evaluatorTier.verdict, "WOULD_ALLOW",
+  "REQUIRE_EVALUATOR is executable, and the settle path checks the answer");
+assert.match(
+  evaluatorTier.checks.find((check) => check.code === "veyra_decision_allows")!.detail,
+  /checked after paying/,
+  "and says so, rather than naming a tier and leaving the reader to guess");
+
+const evaluatorUnverified = evaluateShadow({
+  mandate: verified, usage: idle, period,
+  proposal: proposal({ decision: "REQUIRE_EVALUATOR", verifiedAfterPaying: false }),
+});
+assert.deepEqual(evaluatorUnverified.failed, ["veyra_decision_allows"],
+  "a tier that demands a checked answer, with nothing that would check it, is not executable");
+
 /* --------------------------------------------- the evaluator, wired for real */
 
 /* Of the three terms a mandate signs that shadow did not read, this is the one
@@ -290,6 +334,18 @@ assert.equal(evaluateShadow({
   mandate: verified, usage: idle, period,
   proposal: proposal({ verifiedAfterPaying: false }),
 }).verdict, "WOULD_ALLOW", "a zero threshold demands nothing");
+
+/* Zero is "the owner set no threshold of their own", and the line has to read
+   as that. It used to say the purchase was "under the amount that would demand
+   a checked answer" -- which on $0.0030 against $0 is false, and false in the
+   direction that makes an owner think they forbade something. */
+const zeroThreshold = evaluateShadow({
+  mandate: verified, usage: idle, period, proposal: proposal(),
+}).checks.find((check) => check.code === "evaluator_where_required")!;
+assert.equal(zeroThreshold.ok, true);
+assert.doesNotMatch(zeroThreshold.detail, /under the amount/,
+  "a threshold nobody set is not an amount this purchase is under");
+assert.match(zeroThreshold.detail, /no verification threshold/);
 
 /* ------------------------------------------------ networks are one namespace */
 
@@ -569,5 +625,7 @@ const today = shadowSummaryFrom([record(), record({ period: yesterday })], { per
 assert.equal(today.decisions, 1, "a budget day is the unit the morning reports");
 
 console.log("nova autonomy: v1 frozen at its golden hash, budget days on the owner's clock "
-  + "through both DST turns, every check reported on every decision, and a morning that counts "
-  + "what was withheld as well as what would have been spent");
+  + "through both DST turns, every check reported on every decision, one predicate deciding "
+  + "what is executable on both sides of the card, a threshold nobody set reported as one "
+  + "nobody set, and a morning that counts what was withheld as well as what would have been "
+  + "spent");

@@ -19,7 +19,7 @@ import { computeCanonicalDecisionHash } from "../trust-gate/canonical.ts";
 import { evaluateTrustDecision } from "../trust-gate/decision.ts";
 import { buildClearanceMessage, signTrustClearance } from "../trust-gate/sign.ts";
 import type { TrustDecision } from "../trust-gate/types.ts";
-import { TRUST_POLICY_VERSION } from "../trust-gate/types.ts";
+import { TRUST_POLICY_VERSION, isExecutableTrustDecision } from "../trust-gate/types.ts";
 import { verifyTrustClearanceOnchain } from "../trust-gate/verify.ts";
 import { readArcUsdcBlocklistStatus } from "../wallet/arc-usdc.ts";
 import {
@@ -770,7 +770,10 @@ export async function selectCounterparty(input: {
   const winner = combined.find((candidate) =>
     candidate.identity
     && ["ELIGIBLE", "ELIGIBLE_WITH_LIMITS", "REQUIRES_EVALUATOR"].includes(candidate.eligibility));
-  if (!winner?.identity || !["ALLOW", "ALLOW_WITH_LIMITS", "REQUIRE_EVALUATOR"].includes(winner.trustDecision)) {
+  /* The shared predicate rather than a third copy of its contents. This list
+     agreed with it, which is the only reason it was not a bug -- and agreeing
+     by coincidence is what the copy in shadow autonomy stopped doing. */
+  if (!winner?.identity || !isExecutableTrustDecision(winner.trustDecision)) {
     throw new CounterpartySelectionError("no_eligible_counterparty", 422, {
       candidates: combined.map((candidate) => ({
         agentId: candidate.identity?.agentId ?? null,

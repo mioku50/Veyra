@@ -5,6 +5,7 @@
 
 import type { ExecutionMandate } from "../execution/types.ts";
 import { MANDATE_VERSION_V2 } from "../execution/canonical.ts";
+import { isExecutableTrustDecision } from "../trust-gate/types.ts";
 import type { NovaResearchProposal } from "./research.ts";
 
 /**
@@ -334,10 +335,40 @@ export function evaluateShadow(input: {
     ? `settles on ${input.network ?? mandate.network}`
     : `would settle on ${input.network}, and your mandate names ${mandate.network}`);
 
-  const decisionOk = proposal.decision === "ALLOW" || proposal.decision === "ALLOW_WITH_LIMITS";
+  /* Veyra's own answer, read with Veyra's own predicate.
+     This check kept a second list -- ALLOW and ALLOW_WITH_LIMITS -- beside
+     isExecutableTrustDecision, and the two disagreed about REQUIRE_EVALUATOR.
+     research.ts had already dropped its copy of that list for exactly this
+     reason; shadow kept one, so the layer that draws the card and the layer
+     that decides about it were answering the same question differently. What
+     that produced is not an edge case: research only ever proposes candidates
+     the shared predicate allows, so every REQUIRE_EVALUATOR card reaching here
+     was priced, shown, and then refused by a rule the screen did not have.
+     Both of the first real shadow decisions failed here and nowhere near a
+     limit.
+
+     The tier is not a warning. On an x402 purchase it sets
+     postCallVerificationRequired, and the settle path runs verifyPostCall on
+     the response before the purchase counts as successful -- so the permission
+     is granted against that verification rather than against the tier's name.
+     `verifiedAfterPaying` is the same flag the plan carries into settle as
+     `required`, which is why it is what gets asked here.
+
+     Today that flag is `decision !== "ALLOW"`, so on this rail the condition is
+     satisfied whenever the tier appears and denies nothing by itself. Said
+     plainly rather than left to be discovered: it is here so the day a
+     proposal offers this tier without the verification behind it, shadow
+     refuses it instead of trusting the label. */
+  const verifiedAfterPaying = proposal.verifiedAfterPaying === true;
+  const decisionOk = isExecutableTrustDecision(proposal.decision)
+    && (proposal.decision !== "REQUIRE_EVALUATOR" || verifiedAfterPaying);
   add("veyra_decision_allows", decisionOk, decisionOk
-    ? `Veyra's own decision is ${proposal.decision}`
-    : `Veyra's own decision is ${proposal.decision}`);
+    ? proposal.decision === "REQUIRE_EVALUATOR"
+      ? "Veyra's own decision is REQUIRE_EVALUATOR, and the answer is checked after paying"
+      : `Veyra's own decision is ${proposal.decision}`
+    : proposal.decision === "REQUIRE_EVALUATOR"
+      ? "Veyra's own decision is REQUIRE_EVALUATOR, and nothing here would check the answer afterwards"
+      : `Veyra's own decision is ${proposal.decision}, which Veyra will not execute`);
 
   const trustOk = proposal.trustScore >= mandate.minimumTrustScore;
   add("trust_at_least_minimum", trustOk,
@@ -380,15 +411,25 @@ export function evaluateShadow(input: {
   /* The one term of the three that a proposal can actually answer. Above the
      threshold the owner signed, the answer has to be checked after paying --
      and `verifiedAfterPaying` is precisely whether Veyra will do that. Below
-     it, the term does not apply and the check passes by saying so. */
-  const evaluatorNeeded = mandate.evaluatorThresholdUsdc > 0
-    && cost >= mandate.evaluatorThresholdUsdc;
-  const evaluatorOk = !evaluatorNeeded || proposal.verifiedAfterPaying;
-  add("evaluator_where_required", evaluatorOk, evaluatorNeeded
-    ? evaluatorOk
-      ? `over ${money(mandate.evaluatorThresholdUsdc)}, and the answer would be checked`
-      : `over ${money(mandate.evaluatorThresholdUsdc)}, and this answer would not be checked`
-    : "under the amount that would demand a checked answer");
+     it, the term does not apply and the check passes by saying so.
+
+     Zero is a threshold the owner did not set, not a threshold of nothing. It
+     has always passed here, and it should: the owner is asking for no
+     verification beyond whatever the trust tier already demands. But the line
+     it printed was "under the amount that would demand a checked answer",
+     which on a $0.0100 purchase against a $0 threshold is simply false, and a
+     sentence like that is how a term gets read as a prohibition it never was.
+     It now says what the owner actually said. */
+  const noThreshold = mandate.evaluatorThresholdUsdc <= 0;
+  const evaluatorNeeded = !noThreshold && cost >= mandate.evaluatorThresholdUsdc;
+  const evaluatorOk = !evaluatorNeeded || verifiedAfterPaying;
+  add("evaluator_where_required", evaluatorOk, noThreshold
+    ? "you set no verification threshold of your own"
+    : evaluatorNeeded
+      ? evaluatorOk
+        ? `over ${money(mandate.evaluatorThresholdUsdc)}, and the answer would be checked`
+        : `over ${money(mandate.evaluatorThresholdUsdc)}, and this answer would not be checked`
+      : `under the ${money(mandate.evaluatorThresholdUsdc)} that would demand a checked answer`);
 
   const failed = checks.filter((check) => !check.ok).map((check) => check.code);
   return {
