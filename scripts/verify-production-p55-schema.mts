@@ -1,6 +1,4 @@
 /** Read-only/transaction-rollback Production verifier for P5.5. */
-process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
-
 import assert from "node:assert/strict";
 import { createClient } from "@supabase/supabase-js";
 import { Client } from "pg";

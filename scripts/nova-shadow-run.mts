@@ -12,9 +12,15 @@
  *
  * Nothing here can spend. runShadowPass stops one step before any payment
  * authorization exists.
+ *
+ * It does not turn TLS verification off. The line that did was copied from the
+ * migration scripts, where `pg` meets a self-signed certificate in the pooler's
+ * chain -- a problem this script does not have, because it speaks to Supabase
+ * over HTTPS with an ordinary public certificate. NODE_TLS_REJECT_UNAUTHORIZED
+ * is not scoped to one connection either: it disables verification for every
+ * outbound request the process makes, and this one reaches a live catalogue and
+ * live seller endpoints while holding a service key.
  */
-
-process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
 
 import { createClient } from "@supabase/supabase-js";
 import { getServerSupabaseConfig } from "../lib/supabase/server-env.ts";

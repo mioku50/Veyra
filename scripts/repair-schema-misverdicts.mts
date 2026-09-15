@@ -25,8 +25,6 @@
  * recompute hopefully.
  */
 
-process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
-
 import assert from "node:assert/strict";
 import { db } from "../lib/nova/service.ts";
 import { readResult } from "../lib/nova/synthesis.ts";

@@ -2,8 +2,6 @@
  * Applies the P6.1 Trust-Routed Execution production migration atomically.
  */
 
-process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
-
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import path from "node:path";

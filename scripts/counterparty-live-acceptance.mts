@@ -1,6 +1,4 @@
 /** Real Production P5.5 acceptance. Never prints credentials or private keys. */
-process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
-
 import assert from "node:assert/strict";
 import {
   createPublicClient,

@@ -3,8 +3,6 @@
  * Every score is derived from verified identity plus actual settled ERC-8183
  * execution. No synthetic evidence or placeholder transaction is accepted.
  */
-process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
-
 import assert from "node:assert/strict";
 import {
   createWalletClient,

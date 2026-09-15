@@ -20,8 +20,6 @@
  *   npm run nova:arc:publish -- --apply -- writes to Arc
  */
 
-process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
-
 import { keccak256, toBytes } from "viem";
 import { db } from "../lib/nova/service.ts";
 import { novaRequestHash, recordPurchaseOnArc } from "../lib/nova/arc-proof.ts";

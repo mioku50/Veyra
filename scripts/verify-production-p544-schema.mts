@@ -2,8 +2,6 @@
  * Read-only Production verifier for the P5.4.4 durable trust and RLS closure.
  */
 
-process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
-
 import assert from "node:assert/strict";
 import { createClient } from "@supabase/supabase-js";
 import { Client } from "pg";

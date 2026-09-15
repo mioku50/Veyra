@@ -1,6 +1,4 @@
 /** Read-only Production verifier for the AI-audit security hardening schema. */
-process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
-
 import assert from "node:assert/strict";
 import { createClient } from "@supabase/supabase-js";
 import { Client } from "pg";

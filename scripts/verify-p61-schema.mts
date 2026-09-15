@@ -2,8 +2,6 @@
  * Verifies that the P6.1 database tables and RPC functions are correctly installed.
  */
 
-process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
-
 import assert from "node:assert/strict";
 import { Client } from "pg";
 import { tryGetServerSupabaseConfig } from "../lib/supabase/server-env.ts";

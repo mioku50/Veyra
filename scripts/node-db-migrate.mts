@@ -3,8 +3,6 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
-
 import { readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -33,6 +31,14 @@ async function main() {
 
   const client = new Client({
     connectionString: poolerConnStr,
+    /* Scoped to this connection, and it has to stay that way. The pooler
+       presents a self-signed certificate in its chain, and every script that
+       met it reached for process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0"
+       instead -- which is not a database setting at all: it turns verification
+       off for every outbound request the process makes. Nineteen scripts
+       carried it, including ones that sign Arc transactions and ones that never
+       open a `pg` connection in the first place. If a new script hits the
+       certificate, copy this line, not that one. */
     ssl: { rejectUnauthorized: false },
     connectionTimeoutMillis: 10000,
     statement_timeout: 15000,
