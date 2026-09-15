@@ -5,8 +5,9 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { useState, useSyncExternalStore } from "react";
+import { useState } from "react";
 import { useArcWallet } from "./use-arc-wallet";
+import { useIsProbablyMobile, walletDeepLinks } from "./wallet-app-links";
 
 /* One chip that always says what the wallet is actually doing.
  *
@@ -16,24 +17,9 @@ import { useArcWallet } from "./use-arc-wallet";
  * app's own browser does inject one, so the honest answer on a phone is a link
  * that reopens this page inside it. */
 
-/* Read through useSyncExternalStore rather than an effect: the value never
-   changes after hydration, and the server snapshot is deliberately false so the
-   desktop branch renders identically on both sides. */
-const NO_OP_SUBSCRIBE = () => () => {};
-
-function isProbablyMobile() {
-  return /android|iphone|ipad|ipod|mobile/i.test(navigator.userAgent);
-}
-
-function walletDeepLinks() {
-  if (typeof window === "undefined") return [];
-  const { host, pathname, search, href } = window.location;
-  return [
-    { label: "MetaMask", href: `https://metamask.app.link/dapp/${host}${pathname}${search}` },
-    { label: "Coinbase Wallet", href: `https://go.cb-w.com/dapp?cb_url=${encodeURIComponent(href)}` },
-    { label: "Trust Wallet", href: `https://link.trustwallet.com/open_url?coin_id=60&url=${encodeURIComponent(href)}` },
-  ];
-}
+/* Mobile detection and the deep links moved to ./wallet-app-links, because the
+   product screens hit the same dead end this chip was written to fix and were
+   nowhere near /run to borrow it. */
 
 function short(address: string) {
   return `${address.slice(0, 6)}…${address.slice(-4)}`;
@@ -50,7 +36,7 @@ export function ConnectChip({
   verifying?: boolean;
 }) {
   const wallet = useArcWallet();
-  const mobile = useSyncExternalStore(NO_OP_SUBSCRIBE, isProbablyMobile, () => false);
+  const mobile = useIsProbablyMobile();
   const [openLinks, setOpenLinks] = useState(false);
 
   const base =
