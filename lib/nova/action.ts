@@ -4,6 +4,7 @@
  */
 
 import type { NovaSignal } from "./types.ts";
+import { policyCapabilityFor } from "./capability.ts";
 
 /**
  * What a card is actually asking to do, decided before anybody is routed.
@@ -47,9 +48,23 @@ export type NovaAction = {
   subject: NovaActionSubject | null;
   /** The question, in the words the card will show. */
   intent: string;
-  /** What the counterparty has to be able to do. For an interaction it is the
-   *  subject's own capability; for research it is research. */
+  /**
+   * What kind of paid action this is -- the value a mandate authorises.
+   *
+   * One of POLICY_CAPABILITIES, or "unclassified" when the endpoint publishes
+   * nothing Veyra can read a kind out of. It used to be the discovery term,
+   * which is a different question entirely: see discoveryTerm.
+   */
   requiredCapability: string;
+  /**
+   * The word this subject was found by, kept for finding things like it.
+   *
+   * Good at discovery and useless as a permission. Circle's search matches
+   * anywhere in a row, so searching "payment" returns every x402 listing that
+   * mentions payment -- which is all of them -- and the agent's own terms
+   * include Arc, USDC and stablecoin, which are topics and not actions at all.
+   */
+  discoveryTerm: string;
   /** What to ask the catalogue for. */
   query: string;
 };
@@ -72,7 +87,11 @@ export function actionFor(signal: NovaSignal): NovaAction {
       actionType: "research_subject",
       subject: { kind: "github_repository", ref: signal.subjectRef ?? null, label },
       intent: `What changed in ${label}, and does it matter?`,
+      /* Reading a repository and writing up what changed is research whoever
+         is paid to do it, and unlike an endpoint there is nothing here to
+         classify: a repository publishes no route and sells nothing. */
       requiredCapability: "research",
+      discoveryTerm: "research",
       query: `${label} project update`,
     };
   }
@@ -81,9 +100,21 @@ export function actionFor(signal: NovaSignal): NovaAction {
      its payee moved, its rail moved, it stopped answering -- is a fact about
      that endpoint. None of them is a question another seller can be paid to
      answer, and the price printed on the card is this endpoint's price. */
-  const capability = typeof subjectContext.capability === "string" && subjectContext.capability.trim()
+  const term = typeof subjectContext.capability === "string" && subjectContext.capability.trim()
     ? subjectContext.capability.trim()
     : "research";
+
+  /* The permission is read from the endpoint, never from the word that found
+     it. Stored on the signal, `capability` is the discovery term, and on the
+     live catalogue that term said "payments" for a CAPTCHA solver, a meme
+     generator, Messari's news feed and eight Apollo people-search routes --
+     none of which takes a payment. A mandate built on those values would say
+     one thing and authorise another. */
+  const capability = policyCapabilityFor({
+    resource: typeof subjectContext.resource === "string" ? subjectContext.resource : "",
+    description: typeof subjectContext.description === "string" ? subjectContext.description : null,
+    provider: typeof subjectContext.provider === "string" ? subjectContext.provider : null,
+  });
 
   return {
     actionType: "interact_with_subject",
@@ -92,6 +123,7 @@ export function actionFor(signal: NovaSignal): NovaAction {
       : null,
     intent: `What is ${label} for, and is it worth paying for?`,
     requiredCapability: capability,
+    discoveryTerm: term,
     query: label,
   };
 }

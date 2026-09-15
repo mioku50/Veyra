@@ -25,6 +25,9 @@ import { EXPLICIT_IGNORE_SUPPORT, ignoreWeight, summariseAway } from "../lib/nov
 import { networkName, settlementNetworkOf } from "../lib/nova/network.ts";
 import { buildRequestBody } from "../lib/x402/request-body.ts";
 import { actionFor } from "../lib/nova/action.ts";
+import {
+  policyCapabilityFor, POLICY_CAPABILITIES, UNCLASSIFIED_CAPABILITY,
+} from "../lib/nova/capability.ts";
 import { readResult } from "../lib/nova/synthesis.ts";
 import { sharpenIntent } from "../lib/nova/intent.ts";
 import { proposeResearch } from "../lib/nova/research.ts";
@@ -866,25 +869,125 @@ const interestsSeen = new Set(fairQueries.map((q) => q.interest));
 assert.equal(interestsSeen.size, 4, "no interest is dropped by the interleave");
 assert.ok(fairQueries.length > 4, "second and third capability terms are still asked");
 
+/* ---- what kind of paid action this is ---- */
+
+/* Rows copied from the live catalogue, because the whole point is that these
+   are what providers actually publish. The description column is worth reading
+   twice: ten different services share the sentence "<x> endpoint via Orthogonal
+   nanopayment proxy", which is why the route decides and the prose only speaks
+   when the route says nothing. */
+const CATALOGUE: Array<[string, string, string]> = [
+  // money moves
+  ["payments", "https://api.venice.ai/api/v1/x402/top-up", "Generate x402 USDC top-up payment request"],
+  ["payments", "https://x402.ottoai.services/hl-deposit-withdraw", "Deposit or withdraw USDC to/from Hyperliquid via Arbitrum"],
+  ["payments", "https://x402.ottoai.services/bridge", "Cross-chain token bridging via LiFi aggregator"],
+  ["payments", "https://agentres.dev/api/book", "Book a reservation ($0.01 USDC)"],
+  // work run on somebody's bill
+  ["inference", "https://np.orthogonal.com/baseten/v1/chat/completions", "baseten endpoint via Orthogonal nanopayment proxy"],
+  ["inference", "https://api.aisa.one/v2/chat/completions", "OpenAI-compatible chat completions"],
+  ["inference", "https://fal.x402.paysponge.com/fal-ai/flux/schnell", "Submit a FLUX Schnell image generation request"],
+  // reads
+  ["identity", "https://api.arkm.com/x402/intelligence/entity", "Get Arkham intelligence for an entity"],
+  ["data", "https://api.arkm.com/x402/marketdata/altcoin-index", "Get Arkham Altcoin Index"],
+  ["data", "https://x402.alchemy.com/prices/v1/tokens/by-symbol", "Prices API - current token prices by symbol"],
+  ["research", "https://api.exa.ai/search", "Search the web with Exa and return ranked results"],
+  ["research", "https://api.exa.ai/contents", "Retrieve clean content from URLs or Exa document IDs."],
+  ["research", "https://np.orthogonal.com/serper/patents", "serper endpoint via Orthogonal nanopayment proxy"],
+  ["research", "https://x402.twit.sh/tweets/search", "Search tweets with advanced filters"],
+];
+for (const [expected, resource, description] of CATALOGUE) {
+  assert.equal(policyCapabilityFor({ resource, description }), expected,
+    `${resource} should be ${expected}`);
+}
+
+/* Providers write routes three ways and mean the same thing by all of them. */
+assert.equal(policyCapabilityFor({ resource: "https://x/api_search" }), "research");
+assert.equal(policyCapabilityFor({ resource: "https://x/createTask" }), "unclassified");
+assert.equal(policyCapabilityFor({ resource: "https://x/hl-deposit-withdraw" }), "payments");
+
+/* A templated segment is the caller's knowledge, not the endpoint's kind. */
+assert.equal(
+  policyCapabilityFor({ resource: "https://x/v0/inboxes/{inbox_id}/drafts" }),
+  "unclassified",
+  "and {inbox_id} must not be read as a word about what this endpoint does");
+
+/* The asymmetry, asserted rather than assumed. Where the evidence runs out the
+   answer is a value no mandate lists, because calling a payment endpoint
+   "research" spends a research budget on a transfer, while calling a research
+   endpoint "unclassified" costs a card nobody was going to buy. */
+assert.equal(policyCapabilityFor({ resource: "https://x/x402/einstein/report" }), "unclassified");
+assert.equal(policyCapabilityFor({ resource: "" }), "unclassified");
+assert.ok(!POLICY_CAPABILITIES.includes(UNCLASSIFIED_CAPABILITY as never),
+  "unclassified is not a capability, so a mandate cannot list it by accident");
+
+/* A route that reads as two things is read as the more consequential one. */
+assert.equal(
+  policyCapabilityFor({ resource: "https://x/v1/payments/history" }),
+  "payments",
+  "history of payments is still the payments family, not the data one");
+
 /* ---- what the card is asking to do ---- */
 
-function signalFor(kind: "x402_resource" | "github_repository", label: string, capability?: string) {
+function signalFor(
+  kind: "x402_resource" | "github_repository",
+  label: string,
+  subject?: { capability?: string; resource?: string; description?: string },
+) {
   return {
     signalId: "s1", subjectId: "sub1", subjectLabel: label, subjectRef: "x402:aff46c21",
     subjectKind: kind, interest: "Arc", kind: "capability_available",
     headline: `${label} is available`, detail: "", relevance: "high", relevanceReason: "",
     status: "new", executionPublicId: null, observedAt: "2026-09-14T00:00:00.000Z",
-    evidence: capability ? { subject: { capability } } : {},
+    evidence: subject ? { subject } : {},
   } as never;
 }
 
 /* A catalogue listing is a seller. The card is named after it, the price on the
    card is its price, and nobody else may be paid instead -- that substitution
    happened, at twenty times the price, silently. */
-const exa = actionFor(signalFor("x402_resource", "Exa contents", "search"));
+const exa = actionFor(signalFor("x402_resource", "Exa contents", {
+  capability: "arc", resource: "https://api.exa.ai/contents",
+  description: "Retrieve clean content from URLs or Exa document IDs.",
+}));
 assert.equal(exa.actionType, "interact_with_subject");
-assert.equal(exa.requiredCapability, "search", "an interaction needs the subject's own capability");
 assert.equal(exa.subject?.ref, "x402:aff46c21", "routing is pinned to the subject");
+
+/* The two questions, kept apart. The term is how this endpoint was found and
+   is a topic -- Arc is not something anybody may be paid to do. The capability
+   is what paying it would be, read from the endpoint's own route. Putting the
+   term in a mandate is what produced `allowedCapabilities: ["arc", "x402",
+   "stablecoin"]`, a list that authorises nothing a reader could name. */
+assert.equal(exa.discoveryTerm, "arc", "the term that found it is kept for finding more like it");
+assert.equal(exa.requiredCapability, "research", "and never used as the permission");
+
+/* The direction that matters. Circle's search matches anywhere in a row, so
+   "payment" returns every listing that mentions payment -- which on a
+   marketplace of paid endpoints is all of them. Measured on the live
+   catalogue: 24 resources would have been called payments by their term, and
+   not one of them takes a payment. */
+const apollo = actionFor(signalFor("x402_resource", "Orthogonal api search", {
+  capability: "payment",
+  resource: "https://np.orthogonal.com/apollo/api/v1/mixed_people/api_search",
+  description: "apollo endpoint via Orthogonal nanopayment proxy",
+}));
+assert.notEqual(apollo.requiredCapability, "payments",
+  "a people-search endpoint found by searching \"payment\" is not a payment");
+
+/* And the one that really is. A mandate that allows research must not
+   authorise a $5 top-up because the card was found under the same word. */
+const topup = actionFor(signalFor("x402_resource", "Venice.ai top up", {
+  capability: "arc", resource: "https://api.venice.ai/api/v1/x402/top-up",
+  description: "Generate x402 USDC top-up payment request",
+}));
+assert.equal(topup.requiredCapability, "payments");
+
+/* Unreadable is refused, not filed under the broadest thing available. */
+const opaque = actionFor(signalFor("x402_resource", "Sponge createTask", {
+  capability: "x402", resource: "https://2captcha.x402.paysponge.com/createTask",
+  description: "Create a CAPTCHA solve task",
+}));
+assert.equal(opaque.requiredCapability, "unclassified",
+  "no mandate lists this, so an endpoint Veyra cannot read is not paid");
 
 /* A repository sells nothing, so the work has to be bought from somebody and
    which somebody is a real routing decision. */
@@ -897,6 +1000,8 @@ assert.match(repo.intent, /What changed in Ethereum EIPs/);
    capability falls back; the action type does not, because what may be paid is
    not a function of how well the evidence was filled in. */
 assert.equal(actionFor(signalFor("x402_resource", "Sponge fast sdxl")).actionType, "interact_with_subject");
+assert.equal(actionFor(signalFor("x402_resource", "Sponge fast sdxl")).requiredCapability, "unclassified",
+  "and an evidence gap is reported as one rather than guessed past");
 
 /* ---- the brief has to be a market, not a catalogue page ---- */
 
@@ -1117,4 +1222,4 @@ const forStranger = await sharpenIntent({
 assert.equal(forStranger.written, true);
 assert.match(forStranger.intent, /Ethereum/);
 
-console.log("[nova-test] passed: interests kept even when unknown, a first sighting reported as a finding rather than as news, the same commits not re-reported across refreshes, a payee change outranking everything and un-learnable away, a rail change surfaced a day before it could refuse a payment, a 3% price move kept out of the headline, a brief that caps findings so a change can never be crowded out, a tick that reads each URL once and shares its failures, and an absence measured by adding up every unattended pass rather than reporting the last one, and feedback that can raise as well as bury without ever silencing a payee change, and terms that stop a payment when the price or the payee moved between reading the card and pressing the button, and a card that names the chain its money moves on rather than letting the interest stand in for one, and a body that says it asks nothing rather than satisfying a schema with silence, and a budget every interest gets a share of before any interest gets seconds, and an action type that decides whether routing may substitute at all, and a watchlist that grows with the interests and cannot be filled by one seller, and a reading of what was bought that never speaks for the verification and never costs the receipt, and a question written for the event that is thrown away the moment it drifts off the subject, matched as whole words so a short name is never found inside a longer one, and a verdict that says out loud it covers the exchange and not the truth of what was sold, and an interaction that refuses rather than spend on the stock question, which for an endpoint is only a search for its own name");
+console.log("[nova-test] passed: interests kept even when unknown, a first sighting reported as a finding rather than as news, the same commits not re-reported across refreshes, a payee change outranking everything and un-learnable away, a rail change surfaced a day before it could refuse a payment, a 3% price move kept out of the headline, a brief that caps findings so a change can never be crowded out, a tick that reads each URL once and shares its failures, and an absence measured by adding up every unattended pass rather than reporting the last one, and feedback that can raise as well as bury without ever silencing a payee change, and terms that stop a payment when the price or the payee moved between reading the card and pressing the button, and a card that names the chain its money moves on rather than letting the interest stand in for one, and a body that says it asks nothing rather than satisfying a schema with silence, and a budget every interest gets a share of before any interest gets seconds, and an action type that decides whether routing may substitute at all, and a watchlist that grows with the interests and cannot be filled by one seller, and a reading of what was bought that never speaks for the verification and never costs the receipt, and a question written for the event that is thrown away the moment it drifts off the subject, matched as whole words so a short name is never found inside a longer one, and a verdict that says out loud it covers the exchange and not the truth of what was sold, and an interaction that refuses rather than spend on the stock question, which for an endpoint is only a search for its own name, and a capability read from the endpoint rather than from the word that found it");

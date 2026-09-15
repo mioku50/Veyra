@@ -397,7 +397,7 @@ async function firstPayable(input: {
 
     const request = buildRequestBody({
       intent: input.action.intent,
-      capability: input.action.requiredCapability,
+      capability: input.action.discoveryTerm,
       inputSchema: (candidate.marketplace.inputSchema ?? null) as JsonSchema | null,
     });
     /* An endpoint whose published vocabulary has nowhere to put the question.
@@ -516,7 +516,7 @@ export async function proposeResearch(input: {
   }
 
   const action: NovaAction = { ...base, intent: sharpened.intent };
-  const { requiredCapability: capability, query, intent: question } = action;
+  const { requiredCapability: capability, discoveryTerm, query, intent: question } = action;
   const subjectRefWanted = action.subject?.ref ?? null;
   const requesterWallet = input.wallet && isAddress(input.wallet)
     ? getAddress(input.wallet)
@@ -526,7 +526,12 @@ export async function proposeResearch(input: {
   try {
     selection = await selectMarketplaceCounterparty({
       request: {
-        capability,
+        /* The term, because this is discovery and the term is what Circle's
+           catalogue answers to. The policy capability goes on the proposal
+           instead, where a mandate reads it -- two questions, two values, and
+           sending the wrong one to either is how "arc" ended up in a list of
+           things the owner authorised Nova to pay for. */
+        capability: discoveryTerm,
         query,
         /* The endpoint this card is named after, asked for by id.
            An interaction's counterparty is not a search result: the card says
