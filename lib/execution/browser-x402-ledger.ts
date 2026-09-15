@@ -6,6 +6,7 @@
 import { randomUUID } from "node:crypto";
 import { computeCanonicalExecutionHash } from "./canonical.ts";
 import { saveExecutionAttempt, updateExecutionAttemptState } from "./db.ts";
+import type { RelayFailure } from "./relay-failure.ts";
 import type { ExecutionAttempt, ExecutionState, X402ReconciliationContext } from "./types.ts";
 import type { PostCallVerification } from "../x402/post-call-verification.ts";
 
@@ -143,8 +144,12 @@ export type BrowserX402Outcome = {
   httpOk: boolean;
   /** The seller answered the payment itself with another 402. */
   paymentRefused?: boolean;
-  /** The relay never completed: nothing is known about the money. */
-  relayFailed?: boolean;
+  /** What the token says about the authorization: redeemed, not redeemed, or
+   *  unreadable. Null is not "no" -- it is "the question could not be put". */
+  authorizationUsed?: boolean | null;
+  /** The relay did not complete, and whether the authorization could have left
+   *  before it broke. */
+  relayFailure?: RelayFailure;
   verification: PostCallVerification | null;
 };
 
@@ -163,10 +168,26 @@ export function terminalStateFor(input: BrowserX402Outcome): {
   state: ExecutionState;
   failureCode: string | null;
 } {
-  if (input.relayFailed) {
-    return { state: "FAILED", failureCode: "relay_failed" };
+  if (input.relayFailure === "not_dispatched") {
+    /* The request never reached the seller -- no socket, no handshake, no
+       bytes. This is the only relay failure that proves the money is still
+       where it was. */
+    return { state: "FAILED", failureCode: "relay_not_dispatched" };
   }
-  if (input.paymentRefused || input.settlementSuccess === false) {
+  if (input.paymentRefused) {
+    /* A seller answering 402 is telling us its intent, not the chain's state.
+       The authorization it holds is redeemable by whoever holds it, and saying
+       no costs nothing to a seller that has already taken it -- so the refusal
+       is graded by what the token says, not by what the seller said. */
+    if (input.authorizationUsed === true) {
+      return { state: "SETTLED_SERVICE_FAILED", failureCode: "payment_taken_then_refused" };
+    }
+    if (input.authorizationUsed === false) {
+      return { state: "SETTLEMENT_FAILED", failureCode: "payment_rejected_by_seller" };
+    }
+    return { state: "SETTLEMENT_UNVERIFIED", failureCode: null };
+  }
+  if (input.settlementSuccess === false) {
     return { state: "SETTLEMENT_FAILED", failureCode: "payment_rejected_by_seller" };
   }
   if (input.settlementSuccess === null) {
@@ -174,8 +195,10 @@ export function terminalStateFor(input: BrowserX402Outcome): {
        authorization nonce may already have been consumed, and that is true
        whether or not the seller then answered with an error. Recording FAILED
        would assert no money moved, which Veyra cannot see. SETTLEMENT_UNVERIFIED
-       is not terminal: the reconciliation route resolves it against Arc from the
-       nonce and signature stored with the attempt. */
+       is not terminal: the reconciliation route resolves it from the payer and
+       nonce stored with the attempt by reading the token's own authorization
+       bit, which needs no transaction hash and so survives the case where the
+       response that would have carried one never arrived. */
     return { state: "SETTLEMENT_UNVERIFIED", failureCode: null };
   }
   if (!input.httpOk) {

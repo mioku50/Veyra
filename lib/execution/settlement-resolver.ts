@@ -11,8 +11,9 @@ import {
   decodeFunctionData,
   type Address,
   type Hash,
+  type PublicClient,
 } from "viem";
-import { arcTestnet } from "viem/chains";
+import { arcTestnet, base, mainnet } from "viem/chains";
 import type { ExecutionAttempt } from "./types.ts";
 
 export const ARC_USDC_CONTRACT: Address = "0x3600000000000000000000000000000000000000";
@@ -54,6 +55,20 @@ export const EIP3009_ABI = [
     stateMutability: "nonpayable",
   },
   {
+    /* The canonical answer to "did this authorization get spent", and the only
+       one available when the response that would have carried a transaction
+       hash never arrived. EIP-3009 keeps a bit per (authorizer, nonce); the
+       token is the authority on it, not the seller. */
+    name: "authorizationState",
+    type: "function",
+    inputs: [
+      { name: "authorizer", type: "address" },
+      { name: "nonce", type: "bytes32" },
+    ],
+    outputs: [{ name: "", type: "bool" }],
+    stateMutability: "view",
+  },
+  {
     name: "AuthorizationUsed",
     type: "event",
     inputs: [
@@ -78,6 +93,43 @@ export interface SettlementResolution {
   settledAmountUsdc?: number;
   payer?: `0x${string}`;
   payTo?: `0x${string}`;
+  /** What the answer rests on. A settlement read from the token's own
+   *  authorization bit is as certain as one read from a receipt, but it cannot
+   *  name the transaction that did it, and a reader deserves to know which of
+   *  the two they are looking at. */
+  proof?: "transaction_receipt" | "authorization_state";
+}
+
+const UNRESOLVED: SettlementResolution = { resolved: false, settled: false, failed: false };
+
+/**
+ * The chain an authorization was signed for.
+ *
+ * This used to be Arc and nothing else, while the browser relay happily settles
+ * on Base -- so a Base payment that needed reconciling was looked for on a
+ * chain it was never on, found nothing, and stayed unresolved forever. An
+ * unknown network resolves to nothing rather than to a default, because
+ * guessing the chain is how you prove a payment did not happen by looking in
+ * the wrong place.
+ */
+export function chainForNetwork(network?: string | null) {
+  switch ((network ?? "").trim().toLowerCase()) {
+    // Absent means Arc: every attempt written before the field existed was one.
+    case "":
+    case "arc":
+    case "arc-testnet":
+    case "eip155:5042002":
+      return arcTestnet;
+    case "base":
+    case "eip155:8453":
+      return base;
+    case "ethereum":
+    case "mainnet":
+    case "eip155:1":
+      return mainnet;
+    default:
+      return null;
+  }
 }
 
 export interface SettlementResolver {
@@ -85,6 +137,45 @@ export interface SettlementResolver {
     attempt: ExecutionAttempt;
     hint?: string;
   }): Promise<SettlementResolution>;
+}
+
+/**
+ * Whether one authorization has been redeemed, asked of the token directly.
+ *
+ * For callers that hold a live authorization and a claim about it -- a seller
+ * answering 402, say -- and want the chain's answer instead of the claim.
+ * Returns null when the question could not be put: an unknown network, an RPC
+ * that did not answer. Null is not "no".
+ */
+export async function readAuthorizationUsed(input: {
+  network?: string | null;
+  asset: string;
+  payer: string;
+  nonce: string;
+  rpcUrl?: string;
+}): Promise<boolean | null> {
+  const chain = chainForNetwork(input.network);
+  const nonce = normalizeHex32(input.nonce);
+  if (!chain || !nonce || !input.asset || !input.payer) return null;
+  try {
+    const client = createPublicClient({
+      chain,
+      transport: http(
+        chain.id === arcTestnet.id
+          ? (input.rpcUrl || process.env.ARC_TESTNET_RPC_URL || process.env.ARC_RPC_URL)
+          : undefined,
+      ),
+    }) as PublicClient;
+    const used = await client.readContract({
+      address: input.asset as Address,
+      abi: EIP3009_ABI,
+      functionName: "authorizationState",
+      args: [input.payer as Address, nonce as `0x${string}`],
+    });
+    return used === true;
+  } catch {
+    return null;
+  }
 }
 
 export class RealArcSettlementResolver implements SettlementResolver {
@@ -124,17 +215,136 @@ export class RealArcSettlementResolver implements SettlementResolver {
       x402Context.authorizedAmountAtomic ?? Math.round(x402Context.authorizedAmountUsdc * 1_000_000)
     );
 
-    // Check candidate transaction hash
-    const candidateTx = hint || attempt.paymentTx || x402Context.facilitatorReference;
-    if (!candidateTx || !TRANSACTION_HASH_REGEX.test(candidateTx)) {
-      return { resolved: false, settled: false, failed: false };
+    const chain = chainForNetwork(x402Context.network);
+    if (!chain) return UNRESOLVED;
+
+    let publicClient: PublicClient;
+    try {
+      publicClient = createPublicClient({
+        chain,
+        /* The configured URL is Arc's. Every other chain uses viem's default
+           endpoint for itself; this is a read-only call on a public contract. */
+        transport: http(chain.id === arcTestnet.id ? this.rpcUrl : undefined),
+      }) as PublicClient;
+    } catch {
+      return UNRESOLVED;
     }
 
-    try {
-      const publicClient = createPublicClient({
-        chain: arcTestnet,
-        transport: http(this.rpcUrl),
-      });
+    /* Two ways to answer, in order of how much they can say.
+
+       A transaction receipt names the transfer and proves it, so it is tried
+       first whenever there is a hash to try. But the failure this resolver
+       exists for -- a response that never arrived -- is exactly the one that
+       leaves no hash, and that meant the attempt sat in SETTLEMENT_UNVERIFIED
+       with its budget reserved and no way out of it.
+
+       The token itself always knows. EIP-3009 records a bit per (authorizer,
+       nonce), and both were written down before the request was sent. */
+    const candidateTx = hint || attempt.paymentTx || x402Context.facilitatorReference;
+    if (candidateTx && TRANSACTION_HASH_REGEX.test(candidateTx)) {
+      const byReceipt = await this.resolveFromTransaction({
+        publicClient,
+        candidateTx: candidateTx as Hash,
+        expectedPayer,
+        expectedPayTo,
+        expectedAsset,
+        expectedNonce,
+        expectedValidBefore,
+        expectedAmountAtomic,
+      }).catch(() => null);
+      if (byReceipt) return byReceipt;
+    }
+
+    return await this.resolveFromAuthorizationState({
+      publicClient,
+      asset: expectedAsset as Address,
+      payer: expectedPayer as Address,
+      nonce: expectedNonce as `0x${string}`,
+      validBefore: expectedValidBefore,
+      amountAtomic: expectedAmountAtomic,
+      payTo: expectedPayTo as Address,
+    }).catch(() => UNRESOLVED);
+  }
+
+  /**
+   * What the chain says about one authorization, when no receipt is available.
+   *
+   * The bit is the whole answer to whether money moved. What it cannot do is
+   * name the transaction that moved it, so a settlement proved this way carries
+   * no hash -- a weaker receipt and a far stronger fact than the "FAILED,
+   * nothing transferred" it replaces.
+   *
+   * An unused authorization is not yet good news. Until validBefore passes the
+   * signature is still redeemable by anyone holding it, so "not spent" means
+   * "not spent yet" and the attempt stays open. Only an expired and unused
+   * authorization is safe to call a failure -- and then it is a certain one.
+   */
+  private async resolveFromAuthorizationState(input: {
+    publicClient: PublicClient;
+    asset: Address;
+    payer: Address;
+    nonce: `0x${string}`;
+    validBefore: number;
+    amountAtomic: bigint;
+    payTo: Address;
+  }): Promise<SettlementResolution> {
+    const used = await input.publicClient.readContract({
+      address: input.asset,
+      abi: EIP3009_ABI,
+      functionName: "authorizationState",
+      args: [input.payer, input.nonce],
+    });
+
+    if (used === true) {
+      return {
+        resolved: true,
+        settled: true,
+        failed: false,
+        /* The signature fixed the payee and the amount, so redemption can only
+           have moved this much to this address. Nothing here is taken from
+           what the seller said. */
+        settledAmountUsdc: Number(input.amountAtomic) / 1_000_000,
+        payer: input.payer,
+        payTo: input.payTo,
+        txHash: null,
+        proof: "authorization_state",
+      };
+    }
+
+    if (Number.isFinite(input.validBefore) && Date.now() / 1000 > input.validBefore) {
+      return {
+        resolved: true,
+        settled: false,
+        failed: true,
+        failureReason: "AUTHORIZATION_EXPIRED_UNUSED",
+        proof: "authorization_state",
+      };
+    }
+
+    // Still redeemable. Nobody may call this a failure yet.
+    return UNRESOLVED;
+  }
+
+  /**
+   * The receipt path, unchanged: a candidate transaction bound to this exact
+   * authorization. Returns null rather than a verdict when it has nothing to
+   * say, so an unrelated or unfindable transaction falls through to the token
+   * instead of ending the resolution.
+   */
+  private async resolveFromTransaction(input: {
+    publicClient: PublicClient;
+    candidateTx: Hash;
+    expectedPayer: string;
+    expectedPayTo: string;
+    expectedAsset: string;
+    expectedNonce: string | null;
+    expectedValidBefore: number;
+    expectedAmountAtomic: bigint;
+  }): Promise<SettlementResolution | null> {
+    const {
+      publicClient, candidateTx, expectedPayer, expectedPayTo,
+      expectedAsset, expectedNonce, expectedValidBefore, expectedAmountAtomic,
+    } = input;
 
       const [receipt, transaction] = await Promise.all([
         publicClient.getTransactionReceipt({ hash: candidateTx as Hash }).catch(() => null),
@@ -142,7 +352,7 @@ export class RealArcSettlementResolver implements SettlementResolver {
       ]);
 
       if (!receipt) {
-        return { resolved: false, settled: false, failed: false };
+        return null;
       }
 
       // 3 & 4. BIND TRANSACTION TO AUTHORIZATION
@@ -215,7 +425,7 @@ export class RealArcSettlementResolver implements SettlementResolver {
           };
         }
         // Unrelated reverted transaction -> remain unresolved
-        return { resolved: false, settled: false, failed: false };
+        return null;
       }
 
       // Handle Successful Transaction
@@ -251,12 +461,8 @@ export class RealArcSettlementResolver implements SettlementResolver {
           }
         }
       }
-    } catch {
-      // Network or RPC failure -> fail unresolved
-      return { resolved: false, settled: false, failed: false };
-    }
 
-    return { resolved: false, settled: false, failed: false };
+    return null;
   }
 }
 

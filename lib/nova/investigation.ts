@@ -415,10 +415,20 @@ export async function settleResearch(input: {
        away. "The endpoint rejected the signed payment" is true and useless: it
        cost an hour of forensics against the chain to learn what one line of the
        response already said. It is kept and shown now, including the raw body,
-       because a refusal nobody can act on is a dead end with a receipt. */
+       because a refusal nobody can act on is a dead end with a receipt.
+
+       "unpaid" is what a refusal usually means and not what it always means. A
+       seller can redeem the authorization and still answer 402, and the ledger
+       now grades the refusal against the token rather than the answer -- so
+       this reads the graded state instead of assuming the generous one. Saying
+       "unpaid" about money that is gone is the one mistake here that costs
+       somebody something. */
+    const moneyLeft = outcome.executionState === "SETTLED_SERVICE_FAILED";
+    const unresolved = outcome.executionState === "SETTLEMENT_UNVERIFIED";
     return finish(row, {
-      status: "unpaid",
+      status: moneyLeft || unresolved ? "paid_unverified" : "unpaid",
       executionPublicId: outcome.executionId,
+      paidUsdc: outcome.paidUsdc,
       result: outcome.body || null,
       failure: `${outcome.message} ${sellerReason(outcome.body)}`.trim(),
     });

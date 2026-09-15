@@ -5,6 +5,8 @@
 
 import assert from "node:assert/strict";
 import { terminalStateFor, type BrowserX402Outcome } from "../lib/execution/browser-x402-ledger.ts";
+import { classifyRelayFailure } from "../lib/execution/relay-failure.ts";
+import { chainForNetwork } from "../lib/execution/settlement-resolver.ts";
 import { ALLOWED_TRANSITIONS, validateStateTransition } from "../lib/execution/state-machine.ts";
 import type { ExecutionAttempt, ExecutionState } from "../lib/execution/types.ts";
 import { publicExecutionView } from "../lib/execution/public-view.ts";
@@ -53,9 +55,32 @@ assert.equal(
   terminalStateFor({ settlementSuccess: false, httpOk: false, verification: null }).state,
   "SETTLEMENT_FAILED",
 );
+
+/* A 402 is what the seller says, not what the chain shows.
+ *
+ * This used to be "SETTLEMENT_FAILED, nothing was transferred" on the strength
+ * of the refusal alone -- which a seller that had already redeemed the
+ * authorization could produce for free, and the money would leave the record.
+ * The refusal is now graded by the token's own authorization bit. */
+assert.deepEqual(
+  terminalStateFor({ paymentRefused: true, authorizationUsed: false, settlementSuccess: false, httpOk: false, verification: null }),
+  { state: "SETTLEMENT_FAILED", failureCode: "payment_rejected_by_seller" },
+  "unspent authorization: the refusal is real and now provable",
+);
+assert.deepEqual(
+  terminalStateFor({ paymentRefused: true, authorizationUsed: true, settlementSuccess: true, httpOk: false, verification: null }),
+  { state: "SETTLED_SERVICE_FAILED", failureCode: "payment_taken_then_refused" },
+  "a seller that took the money and then said no must not read as not paid",
+);
+assert.equal(
+  terminalStateFor({ paymentRefused: true, authorizationUsed: null, settlementSuccess: null, httpOk: false, verification: null }).state,
+  "SETTLEMENT_UNVERIFIED",
+  "an unreadable chain is not a refusal",
+);
 assert.equal(
   terminalStateFor({ paymentRefused: true, settlementSuccess: null, httpOk: false, verification: null }).state,
-  "SETTLEMENT_FAILED",
+  "SETTLEMENT_UNVERIFIED",
+  "and neither is not having asked",
 );
 
 /* No receipt at all: Veyra will not claim the money moved, and will not claim it
@@ -74,17 +99,59 @@ assert.equal(
   "an error answer with no receipt still leaves the charge unknown",
 );
 
-// Only a relay that never left asserts nothing was spent.
+/* Only a relay that never left asserts nothing was spent.
+ *
+ * Both halves of this used to be FAILED. A hostname that does not resolve and
+ * a socket that died waiting for the response are not the same event: in the
+ * second the PAYMENT-SIGNATURE header, and the redeemable nonce inside it, has
+ * already reached the seller. */
+assert.deepEqual(
+  terminalStateFor({ relayFailure: "not_dispatched", settlementSuccess: null, httpOk: false, verification: null }),
+  { state: "FAILED", failureCode: "relay_not_dispatched" },
+);
 assert.equal(
-  terminalStateFor({ relayFailed: true, settlementSuccess: null, httpOk: false, verification: null }).state,
-  "FAILED",
+  terminalStateFor({ relayFailure: "possibly_dispatched", settlementSuccess: null, httpOk: false, verification: null }).state,
+  "SETTLEMENT_UNVERIFIED",
+  "a lost response is not evidence that nothing was paid",
 );
 
-// The relay never came back.
+/* ---- where in the call it broke ---- */
+
+assert.equal(classifyRelayFailure({ name: "SSRFProtectionError" }), "not_dispatched");
+for (const code of ["ENOTFOUND", "ECONNREFUSED", "UND_ERR_CONNECT_TIMEOUT", "CERT_HAS_EXPIRED"]) {
+  assert.equal(
+    classifyRelayFailure(new TypeError("fetch failed", { cause: { code } })),
+    "not_dispatched",
+    `${code} happens before any byte is written`,
+  );
+}
+for (const code of ["ECONNRESET", "UND_ERR_HEADERS_TIMEOUT", "UND_ERR_BODY_TIMEOUT", "ETIMEDOUT", "EPIPE"]) {
+  assert.equal(
+    classifyRelayFailure(new TypeError("fetch failed", { cause: { code } })),
+    "possibly_dispatched",
+    `${code} can happen with the request already on the wire`,
+  );
+}
 assert.equal(
-  terminalStateFor({ relayFailed: true, settlementSuccess: null, httpOk: false, verification: null }).state,
-  "FAILED",
+  classifyRelayFailure(new Error("something nobody has seen before")),
+  "possibly_dispatched",
+  "unknown means unknown, and unknown must not release a reservation",
 );
+// fetch buries the real reason, sometimes more than one level down.
+assert.equal(
+  classifyRelayFailure(new TypeError("fetch failed", { cause: new Error("x", { cause: { code: "ENOTFOUND" } }) })),
+  "not_dispatched",
+);
+
+/* ---- and on which chain to go looking ----
+   The resolver was hardcoded to Arc while the browser relay settles on Base, so
+   a Base payment needing reconciliation was searched for on a chain it had
+   never touched, found nothing, and stayed unresolved with its budget held. */
+assert.equal(chainForNetwork("eip155:8453")?.id, 8453);
+assert.equal(chainForNetwork("eip155:1")?.id, 1);
+assert.equal(chainForNetwork("eip155:5042002")?.id, 5042002);
+assert.equal(chainForNetwork(null)?.id, 5042002, "an attempt older than the field is an Arc one");
+assert.equal(chainForNetwork("eip155:999999"), null, "guessing the chain is how you prove the wrong thing");
 
 // A FAIL with no named critical check still records a reason rather than null.
 assert.equal(
@@ -107,8 +174,11 @@ const OUTCOMES: BrowserX402Outcome[] = [
   { settlementSuccess: false, httpOk: false, verification: null },
   { settlementSuccess: null, httpOk: true, verification: null },
   { settlementSuccess: null, httpOk: false, verification: null },
-  { relayFailed: true, settlementSuccess: null, httpOk: false, verification: null },
+  { relayFailure: "not_dispatched", settlementSuccess: null, httpOk: false, verification: null },
+  { relayFailure: "possibly_dispatched", settlementSuccess: null, httpOk: false, verification: null },
   { paymentRefused: true, settlementSuccess: null, httpOk: false, verification: null },
+  { paymentRefused: true, authorizationUsed: false, settlementSuccess: false, httpOk: false, verification: null },
+  { paymentRefused: true, authorizationUsed: true, settlementSuccess: true, httpOk: false, verification: null },
 ];
 
 // The one legal step out of AUTHORIZED that the purchase path takes.
@@ -201,9 +271,27 @@ assert.equal(serviceFailed.failureCode, "response_non_empty");
 // Money moved even though the goods did not: the record must say so.
 assert.equal(serviceFailed.actualSettledAmountUsdc, 0.002);
 
-const refused = await roundTrip({ paymentRefused: true, settlementSuccess: false, httpOk: false, verification: null });
+const refused = await roundTrip({
+  paymentRefused: true, authorizationUsed: false, settlementSuccess: false, httpOk: false, verification: null,
+});
 assert.equal(refused.state, "SETTLEMENT_FAILED");
 assert.equal(refused.actualSettledAmountUsdc, 0, "a refused payment must not be recorded as settled");
+
+/* The same 402 from a seller that had already redeemed the authorization. The
+   only difference is what the token said, and it is the difference between a
+   refund and a loss. */
+const takenThenRefused = await roundTrip({
+  paymentRefused: true, authorizationUsed: true, settlementSuccess: true, httpOk: false, verification: null,
+});
+assert.equal(takenThenRefused.state, "SETTLED_SERVICE_FAILED");
+assert.equal(takenThenRefused.failureCode, "payment_taken_then_refused");
+assert.equal(takenThenRefused.actualSettledAmountUsdc, 0.002, "money the seller took must appear in the record");
+
+/* And the lost response: the relay broke after the header left. */
+const lost = await roundTrip({
+  relayFailure: "possibly_dispatched", settlementSuccess: null, httpOk: false, verification: null,
+});
+assert.equal(lost.state, "SETTLEMENT_UNVERIFIED", "a lost response leaves the charge open, not closed");
 
 const unverified = await roundTrip({ settlementSuccess: null, httpOk: true, verification: null });
 assert.equal(unverified.state, "SETTLEMENT_UNVERIFIED");

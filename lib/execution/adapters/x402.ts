@@ -13,6 +13,7 @@ import { getAddress, isAddress, parseUnits, createPublicClient, http, keccak256,
 import { privateKeyToAccount } from "viem/accounts";
 import { arcTestnet } from "viem/chains";
 import { getArcPublicClient } from "../../erc8183/client.ts";
+import { classifyRelayFailure } from "../relay-failure.ts";
 import type { ExecutionRailAdapter, NormalizedRailResult, RailExecutionParams } from "./types.ts";
 
 export class X402ExecutionAdapter implements ExecutionRailAdapter {
@@ -78,6 +79,11 @@ export class X402ExecutionAdapter implements ExecutionRailAdapter {
 
     // Real Execution Path against live x402 V2 endpoint
     if (endpointUrl && payerPk && rpcUrl) {
+      /* Set the moment the signed authorization leaves this process, and read
+         only by the catch below. Everything before the paid request is
+         recoverable; after it, whether money moved is the seller's and the
+         chain's business, not this function's. */
+      let dispatchedContext: NormalizedRailResult["x402Context"] | null = null;
       try {
         const payerAccount = privateKeyToAccount(payerPk);
         const publicClient = createPublicClient({ chain: arcTestnet, transport: http(rpcUrl) });
@@ -258,6 +264,7 @@ export class X402ExecutionAdapter implements ExecutionRailAdapter {
           };
 
           // Step 4: Retry with standard x402 V2 payment-signature header
+          dispatchedContext = x402Context;
           const paidRes = await fetch(endpointUrl, {
             method: "POST",
             headers: {
@@ -364,6 +371,29 @@ export class X402ExecutionAdapter implements ExecutionRailAdapter {
           evidenceType: "x402_execution_failure",
         };
       } catch (err: any) {
+        /* Thrown after the authorization was sent. The executor reads
+           economicCommitted: false as "release the reservation, nothing moved",
+           and that was being said about a signed nonce already in a seller's
+           hands. PAYMENT_SETTLEMENT_UNVERIFIED keeps the budget held and sends
+           the attempt to reconciliation, which asks the token itself.
+
+           A failure that is positively known to have happened before any byte
+           reached the peer keeps the old, cheaper answer. */
+        if (dispatchedContext && classifyRelayFailure(err) === "possibly_dispatched") {
+          return {
+            executionId: params.executionId,
+            rail: "x402",
+            success: false,
+            failureCode: "PAYMENT_SETTLEMENT_UNVERIFIED",
+            economicCommitted: true,
+            economicSettled: false,
+            actualSettledAmountUsdc: 0,
+            serviceSucceeded: false,
+            evidenceType: "x402_settlement_unverified",
+            x402Context: dispatchedContext,
+            rawResult: { error: String(err?.message ?? err).slice(0, 300) },
+          };
+        }
         return {
           executionId: params.executionId,
           rail: "x402",

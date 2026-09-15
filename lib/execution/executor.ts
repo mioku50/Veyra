@@ -726,15 +726,24 @@ export async function reconcileExecutionSettlement(
   });
 
   // CASE 1: Canonical Settlement Confirmed
-  if (resolution.settled && resolution.txHash && resolution.settledAmountUsdc !== undefined) {
+  if (resolution.settled && resolution.settledAmountUsdc !== undefined) {
+    /* A settlement read from the token's authorization bit rather than from a
+       receipt names no transaction and proves no delivery -- the response that
+       would have carried both is the thing that went missing. The money is
+       certain, the goods are not, and COMPLETED_UNPROVEN is the state that says
+       exactly that. It is not a dead end: a later receipt still promotes it. */
+    const settledTx = resolution.txHash ?? null;
+    const settledState = resolution.proof === "authorization_state" && !settledTx
+      ? "COMPLETED_UNPROVEN"
+      : "COMPLETED";
     const { success, attempt: atomicAttempt } = await transitionExecutionAttemptStateAtomic(
       executionId,
       "SETTLEMENT_UNVERIFIED",
-      "COMPLETED",
+      settledState,
       {
         actualSettledAmountUsdc: resolution.settledAmountUsdc,
-        paymentTx: resolution.txHash,
-        completeTx: resolution.txHash,
+        paymentTx: settledTx,
+        completeTx: settledTx,
         failureCode: null,
       }
     );
@@ -753,8 +762,8 @@ export async function reconcileExecutionSettlement(
         requestedAmountUsdc: refreshed?.requestedAmountUsdc || attempt.requestedAmountUsdc,
         authorizedAmountUsdc: refreshed?.authorizedAmountUsdc || attempt.authorizedAmountUsdc,
         actualSettledAmountUsdc: refreshed?.actualSettledAmountUsdc || resolution.settledAmountUsdc,
-        status: (refreshed?.state as any) || "COMPLETED",
-        paymentTx: refreshed?.paymentTx || resolution.txHash,
+        status: (refreshed?.state as any) || settledState,
+        paymentTx: refreshed?.paymentTx || settledTx,
         completedAt: refreshed?.updatedAt || new Date().toISOString(),
       };
     }
@@ -772,17 +781,21 @@ export async function reconcileExecutionSettlement(
     // 2. Ingest real reputation evidence with correct economic buyer provenance
     const realBuyerWallet = mandate?.ownerWallet || mandate?.subjectWallet || attempt.x402Context?.payerWallet;
     let evidenceHash: string | null = null;
-    if (realBuyerWallet && realBuyerWallet.toLowerCase() !== attempt.counterpartyWallet.toLowerCase()) {
+    /* Reputation evidence is keyed by the payment it describes, so it needs the
+       transaction. A settlement proved only by the authorization bit has none,
+       and inventing an identifier for it would put an unverifiable row into
+       somebody's reputation. */
+    if (settledTx && realBuyerWallet && realBuyerWallet.toLowerCase() !== attempt.counterpartyWallet.toLowerCase()) {
       try {
         const ev = await ingestX402PaymentEvidence({
           agentId: attempt.counterpartyAgentId,
-          paymentId: resolution.txHash,
+          paymentId: settledTx,
           success: true,
           amountUsdc: resolution.settledAmountUsdc,
           clientAddress: realBuyerWallet,
         });
         evidenceHash = ev.canonicalHash;
-        await updateExecutionAttemptState(executionId, "COMPLETED", { evidenceHash });
+        await updateExecutionAttemptState(executionId, settledState, { evidenceHash });
       } catch {
         // Evidence failure non-fatal
       }
@@ -799,9 +812,9 @@ export async function reconcileExecutionSettlement(
       requestedAmountUsdc: attempt.requestedAmountUsdc,
       authorizedAmountUsdc: attempt.authorizedAmountUsdc,
       actualSettledAmountUsdc: resolution.settledAmountUsdc,
-      status: "COMPLETED",
-      paymentTx: resolution.txHash,
-      completeTx: resolution.txHash,
+      status: settledState,
+      paymentTx: settledTx,
+      completeTx: settledTx,
       evidenceHash,
       completedAt: new Date().toISOString(),
     };

@@ -10,6 +10,9 @@ import {
   markBrowserX402Executing,
   openBrowserX402Attempt,
 } from "../execution/browser-x402-ledger.ts";
+import { classifyRelayFailure } from "../execution/relay-failure.ts";
+import type { ExecutionState } from "../execution/types.ts";
+import { readAuthorizationUsed } from "../execution/settlement-resolver.ts";
 import { challengeSchemas, decodePaymentRequiredHeader, parseChallengeAccepts } from "../providers/x402-probe.ts";
 import type { JsonSchema } from "../seller/json-schema.ts";
 import { fetchWithSsrfProtection, SSRFProtectionError } from "../seller/ssrf.ts";
@@ -278,6 +281,15 @@ export type X402SettleOutcome =
       executionId: string | null;
       status: 402;
       message: string;
+      /** What the refusal was actually recorded as. A seller that says no is
+       *  not always a seller that took nothing, so this is SETTLEMENT_FAILED
+       *  only when the token confirms the authorization is unspent. */
+      executionState: ExecutionState | null;
+      /** What this refusal may have cost. Zero only when the chain confirmed
+       *  the authorization is unspent; otherwise the full authorized amount,
+       *  because a budget that under-counts an unresolved charge is a budget
+       *  that lets the next one through. */
+      paidUsdc: number;
       settlement: Record<string, unknown> | null;
       body: string;
     }
@@ -412,12 +424,18 @@ export async function settleX402Call(input: X402SettleRequest): Promise<X402Sett
       body: method === "POST" ? JSON.stringify(requestBody) : undefined,
     });
   } catch (error) {
-    // The signature left this server and nothing came back. Whether money moved
-    // is unknown, so the attempt is closed as failed rather than abandoned
-    // mid-flight in EXECUTING.
+    /* Where in the call it broke decides what may be recorded.
+     *
+     * This used to close every one of these as FAILED, which reads as "no money
+     * moved" -- an assertion this server cannot make once the PAYMENT-SIGNATURE
+     * header has left it, because the nonce inside is redeemable on chain
+     * whether or not a response ever came back. A hostname that does not
+     * resolve is genuinely nothing; a socket that died waiting is not.
+     * classifyRelayFailure is what tells the two apart, and anything it cannot
+     * place goes in the cautious bucket and is reconciled against the token. */
     await closeBrowserX402Attempt({
       executionId,
-      relayFailed: true,
+      relayFailure: classifyRelayFailure(error),
       settlementSuccess: null,
       httpOk: false,
       paidUsdc: 0,
@@ -439,14 +457,25 @@ export async function settleX402Call(input: X402SettleRequest): Promise<X402Sett
     response.headers.get("payment-response") ?? response.headers.get("x-payment-response"),
   );
 
-  // A second 402 means the seller refused the payment rather than the request.
+  /* A second 402 means the seller refused the payment rather than the request
+     -- and that is a statement of its intent, not a fact about the chain. The
+     authorization it was handed is redeemable by whoever holds it, and
+     answering 402 costs nothing to a seller that has already redeemed it. So
+     the refusal is checked against the token rather than believed. */
   if (response.status === 402) {
-    await closeBrowserX402Attempt({
+    const authorizationUsed = await readAuthorizationUsed({
+      network: accept.network,
+      asset: accept.asset,
+      payer: authorization.from,
+      nonce: authorization.nonce,
+    });
+    const closedRefusal = await closeBrowserX402Attempt({
       executionId,
       paymentRefused: true,
-      settlementSuccess: false,
+      authorizationUsed,
+      settlementSuccess: authorizationUsed === null ? null : authorizationUsed,
       httpOk: false,
-      paidUsdc: 0,
+      paidUsdc: Number(authorization.value) / 1e6,
       transaction: null,
       verification: null,
     });
@@ -454,7 +483,13 @@ export async function settleX402Call(input: X402SettleRequest): Promise<X402Sett
       kind: "payment_rejected",
       executionId,
       status: 402,
-      message: "The endpoint rejected the signed payment. Nothing was transferred.",
+      message: authorizationUsed === true
+        ? "The endpoint rejected the request after redeeming the payment. The money is gone."
+        : authorizationUsed === false
+        ? "The endpoint rejected the signed payment. The authorization is unspent."
+        : "The endpoint rejected the signed payment. Whether the authorization was redeemed could not be checked yet.",
+      executionState: closedRefusal?.state ?? null,
+      paidUsdc: authorizationUsed === false ? 0 : Number(authorization.value) / 1e6,
       settlement,
       body: text.slice(0, 4_000),
     };
