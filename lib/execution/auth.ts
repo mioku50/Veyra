@@ -5,6 +5,7 @@
 
 import { getAddress, isAddress, verifyMessage, keccak256, toBytes, type Address } from "viem";
 import { BYOA_OWNER_SESSION_COOKIE, verifyOwnerSession } from "../byoa/auth.ts";
+import { originSet } from "../byoa/config.ts";
 import { claimAuthNonce } from "./auth-nonce.ts";
 import { ExecutionError } from "./executor.ts";
 
@@ -33,15 +34,30 @@ export const SIGNED_HEADER_WINDOW_MS = 60_000;
  * Exported so that a client and a test produce the string the same way rather
  * than each writing it out and drifting.
  *
- * The request body is deliberately not covered. Binding it means every route
- * must hand the bytes it is going to parse to this function, and today some
- * read the body before authenticating and some after -- a change to the calling
- * convention rather than to a message format, and worth doing separately.
- * Until then: method, path, nonce and timestamp, single use enforced durably,
- * so a signature authorizes one request at one endpoint, once.
+ * `audience` is the origin the signature is for, and the server supplies its
+ * own rather than reading one out of the request -- an audience a caller can
+ * choose binds nothing. Without it the deployments of this project all accept
+ * each other's headers: a signature harvested from a preview build verified
+ * against production for the length of its window, at the same path, because
+ * nothing in the sentence said which server it was addressed to.
+ *
+ * `path` carries the query string as well as the pathname. Only the pathname
+ * used to be signed, so every parameter after the `?` was a term the request
+ * could change and the signature did not cover.
+ *
+ * The request body is still not covered. Binding it means every route must hand
+ * the bytes it is going to parse to this function, and today some read the body
+ * before authenticating and some after -- a change to the calling convention
+ * rather than to a message format. It also needs one canonicalization rule
+ * shared with the durable decision record, which has to bind the same digest;
+ * two independent rules for hashing the same body is how a signature comes to
+ * verify in one place and not the other. So it belongs with that work, not
+ * beside it. Until then: audience, method, full path, nonce and timestamp,
+ * single use enforced durably.
  */
 export function executionAuthMessage(input: {
   wallet: string;
+  audience: string;
   method: string;
   path: string;
   nonce: string;
@@ -50,11 +66,51 @@ export function executionAuthMessage(input: {
   return [
     "Veyra Execution Auth:",
     `Wallet: ${input.wallet.toLowerCase()}`,
+    `Audience: ${input.audience}`,
     `Method: ${input.method.toUpperCase()}`,
     `Path: ${input.path}`,
     `Nonce: ${input.nonce}`,
     `Timestamp: ${input.timestamp}`,
   ].join("\n");
+}
+
+/**
+ * The origin this deployment is serving the request on.
+ *
+ * Taken from the request rather than from configuration, and then required to
+ * be one this deployment recognises. Both halves matter. Configuration would be
+ * the obvious source and is the wrong one: an audience nobody set is an
+ * authentication path that refuses every caller, and this repository has
+ * already had that outage once, for the BYOA origin check. The request is the
+ * right source because on a routed platform the host is the routing key -- a
+ * header addressed to the preview host reaches the preview, not production --
+ * and the allowlist is what closes the case where it is not routed, a local or
+ * self-hosted server where Host is whatever the caller typed.
+ *
+ * The recognised set costs no configuration on Vercel: it already contains the
+ * project's production host, this deployment's host and the branch host, none
+ * of which a third party can publish.
+ */
+export function executionAuthAudience(req: Request): string {
+  let origin: string;
+  try {
+    origin = new URL(req.url).origin;
+  } catch {
+    throw new ExecutionError(
+      "This request has no resolvable origin to authenticate against.",
+      "AUTH_AUDIENCE_UNKNOWN",
+      401,
+    );
+  }
+  const recognised = originSet();
+  if (!recognised.has(origin)) {
+    throw new ExecutionError(
+      `Signed-header authentication is not served on ${origin}.`,
+      "AUTH_AUDIENCE_UNKNOWN",
+      401,
+    );
+  }
+  return origin;
 }
 
 /**
@@ -126,7 +182,10 @@ export async function authenticateExecutionCaller(req: Request): Promise<Authent
 
     const url = new URL(req.url);
     const method = req.method.toUpperCase();
-    const pathname = url.pathname;
+    /* Query included. A parameter after the `?` is as much a part of what is
+       being asked for as the pathname, and it used to be unsigned. */
+    const pathname = `${url.pathname}${url.search}`;
+    const audience = executionAuthAudience(req);
     const normWallet = getAddress(walletHeader);
     /* A caller who sends no nonce gets one derived from what they did sign, so
        the header stays optional without the message losing a term. It is a
@@ -136,7 +195,9 @@ export async function authenticateExecutionCaller(req: Request): Promise<Authent
 
     const valid = await verifyMessage({
       address: normWallet,
-      message: executionAuthMessage({ wallet: walletHeader, method, path: pathname, nonce, timestamp: ts }),
+      message: executionAuthMessage({
+        wallet: walletHeader, audience, method, path: pathname, nonce, timestamp: ts,
+      }),
       signature: signatureHeader as `0x${string}`,
     }).catch(() => false);
 
@@ -145,7 +206,7 @@ export async function authenticateExecutionCaller(req: Request): Promise<Authent
          A caller holding a key and getting the message format wrong should not
          spend an afternoon reading it as a missing header. */
       throw new ExecutionError(
-        "Authentication signature does not match the request. Sign the exact message naming wallet, method, path, nonce and timestamp.",
+        "Authentication signature does not match the request. Sign the exact message naming wallet, audience, method, path (with query), nonce and timestamp.",
         "AUTH_SIGNATURE_INVALID",
         401
       );

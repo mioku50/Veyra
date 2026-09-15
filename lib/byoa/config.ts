@@ -26,7 +26,7 @@ function addressSet(value: string | undefined) {
   return result;
 }
 
-function originSet(environment: NodeJS.ProcessEnv) {
+export function originSet(environment: NodeJS.ProcessEnv = process.env) {
   /* The deployment's own origin is trusted without being configured.
      This guard exists to refuse *cross*-origin callers; a page refusing its own
      server because nobody set an environment variable is not a security

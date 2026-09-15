@@ -257,14 +257,18 @@ async function runNegativeTests() {
 
     const signedRequest = async (url: string, nonce: string, options?: {
       signPath?: string;
+      signAudience?: string;
       signature?: string;
       timestamp?: number;
     }) => {
       const ts = options?.timestamp ?? Date.now();
-      const path = options?.signPath ?? new URL(url).pathname;
+      const parsed = new URL(url);
+      const path = options?.signPath ?? `${parsed.pathname}${parsed.search}`;
+      const audience = options?.signAudience ?? parsed.origin;
       const signature = options?.signature ?? await account.signMessage({
         message: executionAuthMessage({
           wallet: account.address,
+          audience,
           method: "POST",
           path,
           nonce,
@@ -309,6 +313,49 @@ async function runNegativeTests() {
       "A signature made for one path must not authenticate another",
     );
 
+    /* c2) The audience. Every deployment of this project used to accept every
+           other one's headers, because the sentence never said which server it
+           was addressed to -- so a header harvested from a preview build
+           verified against production, at the same path, inside its window.
+           The signature below is real and names a Veyra origin; it is simply
+           not this one. */
+    await assert.rejects(
+      async () => authenticateExecutionCaller(
+        await signedRequest(MANDATES, "nonce_b2", { signAudience: "https://preview-xyz.vercel.app" }),
+      ),
+      (err: any) => err.code === "AUTH_SIGNATURE_INVALID",
+      "A signature made for another deployment must not authenticate this one",
+    );
+
+    /* c3) And the query string, which was outside the signed path entirely, so
+           every parameter after the `?` was a term the request could change
+           freely while the signature still verified. */
+    await assert.rejects(
+      async () => authenticateExecutionCaller(
+        await signedRequest(`${MANDATES}?owner=0xvictim`, "nonce_b3", {
+          signPath: "/api/execution/v1/mandates?owner=0xattacker",
+        }),
+      ),
+      (err: any) => err.code === "AUTH_SIGNATURE_INVALID",
+      "A signature made for one query must not authenticate another",
+    );
+    const withQuery = await authenticateExecutionCaller(
+      await signedRequest(`${MANDATES}?owner=0xvictim`, "nonce_b4"),
+    );
+    assert.equal(withQuery.source, "signed_header", "and the matching query still authenticates");
+
+    /* c4) An origin this deployment does not serve is refused before any
+           signature is checked: an audience the caller may choose binds
+           nothing, so the server only ever builds the sentence with an origin
+           it recognises. */
+    await assert.rejects(
+      async () => authenticateExecutionCaller(
+        await signedRequest("https://not-a-veyra-host.example/api/execution/v1/mandates", "nonce_b5"),
+      ),
+      (err: any) => err.code === "AUTH_AUDIENCE_UNKNOWN",
+      "Signed headers must not be served on an origin this deployment does not answer for",
+    );
+
     /* d) And the ordering. The nonce used to be consumed before the signature
           was checked, so anyone could burn somebody else's nonce for free. A
           rejected signature must leave the nonce spendable by its owner. */
@@ -339,7 +386,7 @@ async function runNegativeTests() {
       "The legacy wallet:timestamp message must no longer authenticate anything",
     );
 
-    console.log("✅ Signed-header auth binds path and nonce, is single-use, refuses the legacy message, and cannot be burned by a forgery.");
+    console.log("✅ Signed-header auth binds audience, method, path with its query and nonce, is single-use, refuses the legacy message, refuses another deployment's signature, and cannot be burned by a forgery.");
   }
 
   // 14. x402 Protocol violations
