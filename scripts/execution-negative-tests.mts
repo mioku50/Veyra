@@ -14,7 +14,7 @@
  * 9. Cross-wallet mandate access rejection (404)
  * 10. Sanitized mandate model verification (signature omitted)
  * 11. Mandatory clearance requirement in ERC-8183 adapter
- * 12. Authentication replay detection (single-use nonce)
+ * 12. Signed-header auth: path binding, single-use nonce, verify-before-consume
  */
 
 import assert from "node:assert/strict";
@@ -22,7 +22,9 @@ import { checkMandateEligibility } from "../lib/execution/mandate.ts";
 import { validateStateTransition, InvalidStateTransitionError } from "../lib/execution/state-machine.ts";
 import type { ExecutionMandate } from "../lib/execution/types.ts";
 import { Erc8183ExecutionAdapter } from "../lib/execution/adapters/erc8183.ts";
-import { authenticateExecutionCaller } from "../lib/execution/auth.ts";
+import { privateKeyToAccount } from "viem/accounts";
+import { authenticateExecutionCaller, executionAuthMessage } from "../lib/execution/auth.ts";
+import { clearMemoryAuthNonces } from "../lib/execution/auth-nonce.ts";
 
 async function runNegativeTests() {
   process.env.NODE_ENV = "test";
@@ -243,39 +245,101 @@ async function runNegativeTests() {
     console.log("✅ Execution without signed clearance strictly rejected with CLEARANCE_REQUIRED.");
   }
 
-  // 13. Authentication replay detection
+  // 13. Signed-header authentication: what one signature is worth
   {
-    const now = Date.now();
-    const mockRequest1 = new Request("http://localhost:3000/api/execution/v1/mandates", {
-      headers: {
-        "x-wallet-address": "0x1111111111111111111111111111111111111111",
-        "x-wallet-signature": "0x123",
-        "x-wallet-timestamp": String(now),
-        "x-wallet-nonce": "nonce_replay_test_1",
-      },
-    });
+    clearMemoryAuthNonces();
 
-    const mockRequest2 = new Request("http://localhost:3000/api/execution/v1/mandates", {
-      headers: {
-        "x-wallet-address": "0x1111111111111111111111111111111111111111",
-        "x-wallet-signature": "0x123",
-        "x-wallet-timestamp": String(now),
-        "x-wallet-nonce": "nonce_replay_test_1", // Replay same nonce
-      },
-    });
-
-    // First call consumes the nonce (may fail signature check if invalid, but records nonce)
-    await authenticateExecutionCaller(mockRequest1).catch(() => {});
-
-    // Second call with same nonce must be detected as replay
-    await assert.rejects(
-      async () => {
-        await authenticateExecutionCaller(mockRequest2);
-      },
-      (err: any) => err.code === "AUTH_REPLAY_DETECTED",
-      "Replayed authentication nonce must be rejected with AUTH_REPLAY_DETECTED"
+    const account = privateKeyToAccount(
+      "0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d",
     );
-    console.log("✅ Authentication challenge replay strictly rejected.");
+    const MANDATES = "http://localhost:3000/api/execution/v1/mandates";
+    const AUTOPILOT = "http://localhost:3000/api/execution/v1/autopilot";
+
+    const signedRequest = async (url: string, nonce: string, options?: {
+      signPath?: string;
+      signature?: string;
+      timestamp?: number;
+    }) => {
+      const ts = options?.timestamp ?? Date.now();
+      const path = options?.signPath ?? new URL(url).pathname;
+      const signature = options?.signature ?? await account.signMessage({
+        message: executionAuthMessage({
+          wallet: account.address,
+          method: "POST",
+          path,
+          nonce,
+          timestamp: ts,
+        }),
+      });
+      return new Request(url, {
+        method: "POST",
+        headers: {
+          "x-wallet-address": account.address,
+          "x-wallet-signature": signature,
+          "x-wallet-timestamp": String(ts),
+          "x-wallet-nonce": nonce,
+        },
+      });
+    };
+
+    // a) A correctly signed header authenticates the wallet that signed it.
+    const first = await authenticateExecutionCaller(await signedRequest(MANDATES, "nonce_a"));
+    assert.equal(first.source, "signed_header");
+    assert.equal(first.wallet.toLowerCase(), account.address.toLowerCase());
+
+    // b) The same nonce a second time is a replay, whoever presents it.
+    const ts = Date.now();
+    const replayed = await signedRequest(MANDATES, "nonce_a", { timestamp: ts });
+    await authenticateExecutionCaller(replayed).catch(() => {});
+    await assert.rejects(
+      async () => authenticateExecutionCaller(await signedRequest(MANDATES, "nonce_a", { timestamp: ts })),
+      (err: any) => err.code === "AUTH_REPLAY_DETECTED",
+      "Replayed authentication nonce must be rejected with AUTH_REPLAY_DETECTED",
+    );
+
+    /* c) The finding itself. A signature made for one endpoint must not
+          authenticate another: the removed legacy message named only the wallet
+          and the timestamp, so one captured header opened every route for the
+          length of its window. */
+    await assert.rejects(
+      async () => authenticateExecutionCaller(
+        await signedRequest(AUTOPILOT, "nonce_b", { signPath: "/api/execution/v1/mandates" }),
+      ),
+      (err: any) => err.code === "AUTH_SIGNATURE_INVALID",
+      "A signature made for one path must not authenticate another",
+    );
+
+    /* d) And the ordering. The nonce used to be consumed before the signature
+          was checked, so anyone could burn somebody else's nonce for free. A
+          rejected signature must leave the nonce spendable by its owner. */
+    await assert.rejects(
+      async () => authenticateExecutionCaller(
+        await signedRequest(MANDATES, "nonce_c", { signature: "0x" + "11".repeat(65) }),
+      ),
+      (err: any) => err.code === "AUTH_SIGNATURE_INVALID",
+      "A forged signature must be refused on the signature, not on the nonce",
+    );
+    const survived = await authenticateExecutionCaller(await signedRequest(MANDATES, "nonce_c"));
+    assert.equal(survived.source, "signed_header", "a failed forgery must not consume the real nonce");
+
+    /* e) The removed fallback, as a regression test. This is the exact message
+          the old code accepted after the structured one failed to verify: it
+          names the wallet and the timestamp and nothing else, so it authorized
+          any method on any path. A real signature over it, from the real key,
+          must now be worth nothing. */
+    const legacyTs = Date.now();
+    const legacySignature = await account.signMessage({
+      message: `Veyra Execution Authentication: ${account.address.toLowerCase()}:${legacyTs}`,
+    });
+    await assert.rejects(
+      async () => authenticateExecutionCaller(
+        await signedRequest(AUTOPILOT, "nonce_d", { signature: legacySignature, timestamp: legacyTs }),
+      ),
+      (err: any) => err.code === "AUTH_SIGNATURE_INVALID",
+      "The legacy wallet:timestamp message must no longer authenticate anything",
+    );
+
+    console.log("✅ Signed-header auth binds path and nonce, is single-use, refuses the legacy message, and cannot be burned by a forgery.");
   }
 
   // 14. x402 Protocol violations
