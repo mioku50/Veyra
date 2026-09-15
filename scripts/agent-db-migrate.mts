@@ -149,6 +149,30 @@ function main() {
   const migrations = readdirSync(migrationsDirectory)
     .filter((name) => /^\d+_[a-z0-9_]+\.sql$/i.test(name))
     .sort();
+
+  /* The ledger is keyed by the version alone, so two files carrying the same
+     one are one row between them. On the database where both were new they
+     both ran and the second insert hit the conflict, which looks like success
+     -- but on a fresh database the first marks the version applied and the
+     second is skipped in silence. The schema then differs between the
+     deployment and anything rebuilt from this directory, which is the one
+     thing a migration directory exists to prevent.
+     Refused here, before psql is invoked, so the answer is a filename rather
+     than a puzzle. */
+  const byVersion = new Map<string, string>();
+  for (const migration of migrations) {
+    const version = migration.split("_")[0];
+    const previous = byVersion.get(version);
+    if (previous) {
+      throw new Error(
+        `Two migrations share the version ${version}: ${previous} and ${migration}. ` +
+        "The ledger records versions, not filenames, so only one of them would be applied to a fresh database. " +
+        "Renumber the later one.",
+      );
+    }
+    byVersion.set(version, migration);
+  }
+
   const appliedNow: string[] = [];
 
   for (const migration of migrations) {

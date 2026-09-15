@@ -75,9 +75,17 @@ create table if not exists public.hosted_workflow_credits (
   refunded_at timestamptz
 );
 
-alter table public.hosted_workflow_quotes
-  add constraint hosted_workflow_quotes_user_payment_fk
-  foreign key (user_payment_id) references public.hosted_workflow_user_payments(id) on delete set null;
+-- The only statement in this file that was not re-runnable. ADD CONSTRAINT has
+-- no IF NOT EXISTS for a foreign key, so a second pass aborted here under
+-- ON_ERROR_STOP and took the rest of the migration with it.
+do $$
+begin
+  alter table public.hosted_workflow_quotes
+    add constraint hosted_workflow_quotes_user_payment_fk
+    foreign key (user_payment_id) references public.hosted_workflow_user_payments(id) on delete set null;
+exception when duplicate_object then null;
+end;
+$$;
 
 alter table public.hosted_agent_jobs
   add column if not exists workflow_quote_id uuid references public.hosted_workflow_quotes(id) on delete set null,

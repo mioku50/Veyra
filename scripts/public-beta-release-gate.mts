@@ -4,7 +4,7 @@
  */
 
 import { execSync } from "node:child_process";
-import { readFileSync, existsSync } from "node:fs";
+import { readFileSync, existsSync, readdirSync } from "node:fs";
 import { resolve } from "node:path";
 
 const root = resolve(import.meta.dirname, "..");
@@ -47,6 +47,31 @@ runStep("Required Documentation & Notice Files", () => {
     if (!existsSync(resolve(root, file))) {
       throw new Error(`Required open-source release file missing: ${file}`);
     }
+  }
+});
+
+// 2a. Every migration has a version of its own
+runStep("Migration Versions Are Unique", () => {
+  /* The ledger records versions, not filenames. Two files sharing one version
+     are one row between them: on the database where both were new they both
+     ran and the duplicate insert looked like success, while on a fresh database
+     the first marks the version applied and the second is skipped in silence.
+     20260720120000 carried two for eight weeks, and the only reason production
+     was not missing three tables is that they happened to be applied together.
+     Caught here, at the moment the file is added, rather than on whichever
+     rebuild first came up short. */
+  const directory = resolve(root, "supabase/migrations");
+  const seen = new Map<string, string>();
+  for (const name of readdirSync(directory).filter((f) => /^\d+_[a-z0-9_]+\.sql$/i.test(f)).sort()) {
+    const version = name.split("_")[0];
+    const previous = seen.get(version);
+    if (previous) {
+      throw new Error(
+        `Migrations ${previous} and ${name} share the version ${version}. ` +
+        "Only one of them would reach a fresh database. Renumber the later one.",
+      );
+    }
+    seen.set(version, name);
   }
 });
 
