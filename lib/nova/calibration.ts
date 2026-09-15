@@ -43,13 +43,31 @@ export type CalibrationEpoch = {
 /**
  * The runs, in order.
  *
- * Empty until an owner signs. Epoch #1 begins with the first PREVIEW mandate
- * carrying `allowedCapabilities: ["research", "data"]`, and its hash is not
- * knowable before that signature -- the hash covers the owner's wallet, their
- * timezone and the moment of issue, so it is produced by the act of signing and
- * cannot be written down in advance.
+ * Epoch #1 is the mandate signed on 15 September 2026, the first carrying
+ * `allowedCapabilities: ["research", "data"]` -- capabilities read off the
+ * endpoint rather than the word the catalogue was searched with. It expires
+ * seven days later, which is the calibration week.
+ *
+ * Everything decided before it is development history, and the boundary is not
+ * a formality. Those decisions were made while shadow autonomy kept its own
+ * list of executable verdicts and refused a tier Veyra allows; while the budget
+ * day moved by a millisecond on every pass, so the backoff never fired and the
+ * same signal was decided three times in twenty minutes; and while
+ * allowedCapabilities held discovery terms, so every denial on
+ * capability_allowed was against a list that authorised nothing anybody could
+ * name. Eight decisions, all WOULD_DENY, all on capability. Counting them
+ * towards a limit would answer "what should Nova be allowed to spend" with
+ * evidence from a mandate that permitted nothing.
  */
-export const CALIBRATION_EPOCHS: readonly CalibrationEpoch[] = [];
+export const CALIBRATION_EPOCHS: readonly CalibrationEpoch[] = [
+  {
+    number: 1,
+    mandateHash: "0x32c4b9a9e1421b8a97afbe57704e27a250b6ff146569ea9179eecc0cacf87db1",
+    startedAt: "2026-09-15T12:50:15.667Z",
+    purpose: "What Nova's limits should be, measured on research and data at "
+      + "$0.01 per action, $0.03 a day and three attempts.",
+  },
+];
 
 /** The run in progress, or null before the first signature. */
 export function currentEpoch(): CalibrationEpoch | null {

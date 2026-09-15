@@ -28,7 +28,9 @@ import {
   PREVIEW_MANDATE,
 } from "../lib/nova/autonomy-mandate.ts";
 import { isPolicyCapability } from "../lib/nova/capability.ts";
-import { currentEpoch, splitByCalibration } from "../lib/nova/calibration.ts";
+import {
+  CALIBRATION_EPOCHS, currentEpoch, epochFor, splitByCalibration,
+} from "../lib/nova/calibration.ts";
 import { privateKeyToAccount } from "viem/accounts";
 import { hashTypedData } from "viem";
 
@@ -667,12 +669,33 @@ assert.deepEqual(
 assert.equal(splitByCalibration([preCalibration, inEpoch, preCalibration], epoch).development.length, 2,
   "and the rest are kept rather than dropped");
 
-/* Before anybody has signed, everything is development history. A module that
-   counted the old rows the day it was first imported would be the failure it
-   exists to prevent. */
-assert.equal(currentEpoch(), null, "no epoch begins without a signature");
-assert.equal(splitByCalibration([preCalibration, inEpoch]).calibration.length, 0);
-assert.equal(splitByCalibration([preCalibration, inEpoch]).development.length, 2);
+/* With no epoch, everything is development history. Passed explicitly rather
+   than left to the registry being empty, because the registry is not empty any
+   more and this is the property that matters: nothing is counted towards a
+   calibration run that has not begun. */
+assert.equal(splitByCalibration([preCalibration, inEpoch], null).calibration.length, 0);
+assert.equal(splitByCalibration([preCalibration, inEpoch], null).development.length, 2);
+
+/* Epoch #1, pinned. It is a signature that happened, so it is a fact rather
+   than a setting: if this assertion ever has to change, either the hash was
+   wrong or somebody edited a run that has already been measured. */
+const first = currentEpoch();
+assert.ok(first, "epoch #1 has begun");
+assert.equal(first.number, 1);
+assert.equal(first.mandateHash,
+  "0x32c4b9a9e1421b8a97afbe57704e27a250b6ff146569ea9179eecc0cacf87db1");
+assert.equal(first.startedAt, "2026-09-15T12:50:15.667Z");
+assert.equal(epochFor(first.mandateHash)?.number, 1);
+assert.equal(epochFor("0x2b5212916e3790bf4291bec6854393fec92ffce42cec0e99cc50248bf2df31ce"), null,
+  "the mandate that came before it is not an epoch, and its eight decisions are "
+  + "development history");
+
+/* Append-only, asserted rather than trusted to convention. */
+assert.deepEqual(CALIBRATION_EPOCHS.map((entry) => entry.number),
+  [...CALIBRATION_EPOCHS.map((entry) => entry.number)].sort((a, b) => a - b),
+  "epochs are in the order they began");
+assert.equal(new Set(CALIBRATION_EPOCHS.map((entry) => entry.mandateHash)).size,
+  CALIBRATION_EPOCHS.length, "one mandate, one run");
 
 
 const night = shadowSummaryFrom([
