@@ -88,6 +88,9 @@ export const MARKETPLACE_EVIDENCE_DIMENSIONS = [
 export type MarketplaceSelectionRequest = {
   capability: string;
   query?: string;
+  /** A counterparty that is named rather than searched for. See
+   *  MarketplaceDiscoveryInput.mustInclude. */
+  mustInclude?: string | null;
   task?: string;
   budgetUsdc: number;
   maxPriceUsdc?: number;
@@ -215,6 +218,7 @@ export function validateMarketplaceSelectionRequest(body: unknown): MarketplaceS
   const allowed = [
     "capability", "query", "task", "budgetUsdc", "maxPriceUsdc",
     "network", "limit", "requireExactCapability", "requireCircleGateway",
+    "mustInclude",
   ];
   if (Object.keys(input).some((key) => !allowed.includes(key))) {
     throw new CounterpartySelectionError("client_derived_fields_forbidden");
@@ -266,6 +270,14 @@ export function validateMarketplaceSelectionRequest(body: unknown): MarketplaceS
     limit,
     requireExactCapability: Boolean(input.requireExactCapability),
     requireCircleGateway: Boolean(input.requireCircleGateway),
+    /* An id, not free text: it only ever selects one row out of the catalogue
+       the caller could already see, so there is nothing here to widen a search
+       with. Anything that is not a well-formed candidate id is dropped rather
+       than refused, because a stale subject is a card going out of date, not a
+       bad request. */
+    mustInclude: typeof input.mustInclude === "string" && /^x402:[0-9a-f]{1,64}$/.test(input.mustInclude)
+      ? input.mustInclude
+      : null,
   };
 }
 
@@ -551,6 +563,7 @@ export async function selectMarketplaceCounterparty(input: {
     discovery = await discoverMarketplaceCandidates({
       capability: request.capability,
       query: request.query,
+      mustInclude: request.mustInclude,
       network: request.network,
       maxPriceUsdc: request.maxPriceUsdc,
       limit: request.limit,

@@ -517,6 +517,7 @@ export async function proposeResearch(input: {
 
   const action: NovaAction = { ...base, intent: sharpened.intent };
   const { requiredCapability: capability, query, intent: question } = action;
+  const subjectRefWanted = action.subject?.ref ?? null;
   const requesterWallet = input.wallet && isAddress(input.wallet)
     ? getAddress(input.wallet)
     : NO_WALLET;
@@ -527,6 +528,17 @@ export async function proposeResearch(input: {
       request: {
         capability,
         query,
+        /* The endpoint this card is named after, asked for by id.
+           An interaction's counterparty is not a search result: the card says
+           "Parallel search is available for $0.0100", that price is Parallel's,
+           and if Parallel is not in the answer there is nothing here to buy.
+           The label was being used as the search query, and a display name is
+           not a search term -- three of five subjects fell out of their own
+           discovery and the card refused with "could not reach the terms of
+           this endpoint", which named the symptom and not the cause. Research
+           passes null: a repository sells nothing, so who does the work is
+           genuinely a routing question. */
+        mustInclude: base.actionType === "interact_with_subject" ? subjectRefWanted : null,
         budgetUsdc: RESEARCH_BUDGET_USDC,
         limit: RESEARCH_CANDIDATE_LIMIT,
       },

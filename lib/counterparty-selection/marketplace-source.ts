@@ -122,6 +122,30 @@ export type MarketplaceCandidate = {
 export type MarketplaceDiscoveryInput = {
   capability: string;
   query?: string;
+  /**
+   * A candidate that must be in the answer, by id.
+   *
+   * Discovery is a search, and a search is the right shape when the question is
+   * "who could do this". It is the wrong shape when the counterparty is already
+   * named -- which is every card Nova builds from a catalogue listing, because
+   * the card *is* that endpoint and its price is that endpoint's price.
+   *
+   * Measured on the live catalogue: searching each card's own display label and
+   * then filtering by capability lost the card's own subject in three of five
+   * cases, while the capability alone -- the way the catalogue was read when the
+   * subject was first seen -- found all five. "Orthogonal patents", "Venice.ai
+   * top up" and "twit.sh search" are display names, not search terms, and
+   * Circle's search is conjunctive, so each one selected a different slice of
+   * the catalogue that happened not to contain the endpoint it was named after.
+   * The refusal downstream then read "Veyra could not reach the terms of this
+   * endpoint to authorise it", which was true and pointed nowhere.
+   *
+   * So the named one is fetched rather than hoped for, and is never truncated
+   * out of the shortlist. It is still normalized, still price-filtered, and
+   * still has to pass every check after this one: this guarantees it is
+   * considered, not that it is allowed.
+   */
+  mustInclude?: string | null;
   network?: string;
   maxPriceUsdc?: number;
   limit?: number;
@@ -471,6 +495,30 @@ export async function discoverMarketplaceCandidates(
     MARKETPLACE_DISCOVERY_LIMITS.perProviderInShortlist,
   );
 
+  let top = shortlist.slice(0, limit);
+
+  const wanted = input.mustInclude?.trim() || null;
+  if (wanted && !top.some((candidate) => candidate.candidateId === wanted)) {
+    /* Either it was found and the shortlist cut it, or the query never reached
+       it. One more read settles both: the capability alone, which is the search
+       that saw this subject in the first place. Recursion is bounded -- the
+       retry carries no mustInclude, so it cannot ask again. */
+    const named = candidates.find((candidate) => candidate.candidateId === wanted)
+      ?? (await discoverMarketplaceCandidates({
+        capability: input.capability,
+        network: input.network,
+        maxPriceUsdc: input.maxPriceUsdc,
+        limit,
+        requireCircleGateway: input.requireCircleGateway,
+        fetchImpl: input.fetchImpl,
+      }).catch(() => null))?.candidates.find((candidate) => candidate.candidateId === wanted)
+      ?? null;
+
+    /* First, and the rest trimmed around it rather than after it. Appending
+       inside a sliced list would put it back at the mercy of the same limit. */
+    if (named) top = [named, ...top.filter((c) => c.candidateId !== wanted)].slice(0, limit);
+  }
+
   return {
     source: MARKETPLACE_SOURCE,
     sourceVersion: MARKETPLACE_SOURCE_VERSION,
@@ -479,7 +527,7 @@ export async function discoverMarketplaceCandidates(
     networkLabel: MARKETPLACE_NETWORKS[network],
     query,
     catalogTotal,
-    candidates: shortlist.slice(0, limit),
+    candidates: top,
     queriedAt: new Date().toISOString(),
     readOnly: true,
     paymentCreated: false,
