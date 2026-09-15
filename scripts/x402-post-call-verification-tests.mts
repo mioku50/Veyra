@@ -5,6 +5,11 @@
 
 import assert from "node:assert/strict";
 import { verifyPostCall } from "../lib/x402/post-call-verification.ts";
+import {
+  proofFromReceipt,
+  provesEconomicEvidence,
+  strongerProof,
+} from "../lib/execution/settlement-proof.ts";
 
 const BASE = {
   httpStatus: 200,
@@ -214,4 +219,77 @@ assert.equal(
   "a real mismatch is a failure, not an abstention",
 );
 
-console.log("[x402-post-call-verification-test] passed: delivery, error envelopes, empty bodies, settlement receipts, published schemas, latency envelope, amount binding, response commitment, a failure summary that says what happened rather than which check it was, and no check that claims a charge without a receipt, and a schema Veyra cannot enforce that abstains instead of blaming the seller for delivering");
+/* ---- whose word the money line rests on ----
+ *
+ * "The endpoint confirmed settlement" was the strongest economic sentence Veyra
+ * printed, and it was the seller describing itself. The claim is graded now,
+ * and the grade is on the record. */
+
+const sellerWord = verifyPostCall({ ...BASE, settlementProof: "seller_reported" });
+const sellerLine = sellerWord.checks.find((c) => c.id === "payment_settled");
+assert.equal(sellerLine?.passed, true, "an ungraded seller report still settles the purchase");
+assert.match(
+  sellerLine!.detail,
+  /Nothing independent of the endpoint confirms it/,
+  "but the line must not read as confirmation",
+);
+assert.equal(
+  sellerWord.checks.find((c) => c.id === "settlement_independently_verified")?.passed,
+  null,
+  "unverified is not a failure -- an honest batched settlement has no hash for days",
+);
+assert.equal(sellerWord.verdict, "PASS", "and it must not turn an honest purchase into a FAIL");
+
+const chainWord = verifyPostCall({ ...BASE, settlementProof: "onchain_final" });
+assert.match(
+  chainWord.checks.find((c) => c.id === "payment_settled")!.detail,
+  /chain shows the authorization was spent/,
+);
+assert.equal(
+  chainWord.checks.find((c) => c.id === "settlement_independently_verified")?.passed,
+  true,
+);
+
+/* The case the whole grading exists for: the chain says the money moved and
+   the seller says it did not. Believing the seller here loses a real payment
+   out of the record. */
+const contradicted = verifyPostCall({
+  ...BASE,
+  settlement: { success: false },
+  settlementProof: "onchain_final",
+});
+const contradictedLine = contradicted.checks.find((c) => c.id === "payment_settled");
+assert.equal(contradictedLine?.passed, true, "the chain outranks the seller");
+assert.match(contradictedLine!.detail, /though the endpoint reported that it was not/);
+
+const batched = verifyPostCall({ ...BASE, settlementProof: "facilitator_accepted" });
+assert.match(
+  batched.checks.find((c) => c.id === "settlement_independently_verified")!.detail,
+  /batched settlement looks until the batch lands/,
+);
+
+/* ---- and what may become reputation ---- */
+
+assert.equal(provesEconomicEvidence("onchain_final"), true);
+assert.equal(provesEconomicEvidence("facilitator_accepted"), false);
+assert.equal(provesEconomicEvidence("seller_reported"), false);
+assert.equal(provesEconomicEvidence(null), false, "an ungraded settlement is not evidence either");
+
+// A hash in the seller's own receipt is still the seller's word.
+assert.equal(
+  proofFromReceipt({ settlementSuccess: true, transaction: "0xabc" }),
+  "seller_reported",
+);
+// Acknowledged with no reference is the batched shape, not an evasion.
+assert.equal(
+  proofFromReceipt({ settlementSuccess: true, transaction: null, batched: true }),
+  "facilitator_accepted",
+);
+assert.equal(
+  proofFromReceipt({ settlementSuccess: true, transaction: null, batched: false }),
+  "seller_reported",
+);
+assert.equal(strongerProof("seller_reported", "onchain_final"), "onchain_final");
+assert.equal(strongerProof("onchain_final", "facilitator_accepted"), "onchain_final");
+
+console.log("[x402-post-call-verification-test] passed: delivery, error envelopes, empty bodies, settlement receipts, published schemas, latency envelope, amount binding, response commitment, a failure summary that says what happened rather than which check it was, and no check that claims a charge without a receipt, and a schema Veyra cannot enforce that abstains instead of blaming the seller for delivering, and a money line that says whether the chain or the seller is the source of it");

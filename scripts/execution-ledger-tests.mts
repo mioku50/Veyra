@@ -417,4 +417,12 @@ assert.ok(!JSON.stringify(withNewField).includes("must-not-publish"),
    neither is above. */
 assert.equal(publicExecutionView(attempt).x402?.authorizationValidBefore, 1789985038);
 
+/* A public ledger that prints a settled amount without saying whether the chain
+   or the seller is the source of it is publishing an opinion as a fact. */
+assert.equal(publicExecutionView(attempt).settlementProof, null, "ungraded rows say so");
+assert.equal(
+  publicExecutionView({ ...attempt, settlementProof: "onchain_final" } as ExecutionAttempt).settlementProof,
+  "onchain_final",
+);
+
 console.log(`[execution-ledger-test] passed: all ${declared.length} execution states are writable by the schema, and the schema allows no state the machine cannot produce, and the public ledger carries the evidence without the material that spends it`);

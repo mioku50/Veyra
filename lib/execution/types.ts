@@ -3,6 +3,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import type { SettlementProof } from "./settlement-proof.ts";
+
 export type ExecutionMode = "PREVIEW" | "PREPARE" | "AUTOPILOT";
 
 export type ExecutionRail = "erc8183" | "x402";
@@ -148,6 +150,10 @@ export interface ExecutionAttempt {
   providerSubmittedAt?: string | null;
   x402Context?: X402ReconciliationContext | null;
   idempotencyKey?: string | null;
+  /** Where the claim that this payment settled comes from. Only the chain's
+   *  own answer counts as evidence about a seller; the rest is evidence from
+   *  one. Null on rows written before the column. */
+  settlementProof?: SettlementProof | null;
   /** The budget day this attempt reserved against, fixed when the reservation
    *  was taken. Reconciliation settles into this and never into the day it
    *  happens to run on -- those are the same day only if nothing took longer

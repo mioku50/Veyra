@@ -41,6 +41,10 @@ export type PublicExecutionView = {
   requestedAmountUsdc: number;
   authorizedAmountUsdc: number;
   actualSettledAmountUsdc: number;
+  /** Where the claim that this payment settled comes from. A public ledger that
+   *  prints a settled amount without saying whether the chain or the seller is
+   *  the source of it is publishing an opinion as a fact. */
+  settlementProof: string | null;
   failureCode: string | null;
   createTx: string | null;
   paymentTx: string | null;
@@ -92,6 +96,7 @@ export function publicExecutionView(attempt: ExecutionAttempt): PublicExecutionV
     requestedAmountUsdc: attempt.requestedAmountUsdc,
     authorizedAmountUsdc: attempt.authorizedAmountUsdc,
     actualSettledAmountUsdc: attempt.actualSettledAmountUsdc ?? 0,
+    settlementProof: attempt.settlementProof ?? null,
     failureCode: attempt.failureCode ?? null,
     createTx: attempt.createTx ?? null,
     paymentTx: attempt.paymentTx ?? null,

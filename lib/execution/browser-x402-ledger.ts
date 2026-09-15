@@ -7,6 +7,7 @@ import { randomUUID } from "node:crypto";
 import { computeCanonicalExecutionHash } from "./canonical.ts";
 import { saveExecutionAttempt, updateExecutionAttemptState } from "./db.ts";
 import type { RelayFailure } from "./relay-failure.ts";
+import type { SettlementProof } from "./settlement-proof.ts";
 import type { ExecutionAttempt, ExecutionState, X402ReconciliationContext } from "./types.ts";
 import type { PostCallVerification } from "../x402/post-call-verification.ts";
 
@@ -147,6 +148,9 @@ export type BrowserX402Outcome = {
   /** What the token says about the authorization: redeemed, not redeemed, or
    *  unreadable. Null is not "no" -- it is "the question could not be put". */
   authorizationUsed?: boolean | null;
+  /** Where the claim that money moved came from. The receipt is the seller's
+   *  own account of itself until something on chain agrees with it. */
+  settlementProof?: SettlementProof | null;
   /** The relay did not complete, and whether the authorization could have left
    *  before it broke. */
   relayFailure?: RelayFailure;
@@ -228,6 +232,7 @@ export async function closeBrowserX402Attempt(input: BrowserX402Outcome & {
     await updateExecutionAttemptState(input.executionId, outcome.state, {
       actualSettledAmountUsdc: input.settlementSuccess === true ? input.paidUsdc : 0,
       paymentTx: input.transaction,
+      settlementProof: input.settlementProof ?? null,
       failureCode: outcome.failureCode,
       evidenceHash: input.verification?.responseHash ?? null,
     });

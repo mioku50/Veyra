@@ -4,6 +4,7 @@
  */
 
 import { keccak256, toBytes, type Hex } from "viem";
+import type { SettlementProof } from "../execution/settlement-proof.ts";
 import { validateJsonSchemaValue, type JsonSchema } from "../seller/json-schema.ts";
 
 /**
@@ -87,6 +88,8 @@ export function verifyPostCall(input: {
   declaredOutputSchema?: JsonSchema | null;
   /** p95 from Veyra's own observations, when there are enough of them. */
   latencyP95Ms?: number | null;
+  /** Where the claim that money moved came from, when it has been graded. */
+  settlementProof?: SettlementProof | null;
   required: boolean;
   now?: Date;
 }): PostCallVerification {
@@ -100,15 +103,39 @@ export function verifyPostCall(input: {
 
   // --- the money -----------------------------------------------------------
   const settled = input.settlement?.success;
+  const proof = input.settlementProof ?? null;
+  const onchain = proof === "onchain_final";
   add(
     "payment_settled",
-    settled === undefined ? null : settled === true,
+    onchain ? true : settled === undefined ? null : settled === true,
     "critical",
-    settled === undefined
-      ? "The endpoint returned no settlement receipt, so settlement could not be confirmed from the response."
-      : settled === true
-        ? "The endpoint confirmed settlement."
-        : "The endpoint reported that settlement did not succeed.",
+    onchain
+      ? settled === false
+        ? "The chain shows the authorization was spent, though the endpoint reported that it was not."
+        : "The chain shows the authorization was spent."
+      : settled === undefined
+        ? "The endpoint returned no settlement receipt, so settlement could not be confirmed from the response."
+        : settled === true
+          ? "The endpoint reports settlement. Nothing independent of the endpoint confirms it."
+          : "The endpoint reported that settlement did not succeed.",
+  );
+
+  /* Said out loud, because it used to be the difference nobody could see.
+   *
+   * "The endpoint confirmed settlement" was the strongest economic line Veyra
+   * printed, and it was the seller describing itself -- in a product whose
+   * subject is whether sellers can be taken at their word. Never a failure: an
+   * honest batched settlement has no onchain reference for days. It is a label
+   * on the evidence, and the reputation engine reads the same label. */
+  add(
+    "settlement_independently_verified",
+    onchain ? true : null,
+    "minor",
+    onchain
+      ? "Confirmed against the token's own record of the authorization."
+      : proof === "facilitator_accepted"
+        ? "Acknowledged without an onchain reference, which is how batched settlement looks until the batch lands."
+        : "Rests on the endpoint's own account; it does not count towards the seller's economic reputation.",
   );
 
   const paidExactly = input.authorizedAtomic === input.quotedAtomic;

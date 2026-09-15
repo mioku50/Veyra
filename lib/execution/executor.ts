@@ -9,6 +9,7 @@ import { arcTestnet } from "viem/chains";
 import { getRailAdapter } from "./adapters/index.ts";
 import { computeCanonicalExecutionHash } from "./canonical.ts";
 import { dailyPeriodFor, getCurrentDailyPeriod } from "./budget.ts";
+import { provesEconomicEvidence } from "./settlement-proof.ts";
 import {
   RealArcSettlementResolver,
   type SettlementResolver,
@@ -383,6 +384,7 @@ export async function executePreparedIntent(params: {
       actualSettledAmountUsdc: railResult.actualSettledAmountUsdc,
       paymentTx: railResult.paymentTx || null,
       createTx: railResult.createTx || null,
+      settlementProof: railResult.settlementProof || null,
       x402Context: railResult.x402Context || null,
     });
 
@@ -425,10 +427,16 @@ export async function executePreparedIntent(params: {
       evidenceIngested = true;
     } else {
       const realBuyerWallet = mandate?.ownerWallet || mandate?.subjectWallet || railResult.x402Context?.payerWallet;
+      /* Only a settlement the chain confirms becomes reputation.
+         This used to run on railResult.paymentTx alone -- a string out of the
+         seller's own PAYMENT-RESPONSE header -- so a seller's score was
+         computed from its account of itself, and the sellers with most to gain
+         from a flattering account are the ones the score exists to catch. */
       if (
         realBuyerWallet &&
         realBuyerWallet.toLowerCase() !== attempt.counterpartyWallet.toLowerCase() &&
-        railResult.paymentTx
+        railResult.paymentTx &&
+        provesEconomicEvidence(railResult.settlementProof)
       ) {
         const ev = await ingestX402PaymentEvidence({
           agentId: attempt.counterpartyAgentId,
@@ -772,6 +780,10 @@ export async function reconcileExecutionSettlement(
       mandateId: attempt.mandateId ?? null,
       reservedAmountUsdc: attempt.requestedAmountUsdc,
       periodStart,
+      /* Reconciliation only ever answers from the chain -- a receipt bound to
+         this authorization, or the token's own spent-nonce bit -- so anything
+         it settles is final by construction. */
+      settlementProof: "onchain_final",
     });
 
     if (!success && reason && reason !== "STATE_MISMATCH") {

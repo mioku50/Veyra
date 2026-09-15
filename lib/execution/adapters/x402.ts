@@ -14,6 +14,8 @@ import { privateKeyToAccount } from "viem/accounts";
 import { arcTestnet } from "viem/chains";
 import { getArcPublicClient } from "../../erc8183/client.ts";
 import { classifyRelayFailure } from "../relay-failure.ts";
+import { readAuthorizationUsed } from "../settlement-resolver.ts";
+import type { SettlementProof } from "../settlement-proof.ts";
 import type { ExecutionRailAdapter, NormalizedRailResult, RailExecutionParams } from "./types.ts";
 
 export class X402ExecutionAdapter implements ExecutionRailAdapter {
@@ -308,6 +310,27 @@ export class X402ExecutionAdapter implements ExecutionRailAdapter {
 
           const paymentTxHash = settleResponse?.transaction ?? settleResponse?.txHash;
 
+          /* The receipt is the seller's own account of itself. A hash inside it
+             is a string in a header that seller wrote, and Veyra used to treat
+             it as proof of settlement -- then compute reputation about the
+             seller from it.
+
+             One read of the token's authorization bit settles the question. It
+             needs no cooperation from the endpoint, costs an eth_call, and is
+             the difference between evidence about a counterparty and evidence
+             from one. When it cannot be read, the claim stays a claim. */
+          const authorizationSpent = paymentTxHash
+            ? await readAuthorizationUsed({
+                network: selectedOption.network,
+                asset: x402Context.asset,
+                payer: x402Context.payerWallet,
+                nonce: x402Context.authorizationNonce ?? "",
+              })
+            : null;
+          const settlementProof: SettlementProof = authorizationSpent === true
+            ? "onchain_final"
+            : "seller_reported";
+
           if (!paymentTxHash) {
             return {
               executionId: params.executionId,
@@ -338,6 +361,7 @@ export class X402ExecutionAdapter implements ExecutionRailAdapter {
               serviceSucceeded: false,
               paymentTx: paymentTxHash,
               evidenceType: "x402_execution_failure",
+              settlementProof,
               x402Context,
               rawResult: { status: paidRes.status },
             };
@@ -354,6 +378,7 @@ export class X402ExecutionAdapter implements ExecutionRailAdapter {
             externalReference: paymentTxHash,
             paymentTx: paymentTxHash,
             evidenceType: "x402_settlement_success",
+            settlementProof,
             x402Context,
             rawResult: responseData,
           };

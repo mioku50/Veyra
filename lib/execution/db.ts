@@ -6,6 +6,7 @@
 import { getByoaClient } from "../byoa/service.ts";
 import { getCurrentDailyPeriod, type BudgetPeriod, type BudgetReservationResult } from "./budget.ts";
 import { MANDATE_VERSION_V2 } from "./canonical.ts";
+import type { SettlementProof } from "./settlement-proof.ts";
 import { validateStateTransition } from "./state-machine.ts";
 import type { ExecutionAttempt, ExecutionMandate, ExecutionState } from "./types.ts";
 
@@ -303,6 +304,7 @@ export async function saveExecutionAttempt(attempt: ExecutionAttempt): Promise<v
     x402_context: attempt.x402Context || null,
     idempotency_key: attempt.idempotencyKey || null,
     budget_period_start: attempt.budgetPeriodStart || null,
+    settlement_proof: attempt.settlementProof || null,
     canonical_hash: attempt.canonicalHash,
     created_at: attempt.createdAt,
     updated_at: attempt.updatedAt,
@@ -362,6 +364,7 @@ export async function getExecutionAttempt(executionId: string): Promise<Executio
     x402Context: data.x402_context || data.x402Context || null,
     idempotencyKey: data.idempotency_key,
     budgetPeriodStart: data.budget_period_start ?? null,
+    settlementProof: data.settlement_proof ?? null,
     canonicalHash: data.canonical_hash,
     createdAt: data.created_at,
     updatedAt: data.updated_at,
@@ -437,6 +440,7 @@ export async function listExecutionAttempts(options?: {
     x402Context: d.x402_context || d.x402Context || null,
     idempotencyKey: d.idempotency_key,
     budgetPeriodStart: d.budget_period_start ?? null,
+    settlementProof: d.settlement_proof ?? null,
     canonicalHash: d.canonical_hash,
     createdAt: d.created_at,
     updatedAt: d.updated_at,
@@ -498,6 +502,7 @@ export async function getExecutionAttemptByIdempotency(
     x402Context: data.x402_context || data.x402Context || null,
     idempotencyKey: data.idempotency_key,
     budgetPeriodStart: data.budget_period_start ?? null,
+    settlementProof: data.settlement_proof ?? null,
     canonicalHash: data.canonical_hash,
     createdAt: data.created_at,
     updatedAt: data.updated_at,
@@ -836,6 +841,7 @@ export async function settleExecutionBudgetAtomic(input: {
   mandateId?: string | null;
   reservedAmountUsdc: number;
   periodStart: string;
+  settlementProof?: SettlementProof | null;
 }): Promise<{ success: boolean; reason?: string; attempt: ExecutionAttempt | null }> {
   if (isMemoryStoreAllowed()) {
     const current = memoryAttemptStore.get(input.executionId);
@@ -850,6 +856,7 @@ export async function settleExecutionBudgetAtomic(input: {
       actualSettledAmountUsdc: input.settledAmountUsdc,
       paymentTx: input.paymentTx ?? current.paymentTx,
       completeTx: input.completeTx ?? current.completeTx,
+      settlementProof: input.settlementProof ?? current.settlementProof ?? null,
       failureCode: null,
       updatedAt: new Date().toISOString(),
     };
@@ -882,6 +889,7 @@ export async function settleExecutionBudgetAtomic(input: {
     p_mandate_id: input.mandateId ?? null,
     p_reserved_amount_usdc: input.reservedAmountUsdc,
     p_period_start: input.periodStart,
+    p_settlement_proof: input.settlementProof ?? null,
   });
 
   if (error) {

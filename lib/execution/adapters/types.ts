@@ -3,6 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import type { SettlementProof } from "../settlement-proof.ts";
 import type { ExecutionRail, X402ReconciliationContext } from "../types.ts";
 
 export interface RailExecutionParams {
@@ -40,6 +41,9 @@ export interface NormalizedRailResult {
   evaluationId?: string | null;
   evaluationVerdict?: "Complete" | "Reject" | null;
   evidenceType: string;
+  /** Where the claim that money moved came from. Absent when nothing was
+   *  claimed; see lib/execution/settlement-proof.ts. */
+  settlementProof?: SettlementProof | null;
   x402Context?: X402ReconciliationContext | null;
   rawResult?: any;
 }

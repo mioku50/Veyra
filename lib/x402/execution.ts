@@ -12,6 +12,7 @@ import {
 } from "../execution/browser-x402-ledger.ts";
 import { classifyRelayFailure } from "../execution/relay-failure.ts";
 import type { ExecutionState } from "../execution/types.ts";
+import { proofFromReceipt } from "../execution/settlement-proof.ts";
 import { readAuthorizationUsed } from "../execution/settlement-resolver.ts";
 import { challengeSchemas, decodePaymentRequiredHeader, parseChallengeAccepts } from "../providers/x402-probe.ts";
 import type { JsonSchema } from "../seller/json-schema.ts";
@@ -512,6 +513,35 @@ export async function settleX402Call(input: X402SettleRequest): Promise<X402Sett
     latencyP95Ms = null;
   }
 
+  /* Two different facts, never conflated again. A seller can settle the x402
+     authorization and then fail in its own application layer; reading payment
+     off the HTTP status would lose that money from the record entirely. */
+  const settlementSuccess = typeof settlement?.success === "boolean" ? settlement.success : null;
+  const settlementTx = typeof settlement?.transaction === "string" ? settlement.transaction : null;
+
+  /* Whose word this is, established before anything is verified against it.
+   *
+   * The receipt, its success flag and the transaction hash were all written by
+   * the endpoint being assessed. Veyra recorded settled purchases on the
+   * strength of them and computed that seller's reputation from them -- in a
+   * product whose subject is whether sellers can be taken at their word. One
+   * read of the token's spent-nonce bit either agrees or it does not, and
+   * either answer is worth more than the header alone. A seller that reported
+   * a failed settlement is not asked about: there is nothing to corroborate. */
+  const onchainSpent = settlementSuccess === false ? null : await readAuthorizationUsed({
+    network: accept.network,
+    asset: accept.asset,
+    payer: authorization.from,
+    nonce: authorization.nonce,
+  });
+  const settlementProof = onchainSpent === true
+    ? "onchain_final" as const
+    : proofFromReceipt({
+        settlementSuccess,
+        transaction: settlementTx,
+        batched: accept.gatewayBatched,
+      });
+
   const verification = verifyPostCall({
     httpStatus: response.status,
     bodyText: text,
@@ -521,21 +551,19 @@ export async function settleX402Call(input: X402SettleRequest): Promise<X402Sett
     authorizedAtomic: authorization.value,
     payTo: accept.payTo,
     settlement,
+    settlementProof,
     declaredOutputSchema: asOutputSchema(input.declaredOutputSchema),
     latencyP95Ms,
     required: input.verificationRequired === true,
   });
 
-  /* Two different facts, never conflated again. A seller can settle the x402
-     authorization and then fail in its own application layer; reading payment
-     off the HTTP status would lose that money from the record entirely. */
-  const settlementSuccess = typeof settlement?.success === "boolean" ? settlement.success : null;
   const closed = await closeBrowserX402Attempt({
     executionId,
     settlementSuccess,
+    settlementProof,
     httpOk: response.ok,
     paidUsdc: Number(authorization.value) / 1e6,
-    transaction: typeof settlement?.transaction === "string" ? settlement.transaction : null,
+    transaction: settlementTx,
     verification,
   });
 
