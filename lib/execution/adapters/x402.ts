@@ -14,6 +14,7 @@ import { privateKeyToAccount } from "viem/accounts";
 import { arcTestnet } from "viem/chains";
 import { getArcPublicClient } from "../../erc8183/client.ts";
 import { fetchWithSsrfProtection } from "../../seller/ssrf.ts";
+import { CIRCLE_BATCHING_DOMAIN_NAME } from "../../x402/browser-payment.ts";
 
 /* The x402 SDK spells the payment header one way in v2 and another in v1, and
    the SSRF transport drops anything it does not recognise -- silently, which
@@ -293,6 +294,18 @@ export class X402ExecutionAdapter implements ExecutionRailAdapter {
           const authPayload = (paymentPayload as any)?.payload?.authorization;
           const authSignature = (paymentPayload as any)?.payload?.signature;
 
+          /* Which rail this accept actually is. The EIP-712 domain name is the
+             only thing that says so: Circle's batched scheme separates by
+             GatewayWalletBatched at the GatewayWallet, a vanilla accept by the
+             token's own name at the token. Recorded on the attempt, because
+             reconciliation asks the token about the nonce and the token has
+             never heard of a batched one. */
+          const acceptExtra = (selectedOption as any)?.extra as Record<string, unknown> | undefined;
+          const gatewayBatched = String(acceptExtra?.name ?? "") === CIRCLE_BATCHING_DOMAIN_NAME;
+          const verifyingContract = typeof acceptExtra?.verifyingContract === "string"
+            ? acceptExtra.verifyingContract
+            : null;
+
           const x402Context = {
             payerWallet: payerAccount.address,
             payTo: requiredRecipient as `0x${string}`,
@@ -303,6 +316,8 @@ export class X402ExecutionAdapter implements ExecutionRailAdapter {
             authorizationNonce: authPayload?.nonce || null,
             authorizationSignature: authSignature || null,
             authorizationValidBefore: authPayload?.validBefore ? Number(authPayload.validBefore) : null,
+            authorizationVerifyingContract: verifyingContract,
+            gatewayBatched,
             resource: endpointUrl,
             paymentRequirementsHash: paymentRequiredHeader ? keccak256(stringToBytes(paymentRequiredHeader)) : null,
             facilitatorReference: null,
@@ -369,6 +384,7 @@ export class X402ExecutionAdapter implements ExecutionRailAdapter {
                 asset: x402Context.asset,
                 payer: x402Context.payerWallet,
                 nonce: x402Context.authorizationNonce ?? "",
+                gatewayBatched,
               })
             : null;
           const settlementProof: SettlementProof = authorizationSpent === true

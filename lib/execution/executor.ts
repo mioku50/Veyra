@@ -9,7 +9,7 @@ import { arcTestnet } from "viem/chains";
 import { getRailAdapter } from "./adapters/index.ts";
 import { computeCanonicalExecutionHash } from "./canonical.ts";
 import { dailyPeriodFor, getCurrentDailyPeriod } from "./budget.ts";
-import { provesEconomicEvidence } from "./settlement-proof.ts";
+import { provesEconomicEvidence, type SettlementProof } from "./settlement-proof.ts";
 import {
   RealArcSettlementResolver,
   type SettlementResolver,
@@ -763,9 +763,16 @@ export async function reconcileExecutionSettlement(
        certain, the goods are not, and COMPLETED_UNPROVEN is the state that says
        exactly that. It is not a dead end: a later receipt still promotes it. */
     const settledTx = resolution.txHash ?? null;
-    const settledState = resolution.proof === "authorization_state" && !settledTx
-      ? "COMPLETED_UNPROVEN"
-      : "COMPLETED";
+    const settledState = !settledTx ? "COMPLETED_UNPROVEN" : "COMPLETED";
+    /* How good the claim is, carried from whoever answered rather than asserted
+       here. It used to be hardcoded to onchain_final on the reasoning that
+       reconciliation only ever answers from the chain -- true of the two paths
+       that existed then, and false the moment a rail arrived that no chain can
+       be asked about. A batched purchase resolves on an argument about an
+       expired window, and the column has to say so. */
+    const settlementProof: SettlementProof = resolution.proof === "gateway_batch_presumed"
+      ? "presumed_spent"
+      : "onchain_final";
     /* One transaction for the state and the spend. They used to be two
        statements with the budget settled afterwards and its result discarded,
        so a crash in between -- or a missing usage row -- left a purchase marked
@@ -780,10 +787,7 @@ export async function reconcileExecutionSettlement(
       mandateId: attempt.mandateId ?? null,
       reservedAmountUsdc: attempt.requestedAmountUsdc,
       periodStart,
-      /* Reconciliation only ever answers from the chain -- a receipt bound to
-         this authorization, or the token's own spent-nonce bit -- so anything
-         it settles is final by construction. */
-      settlementProof: "onchain_final",
+      settlementProof,
     });
 
     if (!success && reason && reason !== "STATE_MISMATCH") {

@@ -43,6 +43,12 @@ export async function openBrowserX402Attempt(input: {
   authorizationNonce: string;
   authorizationSignature: `0x${string}`;
   authorizationValidBefore: number;
+  /** The contract the EIP-712 domain bound the signature to, and whether that
+   *  made it a batched Gateway authorization. Written down because the two
+   *  rails are reconciled by different means and a row that does not say which
+   *  it was gets reconciled by the wrong one. */
+  verifyingContract?: `0x${string}` | null;
+  gatewayBatched?: boolean;
 }): Promise<string | null> {
   const executionId = `vexec_${randomUUID().replace(/-/g, "").slice(0, 16)}`;
   const now = new Date().toISOString();
@@ -75,6 +81,8 @@ export async function openBrowserX402Attempt(input: {
       authorizationNonce: input.authorizationNonce,
       authorizationSignature: input.authorizationSignature,
       authorizationValidBefore: input.authorizationValidBefore,
+      authorizationVerifyingContract: input.verifyingContract ?? null,
+      gatewayBatched: input.gatewayBatched === true,
       resource: input.resource,
       requestTimestamp: now,
     } satisfies X402ReconciliationContext,

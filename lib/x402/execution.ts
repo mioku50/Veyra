@@ -393,6 +393,8 @@ export async function settleX402Call(input: X402SettleRequest): Promise<X402Sett
     authorizationNonce: authorization.nonce,
     authorizationSignature: signature,
     authorizationValidBefore: Number(authorization.validBefore),
+    verifyingContract: accept.verifyingContract,
+    gatewayBatched: accept.gatewayBatched,
   });
 
   /* The descriptor the challenge published, carried back through the browser
@@ -469,6 +471,7 @@ export async function settleX402Call(input: X402SettleRequest): Promise<X402Sett
       asset: accept.asset,
       payer: authorization.from,
       nonce: authorization.nonce,
+      gatewayBatched: accept.gatewayBatched,
     });
     const closedRefusal = await closeBrowserX402Attempt({
       executionId,
@@ -488,6 +491,12 @@ export async function settleX402Call(input: X402SettleRequest): Promise<X402Sett
         ? "The endpoint rejected the request after redeeming the payment. The money is gone."
         : authorizationUsed === false
         ? "The endpoint rejected the signed payment. The authorization is unspent."
+        /* Batched authorizations have no public per-purchase status at all, so
+           this is permanent rather than pending -- said differently because
+           "yet" would send someone back to check something that will never
+           change. The authorization stays live until it expires either way. */
+        : accept.gatewayBatched
+        ? "The endpoint rejected the signed payment. Circle's batched rail publishes no per-payment status, so whether it was redeemed cannot be established."
         : "The endpoint rejected the signed payment. Whether the authorization was redeemed could not be checked yet.",
       executionState: closedRefusal?.state ?? null,
       paidUsdc: authorizationUsed === false ? 0 : Number(authorization.value) / 1e6,
@@ -533,6 +542,7 @@ export async function settleX402Call(input: X402SettleRequest): Promise<X402Sett
     asset: accept.asset,
     payer: authorization.from,
     nonce: authorization.nonce,
+    gatewayBatched: accept.gatewayBatched,
   });
   const settlementProof = onchainSpent === true
     ? "onchain_final" as const

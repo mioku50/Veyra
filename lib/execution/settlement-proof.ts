@@ -23,6 +23,13 @@
  * become evidence of the same weight as a fact read off the chain.
  */
 export type SettlementProof =
+  /** Nobody said anything. The response that would have carried a receipt never
+   *  arrived, and the rail this purchase used cannot be asked after the fact --
+   *  Circle's batched settlement nets many purchases into one transaction and
+   *  publishes no per-authorization status. The spend is booked because a
+   *  budget that under-counts what may have left is a broken promise, and the
+   *  grade says plainly that nothing corroborates it. */
+  | "presumed_spent"
   /** The endpoint said so. Nothing else was checked. */
   | "seller_reported"
   /** Acknowledged with no onchain reference yet, which is what a batched
@@ -37,6 +44,7 @@ export type SettlementProof =
 
 /** Ranked, so a later check can only ever raise the grade. */
 const RANK: Record<SettlementProof, number> = {
+  presumed_spent: -1,
   seller_reported: 0,
   facilitator_accepted: 1,
   onchain_final: 2,

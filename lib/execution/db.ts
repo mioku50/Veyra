@@ -374,9 +374,16 @@ export async function getExecutionAttempt(executionId: string): Promise<Executio
 export async function listExecutionAttempts(options?: {
   mandateId?: string;
   counterpartyWallet?: string;
+  /** One state, for the reconciliation sweep, which wants every attempt still
+   *  waiting on an answer rather than the latest few of anything. */
+  state?: ExecutionState;
+  /** Oldest first, so a sweep that is limited works through the backlog instead
+   *  of re-reading the same recent page every hour and never reaching it. */
+  oldestFirst?: boolean;
   limit?: number;
 }): Promise<ExecutionAttempt[]> {
   const limit = options?.limit || 50;
+  const direction = options?.oldestFirst ? 1 : -1;
 
   if (isMemoryStoreAllowed()) {
     let attempts = Array.from(memoryAttemptStore.values());
@@ -387,14 +394,24 @@ export async function listExecutionAttempts(options?: {
       const target = options.counterpartyWallet.toLowerCase();
       attempts = attempts.filter((a) => a.counterpartyWallet.toLowerCase() === target);
     }
+    if (options?.state) {
+      attempts = attempts.filter((a) => a.state === options.state);
+    }
     return attempts
-      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+      .sort((a, b) => direction * (new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()))
       .slice(0, limit);
   }
 
   const supabase = getByoaClient();
   const { data, error } = await readWithRetry("listExecutionAttempts", async () => {
-    let query = supabase.from("execution_attempts").select("*").order("created_at", { ascending: false }).limit(limit);
+    let query = supabase
+      .from("execution_attempts")
+      .select("*")
+      .order("created_at", { ascending: options?.oldestFirst === true })
+      .limit(limit);
+    if (options?.state) {
+      query = query.eq("state", options.state);
+    }
     if (options?.mandateId) {
       query = query.eq("mandate_id", options.mandateId);
     }

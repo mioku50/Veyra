@@ -112,6 +112,16 @@ export interface X402ReconciliationContext {
   authorizationNonce?: string | null;
   authorizationSignature?: `0x${string}` | null;
   authorizationValidBefore?: number | null;
+  /** The contract the EIP-712 domain bound this authorization to. A vanilla
+   *  EIP-3009 accept is domain-separated by the token itself; Circle's batched
+   *  scheme is separated by the GatewayWallet, and the token then knows nothing
+   *  whatever about the nonce. Recorded so a row says which it was rather than
+   *  leaving a later reader to assume. */
+  authorizationVerifyingContract?: string | null;
+  /** True when the accept was Circle's batched Gateway scheme, whose spend is
+   *  netted into a periodic batch and has no transaction of its own. Absent on
+   *  rows written before the field, all of which were vanilla. */
+  gatewayBatched?: boolean | null;
   resource?: string | null;
   paymentRequirementsHash?: string | null;
   facilitatorReference?: string | null;

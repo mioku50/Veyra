@@ -1,0 +1,83 @@
+name: Settlement Reconciliation
+
+# Asks the chain about purchases Veyra could not verify at the time.
+#
+# SETTLEMENT_UNVERIFIED is not a terminal state: it means the response that
+# would have said whether money moved never arrived, and the attempt is waiting
+# to be settled against the chain instead. Until this workflow existed the only
+# way out was an HTTP call naming one execution id, so an attempt was reconciled
+# exactly when a person already knew about it -- and every other one sat holding
+# part of a daily budget cap against a payment that had either happened or had
+# not.
+#
+# Deliberately a separate workflow from the Nova scheduler rather than a second
+# step in it. They fail for unrelated reasons, and a Nova tick that dies on a
+# rate limit must not also stop the ledger from closing its open questions.
+
+on:
+  schedule:
+    # Hourly, offset from Nova's :23 so the two are not competing for the same
+    # database at the same minute. Nothing here is time-critical: an hour of
+    # latency on an answer that was already hours late costs nothing, and the
+    # sweep is idempotent, so a missed tick is picked up by the next one.
+    - cron: "47 * * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: settlement-reconcile
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  sweep:
+    name: Reconcile unverified settlements
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Sweep unverified settlements
+        env:
+          # Shared with the Nova scheduler and with Vercel. Passed through the
+          # environment so it never reaches a command line, which `ps` and the
+          # run log would both show.
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+          BASE_URL: ${{ vars.VEYRA_BASE_URL || 'https://agent-commerce-six.vercel.app' }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${CRON_SECRET}" ]; then
+            echo "CRON_SECRET is not set on this repository."
+            echo "Settings -> Secrets and variables -> Actions -> New repository secret,"
+            echo "with the same value as CRON_SECRET in the Vercel project."
+            exit 1
+          fi
+
+          # Counts and durations only -- no execution ids, no wallet addresses,
+          # nothing a person wrote -- so it is safe in a log this repository's
+          # visibility makes public.
+          status=$(curl --silent --show-error --fail-with-body \
+            --max-time 300 \
+            --write-out '%{http_code}' \
+            --output sweep.json \
+            --request POST \
+            --header "authorization: Bearer ${CRON_SECRET}" \
+            "${BASE_URL}/api/execution/v1/reconcile-sweep") || true
+
+          echo "HTTP ${status}"
+          cat sweep.json 2>/dev/null || true
+          echo
+
+          # A 404 is the route refusing to confirm it exists, not a missing
+          # deployment. Saying so saves the next person the same ten minutes.
+          if [ "${status}" = "404" ]; then
+            echo "Rejected. Either CRON_SECRET does not match the one in Vercel,"
+            echo "or the deployment does not have the route yet."
+            exit 1
+          fi
+
+          if [ "${status}" != "200" ]; then
+            echo "Sweep failed."
+            exit 1
+          fi

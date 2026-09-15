@@ -858,6 +858,224 @@ async function runNegativeTests() {
     console.log("✅ Budget settles into the day its reservation was taken in, once.");
   }
 
+  // 21. A batched Gateway purchase is not reconciled with the token's nonce bit
+  {
+    const { readAuthorizationUsed, RealArcSettlementResolver } =
+      await import("../lib/execution/settlement-resolver.ts");
+    const { saveExecutionAttempt, saveExecutionMandate, getExecutionMandateUsage, reserveBudgetAtomic, getExecutionAttempt } =
+      await import("../lib/execution/db.ts");
+    const { reconcileExecutionSettlement } = await import("../lib/execution/executor.ts");
+    const { getCurrentDailyPeriod } = await import("../lib/execution/budget.ts");
+
+    /* Circle's batched scheme domain-separates the signature by the
+       GatewayWallet, so the nonce inside it was never an EIP-3009 nonce on the
+       token. authorizationState on USDC answers false for every one of them --
+       paid and unpaid alike -- and the code read that false as "unspent".
+
+       The address below is Base's real USDC, so the call would actually be made
+       and would actually return false if the guard were removed. */
+    const batchedAnswer = await readAuthorizationUsed({
+      network: "eip155:8453",
+      asset: "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
+      payer: "0x1111111111111111111111111111111111111111",
+      nonce: "0x" + "ab".repeat(32),
+      gatewayBatched: true,
+    });
+    assert.strictEqual(
+      batchedAnswer, null,
+      "the token cannot answer for a batched authorization, and must say so rather than say no",
+    );
+
+    const resolver = new RealArcSettlementResolver();
+    const baseAttempt = {
+      mandateId: null,
+      rail: "x402" as const,
+      counterpartyAgentId: "agent_gateway_seller",
+      counterpartyWallet: "0x3333333333333333333333333333333333333333" as `0x${string}`,
+      capability: "web_search",
+      requestedAmountUsdc: 0.02,
+      authorizedAmountUsdc: 0.02,
+      selectionId: "sel_batched",
+      selectionHash: "0x",
+      canonicalHash: "0x",
+      state: "SETTLEMENT_UNVERIFIED" as const,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    const batchedContext = {
+      payerWallet: "0x1111111111111111111111111111111111111111" as `0x${string}`,
+      payTo: "0x3333333333333333333333333333333333333333" as `0x${string}`,
+      asset: "0x3600000000000000000000000000000000000000" as `0x${string}`,
+      /* A chain no resolver knows. A vanilla context here resolves to nothing,
+         which is what proves the batched path never went looking for one. */
+      network: "eip155:987654321",
+      authorizedAmountUsdc: 0.02,
+      authorizedAmountAtomic: "20000",
+      authorizationNonce: "0x" + "cd".repeat(32),
+      authorizationValidBefore: 0,
+      gatewayBatched: true,
+      requestTimestamp: new Date().toISOString(),
+    };
+
+    const stillOpen = await resolver.resolve({
+      attempt: {
+        ...baseAttempt,
+        executionId: "vexec_batched_open",
+        x402Context: { ...batchedContext, authorizationValidBefore: Math.floor(Date.now() / 1000) + 3_600 },
+      } as any,
+    });
+    assert.strictEqual(stillOpen.resolved, false, "a live batched authorization is still redeemable; nothing to conclude");
+    assert.strictEqual(stillOpen.settled, false);
+    assert.strictEqual(stillOpen.failed, false);
+
+    const expired = await resolver.resolve({
+      attempt: {
+        ...baseAttempt,
+        executionId: "vexec_batched_expired",
+        x402Context: { ...batchedContext, authorizationValidBefore: Math.floor(Date.now() / 1000) - 60 },
+      } as any,
+    });
+    assert.strictEqual(expired.resolved, true, "an expired batched authorization is answerable, on an unknown chain, without any RPC");
+    assert.strictEqual(expired.settled, true, "booked as spent: exceeding a signed cap is worse than under-using one");
+    assert.strictEqual(expired.failed, false);
+    assert.strictEqual(expired.txHash, null, "a batch nets many purchases into one transaction; none of it belongs to this one");
+    assert.strictEqual(expired.proof, "gateway_batch_presumed");
+    assert.strictEqual(expired.settledAmountUsdc, 0.02);
+
+    /* And the same context without the flag still takes the vanilla path, which
+       on an unknown chain has nothing to say. This is the regression guard: if
+       the dispatch were on something other than the recorded rail, these two
+       would not differ. */
+    const vanillaOnUnknownChain = await resolver.resolve({
+      attempt: {
+        ...baseAttempt,
+        executionId: "vexec_vanilla_expired",
+        x402Context: { ...batchedContext, gatewayBatched: false, authorizationValidBefore: Math.floor(Date.now() / 1000) - 60 },
+      } as any,
+    });
+    assert.strictEqual(vanillaOnUnknownChain.resolved, false, "a vanilla authorization on a chain Veyra cannot read stays unresolved");
+
+    // End to end: the presumption reaches the ledger with its grade attached.
+    const day = getCurrentDailyPeriod();
+    const mandateId = "vman_batched_presumed";
+    await saveExecutionMandate({
+      mandateId,
+      ownerWallet: "0x1111111111111111111111111111111111111111",
+      subjectAgentId: "agent_auto",
+      subjectWallet: "0x2222222222222222222222222222222222222222",
+      mode: "AUTOPILOT",
+      network: "eip155:5042002",
+      allowedCapabilities: ["web_search"],
+      allowedRails: ["x402"],
+      maxPerTransactionUsdc: 10,
+      maxPerDayUsdc: 50,
+      maxTotalUsdc: 200,
+      minimumTrustScore: 50,
+      minimumConfidence: 50,
+      requireVerifiedIdentity: true,
+      evaluatorThresholdUsdc: 5,
+      canonicalHash: "0x",
+      signature: "0x",
+      nonce: 1,
+      version: "v2",
+      issuedAt: new Date().toISOString(),
+      expiresAt: new Date(Date.now() + 86400000).toISOString(),
+      createdAt: new Date().toISOString(),
+    } as any);
+    await reserveBudgetAtomic(mandateId, 0.02, day);
+
+    const executionId = "vexec_batched_ledger";
+    await saveExecutionAttempt({
+      ...baseAttempt,
+      executionId,
+      mandateId,
+      budgetPeriodStart: day.periodStart,
+      failureCode: "PAYMENT_SETTLEMENT_UNVERIFIED",
+      x402Context: { ...batchedContext, authorizationValidBefore: Math.floor(Date.now() / 1000) - 60 },
+    } as any);
+
+    const settled = await reconcileExecutionSettlement(executionId, { resolver });
+    assert.strictEqual(settled.status, "COMPLETED_UNPROVEN", "no transaction exists to prove anything with");
+    assert.strictEqual(settled.actualSettledAmountUsdc, 0.02);
+    assert.strictEqual(settled.paymentTx, null);
+
+    const stored = await getExecutionAttempt(executionId);
+    assert.strictEqual(
+      stored?.settlementProof, "presumed_spent",
+      "the grade must say the spend rests on an argument, not on the chain",
+    );
+
+    const { provesEconomicEvidence } = await import("../lib/execution/settlement-proof.ts");
+    assert.strictEqual(
+      provesEconomicEvidence("presumed_spent"), false,
+      "a presumption must never become reputation evidence about the seller",
+    );
+
+    const usage = await getExecutionMandateUsage(mandateId, day.periodStart);
+    assert.strictEqual(usage.reservedUsdc, 0, "the reservation cannot be held forever");
+    assert.strictEqual(usage.usedUsdc, 0.02, "and the spend is booked, because it may really have left");
+
+    console.log("✅ Batched Gateway settlement is reconciled on its own terms, not the token's.");
+  }
+
+  // 22. The sweep is what actually asks
+  {
+    const { saveExecutionAttempt, listExecutionAttempts } = await import("../lib/execution/db.ts");
+    const { sweepUnverifiedSettlements } = await import("../lib/execution/reconcile-sweep.ts");
+    const { MockSettlementResolver } = await import("../lib/execution/settlement-resolver.ts");
+
+    const base = {
+      mandateId: null,
+      rail: "x402" as const,
+      counterpartyAgentId: "agent_sweep",
+      counterpartyWallet: "0x4444444444444444444444444444444444444444" as `0x${string}`,
+      capability: "web_search",
+      requestedAmountUsdc: 0.01,
+      authorizedAmountUsdc: 0.01,
+      selectionId: "sel_sweep",
+      selectionHash: "0x",
+      canonicalHash: "0x",
+      x402Context: null,
+    };
+    // Oldest first, so a bounded sweep works through a backlog rather than
+    // re-reading the newest page every hour and never reaching the tail.
+    await saveExecutionAttempt({
+      ...base, executionId: "vexec_sweep_old", state: "SETTLEMENT_UNVERIFIED",
+      createdAt: new Date(Date.now() - 86_400_000).toISOString(), updatedAt: new Date().toISOString(),
+    } as any);
+    await saveExecutionAttempt({
+      ...base, executionId: "vexec_sweep_new", state: "SETTLEMENT_UNVERIFIED",
+      createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
+    } as any);
+
+    const waiting = await listExecutionAttempts({ state: "SETTLEMENT_UNVERIFIED", oldestFirst: true, limit: 10 });
+    assert.ok(waiting.length >= 2);
+    assert.strictEqual(waiting[0].executionId, "vexec_sweep_old", "the sweep must start at the oldest open question");
+    assert.ok(
+      waiting.every((a) => a.state === "SETTLEMENT_UNVERIFIED"),
+      "the sweep must not touch attempts that already have an answer",
+    );
+
+    /* One attempt throwing must not end the tick. The resolver here refuses the
+       first execution it sees and answers the rest. */
+    let refused = false;
+    const flaky = new MockSettlementResolver(({ attempt }) => {
+      if (!refused && attempt.executionId === "vexec_sweep_old") {
+        refused = true;
+        throw new Error("RPC unavailable");
+      }
+      return { resolved: false, settled: false, failed: false };
+    });
+
+    const outcome = await sweepUnverifiedSettlements({ limit: 10, resolver: flaky });
+    assert.ok(outcome.examined >= 2, "the sweep must find attempts nobody named by id");
+    assert.strictEqual(outcome.errored, 1, "the failing attempt is counted");
+    assert.ok(outcome.unresolved >= 1, "and the sweep carried on to the ones after it");
+    assert.strictEqual(outcome.settled, 0);
+
+    console.log("✅ Unverified settlements are swept without anyone naming them.");
+  }
+
   console.log("\n🎉 ALL P6.1 Negative & Adversarial Security Tests Passed Successfully!");
 }
 

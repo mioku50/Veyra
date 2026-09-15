@@ -68,6 +68,12 @@ export type PublicExecutionView = {
     authorizedAmountUsdc: number;
     authorizedAmountAtomic: string | null;
     authorizationValidBefore: number | null;
+    /** Which rail the signature was for. It is what explains a settlement with
+     *  no transaction: a batched purchase is netted into one onchain transfer
+     *  with every other purchase in its batch, and none of that transfer is
+     *  this one. Absent on rows written before the field, all of them vanilla. */
+    gatewayBatched: boolean | null;
+    authorizationVerifyingContract: string | null;
     resource: string | null;
     paymentRequirementsHash: string | null;
     facilitatorReference: string | null;
@@ -125,6 +131,8 @@ export function publicExecutionView(attempt: ExecutionAttempt): PublicExecutionV
              record and not a way to use it. The signature and the nonce are
              the tuple that spends it, and neither appears above. */
           authorizationValidBefore: x402.authorizationValidBefore ?? null,
+          gatewayBatched: x402.gatewayBatched ?? null,
+          authorizationVerifyingContract: x402.authorizationVerifyingContract ?? null,
           resource: x402.resource ?? null,
           paymentRequirementsHash: x402.paymentRequirementsHash ?? null,
           facilitatorReference: x402.facilitatorReference ?? null,

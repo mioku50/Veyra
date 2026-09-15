@@ -96,8 +96,9 @@ export interface SettlementResolution {
   /** What the answer rests on. A settlement read from the token's own
    *  authorization bit is as certain as one read from a receipt, but it cannot
    *  name the transaction that did it, and a reader deserves to know which of
-   *  the two they are looking at. */
-  proof?: "transaction_receipt" | "authorization_state";
+   *  the two they are looking at -- and a batched purchase, which no public
+   *  record describes at all, is a third thing again. */
+  proof?: "transaction_receipt" | "authorization_state" | "gateway_batch_presumed";
 }
 
 const UNRESOLVED: SettlementResolution = { resolved: false, settled: false, failed: false };
@@ -153,7 +154,15 @@ export async function readAuthorizationUsed(input: {
   payer: string;
   nonce: string;
   rpcUrl?: string;
+  /** True for Circle's batched scheme, which the token cannot answer for. */
+  gatewayBatched?: boolean | null;
 }): Promise<boolean | null> {
+  /* A batched authorization is domain-separated by the GatewayWallet, not by
+     the token, so its nonce was never an EIP-3009 nonce on this contract and
+     the token will answer false for it forever -- for one that was paid and
+     one that was not, indistinguishably. Asking anyway and reading the answer
+     as "unspent" is how a settled purchase gets recorded as a refusal. */
+  if (input.gatewayBatched === true) return null;
   const chain = chainForNetwork(input.network);
   const nonce = normalizeHex32(input.nonce);
   if (!chain || !nonce || !input.asset || !input.payer) return null;
@@ -215,6 +224,30 @@ export class RealArcSettlementResolver implements SettlementResolver {
       x402Context.authorizedAmountAtomic ?? Math.round(x402Context.authorizedAmountUsdc * 1_000_000)
     );
 
+    /* Which rail this authorization belongs to decides what may be asked of it.
+       They are not variants of one question with a different RPC URL.
+
+       A vanilla EIP-3009 authorization is answerable: the token keeps a bit per
+       (authorizer, nonce) and a receipt can be bound to the transfer. Circle's
+       batched scheme is answerable by nobody outside Circle. The buyer signs
+       against the GatewayWallet, the seller hands the authorization to Gateway,
+       Gateway locks the funds in its own ledger, and some minutes or hours later
+       one transaction applies the *net* position of every participant in the
+       batch. There is no transfer to find, no nonce on the token to read, and
+       no public per-authorization status: /v1/x402/verify validates the signed
+       message and nothing else -- it answered isValid for a payer with no
+       deposit at all, and short-circuits on expiry before it would reach a
+       nonce. So the batched rail gets its own resolution, which is honest about
+       resting on an argument rather than on a record. */
+    if (x402Context.gatewayBatched === true) {
+      return this.resolveBatchedAuthorization({
+        validBefore: expectedValidBefore,
+        amountAtomic: expectedAmountAtomic,
+        payer: expectedPayer as Address,
+        payTo: expectedPayTo as Address,
+      });
+    }
+
     const chain = chainForNetwork(x402Context.network);
     if (!chain) return UNRESOLVED;
 
@@ -264,6 +297,50 @@ export class RealArcSettlementResolver implements SettlementResolver {
       amountAtomic: expectedAmountAtomic,
       payTo: expectedPayTo as Address,
     }).catch(() => UNRESOLVED);
+  }
+
+  /**
+   * A batched purchase whose response never arrived.
+   *
+   * Nothing can be read. What can be reasoned about is the window: until
+   * validBefore passes the authorization is live and the seller may still hand
+   * it to Gateway, so there is no answer yet and the attempt stays open. Once
+   * it passes, whatever was going to happen has happened -- Gateway refuses an
+   * expired authorization, and so would the GatewayWallet -- and the only
+   * question left is which way, permanently unanswerable.
+   *
+   * It is booked as spent. Not because that is known, but because the two
+   * mistakes are not the same size. A mandate is a promise about a ceiling: if
+   * the money left and the reservation is released, the buyer's own cap is
+   * quietly exceeded by real funds. If it did not leave and the spend is booked,
+   * one day's cap is under-used and resets at midnight. The asymmetry decides
+   * it, and the probabilities point the same way -- the response went missing
+   * after the seller already held a valid authorization.
+   *
+   * What it must never do is become evidence about the seller. There is no
+   * transaction, so no reputation row is written, and the proof grade says
+   * presumed rather than observed.
+   */
+  private async resolveBatchedAuthorization(input: {
+    validBefore: number;
+    amountAtomic: bigint;
+    payer: Address;
+    payTo: Address;
+  }): Promise<SettlementResolution> {
+    // Still redeemable by whoever holds it. Nothing to conclude.
+    if (!Number.isFinite(input.validBefore) || Date.now() / 1000 <= input.validBefore) {
+      return UNRESOLVED;
+    }
+    return {
+      resolved: true,
+      settled: true,
+      failed: false,
+      settledAmountUsdc: Number(input.amountAtomic) / 1_000_000,
+      payer: input.payer,
+      payTo: input.payTo,
+      txHash: null,
+      proof: "gateway_batch_presumed",
+    };
   }
 
   /**

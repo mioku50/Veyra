@@ -221,7 +221,7 @@ const db = await import("../lib/execution/db.ts");
 
 assert.equal(db.isMemoryStoreAllowed(), true, "the round trip needs the memory store");
 
-async function roundTrip(outcome: BrowserX402Outcome) {
+async function roundTrip(outcome: BrowserX402Outcome, rail?: { gatewayBatched: boolean; verifyingContract: `0x${string}` }) {
   const executionId = await ledger.openBrowserX402Attempt({
     selectionId: "vms_roundtrip",
     selectionHash: "0x",
@@ -240,6 +240,8 @@ async function roundTrip(outcome: BrowserX402Outcome) {
     authorizationNonce: `0x${"11".repeat(32)}`,
     authorizationSignature: `0x${"22".repeat(65)}`,
     authorizationValidBefore: Math.floor(Date.now() / 1000) + 600,
+    gatewayBatched: rail?.gatewayBatched,
+    verifyingContract: rail?.verifyingContract,
   });
   assert.ok(executionId, "the attempt must be created");
   assert.equal((await db.getExecutionAttempt(executionId!))?.state, "AUTHORIZED");
@@ -264,6 +266,21 @@ assert.equal(completed.paymentTx, "0xdeadbeef");
 // independently verified against Arc afterwards.
 assert.equal(completed.x402Context?.payerWallet, "0x9b57000000000000000000000000000000003dad");
 assert.equal(completed.x402Context?.authorizedAmountAtomic, "2000");
+/* Which rail the signature belonged to, written down at the moment it is still
+   known. Reconciliation runs hours later from this row alone, and asking the
+   token about a batched nonce gets a confident, permanent, wrong "unspent". */
+assert.equal(completed.x402Context?.gatewayBatched, false);
+
+const batched = await roundTrip(
+  { ...paid, verification: verification("PASS") },
+  { gatewayBatched: true, verifyingContract: "0x77777777Dcc4d5A8B6E418Fd04D8997ef11000eE" },
+);
+assert.equal(batched.x402Context?.gatewayBatched, true);
+assert.equal(
+  batched.x402Context?.authorizationVerifyingContract,
+  "0x77777777Dcc4d5A8B6E418Fd04D8997ef11000eE",
+  "the GatewayWallet, not the token -- the evidence for the flag beside it",
+);
 
 const serviceFailed = await roundTrip({ ...paid, verification: verification("FAIL", "response_non_empty") });
 assert.equal(serviceFailed.state, "SETTLED_SERVICE_FAILED");
@@ -416,6 +433,18 @@ assert.ok(!JSON.stringify(withNewField).includes("must-not-publish"),
    the record; the pair that spends it is the signature and the nonce, and
    neither is above. */
 assert.equal(publicExecutionView(attempt).x402?.authorizationValidBefore, 1789985038);
+
+/* Why a settlement can have no transaction. Without the rail on the row, a
+   COMPLETED_UNPROVEN with an empty payment_tx reads as a bug rather than as the
+   shape Circle's batched settlement actually has. */
+assert.equal(publicExecutionView(attempt).x402?.gatewayBatched, null, "rows older than the field say nothing rather than guess");
+assert.equal(
+  publicExecutionView({
+    ...attempt,
+    x402Context: { ...(attempt as any).x402Context, gatewayBatched: true },
+  } as ExecutionAttempt).x402?.gatewayBatched,
+  true,
+);
 
 /* A public ledger that prints a settled amount without saying whether the chain
    or the seller is the source of it is publishing an opinion as a fact. */
