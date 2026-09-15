@@ -97,7 +97,11 @@ export function resolveLlmConfig(
   const label = normalizedEnvironmentValue(environment.LLM_PROVIDER_LABEL) ?? DEFAULT_LLM_PROVIDER_LABEL;
   const userAgent = normalizedEnvironmentValue(environment.LLM_USER_AGENT);
 
-  if (provider && provider !== LLM_PROVIDER_PROTOCOL) {
+  /* Case-insensitively, because this names a protocol rather than data and
+     there is exactly one value it may hold. Matching it exactly bought nothing
+     and cost a deployment: LLM_PROVIDER is the one setting whose value is not a
+     vendor, a URL or a key, so it is also the one people fill in from memory. */
+  if (provider && provider.toLowerCase() !== LLM_PROVIDER_PROTOCOL) {
     return { configured: false, reason: "unsupported_provider", model };
   }
   if (!provider || !baseUrl || !apiKey || !model) {
@@ -156,6 +160,11 @@ export function getLlmSynthesisDiagnostic(
       : required.filter(([, value]) => !value).map(([name]) => name),
     unsupportedProvider: !resolution.configured
       && (resolution as { reason?: string }).reason === "unsupported_provider",
+    /** What LLM_PROVIDER has to say. Named, because "unsupported" tells
+     *  somebody their value is wrong and not which value is right -- and the
+     *  right one is a protocol name that looks nothing like the vendor every
+     *  other setting on this list refers to. */
+    expectedProvider: LLM_PROVIDER_PROTOCOL,
     externalProcessing: true,
     deterministicFallback: true,
     legacyOpenAiKeyUsed: false,

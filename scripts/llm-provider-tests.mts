@@ -397,5 +397,25 @@ const wrongProtocol = getLlmSynthesisDiagnostic({
 assert.equal(wrongProtocol.configured, false);
 assert.deepEqual(wrongProtocol.missing, [], "nothing is missing");
 assert.equal(wrongProtocol.unsupportedProvider, true, "the value is simply wrong");
+assert.equal(wrongProtocol.expectedProvider, "openai-compatible",
+  "and the right one is named, because a protocol name looks nothing like the "
+  + "vendor every other setting on the list refers to");
+
+/* The one setting whose value is not a vendor, a URL or a key is also the one
+   people fill in from memory, so its case is not held against them. */
+for (const spelling of ["openai-compatible", "OpenAI-Compatible", "OPENAI-COMPATIBLE"]) {
+  assert.equal(getLlmSynthesisDiagnostic({
+    LLM_PROVIDER: spelling,
+    LLM_BASE_URL: "https://api.example.test/v1",
+    LLM_API_KEY: "k",
+    LLM_MODEL: "example-model-1",
+  } as NodeJS.ProcessEnv).configured, true, `${spelling} is the same protocol`);
+}
+assert.equal(getLlmSynthesisDiagnostic({
+  LLM_PROVIDER: "openai",
+  LLM_BASE_URL: "https://api.example.test/v1",
+  LLM_API_KEY: "k",
+  LLM_MODEL: "example-model-1",
+} as NodeJS.ProcessEnv).configured, false, "and a different value is still refused");
 
 console.log("[llm-provider-test] passed: OpenAI-compatible request boundary, routed provider label and User-Agent header, and a diagnostic that names the settings it needs without carrying one of their values, model config, timeout, 429 retry, response bounds, malformed output, legacy-key rejection, secret-safe prompt, input-leak fallback, AI metadata, deterministic fallback, and partial failure");
