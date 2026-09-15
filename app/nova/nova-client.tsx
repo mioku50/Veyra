@@ -32,6 +32,7 @@ import type { NovaBrief, NovaFeedback, NovaInvestigation, NovaSignal } from "@/l
 import type { NovaResearchProposal } from "@/lib/nova/research";
 import type { TermsChange } from "@/lib/nova/research-terms";
 import { useArcWallet } from "@/components/wallet/use-arc-wallet";
+import { NoWalletHere } from "@/components/wallet/wallet-app-links";
 import { signPaymentAuthorization, type SigningTerms } from "@/lib/x402/sign-payment";
 
 /**
@@ -1125,6 +1126,7 @@ export function NovaClient({ view = "today" }: { view?: NovaView } = {}) {
                   walletAddress={wallet.address}
                   onConnect={() => void wallet.connect()}
                   connecting={wallet.connecting}
+                  walletReady={wallet.providerAvailable || !wallet.providerSettled}
                   onPay={(acknowledge) => void pay(signal, acknowledge)}
                   refusedAt={signal.refusal?.at ?? null}
                   onLookAgain={() => void price(signal)}
@@ -1197,6 +1199,7 @@ export function NovaClient({ view = "today" }: { view?: NovaView } = {}) {
           onSign={() => void signPreviewMandate()}
           signing={signingMandate}
           note={mandateNote}
+          walletReady={wallet.providerAvailable || !wallet.providerSettled}
         />
       ) : null}
 
@@ -1326,6 +1329,7 @@ export function NovaClient({ view = "today" }: { view?: NovaView } = {}) {
                         walletAddress={wallet.address}
                         onConnect={() => void wallet.connect()}
                         connecting={wallet.connecting}
+                        walletReady={wallet.providerAvailable || !wallet.providerSettled}
                         onPay={(acknowledge) => void pay(signal, acknowledge)}
                         refusedAt={signal.refusal?.at ?? null}
                         onLookAgain={() => void price(signal)}
@@ -1401,6 +1405,7 @@ export function NovaClient({ view = "today" }: { view?: NovaView } = {}) {
           onAttest={() => void attestOnArc()}
           attesting={attesting}
           attestNote={attestNote}
+          walletReady={wallet.providerAvailable || !wallet.providerSettled}
         />
           {/* Said here because the brief cannot avoid raising it: somebody picks
               Arc as an interest, gets shown a payment, and the payment settles
@@ -1449,6 +1454,7 @@ function Standing({
   onAttest,
   attesting,
   attestNote,
+  walletReady,
 }: {
   brief: NovaBrief;
   onClaim: () => void;
@@ -1457,6 +1463,10 @@ function Standing({
   onAttest: () => void;
   attesting: boolean;
   attestNote: string | null;
+  /** False only once detection has settled on there being no wallet here.
+   *  Gates claiming, which mints from the owner's own wallet; attesting is
+   *  signed by Veyra and does not. */
+  walletReady: boolean;
 }) {
   const { standing, agent } = brief;
   const identity = agent.arcIdentity;
@@ -1523,14 +1533,18 @@ function Standing({
           </p>
           {identityState.kind === "earned_not_claimed" ? (
             <div className="mt-4">
-              <button
-                type="button"
-                onClick={onClaim}
-                disabled={claiming}
-                className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:opacity-60"
-              >
-                {claiming ? "Claiming…" : "Claim Arc identity"}
-              </button>
+              {walletReady ? (
+                <button
+                  type="button"
+                  onClick={onClaim}
+                  disabled={claiming}
+                  className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:opacity-60"
+                >
+                  {claiming ? "Claiming…" : "Claim Arc identity"}
+                </button>
+              ) : (
+                <NoWalletHere what="this identity" />
+              )}
               <p className="mt-3 max-w-xl text-xs leading-relaxed text-muted-foreground">
                 You will own this identity — your wallet mints it, and {BRAND.name} never holds it.
                 {agent.name}&apos;s memory and history stay with the agent, not with the wallet.
@@ -1680,11 +1694,15 @@ function AutonomyPanel({
   onSign,
   signing,
   note,
+  walletReady,
 }: {
   brief: NovaBrief;
   onSign: () => void;
   signing: boolean;
   note: string | null;
+  /** False only once detection has settled on there being no wallet here.
+   *  Stays true while the answer is still open. See NoWalletHere. */
+  walletReady: boolean;
 }) {
   const shadow = brief.shadow;
   const limits = shadow.limits;
@@ -1731,14 +1749,20 @@ function AutonomyPanel({
             <Row label="Budget day" value={browserTimezone()} />
             <Row label="Expires" value={`in ${days} days`} />
           </dl>
-          <button
-            type="button"
-            onClick={onSign}
-            disabled={signing}
-            className="mt-5 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:opacity-60"
-          >
-            {signing ? "Waiting for your wallet…" : "Sign preview mandate"}
-          </button>
+          <div className="mt-5">
+            {walletReady ? (
+              <button
+                type="button"
+                onClick={onSign}
+                disabled={signing}
+                className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:opacity-60"
+              >
+                {signing ? "Waiting for your wallet…" : "Sign preview mandate"}
+              </button>
+            ) : (
+              <NoWalletHere what="these limits" />
+            )}
+          </div>
           <p className="mt-3 max-w-xl text-xs leading-relaxed text-muted-foreground">
             <Said claim={previewOnlyWarning()} />
           </p>
@@ -2199,6 +2223,7 @@ function DeeperResearch({
   walletAddress,
   onConnect,
   connecting,
+  walletReady,
   onPay,
   refusedAt,
   onLookAgain,
@@ -2210,6 +2235,9 @@ function DeeperResearch({
   walletAddress: string | null;
   onConnect: () => void;
   connecting: boolean;
+  /** False only once detection has settled on there being no wallet here.
+   *  Stays true while the answer is still open. See NoWalletHere. */
+  walletReady: boolean;
   onPay: (acknowledge?: string) => void;
   /** When Veyra last looked and declined, so an old no reads as an old no. */
   refusedAt?: string | null;
@@ -2396,7 +2424,7 @@ function DeeperResearch({
             >
               {state.stage === "failed" ? `Try again — ${cost}` : `Pay ${cost} with your wallet`}
             </button>
-          ) : (
+          ) : walletReady ? (
             <button
               type="button"
               onClick={onConnect}
@@ -2405,6 +2433,8 @@ function DeeperResearch({
             >
               {connecting ? "Opening your wallet…" : `Connect a wallet to pay ${cost}`}
             </button>
+          ) : (
+            <NoWalletHere what={`this ${cost} payment`} />
           )
         ) : null}
 

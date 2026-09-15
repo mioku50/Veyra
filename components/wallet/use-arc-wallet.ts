@@ -136,6 +136,12 @@ export function useArcWallet() {
   const [loadingBalances, setLoadingBalances] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [providerAvailable, setProviderAvailable] = useState(false);
+  /* Whether the answer above is final. `providerAvailable` is false both for
+     "there is no wallet here" and for "nobody has looked yet", and a screen
+     that swaps a Connect button for "install a wallet" on the second reading
+     tells a person with MetaMask open that they have not got it. It stays false
+     until a provider arrives or the detection window below closes. */
+  const [providerSettled, setProviderSettled] = useState(false);
   const isArcTestnet = chainId === ARC_TESTNET_CHAIN_ID;
 
   const readWalletState = useCallback(async () => {
@@ -189,6 +195,7 @@ export function useArcWallet() {
     const detect = () => {
       if (!getProvider()) return false;
       setProviderAvailable(true);
+      setProviderSettled(true);
       void readWalletState();
       return true;
     };
@@ -196,7 +203,11 @@ export function useArcWallet() {
 
     const onInitialized = () => detect();
     window.addEventListener("ethereum#initialized", onInitialized, { once: true });
-    const timer = window.setTimeout(onInitialized, 3_000);
+    /* The same timer settles the question either way: a provider that has not
+       attached within the window is not going to. */
+    const timer = window.setTimeout(() => {
+      if (!detect()) setProviderSettled(true);
+    }, 3_000);
 
     return () => {
       window.removeEventListener("ethereum#initialized", onInitialized);
@@ -502,6 +513,7 @@ export function useArcWallet() {
     loadingBalances,
     error,
     providerAvailable,
+    providerSettled,
     isArcTestnet,
     connect,
     switchToArc,
