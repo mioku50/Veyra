@@ -358,6 +358,11 @@ export async function runScheduledTick(input?: {
           ownerWallet: agent.owner_wallet,
         },
         now: new Date(),
+        /* Whatever is left of the tick, less the headroom it keeps for itself.
+           The pass used to bound itself by a candidate count, so it could
+           overrun a nearly-spent tick or -- far more often -- stop looking
+           while there was still time to look. */
+        deadlineMs: Math.max(0, budgetMs - SHADOW_HEADROOM_MS - (Date.now() - started)),
         fetchImpl: reader,
       }).catch(() => null);
       if (shadow) {

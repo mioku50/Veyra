@@ -46,6 +46,14 @@ import type { NovaSignal } from "./types.ts";
  *  in it. */
 export const MAX_DECISIONS_PER_PASS = 2;
 
+/** Every candidate worth walking. The database read is already capped at 40,
+ *  and walking fewer than it returns only ever hides a decision. */
+export const SHADOW_POOL = 40;
+
+/** What the pass may spend before it stops looking. Sized against the
+ *  scheduler's own tick budget, which is what it has to fit inside. */
+export const SHADOW_DEADLINE_MS = 90_000;
+
 export type ShadowPass = {
   ran: boolean;
   /** Why nothing ran, when nothing ran. */
@@ -60,6 +68,9 @@ export type ShadowPass = {
    *  can act on: a market where no endpoint takes a plain question and a model
    *  that timed out are opposite problems, and only one of them is ours. */
   unpricedReasons: Record<string, number>;
+  /** True when the pass stopped on its deadline with candidates left. Without
+   *  it, "considered 6" cannot be told apart from "there were only 6". */
+  ranOutOfTime: boolean;
   /** Already ruled on today under these terms. */
   skipped: number;
   wouldSpendUsdc: number;
@@ -67,7 +78,7 @@ export type ShadowPass = {
 
 const EMPTY: ShadowPass = {
   ran: false, blocked: null, considered: 0, decided: 0, wouldAllow: 0,
-  wouldDeny: 0, unpriced: 0, unpricedReasons: {}, skipped: 0, wouldSpendUsdc: 0,
+  wouldDeny: 0, unpriced: 0, unpricedReasons: {}, ranOutOfTime: false, skipped: 0, wouldSpendUsdc: 0,
 };
 
 /** Worth deciding about, in the order Nova would care. */
@@ -107,6 +118,22 @@ export async function runShadowPass(input: {
   now?: Date;
   fetchImpl?: typeof fetch;
   maxDecisions?: number;
+  /**
+   * How long this pass may spend looking, in milliseconds.
+   *
+   * It used to look at exactly four candidates per decision it was allowed to
+   * make -- a multiplier chosen before there was any data about how many
+   * candidates a decision costs. Measured on the live catalogue it costs about
+   * nine: a night with eight candidates and one priceable card among them
+   * reported "no decision was reached today" while the card sat two places
+   * outside the window.
+   *
+   * A deadline is the honest bound, because what is actually scarce is the
+   * tick's time and not a count somebody guessed. The pass walks its whole
+   * pool, stops the moment it has its decisions, and stops early only when it
+   * would otherwise overrun.
+   */
+  deadlineMs?: number;
 }): Promise<ShadowPass> {
   const now = input.now ?? new Date();
   const mandate = await autonomyMandateFor({
@@ -129,16 +156,23 @@ export async function runShadowPass(input: {
   });
 
   const memory = await recentLearnings(input.agent.agentId).catch(() => [] as string[]);
-  const candidates = await candidatesFor(
-    input.agent.agentId,
-    (input.maxDecisions ?? MAX_DECISIONS_PER_PASS) * 4,
-  );
+  const candidates = await candidatesFor(input.agent.agentId, SHADOW_POOL);
 
-  const pass: ShadowPass = { ...EMPTY, ran: true, unpricedReasons: {} };
+  const pass: ShadowPass = { ...EMPTY, ran: true, unpricedReasons: {}, ranOutOfTime: false };
   let running = { ...usage };
+
+  const startedAt = Date.now();
+  const deadline = input.deadlineMs ?? SHADOW_DEADLINE_MS;
 
   for (const signal of candidates) {
     if (pass.decided >= (input.maxDecisions ?? MAX_DECISIONS_PER_PASS)) break;
+    /* Checked before the work, not after: a candidate costs a model call, a
+       discovery read and a live probe, and starting one with no time left is
+       how a tick overruns rather than how it finds a decision. */
+    if (Date.now() - startedAt >= deadline) {
+      pass.ranOutOfTime = true;
+      break;
+    }
     pass.considered += 1;
 
     if (await alreadyDecided({
