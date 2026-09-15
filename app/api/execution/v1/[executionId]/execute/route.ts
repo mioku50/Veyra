@@ -23,12 +23,34 @@ export async function POST(
       return NextResponse.json({ error: "Execution attempt not found", code: "EXECUTION_NOT_FOUND" }, { status: 404 });
     }
 
-    if (attempt.mandateId) {
-      const mandate = await getExecutionMandate(attempt.mandateId);
-      if (mandate) {
-        assertMandateAccess(caller, mandate.ownerWallet, mandate.subjectWallet);
-      }
+    /* Both halves of this used to be permissive. An attempt with no mandate
+       skipped the check entirely, and so did one whose mandate row could not be
+       found -- so any authenticated caller could execute an attempt nobody
+       owned, on a path that spends a key the server holds. Prepare does not
+       even authenticate when no mandateId is given, so such attempts are
+       trivially created.
+
+       There is no owner to check against without a mandate, which makes the
+       only safe answer no. Browser relay purchases carry no mandate and are not
+       executed through here; they are settled by the relay, against the buyer's
+       own signature. */
+    if (!attempt.mandateId) {
+      return NextResponse.json(
+        {
+          error: "This execution has no mandate, so there is no owner to authorize it.",
+          code: "EXECUTION_REQUIRES_MANDATE",
+        },
+        { status: 403 },
+      );
     }
+    const mandate = await getExecutionMandate(attempt.mandateId);
+    if (!mandate) {
+      return NextResponse.json(
+        { error: "Mandate not found", code: "MANDATE_NOT_FOUND" },
+        { status: 404 },
+      );
+    }
+    assertMandateAccess(caller, mandate.ownerWallet, mandate.subjectWallet);
 
     const body = await req.json().catch(() => ({}));
     const idempotencyKey =

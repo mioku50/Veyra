@@ -13,6 +13,13 @@ import { getAddress, isAddress, parseUnits, createPublicClient, http, keccak256,
 import { privateKeyToAccount } from "viem/accounts";
 import { arcTestnet } from "viem/chains";
 import { getArcPublicClient } from "../../erc8183/client.ts";
+import { fetchWithSsrfProtection } from "../../seller/ssrf.ts";
+
+/* The x402 SDK spells the payment header one way in v2 and another in v1, and
+   the SSRF transport drops anything it does not recognise -- silently, which
+   would turn a paid call into an unpaid one. Both spellings are named so that
+   neither can go missing without the endpoint saying so. */
+const X402_PAYMENT_HEADERS = ["payment-signature", "x-payment"];
 import { classifyRelayFailure } from "../relay-failure.ts";
 import { readAuthorizationUsed } from "../settlement-resolver.ts";
 import type { SettlementProof } from "../settlement-proof.ts";
@@ -51,10 +58,47 @@ export class X402ExecutionAdapter implements ExecutionRailAdapter {
       };
     }
 
-    const endpointUrl = params.taskPayload?.endpointUrl || process.env.LIVE_X402_TARGET_URL;
-    const payerPk = (process.env.CANARY_DEPLOYER_PRIVATE_KEY ||
-      process.env.VEYRA_TRUST_ATTESTER_PRIVATE_KEY) as `0x${string}` | undefined;
+    /* Whose money, and whose URL.
+     *
+     * This path spends a key the server holds, not the wallet named in the
+     * mandate, which makes it a canary executor rather than a user's agent. It
+     * took its endpoint from params.taskPayload.endpointUrl -- and the execute
+     * route passes the whole request body as taskPayload -- so an authenticated
+     * caller named the address and Veyra's key paid for whatever answered. The
+     * audit reached a loopback URL through it.
+     *
+     * Two rules now. The payer key is off unless somebody deliberately turned
+     * the canary on, and the trust attester is never it: that key signs
+     * attestations about counterparties, and a key that both vouches and spends
+     * makes a compromise of either a compromise of both. The endpoint comes
+     * from the server's own configuration, because the money does.
+     */
+    const serverPayerEnabled = process.env.EXECUTION_ALLOW_SERVER_PAYER === "true";
+    const payerPk = serverPayerEnabled
+      ? (process.env.CANARY_DEPLOYER_PRIVATE_KEY as `0x${string}` | undefined)
+      : undefined;
+    const endpointUrl = process.env.LIVE_X402_TARGET_URL;
     const rpcUrl = process.env.ARC_TESTNET_RPC_URL;
+
+    const callerEndpoint = typeof params.taskPayload?.endpointUrl === "string"
+      ? params.taskPayload.endpointUrl.trim()
+      : null;
+    if (callerEndpoint && callerEndpoint !== endpointUrl) {
+      /* Refused rather than ignored. A caller that asked for one address and
+         silently got another would read the result as being about the address
+         it named. */
+      return {
+        executionId: params.executionId,
+        rail: "x402",
+        success: false,
+        failureCode: "X402_ENDPOINT_NOT_SERVER_CONFIGURED",
+        economicCommitted: false,
+        economicSettled: false,
+        actualSettledAmountUsdc: 0,
+        serviceSucceeded: false,
+        evidenceType: "x402_execution_failure",
+      };
+    }
 
     // Controlled deterministic harness for explicit unit/negative test mode only
     if (isTestMode) {
@@ -96,11 +140,11 @@ export class X402ExecutionAdapter implements ExecutionRailAdapter {
         const httpClient = new x402HTTPClient(client);
 
         // Step 1: Initial request to endpoint
-        const initialRes = await fetch(endpointUrl, {
+        const initialRes = await fetchWithSsrfProtection(endpointUrl, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(params.taskPayload?.body || { task: params.capability }),
-        });
+        }, { allowedHeaders: X402_PAYMENT_HEADERS });
 
         // If free or sponsored endpoint returns 200 directly
         if (initialRes.status === 200) {
@@ -267,14 +311,14 @@ export class X402ExecutionAdapter implements ExecutionRailAdapter {
 
           // Step 4: Retry with standard x402 V2 payment-signature header
           dispatchedContext = x402Context;
-          const paidRes = await fetch(endpointUrl, {
+          const paidRes = await fetchWithSsrfProtection(endpointUrl, {
             method: "POST",
             headers: {
               "Content-Type": "application/json",
               ...signatureHeader,
             },
             body: JSON.stringify(params.taskPayload?.body || { task: params.capability }),
-          });
+          }, { allowedHeaders: X402_PAYMENT_HEADERS });
 
           // Check payment-response header
           const paymentResponseHeader =

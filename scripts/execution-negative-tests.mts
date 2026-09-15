@@ -348,21 +348,33 @@ async function runNegativeTests() {
     const { encodePaymentRequiredHeader } = await import("@x402/core/http");
     const adapter = new X402ExecutionAdapter();
 
+    const { setSellerRequestAdapterForTests } = await import("../lib/seller/ssrf.ts");
+
     const originalFetch = global.fetch;
     
     // Set up dummy environment variables for tests
     const oldEndpoint = process.env.LIVE_X402_TARGET_URL;
     const oldPayerPk = process.env.CANARY_DEPLOYER_PRIVATE_KEY;
     const oldRpcUrl = process.env.ARC_TESTNET_RPC_URL;
+    const oldServerPayer = process.env.EXECUTION_ALLOW_SERVER_PAYER;
     
-    process.env.LIVE_X402_TARGET_URL = "http://test";
+    /* An IP literal, because the adapter's calls go through the shared
+       SSRF-protected transport now and a hostname would have to resolve. The
+       transport's own test adapter delegates to the stubbed global.fetch, so
+       the protocol assertions below are unchanged -- they now run through the
+       same code path production uses to reach a seller. */
+    process.env.LIVE_X402_TARGET_URL = "http://127.0.0.1:9999/x402";
     process.env.CANARY_DEPLOYER_PRIVATE_KEY = "0x0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
     process.env.ARC_TESTNET_RPC_URL = "http://rpc-test";
+    /* The canary payer spends a key the server holds rather than the mandate's
+       wallet, so it is off unless a deployment deliberately turns it on. */
+    process.env.EXECUTION_ALLOW_SERVER_PAYER = "true";
+    setSellerRequestAdapterForTests(async (url, init) => global.fetch(url.toString(), init));
 
     // a) Missing payment required header
     global.fetch = async () => new Response("Payment Required", { status: 402 });
     const resNoHeader = await adapter.execute({
-      executionId: "vexec_x402_1", selectionId: "sel", selectionHash: "0x", counterpartyAgentId: "agent", counterpartyWallet: "0x1111111111111111111111111111111111111111", capability: "cap", amountUsdc: 1.0, taskPayload: { endpointUrl: "http://test" }
+      executionId: "vexec_x402_1", selectionId: "sel", selectionHash: "0x", counterpartyAgentId: "agent", counterpartyWallet: "0x1111111111111111111111111111111111111111", capability: "cap", amountUsdc: 1.0, taskPayload: {}
     });
     assert.equal(resNoHeader.failureCode, "X402_INVALID_PAYMENT_REQUIRED_HEADER");
 
@@ -370,7 +382,7 @@ async function runNegativeTests() {
     const prWrongAsset = encodePaymentRequiredHeader({ x402Version: 2, resource: { path: "/x", description: "d" }, accepts: [{ scheme: "exact", network: "eip155:5042002", asset: "0xwrong", amount: "1000000", payTo: "0x1111111111111111111111111111111111111111", maxTimeoutSeconds: 60, extra: {} }] } as any);
     global.fetch = async () => new Response("{}", { status: 402, headers: { "payment-required": prWrongAsset } });
     const resWrongAsset = await adapter.execute({
-      executionId: "vexec_x402_2", selectionId: "sel", selectionHash: "0x", counterpartyAgentId: "agent", counterpartyWallet: "0x1111111111111111111111111111111111111111", capability: "cap", amountUsdc: 1.0, taskPayload: { endpointUrl: "http://test" }
+      executionId: "vexec_x402_2", selectionId: "sel", selectionHash: "0x", counterpartyAgentId: "agent", counterpartyWallet: "0x1111111111111111111111111111111111111111", capability: "cap", amountUsdc: 1.0, taskPayload: {}
     });
     assert.equal(resWrongAsset.failureCode, "X402_WRONG_ASSET");
 
@@ -378,7 +390,7 @@ async function runNegativeTests() {
     const prAmountExceeds = encodePaymentRequiredHeader({ x402Version: 2, resource: { path: "/x", description: "d" }, accepts: [{ scheme: "exact", network: "eip155:5042002", asset: "0x3600000000000000000000000000000000000000", amount: "5000000", payTo: "0x1111111111111111111111111111111111111111", maxTimeoutSeconds: 60, extra: {} }] } as any);
     global.fetch = async () => new Response("{}", { status: 402, headers: { "payment-required": prAmountExceeds } });
     const resAmountExceeds = await adapter.execute({
-      executionId: "vexec_x402_3", selectionId: "sel", selectionHash: "0x", counterpartyAgentId: "agent", counterpartyWallet: "0x1111111111111111111111111111111111111111", capability: "cap", amountUsdc: 1.0, taskPayload: { endpointUrl: "http://test" }
+      executionId: "vexec_x402_3", selectionId: "sel", selectionHash: "0x", counterpartyAgentId: "agent", counterpartyWallet: "0x1111111111111111111111111111111111111111", capability: "cap", amountUsdc: 1.0, taskPayload: {}
     });
     assert.equal(resAmountExceeds.failureCode, "X402_AMOUNT_EXCEEDS_MANDATE");
 
@@ -386,7 +398,7 @@ async function runNegativeTests() {
     const prWrongRecipient = encodePaymentRequiredHeader({ x402Version: 2, resource: { path: "/x", description: "d" }, accepts: [{ scheme: "exact", network: "eip155:5042002", asset: "0x3600000000000000000000000000000000000000", amount: "1000000", payTo: "0x2222222222222222222222222222222222222222", maxTimeoutSeconds: 60, extra: {} }] } as any);
     global.fetch = async () => new Response("{}", { status: 402, headers: { "payment-required": prWrongRecipient } });
     const resWrongRecipient = await adapter.execute({
-      executionId: "vexec_x402_4", selectionId: "sel", selectionHash: "0x", counterpartyAgentId: "agent", counterpartyWallet: "0x1111111111111111111111111111111111111111", capability: "cap", amountUsdc: 1.0, taskPayload: { endpointUrl: "http://test" }
+      executionId: "vexec_x402_4", selectionId: "sel", selectionHash: "0x", counterpartyAgentId: "agent", counterpartyWallet: "0x1111111111111111111111111111111111111111", capability: "cap", amountUsdc: 1.0, taskPayload: {}
     });
     assert.equal(resWrongRecipient.failureCode, "X402_RECIPIENT_MISMATCH");
 
@@ -399,7 +411,7 @@ async function runNegativeTests() {
       return new Response("{}", { status: 200 }); // missing payment-response header
     };
     const resUnverified = await adapter.execute({
-      executionId: "vexec_x402_5", selectionId: "sel", selectionHash: "0x", counterpartyAgentId: "agent", counterpartyWallet: "0x1111111111111111111111111111111111111111", capability: "cap", amountUsdc: 1.0, taskPayload: { endpointUrl: "http://test" }
+      executionId: "vexec_x402_5", selectionId: "sel", selectionHash: "0x", counterpartyAgentId: "agent", counterpartyWallet: "0x1111111111111111111111111111111111111111", capability: "cap", amountUsdc: 1.0, taskPayload: {}
     });
     assert.equal(resUnverified.success, false, "Unverified settlement must NOT return success: true");
     assert.equal(resUnverified.economicCommitted, true, "Unverified settlement must have economicCommitted: true");
@@ -409,9 +421,36 @@ async function runNegativeTests() {
     assert.equal(resUnverified.failureCode, "PAYMENT_SETTLEMENT_UNVERIFIED");
     assert.equal(resUnverified.paymentTx, undefined, "Unverified settlement must not fabricate paymentTx");
 
+    /* The audit's own reproduction, as a test: an authenticated caller naming
+       the address that Veyra's key then pays. The execute route passes the
+       whole request body through as taskPayload, so this was a request field. */
+    const callerNamedUrl = await adapter.execute({
+      executionId: "vexec_x402_6", selectionId: "sel", selectionHash: "0x", counterpartyAgentId: "agent",
+      counterpartyWallet: "0x1111111111111111111111111111111111111111", capability: "cap", amountUsdc: 1.0,
+      taskPayload: { endpointUrl: "http://127.0.0.1:9999/private" },
+    });
+    assert.equal(
+      callerNamedUrl.failureCode, "X402_ENDPOINT_NOT_SERVER_CONFIGURED",
+      "the caller must not choose the address the server's own key pays",
+    );
+    assert.equal(callerNamedUrl.economicCommitted, false);
+
+    /* And with the canary off -- which is how any deployment that has not
+       deliberately enabled it runs -- the path does not spend at all. */
+    process.env.EXECUTION_ALLOW_SERVER_PAYER = "false";
+    const canaryOff = await adapter.execute({
+      executionId: "vexec_x402_7", selectionId: "sel", selectionHash: "0x", counterpartyAgentId: "agent",
+      counterpartyWallet: "0x1111111111111111111111111111111111111111", capability: "cap", amountUsdc: 1.0,
+      taskPayload: {},
+    });
+    assert.equal(canaryOff.failureCode, "X402_ENDPOINT_OR_PAYER_UNAVAILABLE");
+    assert.equal(canaryOff.economicCommitted, false);
+
     global.fetch = originalFetch;
+    setSellerRequestAdapterForTests(null);
     
     // Restore environment variables
+    if (oldServerPayer !== undefined) process.env.EXECUTION_ALLOW_SERVER_PAYER = oldServerPayer; else delete process.env.EXECUTION_ALLOW_SERVER_PAYER;
     if (oldEndpoint !== undefined) process.env.LIVE_X402_TARGET_URL = oldEndpoint; else delete process.env.LIVE_X402_TARGET_URL;
     if (oldPayerPk !== undefined) process.env.CANARY_DEPLOYER_PRIVATE_KEY = oldPayerPk; else delete process.env.CANARY_DEPLOYER_PRIVATE_KEY;
     if (oldRpcUrl !== undefined) process.env.ARC_TESTNET_RPC_URL = oldRpcUrl; else delete process.env.ARC_TESTNET_RPC_URL;
