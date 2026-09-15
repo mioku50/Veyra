@@ -53,20 +53,41 @@ import { runShadowPass } from "./shadow-run.ts";
 export const REFRESH_INTERVAL_HOURS = 6;
 
 /**
+ * How often anyone looks, which is deliberately not how often an agent is due.
+ *
+ * These were the same number once, and that was the bug. A scheduler firing on
+ * the same period it measures has to be punctual to be correct: GitHub's cron
+ * is best-effort and drifts in both directions, so two consecutive ticks land
+ * anywhere from five and a quarter to six and three quarter hours apart. The
+ * early one finds nothing due -- the agent is thirty-seven seconds short -- and
+ * the next pass is twelve hours after the last rather than six. Nothing errors.
+ * The queue is simply empty, which is why it ran for weeks unnoticed.
+ *
+ * Observed here on 2026-09-15: ticks at 05:01, 11:52 and 17:07 UTC. The middle
+ * one refreshed both agents; the last one, 5h14m23s later, found none due.
+ *
+ * So the tick stops carrying the period. It asks an hourly question -- is there
+ * work -- and {@link findDue} alone decides what six hours means. Drift then
+ * costs at most the remainder of one hour instead of a whole cycle, and the
+ * tolerance below shrinks to what it was always supposed to be: seconds of
+ * slack, not a spare cycle.
+ */
+export const TICK_INTERVAL_MINUTES = 60;
+
+/**
  * How early an agent may be picked up.
  *
- * The scheduler fires on the same period an agent is due on, and GitHub's
- * scheduler does not fire on the minute -- a run can be minutes or tens of
- * minutes late under load. Two ticks whose delays differ can therefore land
- * five hours and fifty minutes apart, and with an exact six-hour cutoff the
- * agent is simply not due yet: it is skipped, and the next pass is twelve
- * hours after the last, not six. The failure is invisible, because nothing
- * errors -- the queue is just empty.
+ * With an hourly tick an agent stamped at 12:23 is due at 18:23, and the tick
+ * that catches it fires at 18:23 too. Whichever of the two is a few seconds
+ * later than the other decides whether the pass happens now or an hour from
+ * now, so a little forgiveness here is what keeps the rhythm at six hours
+ * rather than six-and-a-bit, drifting later every day.
  *
- * A tolerance shorter than the period cannot cause a double pass, because a
- * tick that ran on time has nothing due within it.
+ * It must stay well inside {@link TICK_INTERVAL_MINUTES}: the tolerance is the
+ * one thing that could let two consecutive ticks take the same agent twice, and
+ * ten minutes of it against sixty cannot.
  */
-export const DUE_TOLERANCE_MINUTES = 45;
+export const DUE_TOLERANCE_MINUTES = 10;
 
 /**
  * Room a shadow pass needs before it is allowed to start.
@@ -215,6 +236,21 @@ export async function sweepDormant(now: Date): Promise<number> {
 }
 
 /**
+ * The stamp an agent must be older than to be due at this instant.
+ *
+ * Pulled out of {@link findDue} because it is the whole scheduling policy in
+ * one line, and because it was wrong in production with nothing to show it: on
+ * 2026-09-15 a tick at 17:07:12 measured agents stamped at 11:52:49 and put the
+ * cutoff thirty-seven seconds the wrong side of them. Here it can be asked
+ * about a moment rather than inferred from an empty queue.
+ */
+export function dueCutoff(now: Date): Date {
+  return new Date(
+    now.getTime() - REFRESH_INTERVAL_HOURS * 3_600_000 + DUE_TOLERANCE_MINUTES * 60_000,
+  );
+}
+
+/**
  * Agents whose next scheduled pass is due.
  *
  * Oldest first, nulls first: an agent that has never had a scheduled pass is
@@ -222,9 +258,7 @@ export async function sweepDormant(now: Date): Promise<number> {
  * claim race below still leave a full tick's worth of work.
  */
 export async function findDue(now: Date, limit = MAX_AGENTS_PER_TICK): Promise<DueAgent[]> {
-  const cutoff = new Date(
-    now.getTime() - REFRESH_INTERVAL_HOURS * 3_600_000 + DUE_TOLERANCE_MINUTES * 60_000,
-  ).toISOString();
+  const cutoff = dueCutoff(now).toISOString();
   const columns = "agent_id, public_id, name, interests, owner_wallet, last_scheduled_refresh_at";
 
   /* Two queries rather than one `or(...)`. PostgREST takes that filter as a

@@ -14,13 +14,21 @@ name: Nova Scheduler
 
 on:
   schedule:
-    # Every six hours, matching REFRESH_INTERVAL_HOURS. GitHub's scheduler is
-    # best-effort and runs late under load, which is why findDue carries a
-    # tolerance: without it a run that is twenty minutes later than the previous
-    # one finds nothing due and silently skips a whole cycle.
-    - cron: "23 */6 * * *"
+    # Hourly, and deliberately not every six hours.
+    #
+    # This used to fire on REFRESH_INTERVAL_HOURS, which made the alarm clock
+    # and the policy the same number -- and GitHub's cron is best-effort in both
+    # directions. Two ticks 5h14m apart meant the agents were thirty-seven
+    # seconds short of due, so the run found nothing, and the next pass came
+    # twelve hours after the last instead of six. Nothing errored; the queue was
+    # just empty, which is why it went unnoticed for weeks.
+    #
+    # An hourly tick asks a question -- is there work -- and lib/nova/schedule.ts
+    # answers it. Drift now costs the remainder of an hour, never a cycle. An
+    # empty tick is two selects and finishes in under two seconds.
+    - cron: "23 * * * *"
   # So a tick can be run by hand from the Actions tab -- the only way to
-  # exercise this end to end without waiting six hours.
+  # exercise this end to end without waiting for the next hour.
   workflow_dispatch:
 
 # A tick claims agents. Two overlapping runs would not corrupt anything -- the

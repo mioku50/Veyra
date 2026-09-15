@@ -40,7 +40,9 @@ import {
 import {
   DORMANT_AFTER_DAYS,
   DUE_TOLERANCE_MINUTES,
+  dueCutoff,
   REFRESH_INTERVAL_HOURS,
+  TICK_INTERVAL_MINUTES,
   tickReader,
 } from "../lib/nova/schedule.ts";
 
@@ -672,17 +674,56 @@ assert(
   "an agent must get many passes before it can be considered abandoned",
 );
 
-/* The scheduler fires on the same period an agent is due on, so the cutoff has
-   to forgive a late run. Without this a tick twenty minutes later than the last
-   one finds nothing due and skips a whole cycle, silently -- nothing errors,
-   the queue is simply empty. */
-assert(DUE_TOLERANCE_MINUTES > 0, "an exact cutoff loses a cycle to scheduler jitter");
-
-/* And it must stay well inside the period, or a tick would pick up agents that
-   were refreshed by the tick before it. */
+/* The tick must not fire on the period it measures. When it did, a tick that
+   ran early by half a minute found nothing due and the next pass came twelve
+   hours after the last rather than six -- and because an empty queue is not an
+   error, it went unnoticed. Looking far more often than an agent is due makes
+   drift cost the rest of an hour instead of a whole cycle. */
 assert(
-  DUE_TOLERANCE_MINUTES < REFRESH_INTERVAL_HOURS * 60 / 2,
+  TICK_INTERVAL_MINUTES * 4 <= REFRESH_INTERVAL_HOURS * 60,
+  "a tick as rare as the period it measures loses a cycle to scheduler drift",
+);
+
+/* Some forgiveness is still needed, because the tick that catches an agent
+   fires in the same minute the agent comes due, and which of the two is later
+   decides whether the pass happens now or an hour from now. */
+assert(DUE_TOLERANCE_MINUTES > 0, "an exact cutoff loses an hour to a few seconds");
+
+/* And it must stay well inside the tick, not the period: the tolerance is the
+   only thing that could let two consecutive ticks take the same agent twice. */
+assert(
+  DUE_TOLERANCE_MINUTES < TICK_INTERVAL_MINUTES / 2,
   "tolerance this large would let consecutive ticks refresh the same agent",
+);
+
+/* The pass that was lost, as a test.
+ *
+ * Real timestamps from 2026-09-15: GitHub fired at 05:01, 11:52 and 17:07 UTC,
+ * and the 11:52 run stamped both agents at 11:52:49. The 17:07 run came
+ * 5h14m23s later -- inside the old forty-five-minute tolerance by seconds, and
+ * so on the wrong side of it. It reported due: 0 and the agents waited until
+ * the small hours: twelve hours between passes on a six-hour schedule. */
+const stamped = new Date("2026-09-15T11:52:49.033Z");
+assert(
+  dueCutoff(new Date("2026-09-15T17:07:12Z")) < stamped,
+  "five and a quarter hours is genuinely not six -- the old tick was right and still lost the cycle",
+);
+assert(
+  dueCutoff(new Date("2026-09-15T18:07:12Z")) > stamped,
+  "an hourly tick picks them up one hour later instead of six",
+);
+
+/* And the property that makes looking often safe: a tick that has just stamped
+   an agent must not find it again on the next tick, or the hourly schedule
+   would refresh everything hourly. */
+const justStamped = new Date("2026-09-15T18:07:12Z");
+assert(
+  dueCutoff(new Date(justStamped.getTime() + TICK_INTERVAL_MINUTES * 60_000)) < justStamped,
+  "looking every hour must not mean refreshing every hour",
+);
+assert(
+  dueCutoff(new Date(justStamped.getTime() + REFRESH_INTERVAL_HOURS * 3_600_000)) > justStamped,
+  "and six hours later it must be due again",
 );
 
 /* ---- paid research: what somebody agreed to, and what is true now ---- */
