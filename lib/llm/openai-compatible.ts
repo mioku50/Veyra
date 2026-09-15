@@ -4,18 +4,28 @@ import { BRAND } from "../brand.ts";
 /* The client speaks the OpenAI chat-completions protocol, so the vendor behind
    it is configuration, not a constant. It was pinned to one name, which then
    appeared verbatim in published report metadata regardless of who actually
-   answered the request. LLM_PROVIDER_LABEL names the routed provider; the
-   default keeps existing deployments reading the same. */
-export const DEFAULT_LLM_PROVIDER_LABEL = "StepFun" as const;
+   answered the request. LLM_PROVIDER_LABEL names the routed provider.
+
+   The default used to be a vendor too, kept so deployments that predated the
+   setting would read the same. That turned a missing setting into a confident
+   wrong answer: the product went through two providers while the screen kept
+   naming a third, and a person reading "StepFun timed out" was being told the
+   name of something that had not been called in months. A deployment that has
+   not said who answers its requests does not have a vendor to report, and this
+   says so rather than picking one. */
+export const DEFAULT_LLM_PROVIDER_LABEL = "Unnamed provider" as const;
 export const LLM_PROVIDER_NAME = DEFAULT_LLM_PROVIDER_LABEL;
 export const LLM_PROVIDER_PROTOCOL = "openai-compatible" as const;
 export const LLM_REQUEST_TIMEOUT_MS = 30_000;
 export const LLM_MAX_ATTEMPTS = 2;
 export const LLM_MAX_RESPONSE_BYTES = 24_000;
-// StepFun's step-3.7-flash is a reasoning model: tokens spent on its internal
-// reasoning trace count against this budget before any content is emitted. A
-// 900-token cap truncated short answers to empty content, which the caller
-// could only report as `invalid_response`. Budget for reasoning plus answer.
+// Budgeted for a reasoning model, because one was configured here twice and the
+// cost of being wrong is asymmetric. A reasoning model spends this budget on its
+// internal trace before emitting any content, and a 900-token cap truncated
+// short answers to empty content, which the caller could only report as
+// `invalid_response`. A model that does not reason -- which is what Nova's
+// rewrite prompt wants, see .env.example -- answers in tens of tokens and never
+// approaches this.
 export const LLM_MAX_COMPLETION_TOKENS = 2_400;
 
 export type OpenAiCompatibleConfig = {

@@ -413,13 +413,21 @@ async function checkReviewStatus(baseUrl: string) {
       detail: `configured=${json.provider?.configured === true ? "yes" : "no"} endpoint=${json.provider?.paidEndpoint ?? "missing"} freshness=${json.provider?.maxPriceAgeSeconds ?? "missing"}s`,
     },
     {
-      name: "review status exposes StepFun synthesis without credentials or endpoint",
+      /* Which provider and model answer is configuration, and pinning them here
+         made this check a record of one deployment rather than a test. It named
+         StepFun and nemotron while production ran AgentRouter and deepseek, and
+         then Mistral -- passing or failing for reasons that had nothing to do
+         with what it exists to catch, which is a credential or an endpoint
+         leaking into a public status response. What must hold is that the
+         fields are present and say something, not that they say a chosen name. */
+      name: "review status exposes model synthesis without credentials or endpoint",
       ok:
         json.checks?.llmSynthesisConfigured === true &&
         json.llm?.configured === true &&
-        json.llm.provider === "StepFun" &&
+        typeof json.llm.provider === "string" && json.llm.provider.length > 0 &&
+        json.llm.provider !== "Unnamed provider" &&
         json.llm.protocol === "openai-compatible" &&
-        json.llm.model === "nvidia/nemotron-3-super-120b-a12b:free" &&
+        typeof json.llm.model === "string" && json.llm.model.length > 0 &&
         json.llm.externalProcessing === true &&
         json.llm.deterministicFallback === true &&
         json.llm.legacyOpenAiKeyUsed === false &&

@@ -145,7 +145,7 @@ function fallbackReport(
     ...report,
     aggregationMode: "deterministic_structured",
     aggregationLabel: configuredFallback
-      ? "Structured workflow result (StepFun fallback)"
+      ? `Structured workflow result (${synthesis.provider} fallback)`
       : "Structured workflow result (no LLM configured)",
     synthesis,
   };

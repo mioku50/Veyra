@@ -16,11 +16,11 @@ import type { BuyerAgentServiceResult } from "../lib/agent/execution.ts";
 import { serviceRegistry } from "../lib/services/registry.ts";
 
 const config: OpenAiCompatibleConfig = {
-  provider: "StepFun",
+  provider: "Example Router",
   protocol: "openai-compatible",
   baseUrl: "https://openrouter.ai/api/v1",
   apiKey: "test-sensitive-openrouter-key",
-  model: "step-3.7-flash",
+  model: "example-model-1",
 };
 
 const successPayload = JSON.stringify({
@@ -208,9 +208,9 @@ const aiReport = await synthesizeHostedFinalReport({
     synthesisPrompt = input.userPrompt;
     return {
       ok: true,
-      provider: "StepFun",
+      provider: "Example Router",
       protocol: "openai-compatible",
-      model: "step-3.7-flash",
+      model: "example-model-1",
       text: JSON.stringify({
         summary: "AI synthesis for person@example.com uses the successful paid response.",
         keyFindings: ["The paid quote supports the report.", "The failed service did not erase useful work."],
@@ -221,8 +221,8 @@ const aiReport = await synthesizeHostedFinalReport({
 });
 assert.equal(aiReport.aggregationMode, "ai_generated_synthesis");
 assert.equal(aiReport.aggregationLabel, "AI-generated synthesis");
-assert.equal(aiReport.synthesis.provider, "StepFun");
-assert.equal(aiReport.synthesis.model, "step-3.7-flash");
+assert.equal(aiReport.synthesis.provider, "Example Router");
+assert.equal(aiReport.synthesis.model, "example-model-1");
 assert.equal(aiReport.synthesis.usedPaidApiResponses.length, 1);
 assert.equal(aiReport.synthesis.usedPaidApiResponses[0]?.serviceSlug, "premium-quote");
 assert.equal(aiReport.completedWithWarnings, true, "Partial failure warning was lost after synthesis.");
@@ -237,9 +237,9 @@ const fallback = await synthesizeHostedFinalReport({
   serviceResults,
   generateText: async (): Promise<LlmGenerationResult> => ({
     ok: false,
-    provider: "StepFun",
+    provider: "Example Router",
     protocol: "openai-compatible",
-    model: "step-3.7-flash",
+    model: "example-model-1",
     reason: "rate_limited",
     attempted: true,
     attempts: 2,
@@ -258,9 +258,9 @@ const inputLeakFallback = await synthesizeHostedFinalReport({
   serviceResults,
   generateText: async (): Promise<LlmGenerationResult> => ({
     ok: true,
-    provider: "StepFun",
+    provider: "Example Router",
     protocol: "openai-compatible",
-    model: "step-3.7-flash",
+    model: "example-model-1",
     text: JSON.stringify({
       summary: request.inputText,
       keyFindings: ["This output improperly repeated the private workflow input."],

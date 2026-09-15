@@ -155,19 +155,33 @@ function prettyJson(value: unknown) {
   return JSON.stringify(value, null, 2);
 }
 
+/**
+ * Why the deterministic report was used instead of a written one.
+ *
+ * Named after whoever actually answered, which the synthesis carries and this
+ * card already shows two lines above as a Provider badge. It used to be a
+ * hardcoded vendor, so the badge could read "Provider · Mistral" while the
+ * sentence under it said "StepFun timed out" -- naming, with total confidence,
+ * something that had not been called in months.
+ */
 function fallbackReasonLabel(
   value: NonNullable<
     NonNullable<HostedJobView["job"]["structuredResult"]>["synthesis"]
   >["fallbackReason"],
+  provider: string | null,
 ) {
-  if (value === "not_configured") return "StepFun is not configured";
+  /* Falls back to "The model" rather than to a name. A deployment that never
+     set LLM_PROVIDER_LABEL has no vendor to report, and inventing one here is
+     the bug this function had. */
+  const who = provider?.trim() || "The model";
+  if (value === "not_configured") return `${who} is not configured`;
   if (value === "unsupported_provider") return "Unsupported LLM provider configuration";
   if (value === "no_paid_api_results") return "No successful paid API response was available";
-  if (value === "timeout") return "StepFun timed out";
-  if (value === "rate_limited") return "StepFun rate limit";
-  if (value === "response_too_large") return "StepFun response exceeded the safe limit";
-  if (value === "invalid_response") return "StepFun returned an invalid response";
-  if (value === "upstream_error") return "StepFun was unavailable";
+  if (value === "timeout") return `${who} timed out`;
+  if (value === "rate_limited") return `${who} hit a rate limit`;
+  if (value === "response_too_large") return `${who} answered with more than the safe limit`;
+  if (value === "invalid_response") return `${who} returned an invalid response`;
+  if (value === "upstream_error") return `${who} was unavailable`;
   return "Deterministic report selected";
 }
 
@@ -1723,7 +1737,7 @@ export function HostedJobResult({ initialView }: { initialView: HostedJobView })
                             </>
                           ) : (
                             <p className="mt-3 text-xs text-muted-foreground">
-                              {fallbackReasonLabel(report.synthesis.fallbackReason)}. Successful paid API results, receipts, and Arc proofs were preserved.
+                              {fallbackReasonLabel(report.synthesis.fallbackReason, report.synthesis.provider)}. Successful paid API results, receipts, and Arc proofs were preserved.
                             </p>
                           )}
                         </div>
