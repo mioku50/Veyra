@@ -316,8 +316,22 @@ type PayableOutcome =
       /** Set only for research bought from somebody other than the subject. */
       skipped: string | null;
     }
-  /** The object of the action cannot be paid, and nothing may stand in for it. */
-  | { kind: "subject_refused"; refusal: string }
+  /**
+   * The object of the action cannot be paid, and nothing may stand in for it.
+   *
+   * Three outcomes, not one. They used to share the code `subject_refused`, and
+   * a calibration week cannot use that number: "the card is stale", "Veyra
+   * looked at this endpoint and said no" and "the endpoint is real and will not
+   * take a plain question" are a defect, a policy decision and a fact about the
+   * market. Exactly the distinction `unpriced` already draws between
+   * nothing_askable and nothing_allowed, missing one level down.
+   */
+  /** Not in the catalogue any more, or never reachable: the card has gone stale. */
+  | { kind: "subject_missing"; refusal: string }
+  /** Found, and Veyra will not authorise it. A decision, not a failure. */
+  | { kind: "subject_policy_refused"; refusal: string }
+  /** Found and authorised, and it cannot be asked this question. */
+  | { kind: "subject_unaskable"; refusal: string }
   /** Nothing in the shortlist could be asked. */
   | { kind: "none" };
 
@@ -359,12 +373,14 @@ async function firstPayable(input: {
      is. */
   if (input.action.actionType === "interact_with_subject") {
     if (!subject) {
-      return {
-        kind: "subject_refused",
-        refusal: subjectRef && input.selection.candidates.some((c) => c.marketplace.candidateId === subjectRef)
-          ? `${BRAND_NAME} would not pay this endpoint.`
-          : `${BRAND_NAME} could not reach the terms of this endpoint to authorise it.`,
-      };
+      /* Reached and refused, or not reached at all. The sentence was already
+         different; only the code was shared, so the difference reached a reader
+         and never reached telemetry. */
+      const reached = Boolean(subjectRef)
+        && input.selection.candidates.some((c) => c.marketplace.candidateId === subjectRef);
+      return reached
+        ? { kind: "subject_policy_refused", refusal: `${BRAND_NAME} would not pay this endpoint.` }
+        : { kind: "subject_missing", refusal: `${BRAND_NAME} could not reach the terms of this endpoint to authorise it.` };
     }
   }
 
@@ -376,7 +392,15 @@ async function firstPayable(input: {
      and a sentence that is right most of the time is the wrong kind of
      explanation for a screen about money. */
   let skipped: string | null = null;
-  const note = (reason: string) => { skipped ??= `${BRAND_NAME} passed over a higher-ranked endpoint: ${reason}`; };
+  /* The same reason without the routing sentence wrapped round it. An
+     interaction walks one candidate, so "passed over a higher-ranked endpoint"
+     describes a choice that was never available -- what a reader needs there is
+     the reason itself. */
+  let blocked: string | null = null;
+  const note = (reason: string) => {
+    skipped ??= `${BRAND_NAME} passed over a higher-ranked endpoint: ${reason}`;
+    blocked ??= reason;
+  };
 
   /* One candidate for an interaction, by definition. The walk exists to find a
      usable seller among several; here there is only ever one that is allowed to
@@ -460,6 +484,20 @@ async function firstPayable(input: {
          card. An interaction has nothing to say here: its provider IS its
          subject, which is the whole point. */
       skipped: candidate === walk[0] ? null : skipped,
+    };
+  }
+
+  /* An interaction that got this far reached its subject and could not ask it.
+     Reporting that as `nothing_askable` would file it with the research cards,
+     where it means something else: there the shortlist had several sellers and
+     none took a question, here the one endpoint the card is named after did
+     not. */
+  if (input.action.actionType === "interact_with_subject") {
+    return {
+      kind: "subject_unaskable",
+      refusal: blocked
+        ? `${BRAND_NAME} reached this endpoint, and ${blocked}`
+        : `${BRAND_NAME} reached this endpoint and could not put the question to it.`,
     };
   }
   return { kind: "none" };
@@ -593,8 +631,13 @@ export async function proposeResearch(input: {
      sentence. There is no shortlist to fall back to because there is nothing a
      fallback could mean: the card is named after this endpoint and its price is
      this endpoint's price. */
-  if (attempt.kind === "subject_refused") {
-    return { ok: false, reason: "subject_refused", detail: `${attempt.refusal} Nothing was paid.` };
+  if (attempt.kind === "subject_missing"
+    || attempt.kind === "subject_policy_refused"
+    || attempt.kind === "subject_unaskable") {
+    /* The machine reason is the precise one. The sentence a person reads is the
+       umbrella it always was -- nobody needs the taxonomy on a card, and the
+       week of calibration cannot be read without it. */
+    return { ok: false, reason: attempt.kind, detail: `${attempt.refusal} Nothing was paid.` };
   }
 
   if (attempt.kind === "none") {
