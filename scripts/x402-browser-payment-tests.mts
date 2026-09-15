@@ -18,7 +18,7 @@ import {
   PAYMENT_SIGNATURE_HEADER,
   CIRCLE_BATCHING_DOMAIN_NAME,
 } from "../lib/x402/browser-payment.ts";
-import { isUsdcAsset, usdcAddressForChain } from "../lib/x402/usdc-assets.ts";
+import { isKnownUsdcChain, isUsdcAsset, usdcAddressForChain } from "../lib/x402/usdc-assets.ts";
 
 /* A challenge in the shape the live catalog actually returns. Captured from
    api.exa.ai, which offers Base and Solana for the same call. */
@@ -203,6 +203,69 @@ assert.equal(batched.asset.toLowerCase(), usdcAddressForChain(8453));
 assert.equal(isUsdcAsset(8453, batched.asset), true);
 assert.equal(isUsdcAsset(8453, "0xd9aAEc86B65D86f6A7B5B1b0c42FFA531710b6CA"), false, "bridged USDbC is not USDC");
 assert.equal(isUsdcAsset(1, batched.asset), false, "Base USDC is not Ethereum USDC");
+
+/* ---- an allowlist that actually names a pair ----
+ *
+ * The chain check used to fall back to "is this the USDC of any chain we know",
+ * so an unknown network carrying Base's USDC address passed -- in the one
+ * function whose job is to say which token on which chain a wallet is about to
+ * authorize. */
+assert.equal(
+  isUsdcAsset(987_654_321, "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913"),
+  false,
+  "an unknown chain carrying a known USDC address is still an unknown chain",
+);
+assert.equal(isKnownUsdcChain(987_654_321), false);
+
+/* And the Gateway domain. The only check was that the verifying contract
+   differed from the asset, which every address satisfies, so a seller could
+   have a wallet sign a GatewayWalletBatched authorization -- valid for a week
+   -- pointed at a contract of its own choosing. */
+const impostorGateway = {
+  ...GATEWAY_CHALLENGE,
+  accepts: [{
+    ...GATEWAY_CHALLENGE.accepts[0],
+    extra: { ...GATEWAY_CHALLENGE.accepts[0].extra, verifyingContract: `0x${"11".repeat(20)}` },
+  }],
+};
+assert.throws(
+  () => selectPayableAccept(impostorGateway, { maxAtomic: 5_000_000n }),
+  /no payment option|not payable|unpayable/i,
+  "a batched accept naming something other than Circle's GatewayWallet is not payable",
+);
+
+/* A chain with no Gateway deployment cannot offer a batched accept at all,
+   whatever address it names. */
+const gatewaylessChain = {
+  ...GATEWAY_CHALLENGE,
+  accepts: [{
+    ...GATEWAY_CHALLENGE.accepts[0],
+    network: "eip155:421614",
+    asset: "0x75faf114eafb1bdbe2f0316df893fd58ce46aa4d",
+  }],
+};
+assert.throws(
+  () => selectPayableAccept(gatewaylessChain, { maxAtomic: 5_000_000n }),
+  /no payment option|not payable|unpayable/i,
+  "Arbitrum Sepolia has USDC but no Gateway, so GatewayWalletBatched is not signable there",
+);
+
+/* The vanilla side of the same rule: an EIP-3009 authorization is separated by
+   the token's own domain, so a verifying contract that is not the asset is
+   either a mistake or a redirection. */
+const redirectedVanilla = {
+  ...GATEWAY_CHALLENGE,
+  accepts: [{
+    ...GATEWAY_CHALLENGE.accepts[0],
+    maxTimeoutSeconds: 600,
+    extra: { name: "USD Coin", version: "2", verifyingContract: `0x${"22".repeat(20)}` },
+  }],
+};
+assert.throws(
+  () => selectPayableAccept(redirectedVanilla, { maxAtomic: 5_000_000n }),
+  /no payment option|not payable|unpayable/i,
+  "a vanilla accept must be signed under the token it spends",
+);
 
 // Batching settles on a schedule, so its week-long window must survive intact.
 // Clamping it to the vanilla one-hour ceiling would produce an authorization

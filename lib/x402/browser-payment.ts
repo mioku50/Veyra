@@ -31,6 +31,8 @@ export const PAYMENT_SIGNATURE_HEADER = "PAYMENT-SIGNATURE";
 export const PAYMENT_SIGNATURE_HEADER_V1 = "X-PAYMENT";
 
 /** Circle's batched scheme announces itself through the EIP-712 domain name. */
+import { gatewayContextForChain } from "./gateway-deposit.ts";
+
 export const CIRCLE_BATCHING_DOMAIN_NAME = "GatewayWalletBatched";
 const VANILLA_MAX_TIMEOUT_SECONDS = 3_600;
 const GATEWAY_MAX_TIMEOUT_SECONDS = 604_900;
@@ -151,14 +153,34 @@ export function selectPayableAccept(
     // accept that omits them is not payable rather than payable-and-broken.
     if (!assetName || !assetVersion) continue;
 
-    const gatewayBatched = assetName === CIRCLE_BATCHING_DOMAIN_NAME
-      || /gateway/i.test(String(accept.scheme ?? ""));
+    /* The scheme half of this was dead: `accept.scheme !== "exact"` has already
+       skipped everything else, so only the domain name ever decided it. Said
+       plainly now, because a batched accept is signed under a different domain
+       and gets a week-long window, and what turns that on should be one
+       readable condition. */
+    const gatewayBatched = assetName === CIRCLE_BATCHING_DOMAIN_NAME;
     const verifyingContract = isHexAddress(extra?.verifyingContract)
       ? extra.verifyingContract
       : accept.asset;
-    // A batched accept that does not name its GatewayWallet cannot be signed
-    // for: guessing the domain produces a signature the facilitator rejects.
-    if (gatewayBatched && verifyingContract === accept.asset) continue;
+
+    if (gatewayBatched) {
+      /* Circle's GatewayWallet for this chain, or nothing.
+       *
+       * The only check here used to be that the verifying contract differed
+       * from the asset, which any address satisfies -- so a seller could put
+       * 0x1111...1111 in extra.verifyingContract and have a wallet sign a
+       * GatewayWalletBatched authorization pointed at a contract of its
+       * choosing, for a week. Veyra publishes the Gateway deployment addresses
+       * already; this is the one place that was not reading them. */
+      const gateway = gatewayContextForChain(chainId);
+      if (!gateway) continue;
+      if (verifyingContract.toLowerCase() !== gateway.gatewayWallet.toLowerCase()) continue;
+    } else if (verifyingContract.toLowerCase() !== accept.asset.toLowerCase()) {
+      /* A vanilla EIP-3009 authorization is domain-separated by the token
+         itself. A verifying contract that is not the asset is either a mistake
+         or an attempt to move the signature somewhere else; neither is payable. */
+      continue;
+    }
 
     const timeout = Number(accept.maxTimeoutSeconds);
     // The ceiling stops a hostile seller from demanding a year-long standing

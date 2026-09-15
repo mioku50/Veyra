@@ -49,28 +49,30 @@ export const USDC_BY_CHAIN_ID: Readonly<Record<number, `0x${string}`>> = {
   11155420: "0x5fd84259d66cd46123540766be93dfe6d43130d7",
 } as const;
 
-/** Every address above, for the case where the chain is known but the caller
- *  wants to sanity-check an asset without one. */
-const ALL_USDC = new Set(Object.values(USDC_BY_CHAIN_ID));
-
 export function usdcAddressForChain(chainId: number): `0x${string}` | null {
   return USDC_BY_CHAIN_ID[chainId] ?? null;
 }
 
 /**
- * True only when `asset` is the USDC deployment for `chainId`.
+ * True only when `asset` is the USDC deployment for `chainId`. The pair, not
+ * either half of it.
  *
- * Falls back to "is this any known USDC address" when the chain is unknown to
- * this table, which keeps a newly launched Circle chain payable instead of
- * silently unquotable — the amount is still converted at six decimals, which
- * every USDC deployment uses.
+ * There used to be a fallback here: a chain missing from the table was accepted
+ * if the address matched the USDC of any chain that was in it, so that a newly
+ * launched Circle network stayed payable rather than being silently
+ * unquotable. The reasoning is backwards. USDC addresses are chain-specific, so
+ * matching some other chain's deployment says nothing whatever about this one
+ * -- and a seller naming chain 987654321 with Base's USDC address passed a
+ * check whose entire purpose is to say which token on which chain a wallet is
+ * about to be asked to authorize.
+ *
+ * An unknown chain is now unquotable, which is the honest answer and a one-line
+ * change to fix when Circle launches one.
  */
 export function isUsdcAsset(chainId: number, asset: string): boolean {
   const normalized = asset.trim().toLowerCase();
   if (!/^0x[0-9a-f]{40}$/.test(normalized)) return false;
-  const known = USDC_BY_CHAIN_ID[chainId];
-  if (known) return known === normalized;
-  return ALL_USDC.has(normalized as `0x${string}`);
+  return USDC_BY_CHAIN_ID[chainId] === normalized;
 }
 
 /** Whether Veyra knows this chain at all, used to explain a refusal precisely. */
