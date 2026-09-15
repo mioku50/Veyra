@@ -4,14 +4,39 @@
  */
 
 import { getByoaClient } from "../byoa/service.ts";
-import type { BudgetPeriod, BudgetReservationResult } from "./budget.ts";
+import { getCurrentDailyPeriod, type BudgetPeriod, type BudgetReservationResult } from "./budget.ts";
 import { MANDATE_VERSION_V2 } from "./canonical.ts";
 import { validateStateTransition } from "./state-machine.ts";
 import type { ExecutionAttempt, ExecutionMandate, ExecutionState } from "./types.ts";
 
 const memoryMandateStore = new Map<string, ExecutionMandate>();
 const memoryAttemptStore = new Map<string, ExecutionAttempt>();
-const memoryUsageStore = new Map<string, { used: number; reserved: number; totalUsed: number; totalReserved: number }>();
+/* Keyed by mandate AND budget day, as the table is.
+ *
+ * It used to be one bucket per mandate, which made the daily cap behave like a
+ * lifetime cap and made a whole class of bug invisible: a settlement charged to
+ * the wrong day still found the only bucket there was, so every test passed
+ * while production wrote to a row that did not exist. A fake store that cannot
+ * reproduce a real failure is worse than no store. */
+const memoryUsageStore = new Map<string, { used: number; reserved: number }>();
+
+function usageKey(mandateId: string, periodStart: string): string {
+  return `${mandateId}\n${periodStart}`;
+}
+
+/** Lifetime totals, summed across every period -- which is what
+ *  reserve_mandate_budget does in SQL. */
+function memoryLifetimeUsage(mandateId: string): { used: number; reserved: number } {
+  let used = 0;
+  let reserved = 0;
+  const prefix = `${mandateId}\n`;
+  for (const [key, bucket] of memoryUsageStore.entries()) {
+    if (!key.startsWith(prefix)) continue;
+    used += bucket.used;
+    reserved += bucket.reserved;
+  }
+  return { used, reserved };
+}
 
 export function isMemoryStoreAllowed(): boolean {
   return process.env.NODE_ENV === "test" && process.env.EXECUTION_ALLOW_MEMORY_STORE === "true";
@@ -277,6 +302,7 @@ export async function saveExecutionAttempt(attempt: ExecutionAttempt): Promise<v
     provider_submitted_at: attempt.providerSubmittedAt || null,
     x402_context: attempt.x402Context || null,
     idempotency_key: attempt.idempotencyKey || null,
+    budget_period_start: attempt.budgetPeriodStart || null,
     canonical_hash: attempt.canonicalHash,
     created_at: attempt.createdAt,
     updated_at: attempt.updatedAt,
@@ -335,6 +361,7 @@ export async function getExecutionAttempt(executionId: string): Promise<Executio
     providerSubmittedAt: data.provider_submitted_at,
     x402Context: data.x402_context || data.x402Context || null,
     idempotencyKey: data.idempotency_key,
+    budgetPeriodStart: data.budget_period_start ?? null,
     canonicalHash: data.canonical_hash,
     createdAt: data.created_at,
     updatedAt: data.updated_at,
@@ -409,6 +436,7 @@ export async function listExecutionAttempts(options?: {
     providerSubmittedAt: d.provider_submitted_at,
     x402Context: d.x402_context || d.x402Context || null,
     idempotencyKey: d.idempotency_key,
+    budgetPeriodStart: d.budget_period_start ?? null,
     canonicalHash: d.canonical_hash,
     createdAt: d.created_at,
     updatedAt: d.updated_at,
@@ -469,6 +497,7 @@ export async function getExecutionAttemptByIdempotency(
     providerSubmittedAt: data.provider_submitted_at,
     x402Context: data.x402_context || data.x402Context || null,
     idempotencyKey: data.idempotency_key,
+    budgetPeriodStart: data.budget_period_start ?? null,
     canonicalHash: data.canonical_hash,
     createdAt: data.created_at,
     updatedAt: data.updated_at,
@@ -663,11 +692,13 @@ export async function reserveBudgetAtomic(
   }
 
   if (isMemoryStoreAllowed()) {
-    const usage = memoryUsageStore.get(mandateId) || { used: 0, reserved: 0, totalUsed: 0, totalReserved: 0 };
+    const key = usageKey(mandateId, period.periodStart);
+    const usage = memoryUsageStore.get(key) || { used: 0, reserved: 0 };
+    const lifetime = memoryLifetimeUsage(mandateId);
     if (amountUsdc > mandate.maxPerTransactionUsdc) {
       return { success: false, reason: "PER_TRANSACTION_CAP_EXCEEDED" };
     }
-    if (usage.totalUsed + usage.totalReserved + amountUsdc > mandate.maxTotalUsdc) {
+    if (lifetime.used + lifetime.reserved + amountUsdc > mandate.maxTotalUsdc) {
       return { success: false, reason: "MAX_TOTAL_CAP_EXCEEDED" };
     }
     if (usage.used + usage.reserved + amountUsdc > mandate.maxPerDayUsdc) {
@@ -675,14 +706,13 @@ export async function reserveBudgetAtomic(
     }
 
     usage.reserved += amountUsdc;
-    usage.totalReserved += amountUsdc;
-    memoryUsageStore.set(mandateId, usage);
+    memoryUsageStore.set(key, usage);
 
     return {
       success: true,
       reservedAmount: amountUsdc,
       remainingDaily: mandate.maxPerDayUsdc - (usage.used + usage.reserved),
-      remainingTotal: mandate.maxTotalUsdc - (usage.totalUsed + usage.totalReserved),
+      remainingTotal: mandate.maxTotalUsdc - (lifetime.used + lifetime.reserved + amountUsdc),
     };
   }
 
@@ -723,11 +753,11 @@ export async function releaseBudgetAtomic(
   periodStart: string
 ): Promise<boolean> {
   if (isMemoryStoreAllowed()) {
-    const usage = memoryUsageStore.get(mandateId);
+    const key = usageKey(mandateId, periodStart);
+    const usage = memoryUsageStore.get(key);
     if (usage) {
       usage.reserved = Math.max(0, usage.reserved - amountUsdc);
-      usage.totalReserved = Math.max(0, usage.totalReserved - amountUsdc);
-      memoryUsageStore.set(mandateId, usage);
+      memoryUsageStore.set(key, usage);
     }
     return true;
   }
@@ -756,14 +786,15 @@ export async function settleBudgetAtomic(
   periodStart: string
 ): Promise<boolean> {
   if (isMemoryStoreAllowed()) {
-    const usage = memoryUsageStore.get(mandateId);
-    if (usage) {
-      usage.reserved = Math.max(0, usage.reserved - reservedAmountUsdc);
-      usage.totalReserved = Math.max(0, usage.totalReserved - reservedAmountUsdc);
-      usage.used += settledAmountUsdc;
-      usage.totalUsed += settledAmountUsdc;
-      memoryUsageStore.set(mandateId, usage);
-    }
+    /* No bucket for this day means the reservation was taken in another one --
+       the exact failure the database reports as USAGE_ROW_NOT_FOUND, and which
+       the old single-bucket store could not express. */
+    const key = usageKey(mandateId, periodStart);
+    const usage = memoryUsageStore.get(key);
+    if (!usage) return false;
+    usage.reserved = Math.max(0, usage.reserved - reservedAmountUsdc);
+    usage.used += settledAmountUsdc;
+    memoryUsageStore.set(key, usage);
     return true;
   }
 
@@ -783,6 +814,96 @@ export async function settleBudgetAtomic(
 }
 
 /**
+ * A terminal settlement and the spend it represents, in one transaction.
+ *
+ * These were two round trips: transition the attempt, then settle the budget.
+ * A process that died between them left a COMPLETED purchase whose money was
+ * still reserved -- and the budget call's boolean was not read, so a settlement
+ * against a day that had no usage row failed silently and looked identical to
+ * one that worked.
+ *
+ * Guarded on the expected state rather than on an idempotency key, which is
+ * what makes a retried reconcile safe: the second caller finds the attempt
+ * already moved, writes nothing, and says STATE_MISMATCH.
+ */
+export async function settleExecutionBudgetAtomic(input: {
+  executionId: string;
+  expectedState: ExecutionState;
+  targetState: ExecutionState;
+  settledAmountUsdc: number;
+  paymentTx?: string | null;
+  completeTx?: string | null;
+  mandateId?: string | null;
+  reservedAmountUsdc: number;
+  periodStart: string;
+}): Promise<{ success: boolean; reason?: string; attempt: ExecutionAttempt | null }> {
+  if (isMemoryStoreAllowed()) {
+    const current = memoryAttemptStore.get(input.executionId);
+    if (!current) return { success: false, reason: "NOT_FOUND", attempt: null };
+    if (current.state !== input.expectedState) {
+      return { success: false, reason: "STATE_MISMATCH", attempt: current };
+    }
+    validateStateTransition(current.state, input.targetState, input.executionId);
+    const updated: ExecutionAttempt = {
+      ...current,
+      state: input.targetState,
+      actualSettledAmountUsdc: input.settledAmountUsdc,
+      paymentTx: input.paymentTx ?? current.paymentTx,
+      completeTx: input.completeTx ?? current.completeTx,
+      failureCode: null,
+      updatedAt: new Date().toISOString(),
+    };
+    memoryAttemptStore.set(input.executionId, updated);
+    if (input.mandateId) {
+      await settleBudgetAtomic(
+        input.mandateId, input.reservedAmountUsdc, input.settledAmountUsdc, input.periodStart,
+      );
+    }
+    return { success: true, attempt: updated };
+  }
+
+  const current = await getExecutionAttempt(input.executionId);
+  if (!current) return { success: false, reason: "NOT_FOUND", attempt: null };
+  if (current.state !== input.expectedState) {
+    return { success: false, reason: "STATE_MISMATCH", attempt: current };
+  }
+  /* Checked here as well as in Postgres, so an illegal transition is refused by
+     the state machine that documents it rather than by a CHECK constraint. */
+  validateStateTransition(current.state, input.targetState, input.executionId);
+
+  const supabase = getByoaClient();
+  const { data, error } = await supabase.rpc("settle_execution_budget", {
+    p_execution_id: input.executionId,
+    p_expected_state: input.expectedState,
+    p_target_state: input.targetState,
+    p_settled_amount_usdc: input.settledAmountUsdc,
+    p_payment_tx: input.paymentTx ?? null,
+    p_complete_tx: input.completeTx ?? null,
+    p_mandate_id: input.mandateId ?? null,
+    p_reserved_amount_usdc: input.reservedAmountUsdc,
+    p_period_start: input.periodStart,
+  });
+
+  if (error) {
+    /* The function raises rather than returns when the usage row for this
+       period is missing, so that the state change rolls back with it. Reported
+       as a failure the caller must handle, never swallowed: a settlement that
+       did not happen must not leave the ledger claiming it did. */
+    return {
+      success: false,
+      reason: error.message?.includes("USAGE_ROW_NOT_FOUND") ? "USAGE_ROW_NOT_FOUND" : "DB_ERROR",
+      attempt: current,
+    };
+  }
+
+  if (!(data as any)?.success) {
+    return { success: false, reason: (data as any)?.reason || "STATE_MISMATCH", attempt: current };
+  }
+
+  return { success: true, attempt: await getExecutionAttempt(input.executionId) };
+}
+
+/**
  * Retrieves current budget usage for a mandate in memory or database.
  */
 export async function getExecutionMandateUsage(
@@ -790,12 +911,14 @@ export async function getExecutionMandateUsage(
   periodStart?: string
 ): Promise<{ usedUsdc: number; reservedUsdc: number; totalUsedUsdc: number; totalReservedUsdc: number }> {
   if (isMemoryStoreAllowed()) {
-    const usage = memoryUsageStore.get(mandateId) || { used: 0, reserved: 0, totalUsed: 0, totalReserved: 0 };
+    const day = periodStart ?? getCurrentDailyPeriod().periodStart;
+    const usage = memoryUsageStore.get(usageKey(mandateId, day)) || { used: 0, reserved: 0 };
+    const lifetime = memoryLifetimeUsage(mandateId);
     return {
       usedUsdc: usage.used,
       reservedUsdc: usage.reserved,
-      totalUsedUsdc: usage.totalUsed,
-      totalReservedUsdc: usage.totalReserved,
+      totalUsedUsdc: lifetime.used,
+      totalReservedUsdc: lifetime.reserved,
     };
   }
 

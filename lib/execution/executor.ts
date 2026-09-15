@@ -8,7 +8,7 @@ import { createPublicClient, http } from "viem";
 import { arcTestnet } from "viem/chains";
 import { getRailAdapter } from "./adapters/index.ts";
 import { computeCanonicalExecutionHash } from "./canonical.ts";
-import { getCurrentDailyPeriod } from "./budget.ts";
+import { dailyPeriodFor, getCurrentDailyPeriod } from "./budget.ts";
 import {
   RealArcSettlementResolver,
   type SettlementResolver,
@@ -21,6 +21,7 @@ import {
   reserveBudgetAtomic,
   saveExecutionAttempt,
   settleBudgetAtomic,
+  settleExecutionBudgetAtomic,
   updateExecutionAttemptState,
   transitionExecutionAttemptStateAtomic,
 } from "./db.ts";
@@ -258,13 +259,20 @@ export async function executePreparedIntent(params: {
 
   // Load Mandate if attached
   let mandate: ExecutionMandate | null = null;
-  const dailyPeriod = getCurrentDailyPeriod();
   if (attempt.mandateId) {
     mandate = await getExecutionMandate(attempt.mandateId);
     if (!mandate) {
       throw new ExecutionError(`Mandate ${attempt.mandateId} not found`, "MANDATE_NOT_FOUND", 404);
     }
+  }
 
+  /* After the mandate is loaded, because for a v2 mandate the day is the
+     owner's and not UTC's -- the zone is a term they signed, and Nova's shadow
+     pass has always measured it that way. Computing this before knowing which
+     mandate applies is how the two came to disagree. */
+  const dailyPeriod = dailyPeriodFor(mandate);
+
+  if (mandate) {
     // Atomically reserve budget
     const reservation = await reserveBudgetAtomic(
       mandate.mandateId,
@@ -305,8 +313,13 @@ export async function executePreparedIntent(params: {
     );
   }
 
-  // Move to EXECUTING
-  await updateExecutionAttemptState(attempt.executionId, "EXECUTING");
+  /* Move to EXECUTING, and write down which budget day the reservation was
+     taken in. Reconciliation can run hours or days later, and working the day
+     out again from its own clock is how a settlement ended up against a row
+     that did not exist. */
+  await updateExecutionAttemptState(attempt.executionId, "EXECUTING", {
+    budgetPeriodStart: dailyPeriod.periodStart,
+  });
 
   const adapter = getRailAdapter(attempt.rail);
   let railResult: any;
@@ -716,7 +729,16 @@ export async function reconcileExecutionSettlement(
     mandate = await getExecutionMandate(attempt.mandateId);
   }
 
-  const dailyPeriod = getCurrentDailyPeriod();
+  /* The day this attempt reserved against, which is not the day this function
+     is running in. Reconciliation happens hours or days after the purchase, so
+     recomputing "today" settled into a row the reservation was never in: the
+     usage row for the real day kept the budget held forever while the update
+     for today matched nothing and returned USAGE_ROW_NOT_FOUND, whose boolean
+     nobody read. Rows written before the column recompute from their own
+     creation time, in the mandate's zone -- still the wrong answer under a
+     midnight-crossing execution, but the right one for everything else. */
+  const periodStart = attempt.budgetPeriodStart
+    ?? dailyPeriodFor(mandate, new Date(attempt.createdAt)).periodStart;
   const resolver = options?.resolver || new RealArcSettlementResolver();
 
   // Resolve settlement through canonical resolver
@@ -736,17 +758,31 @@ export async function reconcileExecutionSettlement(
     const settledState = resolution.proof === "authorization_state" && !settledTx
       ? "COMPLETED_UNPROVEN"
       : "COMPLETED";
-    const { success, attempt: atomicAttempt } = await transitionExecutionAttemptStateAtomic(
+    /* One transaction for the state and the spend. They used to be two
+       statements with the budget settled afterwards and its result discarded,
+       so a crash in between -- or a missing usage row -- left a purchase marked
+       complete whose money was still only reserved. */
+    const { success, attempt: atomicAttempt, reason } = await settleExecutionBudgetAtomic({
       executionId,
-      "SETTLEMENT_UNVERIFIED",
-      settledState,
-      {
-        actualSettledAmountUsdc: resolution.settledAmountUsdc,
-        paymentTx: settledTx,
-        completeTx: settledTx,
-        failureCode: null,
-      }
-    );
+      expectedState: "SETTLEMENT_UNVERIFIED",
+      targetState: settledState,
+      settledAmountUsdc: resolution.settledAmountUsdc,
+      paymentTx: settledTx,
+      completeTx: settledTx,
+      mandateId: attempt.mandateId ?? null,
+      reservedAmountUsdc: attempt.requestedAmountUsdc,
+      periodStart,
+    });
+
+    if (!success && reason && reason !== "STATE_MISMATCH") {
+      /* Nothing was written, by design. Saying so is the point: the old code
+         would have reported a completed purchase here. */
+      throw new ExecutionError(
+        `Settlement could not be recorded: ${reason}`,
+        "SETTLEMENT_LEDGER_INCONSISTENT",
+        409,
+      );
+    }
 
     if (!success || !atomicAttempt) {
       // Another concurrent reconcile won the race — fetch and return current state
@@ -768,17 +804,9 @@ export async function reconcileExecutionSettlement(
       };
     }
 
-    // 1. Settle budget atomically
-    if (attempt.mandateId) {
-      await settleBudgetAtomic(
-        attempt.mandateId,
-        attempt.requestedAmountUsdc,
-        resolution.settledAmountUsdc,
-        dailyPeriod.periodStart
-      );
-    }
+    // Budget already moved, in the same transaction as the state above.
 
-    // 2. Ingest real reputation evidence with correct economic buyer provenance
+    // Ingest real reputation evidence with correct economic buyer provenance
     const realBuyerWallet = mandate?.ownerWallet || mandate?.subjectWallet || attempt.x402Context?.payerWallet;
     let evidenceHash: string | null = null;
     /* Reputation evidence is keyed by the payment it describes, so it needs the
@@ -836,7 +864,7 @@ export async function reconcileExecutionSettlement(
     if (success) {
       // Release reserved budget atomically
       if (attempt.mandateId) {
-        await releaseBudgetAtomic(attempt.mandateId, attempt.requestedAmountUsdc, dailyPeriod.periodStart);
+        await releaseBudgetAtomic(attempt.mandateId, attempt.requestedAmountUsdc, periodStart);
       }
     }
 

@@ -5,6 +5,14 @@
 
 import type { ExecutionMandate } from "../execution/types.ts";
 import { MANDATE_VERSION_V2 } from "../execution/canonical.ts";
+/* The owner's day and the zone it is read in moved to the execution layer, so
+   that shadow and live spending measure the same Tuesday. Re-exported here
+   because this is where the rest of Nova has always asked for them. */
+import { budgetPeriodFor, isValidTimezone, type OwnerDay } from "../execution/budget-day.ts";
+
+export { budgetPeriodFor, isValidTimezone };
+/** A day, as the owner's clock reads it rather than as UTC does. */
+export type BudgetPeriod = OwnerDay;
 import { isExecutableTrustDecision } from "../trust-gate/types.ts";
 import type { NovaResearchProposal } from "./research.ts";
 
@@ -93,15 +101,6 @@ export type AutonomyBlock = (typeof AUTONOMY_BLOCKS)[number];
 declare const checked: unique symbol;
 export type VerifiedMandate = ExecutionMandate & { readonly [checked]: true };
 
-/** A day, as the owner's clock reads it rather than as UTC does. */
-export type BudgetPeriod = {
-  /** Inclusive ISO instant of local midnight. */
-  start: string;
-  /** Exclusive ISO instant of the next local midnight. */
-  end: string;
-  timezone: string;
-};
-
 export type AutonomyUsage = {
   /** USDC that would have been spent inside this period. */
   spentUsdc: number;
@@ -148,87 +147,6 @@ export type Caip2 = string & { readonly [caip2]: true };
  *  there is something here we cannot read. */
 export function asCaip2(value: string | null | undefined): Caip2 | null {
   return typeof value === "string" && /^eip155:\d+$/.test(value) ? (value as Caip2) : null;
-}
-
-export function isValidTimezone(zone: string): boolean {
-  if (!zone) return false;
-  try {
-    new Intl.DateTimeFormat("en-US", { timeZone: zone });
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-/** How far the zone's clock is from UTC at one instant, in milliseconds. */
-function offsetMsAt(instant: Date, timeZone: string): number {
-  const parts = new Intl.DateTimeFormat("en-US", {
-    timeZone,
-    hour12: false,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-  }).formatToParts(instant);
-  const read = (type: string) => Number(parts.find((part) => part.type === type)?.value ?? "0");
-  /* Some ICU builds render midnight as hour 24 of the previous day. */
-  const hour = read("hour") % 24;
-  /* The instant's own milliseconds, because Intl does not format them and
-     leaving them out does not round the offset -- it subtracts them from it.
-     An offset is a whole number of minutes; this one came back as
-     `trueOffset - now.getMilliseconds()`, and budgetPeriodFor subtracts it from
-     a civil midnight, so the budget day started at 22:00:00.826 on one pass and
-     22:00:00.253 on the next.
-     What that cost is not cosmetic. `alreadyDecided` matches on
-     budget_period_start exactly, and so does the unique index behind it, so the
-     backoff this file documents as "one decision per signal per mandate per
-     budget day" never matched a row: production has the same two signals
-     decided three times inside twenty minutes, each under its own millisecond
-     of a day. A week of statistics gathered that way would mostly be the same
-     handful of signals counted over and over. */
-  const asIfUtc = Date.UTC(
-    read("year"), read("month") - 1, read("day"),
-    hour, read("minute"), read("second"), instant.getUTCMilliseconds(),
-  );
-  return asIfUtc - instant.getTime();
-}
-
-/**
- * The owner's day containing this instant.
- *
- * A daily budget measured in UTC resets at 01:00 or 02:00 for most of Europe,
- * which is inside the window an unattended agent actually works in: a run at
- * 00:30 and a run at 02:30 would draw on two different days without anybody
- * having agreed to that. So the zone is a signed field of the mandate and the
- * day is computed from it.
- *
- * The offset is read twice because it can differ across the boundary. On the
- * night a zone springs forward, the second read is what makes the period start
- * at the first instant that exists rather than at one that does not.
- */
-export function budgetPeriodFor(at: Date, timeZone: string): BudgetPeriod {
-  const zone = isValidTimezone(timeZone) ? timeZone : "UTC";
-  const offset = offsetMsAt(at, zone);
-  const civil = new Date(at.getTime() + offset);
-
-  const boundary = (dayShift: number): number => {
-    const asIfUtc = Date.UTC(
-      civil.getUTCFullYear(),
-      civil.getUTCMonth(),
-      civil.getUTCDate() + dayShift,
-    );
-    const first = asIfUtc - offset;
-    const corrected = offsetMsAt(new Date(first), zone);
-    return corrected === offset ? first : asIfUtc - corrected;
-  };
-
-  return {
-    start: new Date(boundary(0)).toISOString(),
-    end: new Date(boundary(1)).toISOString(),
-    timezone: zone,
-  };
 }
 
 /**

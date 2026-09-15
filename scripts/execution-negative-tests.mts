@@ -698,6 +698,127 @@ async function runNegativeTests() {
     console.log("✅ Canonical SETTLEMENT_UNVERIFIED, MockSettlementResolver, and Authorization-Bound Settlement verified.");
   }
 
+  // 20. A reservation settles into the day it was made in
+  {
+    const { saveExecutionAttempt, saveExecutionMandate, getExecutionMandateUsage, reserveBudgetAtomic, settleBudgetAtomic } =
+      await import("../lib/execution/db.ts");
+    const { reconcileExecutionSettlement } = await import("../lib/execution/executor.ts");
+    const { MockSettlementResolver } = await import("../lib/execution/settlement-resolver.ts");
+    const { dailyPeriodFor, getCurrentDailyPeriod } = await import("../lib/execution/budget.ts");
+
+    /* The owner's day, not UTC's.
+     *
+     * A v2 mandate signs a timezone, and Nova's shadow pass has always measured
+     * the budget day in it while the executor measured it in UTC -- so the same
+     * limits were rehearsed against one Tuesday and charged against another. */
+    const berlinDay = dailyPeriodFor(
+      { version: "v2", budgetTimezone: "Europe/Berlin" },
+      new Date("2026-07-15T00:30:00.000Z"),
+    );
+    assert.strictEqual(
+      berlinDay.periodStart, "2026-07-14T22:00:00.000Z",
+      "half past midnight UTC in July is still the 14th in Berlin",
+    );
+    assert.strictEqual(
+      dailyPeriodFor({ version: "v1" }, new Date("2026-07-15T00:30:00.000Z")).periodStart,
+      getCurrentDailyPeriod(new Date("2026-07-15T00:30:00.000Z")).periodStart,
+      "a v1 mandate never signed a zone, so UTC it stays",
+    );
+
+    const mandateId = "vman_midnight_test";
+    await saveExecutionMandate({
+      mandateId,
+      ownerWallet: "0x1111111111111111111111111111111111111111",
+      subjectAgentId: "agent_auto",
+      subjectWallet: "0x2222222222222222222222222222222222222222",
+      mode: "AUTOPILOT",
+      network: "eip155:5042002",
+      allowedCapabilities: ["web_search"],
+      allowedRails: ["x402"],
+      maxPerTransactionUsdc: 10,
+      maxPerDayUsdc: 50,
+      maxTotalUsdc: 200,
+      minimumTrustScore: 50,
+      minimumConfidence: 50,
+      requireVerifiedIdentity: true,
+      evaluatorThresholdUsdc: 5,
+      canonicalHash: "0x",
+      signature: "0x",
+      nonce: 1,
+      version: "1.0",
+      issuedAt: new Date().toISOString(),
+      expiresAt: new Date(Date.now() + 86400000).toISOString(),
+      createdAt: new Date().toISOString(),
+    } as any);
+
+    /* The purchase happened yesterday and is being reconciled today -- which is
+       the ordinary case, because reconciliation exists precisely for payments
+       whose fate took a while to establish. */
+    const yesterday = getCurrentDailyPeriod(new Date(Date.now() - 86_400_000));
+    const today = getCurrentDailyPeriod();
+    assert.notStrictEqual(yesterday.periodStart, today.periodStart);
+
+    await reserveBudgetAtomic(mandateId, 2.0, yesterday);
+
+    const executionId = "vexec_midnight_test";
+    await saveExecutionAttempt({
+      executionId,
+      mandateId,
+      state: "SETTLEMENT_UNVERIFIED",
+      rail: "x402",
+      counterpartyAgentId: "agent_seller_1",
+      counterpartyWallet: "0x3333333333333333333333333333333333333333",
+      capability: "web_search",
+      requestedAmountUsdc: 2.0,
+      authorizedAmountUsdc: 2.0,
+      actualSettledAmountUsdc: 0,
+      failureCode: "PAYMENT_SETTLEMENT_UNVERIFIED",
+      selectionId: "sel_midnight",
+      selectionHash: "0x",
+      canonicalHash: "0x",
+      budgetPeriodStart: yesterday.periodStart,
+      createdAt: new Date(Date.now() - 86_400_000).toISOString(),
+      updatedAt: new Date(Date.now() - 86_400_000).toISOString(),
+    } as any);
+
+    /* What the old code did: settle against the day it is now. The store is
+       keyed by (mandate, day) exactly as the table is, so this finds nothing --
+       and used to return a boolean nobody read, while the attempt had already
+       been marked COMPLETED by a separate statement. */
+    assert.strictEqual(
+      await settleBudgetAtomic(mandateId, 2.0, 2.0, today.periodStart),
+      false,
+      "there is no usage row for today, because the reservation was not made today",
+    );
+
+    const settled = await reconcileExecutionSettlement(executionId, {
+      resolver: new MockSettlementResolver(() => ({
+        resolved: true,
+        settled: true,
+        failed: false,
+        txHash: "0x" + "b".repeat(64),
+        settledAmountUsdc: 2.0,
+      })),
+    });
+    assert.strictEqual(settled.status, "COMPLETED");
+
+    const yesterdayUsage = await getExecutionMandateUsage(mandateId, yesterday.periodStart);
+    assert.strictEqual(yesterdayUsage.reservedUsdc, 0, "the reservation must be released where it was taken");
+    assert.strictEqual(yesterdayUsage.usedUsdc, 2.0, "and the spend recorded on the same day");
+
+    const todayUsage = await getExecutionMandateUsage(mandateId, today.periodStart);
+    assert.strictEqual(todayUsage.usedUsdc, 0, "today's budget must not be charged for yesterday's purchase");
+    assert.strictEqual(todayUsage.reservedUsdc, 0);
+
+    // Retried reconciliation is a no-op rather than a second settlement.
+    const again = await reconcileExecutionSettlement(executionId);
+    assert.strictEqual(again.status, "COMPLETED");
+    const afterRetry = await getExecutionMandateUsage(mandateId, yesterday.periodStart);
+    assert.strictEqual(afterRetry.usedUsdc, 2.0, "a retried reconcile must not settle twice");
+
+    console.log("✅ Budget settles into the day its reservation was taken in, once.");
+  }
+
   console.log("\n🎉 ALL P6.1 Negative & Adversarial Security Tests Passed Successfully!");
 }
 

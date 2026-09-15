@@ -148,6 +148,11 @@ export interface ExecutionAttempt {
   providerSubmittedAt?: string | null;
   x402Context?: X402ReconciliationContext | null;
   idempotencyKey?: string | null;
+  /** The budget day this attempt reserved against, fixed when the reservation
+   *  was taken. Reconciliation settles into this and never into the day it
+   *  happens to run on -- those are the same day only if nothing took longer
+   *  than the hours left until midnight. Null on rows older than the column. */
+  budgetPeriodStart?: string | null;
   canonicalHash: string;
   createdAt: string;
   updatedAt: string;
