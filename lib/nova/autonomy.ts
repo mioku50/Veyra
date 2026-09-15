@@ -175,7 +175,23 @@ function offsetMsAt(instant: Date, timeZone: string): number {
   const read = (type: string) => Number(parts.find((part) => part.type === type)?.value ?? "0");
   /* Some ICU builds render midnight as hour 24 of the previous day. */
   const hour = read("hour") % 24;
-  const asIfUtc = Date.UTC(read("year"), read("month") - 1, read("day"), hour, read("minute"), read("second"));
+  /* The instant's own milliseconds, because Intl does not format them and
+     leaving them out does not round the offset -- it subtracts them from it.
+     An offset is a whole number of minutes; this one came back as
+     `trueOffset - now.getMilliseconds()`, and budgetPeriodFor subtracts it from
+     a civil midnight, so the budget day started at 22:00:00.826 on one pass and
+     22:00:00.253 on the next.
+     What that cost is not cosmetic. `alreadyDecided` matches on
+     budget_period_start exactly, and so does the unique index behind it, so the
+     backoff this file documents as "one decision per signal per mandate per
+     budget day" never matched a row: production has the same two signals
+     decided three times inside twenty minutes, each under its own millisecond
+     of a day. A week of statistics gathered that way would mostly be the same
+     handful of signals counted over and over. */
+  const asIfUtc = Date.UTC(
+    read("year"), read("month") - 1, read("day"),
+    hour, read("minute"), read("second"), instant.getUTCMilliseconds(),
+  );
   return asIfUtc - instant.getTime();
 }
 

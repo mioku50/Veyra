@@ -270,6 +270,36 @@ const reviewed = evaluateShadow({
 });
 assert.deepEqual(reviewed.failed, ["veyra_decision_allows"]);
 
+/* --------------------------------------------- a day starts when a day starts */
+
+/* A budget day is a boundary, and a boundary that moves is not one. The zone
+   offset was computed from an Intl rendering with no millisecond field, so it
+   came back short by the instant's own milliseconds and carried them into the
+   day's start. Two passes a second apart got two different budget days, which
+   is exactly what `alreadyDecided` and the unique index behind it match on --
+   so the backoff never fired and production re-decided the same signals three
+   times in twenty minutes. */
+for (const zone of ["Europe/Berlin", "UTC", "America/New_York", "Asia/Kolkata", "Pacific/Chatham"]) {
+  const base = new Date("2026-09-15T10:11:36.000Z");
+  const clean = budgetPeriodFor(base, zone);
+  for (const ms of [1, 253, 770, 826, 999]) {
+    const shifted = budgetPeriodFor(new Date(base.getTime() + ms), zone);
+    assert.deepEqual(shifted, clean,
+      `${zone}: the day must not move with the millisecond it was asked on`);
+  }
+  assert.equal(new Date(clean.start).getTime() % 1000, 0,
+    `${zone}: a budget day starts on a whole second`);
+  assert.equal(
+    (new Date(clean.end).getTime() - new Date(clean.start).getTime()) % 60_000, 0,
+    `${zone}: and is a whole number of minutes long`);
+}
+
+/* The real row that exposed it: Europe/Berlin, mid-September, no DST turn in
+   sight, and the period still came back as 22:00:00.826. */
+assert.equal(
+  budgetPeriodFor(new Date("2026-09-15T10:11:36.826Z"), "Europe/Berlin").start,
+  "2026-09-14T22:00:00.000Z");
+
 /* ------------------------------------------------- one predicate, not a copy */
 
 /* Shadow used to keep its own list of the decisions it would act on, and the
