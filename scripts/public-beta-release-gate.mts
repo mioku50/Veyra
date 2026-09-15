@@ -162,6 +162,10 @@ runStep("Project 360 Deterministic Tests", () => {
   execSync("npm run project-360:test", { cwd: root, stdio: "inherit" });
 });
 
+runStep("Canonical Request Binding Tests", () => {
+  execSync("npm run canonical:test", { cwd: root, stdio: "inherit" });
+});
+
 runStep("Trust-Routed Execution Unit Tests", () => {
   execSync("npm run execution:test", { cwd: root, stdio: "inherit" });
 });
