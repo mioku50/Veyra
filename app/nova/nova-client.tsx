@@ -1716,17 +1716,61 @@ function AutonomyPanel({
       </p>
 
       {shadow.state === "watching" && limits ? (
-        <dl className="mt-4 space-y-0">
-          <Row label="Signed by" value={`${limits.signedBy.slice(0, 6)}…${limits.signedBy.slice(-4)}`} tone="good" />
-          <Row label="Mode" value={limits.mode} />
-          <Row label="Expires" value={new Date(limits.expiresAt).toLocaleDateString()} />
-          <Row label="Per investigation" value={`$${limits.perActionUsdc.toFixed(4)}`} />
-          <Row label="Daily budget" value={`$${limits.dailyUsdc.toFixed(4)}`} />
-          <Row label="Total preview budget" value={`$${limits.totalUsdc.toFixed(4)}`} />
-          <Row label="Attempts per day" value={String(limits.attemptsPerDay)} />
-          <Row label="Minimum trust" value={String(limits.minimumTrustScore)} />
-          <Row label="Budget day" value={limits.timezone} />
-        </dl>
+        <>
+          <dl className="mt-4 space-y-0">
+            <Row label="Signed by" value={`${limits.signedBy.slice(0, 6)}…${limits.signedBy.slice(-4)}`} tone="good" />
+            <Row label="Mode" value={limits.mode} />
+            <Row label="Allowed" value={capabilityList(limits.capabilities)} />
+            <Row label="Expires" value={new Date(limits.expiresAt).toLocaleDateString()} />
+            <Row label="Per investigation" value={`$${limits.perActionUsdc.toFixed(4)}`} />
+            <Row label="Daily budget" value={`$${limits.dailyUsdc.toFixed(4)}`} />
+            <Row label="Total preview budget" value={`$${limits.totalUsdc.toFixed(4)}`} />
+            <Row label="Attempts per day" value={String(limits.attemptsPerDay)} />
+            <Row label="Minimum trust" value={String(limits.minimumTrustScore)} />
+            <Row label="Budget day" value={limits.timezone} />
+          </dl>
+
+          {/* A signature cannot be edited, so when the offer changes the only
+              way to adopt it is to sign again -- and until now nothing on this
+              screen said so. An owner who signed once saw their old limits for
+              ever and had no way to reach the new ones, which is the worst
+              shape this can take: terms that moved, in force, unmentioned. */}
+          {limits.isCurrentOffer ? null : (
+            <div className="mt-5 rounded-lg border border-state-warn/40 bg-state-warn/5 p-4">
+              <p className="max-w-xl text-sm leading-relaxed text-muted-foreground">
+                These are not the limits this page offers any more. What you signed stays in
+                force until you sign again — nothing changes on its own, and nothing is
+                revoked. The terms now on offer:
+              </p>
+              <dl className="mt-3 space-y-0">
+                <Row label="Allowed" value={capabilityList([...PREVIEW_MANDATE.allowedCapabilities])} />
+                <Row label="Max per investigation" value={`$${PREVIEW_MANDATE.maxPerTransactionUsdc.toFixed(4)}`} />
+                <Row label="Daily budget" value={`$${PREVIEW_MANDATE.maxPerDayUsdc.toFixed(4)}`} />
+                <Row label="Total preview budget" value={`$${PREVIEW_MANDATE.maxTotalUsdc.toFixed(4)}`} />
+                <Row label="Attempts per day" value={String(PREVIEW_MANDATE.maxAutonomousAttemptsPerDay)} />
+                <Row label="Minimum trust" value={String(PREVIEW_MANDATE.minimumTrustScore)} />
+              </dl>
+              <div className="mt-4">
+                {walletReady ? (
+                  <button
+                    type="button"
+                    onClick={onSign}
+                    disabled={signing}
+                    className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:opacity-60"
+                  >
+                    {signing ? "Waiting for your wallet…" : "Sign the updated mandate"}
+                  </button>
+                ) : (
+                  <NoWalletHere what="the updated limits" />
+                )}
+              </div>
+              <p className="mt-3 max-w-xl text-xs leading-relaxed text-muted-foreground">
+                Signing replaces which limits are in force. The one you signed before stays in
+                the record, and the decisions made under it stay attached to it.
+              </p>
+            </div>
+          )}
+        </>
       ) : (
         <>
           <p className="mt-4 max-w-xl text-sm leading-relaxed text-muted-foreground">
@@ -1736,8 +1780,12 @@ function AutonomyPanel({
           </p>
           <div className="mt-5">
             <Label>Allowed</Label>
+            {/* Read off the mandate rather than written beside it. This line
+                said "Research & search" while the signed list said something
+                else, which is the same class of drift as a screen naming a
+                model nobody had called in months. */}
             <p className="mt-2 text-sm text-muted-foreground">
-              Research &amp; search · x402 · Base
+              {capabilityList([...PREVIEW_MANDATE.allowedCapabilities])} · x402 · Base
             </p>
           </div>
           <dl className="mt-4 space-y-0">
@@ -1775,6 +1823,14 @@ function AutonomyPanel({
       {note ? <p className="mt-4 max-w-xl text-xs leading-relaxed text-state-warn">{note}</p> : null}
     </Panel>
   );
+}
+
+/** The signed list, in the words the rest of the screen uses. */
+function capabilityList(capabilities: string[]): string {
+  const said = capabilities
+    .map((capability) => capability.charAt(0).toUpperCase() + capability.slice(1))
+    .join(" · ");
+  return said || "Nothing";
 }
 
 /* Read at render rather than imported: the budget day is the owner's day, and

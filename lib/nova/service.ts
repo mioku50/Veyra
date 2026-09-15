@@ -15,6 +15,7 @@ import { settlementNetworkOf } from "./network.ts";
 import { standingFrom } from "./standing.ts";
 import { budgetPeriodFor, mandateReadiness, shadowSummaryFrom } from "./autonomy.ts";
 import { autonomyMandateFor, shadowDecisionsFor } from "./autonomy-db.ts";
+import { isPreviewMandate } from "./autonomy-mandate.ts";
 import type {
   NovaAgent,
   NovaBrief,
@@ -717,6 +718,14 @@ async function shadowViewFor(
       mode: live.mode,
       expiresAt: live.expiresAt,
       signedBy: live.ownerWallet,
+      capabilities: [...live.allowedCapabilities],
+      /* The same predicate the activation route accepts by, so the panel
+         cannot say a mandate is current while the server would refuse it. */
+      isCurrentOffer: isPreviewMandate({
+        ...live,
+        budgetTimezone: live.budgetTimezone ?? period.timezone,
+        maxAutonomousAttemptsPerDay: live.maxAutonomousAttemptsPerDay ?? 0,
+      } as Parameters<typeof isPreviewMandate>[0]),
     },
   };
 }

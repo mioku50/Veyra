@@ -367,5 +367,14 @@ export type NovaShadowView = {
     mode: string;
     expiresAt: string;
     signedBy: string;
+    /** What this signature actually authorises, in the capability vocabulary.
+     *  Shown rather than described, because the panel used to print a fixed
+     *  sentence beside a signed list and the two were free to disagree. */
+    capabilities: string[];
+    /** Whether these are still the terms this page offers. False after the
+     *  offer changes, which is the only signal an owner gets that there is a
+     *  new mandate worth signing -- a signature cannot be updated in place, so
+     *  without this the old terms simply stay in force for ever. */
+    isCurrentOffer: boolean;
   } | null;
 };
