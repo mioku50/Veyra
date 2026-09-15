@@ -6,7 +6,8 @@
 import assert from "node:assert/strict";
 import { terminalStateFor, type BrowserX402Outcome } from "../lib/execution/browser-x402-ledger.ts";
 import { ALLOWED_TRANSITIONS, validateStateTransition } from "../lib/execution/state-machine.ts";
-import type { ExecutionState } from "../lib/execution/types.ts";
+import type { ExecutionAttempt, ExecutionState } from "../lib/execution/types.ts";
+import { publicExecutionView } from "../lib/execution/public-view.ts";
 import type { PostCallVerification } from "../lib/x402/post-call-verification.ts";
 
 function verification(verdict: PostCallVerification["verdict"], failed?: string): PostCallVerification {
@@ -253,4 +254,79 @@ assert.deepEqual(
   `the database allows states no execution can reach: ${unreachable.join(", ")}`,
 );
 
-console.log(`[execution-ledger-test] passed: all ${declared.length} execution states are writable by the schema, and the schema allows no state the machine cannot produce`);
+/* ---- what the public ledger may carry ---- */
+
+/* The ledger is open on purpose: a purchase a stranger cannot check is not
+   evidence. So the question is not who may read it but what is in it, and the
+   stored model was being returned whole to anybody who asked with no header at
+   all. Measured against the deployed app before this view existed: five rows,
+   five authorizationSignature values, and among them a signed EIP-3009
+   authorization for USDC on Ethereum mainnet with paymentTx null -- never
+   consumed -- and five days left on its validity. */
+const SIGNATURE = `0x${"ab".repeat(65)}` as `0x${string}`;
+const NONCE = `0x${"cd".repeat(32)}`;
+const IDEMPOTENCY = "idem_do_not_publish_this";
+const CLEARANCE_SIG = `0x${"ef".repeat(65)}` as `0x${string}`;
+
+const attempt = {
+  executionId: "vexec_test", mandateId: "vman_test", selectionId: "vcs_test",
+  clearanceId: "vcl_test", rail: "x402" as const, state: "SETTLEMENT_FAILED" as const,
+  capability: "research", counterpartyAgentId: "x402:abc", counterpartyWallet: `0x${"1".repeat(40)}`,
+  requestedAmountUsdc: 0.012, authorizedAmountUsdc: 0.012, actualSettledAmountUsdc: 0,
+  failureCode: "payment_rejected_by_seller", createTx: null, paymentTx: null, completeTx: null,
+  evaluationId: null, selectionHash: `0x${"2".repeat(64)}`, clearanceDigest: `0x${"3".repeat(64)}`,
+  clearancePayload: { message: { any: "terms" }, signature: CLEARANCE_SIG, digest: `0x${"3".repeat(64)}` },
+  evidenceHash: `0x${"4".repeat(64)}`, providerContentUri: null, providerContentHash: null,
+  providerContentType: null, providerSubmittedAt: null, idempotencyKey: IDEMPOTENCY,
+  canonicalHash: `0x${"5".repeat(64)}`,
+  createdAt: "2026-09-14T10:02:29.422Z", updatedAt: "2026-09-14T10:02:31.423Z",
+  x402Context: {
+    payerWallet: `0x${"6".repeat(40)}` as `0x${string}`,
+    payTo: `0x${"7".repeat(40)}` as `0x${string}`,
+    asset: "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48" as `0x${string}`,
+    network: "eip155:1", authorizedAmountUsdc: 0.012, authorizedAmountAtomic: "12000",
+    authorizationNonce: NONCE, authorizationSignature: SIGNATURE,
+    authorizationValidBefore: 1789985038, resource: "https://seller.example/paid",
+    paymentRequirementsHash: `0x${"8".repeat(64)}`, facilitatorReference: null,
+    requestTimestamp: "2026-09-14T10:02:29.422Z",
+  },
+} as unknown as ExecutionAttempt;
+
+/* Searched across the whole serialised view rather than field by field, because
+   the field that leaked was nested two levels down in a context object added
+   long after the route that returned it. */
+const published = JSON.stringify(publicExecutionView(attempt));
+for (const [what, secret] of [
+  ["the payment authorization's signature", SIGNATURE],
+  ["its nonce", NONCE],
+  ["the idempotency key", IDEMPOTENCY],
+  ["the clearance signature", CLEARANCE_SIG],
+] as const) {
+  assert.ok(!published.includes(secret),
+    `${what} must never reach the public ledger`);
+}
+
+/* And the evidence is still there, because removing it would answer a leak by
+   deleting the product. */
+for (const fact of [
+  "vexec_test", "payment_rejected_by_seller", "eip155:1",
+  "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48", "12000",
+  `0x${"3".repeat(64)}`, `0x${"4".repeat(64)}`, "https://seller.example/paid",
+]) {
+  assert.ok(published.includes(fact), `the public ledger still has to carry ${fact}`);
+}
+
+/* An allowlist, and asserted as one: a field added to the stored model later
+   must not appear until somebody decides it should. */
+const withNewField = publicExecutionView({
+  ...attempt, somethingAddedLater: "must-not-publish",
+} as unknown as ExecutionAttempt);
+assert.ok(!JSON.stringify(withNewField).includes("must-not-publish"),
+  "the view is built by naming what is kept, not by deleting what is not");
+
+/* The expiry stays. When an authorization stops being valid is a fact about
+   the record; the pair that spends it is the signature and the nonce, and
+   neither is above. */
+assert.equal(publicExecutionView(attempt).x402?.authorizationValidBefore, 1789985038);
+
+console.log(`[execution-ledger-test] passed: all ${declared.length} execution states are writable by the schema, and the schema allows no state the machine cannot produce, and the public ledger carries the evidence without the material that spends it`);

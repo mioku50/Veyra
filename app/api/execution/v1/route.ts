@@ -5,9 +5,18 @@
 
 import { NextResponse } from "next/server";
 import { listExecutionAttempts } from "@/lib/execution/db";
+import { publicExecutionView } from "@/lib/execution/public-view";
 
 export const dynamic = "force-dynamic";
 
+/**
+ * The public execution ledger.
+ *
+ * Open on purpose -- a purchase a stranger cannot check is not evidence -- and
+ * for that reason it must carry no material that spends anything. It returned
+ * the stored model whole until now, signatures included, to anybody who asked
+ * with no header at all. See publicExecutionView for what is kept and why.
+ */
 export async function GET(req: Request) {
   try {
     const url = new URL(req.url);
@@ -21,7 +30,7 @@ export async function GET(req: Request) {
       limit,
     });
 
-    return NextResponse.json({ executions });
+    return NextResponse.json({ executions: executions.map(publicExecutionView) });
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 });
   }
