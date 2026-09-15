@@ -477,6 +477,11 @@ export function spendOf(decision: ShadowDecision): number {
 export type ShadowRecord = {
   decisionId: string;
   signalId: string;
+  /** Which signed mandate this was decided under. Written to the row since the
+   *  table existed and dropped on the way back, which left no way to tell a
+   *  decision made under one set of limits from a decision made under another
+   *  -- and a calibration run is exactly a set of decisions under one. */
+  mandateHash: string;
   verdict: "WOULD_ALLOW" | "WOULD_DENY";
   question: string;
   capability: string;

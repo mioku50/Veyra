@@ -28,6 +28,7 @@ import {
   PREVIEW_MANDATE,
 } from "../lib/nova/autonomy-mandate.ts";
 import { isPolicyCapability } from "../lib/nova/capability.ts";
+import { currentEpoch, splitByCalibration } from "../lib/nova/calibration.ts";
 import { privateKeyToAccount } from "viem/accounts";
 import { hashTypedData } from "viem";
 
@@ -649,6 +650,31 @@ function record(over: Partial<ShadowRecord> = {}): ShadowRecord {
   };
 }
 
+/* ------------------------------------------------------- one run, one mandate */
+
+/* A calibration epoch is a signature, because a canonical hash covers every
+   term: change a capability or a budget and the run that follows is a
+   different run whether or not anybody says so. */
+const older: ShadowRecord = record({ verdict: "WOULD_DENY", failed: ["capability_allowed"] });
+const preCalibration = { ...older, mandateHash: "0xdevelopment" };
+const inEpoch = { ...older, mandateHash: "0xepochone" };
+const epoch = { number: 1, mandateHash: "0xepochone", startedAt: "2026-09-15T12:00:00.000Z", purpose: "limits" };
+
+assert.deepEqual(
+  splitByCalibration([preCalibration, inEpoch, preCalibration], epoch).calibration.map((r) => r.mandateHash),
+  ["0xepochone"],
+  "only decisions under the epoch's own mandate are evidence about its limits");
+assert.equal(splitByCalibration([preCalibration, inEpoch, preCalibration], epoch).development.length, 2,
+  "and the rest are kept rather than dropped");
+
+/* Before anybody has signed, everything is development history. A module that
+   counted the old rows the day it was first imported would be the failure it
+   exists to prevent. */
+assert.equal(currentEpoch(), null, "no epoch begins without a signature");
+assert.equal(splitByCalibration([preCalibration, inEpoch]).calibration.length, 0);
+assert.equal(splitByCalibration([preCalibration, inEpoch]).development.length, 2);
+
+
 const night = shadowSummaryFrom([
   record(),
   record({ verdict: "WOULD_DENY", wouldSpendUsdc: 0.02, failed: ["within_per_action_limit"] }),
@@ -686,6 +712,7 @@ assert.equal(today.decisions, 1, "a budget day is the unit the morning reports")
 console.log("nova autonomy: v1 frozen at its golden hash, budget days on the owner's clock "
   + "through both DST turns, every check reported on every decision, one predicate deciding "
   + "what is executable on both sides of the card, a threshold nobody set reported as one "
-  + "nobody set, the terms an owner signs pinned where a diff can see them, "
+  + "nobody set, the terms an owner signs pinned where a diff can see them, a calibration "
+  + "run bounded by the signature it was made under, "
   + "and a morning that counts what was withheld as well as what would have been "
   + "spent");

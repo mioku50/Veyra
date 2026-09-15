@@ -168,6 +168,7 @@ function toRecord(row: Record<string, unknown>): ShadowRecord {
   return {
     decisionId: row.decision_id as string,
     signalId: row.signal_id as string,
+    mandateHash: (row.mandate_hash as string | null) ?? "",
     verdict: row.verdict as ShadowRecord["verdict"],
     question: row.question as string,
     capability: row.capability as string,
