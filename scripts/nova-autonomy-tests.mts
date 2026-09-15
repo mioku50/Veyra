@@ -27,6 +27,7 @@ import {
   isPreviewMandate, mandateFrom, previewMandateSigningRequest, previewMandateTerms,
   PREVIEW_MANDATE,
 } from "../lib/nova/autonomy-mandate.ts";
+import { isPolicyCapability } from "../lib/nova/capability.ts";
 import { privateKeyToAccount } from "viem/accounts";
 import { hashTypedData } from "viem";
 
@@ -269,6 +270,34 @@ const reviewed = evaluateShadow({
   mandate: verified, proposal: proposal({ decision: "REVIEW_REQUIRED" }), usage: idle, period,
 });
 assert.deepEqual(reviewed.failed, ["veyra_decision_allows"]);
+
+/* ------------------------------------------------ the mandate D0 actually issues */
+
+/* Pinned, because these are the terms an owner signs and a diff is the only
+   place a change to them can be noticed. Anything moving here should be a
+   deliberate edit to this assertion, not a surprise in somebody's wallet. */
+assert.deepEqual([...PREVIEW_MANDATE.allowedCapabilities], ["research", "data"],
+  "the capability list is the one chosen against the live catalogue");
+assert.deepEqual([...PREVIEW_MANDATE.allowedRails], ["x402"]);
+assert.equal(PREVIEW_MANDATE.mode, "PREVIEW", "a rehearsal cannot be signed as autopilot");
+assert.equal(PREVIEW_MANDATE.subjectWallet, "0x0000000000000000000000000000000000000000");
+assert.equal(PREVIEW_MANDATE.maxPerTransactionUsdc, 0.01);
+assert.equal(PREVIEW_MANDATE.maxPerDayUsdc, 0.03);
+assert.equal(PREVIEW_MANDATE.maxTotalUsdc, 0.15);
+assert.equal(PREVIEW_MANDATE.maxAutonomousAttemptsPerDay, 3);
+assert.equal(PREVIEW_MANDATE.minimumTrustScore, 90);
+assert.equal(PREVIEW_MANDATE.evaluatorThresholdUsdc, 0);
+
+/* Every value in the list is a capability, and no discovery term can be one.
+   "search" was in this list and is not a capability at all -- it authorised
+   nothing while looking like a permission. */
+for (const capability of PREVIEW_MANDATE.allowedCapabilities) {
+  assert.ok(isPolicyCapability(capability), `${capability} is not a policy capability`);
+}
+assert.ok(!isPolicyCapability("search"), "a discovery term must never pass as one");
+assert.ok(!isPolicyCapability("arc"));
+assert.ok(!PREVIEW_MANDATE.allowedCapabilities.includes("payments" as never),
+  "an agent that may pay to read must not also be able to pay to move money");
 
 /* --------------------------------------------- a day starts when a day starts */
 
@@ -657,5 +686,6 @@ assert.equal(today.decisions, 1, "a budget day is the unit the morning reports")
 console.log("nova autonomy: v1 frozen at its golden hash, budget days on the owner's clock "
   + "through both DST turns, every check reported on every decision, one predicate deciding "
   + "what is executable on both sides of the card, a threshold nobody set reported as one "
-  + "nobody set, and a morning that counts what was withheld as well as what would have been "
+  + "nobody set, the terms an owner signs pinned where a diff can see them, "
+  + "and a morning that counts what was withheld as well as what would have been "
   + "spent");

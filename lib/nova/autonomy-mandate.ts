@@ -46,7 +46,30 @@ export const PREVIEW_MANDATE = {
      answers, and conflating them would deny every decision. */
   network: "eip155:8453",
   allowedRails: ["x402"],
-  allowedCapabilities: ["research", "search"],
+  /*
+   * What Nova may pay to do, in the vocabulary lib/nova/capability.ts reads off
+   * an endpoint -- not the word the catalogue was searched with.
+   *
+   * It said ["research", "search"] until now, and "search" is not a capability
+   * at all: it was a discovery term that had wandered into a permission. Under
+   * the vocabulary it authorises nothing, so this mandate has effectively
+   * allowed one thing while appearing to allow two.
+   *
+   * research and data are the two chosen for the calibration week, and chosen
+   * against the live catalogue rather than in the abstract. Of 153 resources
+   * reachable from this agent's own interests, 41 classify as research and 34
+   * as data -- the two largest families, and between them every card in the
+   * agent's current pool that can actually be priced and asked a question.
+   *
+   * The three left out are left out on purpose. identity and inference are
+   * real and available, and nothing is learned by allowing everything at once:
+   * a week that denies on capability tells the owner which capability to add
+   * next, while a week that allows all five measures only the limits. payments
+   * is the one that stays out on principle -- Venice.ai publishes a $5 USDC
+   * top-up in this same catalogue, and an unattended agent that may pay to read
+   * must not also be able to pay to move money.
+   */
+  allowedCapabilities: ["research", "data"],
   maxPerTransactionUsdc: 0.01,
   maxPerDayUsdc: 0.03,
   maxTotalUsdc: 0.15,
