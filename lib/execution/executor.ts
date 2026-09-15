@@ -121,6 +121,18 @@ export async function prepareExecution(params: {
     } catch (err) {
       console.warn("[prepareExecution] signTrustClearance warning:", err);
     }
+  } else if (!attesterPk) {
+    /* Said here rather than discovered later. Without a key this issues no
+       clearance, and the rail then refuses the execution with
+       CLEARANCE_REQUIRED -- a code that describes the request and says nothing
+       about the environment that caused it. The release gate spent its whole
+       recorded history red on exactly this, because the only symptom was a
+       correct-looking refusal four steps downstream. */
+    console.warn(
+      "[prepareExecution] no trust attester key configured "
+      + "(VEYRA_TRUST_ATTESTER_PRIVATE_KEY); this execution will carry no "
+      + "clearance and the rail will refuse it",
+    );
   }
 
   const now = new Date().toISOString();

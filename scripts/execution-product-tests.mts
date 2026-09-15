@@ -16,7 +16,38 @@ process.env.EXECUTION_ALLOW_TEST_FALLBACK = "true";
 process.env.VEYRA_AUTOPILOT_ENABLED = "true";
 
 import assert from "node:assert/strict";
-import { privateKeyToAccount } from "viem/accounts";
+import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
+
+/**
+ * The attester key this suite quietly depended on.
+ *
+ * prepareExecution signs the EIP-712 clearance with the trust attester, and
+ * when no key is configured it skips issuing one -- with no else branch, so
+ * nothing is said. The execution then carries a null clearance until the rail
+ * refuses it, four steps later, with CLEARANCE_REQUIRED: a code that points at
+ * the caller rather than at the environment.
+ *
+ * Any checkout with a .env.local has that key, and CI has never had one. So
+ * this suite passed for every developer who ran it and failed every run of the
+ * release gate since it was written -- which is why a required status check on
+ * main has been red for its entire recorded history while nothing was actually
+ * broken.
+ *
+ * A throwaway key, minted here. The clearance is signed and carried exactly as
+ * in production; nothing in test mode verifies the signature against a
+ * deployed gate, so the identity behind it does not matter, and depending on a
+ * secret to find out whether execution works does.
+ *
+ * Set unconditionally rather than only when absent. A test that behaves one way
+ * for whoever has a .env.local and another way for CI is the defect being fixed
+ * here, not the fix.
+ *
+ * Assigned after the imports because ESM hoists them: this statement runs once
+ * every module above has been evaluated. It works because the executor reads
+ * the variable when it signs, not when it loads -- the same reason the four
+ * assignments above this block work.
+ */
+process.env.VEYRA_TRUST_ATTESTER_PRIVATE_KEY = generatePrivateKey();
 import {
   buildMandateEip712Message,
   computeCanonicalMandateHash,
