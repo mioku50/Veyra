@@ -7,7 +7,6 @@ import { NextResponse, type NextRequest } from "next/server";
 import { authenticateSelectionRequest } from "@/lib/counterparty-selection/auth";
 import {
   asTransferAuthorization,
-  asX402Accept,
   settleX402Call,
 } from "@/lib/x402/execution";
 
@@ -37,27 +36,21 @@ export async function POST(request: NextRequest) {
     return badRequest("invalid_body", "A JSON body is required.");
   }
 
-  const accept = asX402Accept(body.accept);
-  if (!accept) return badRequest("accept_invalid", "A complete payment accept is required.");
-
   const authorization = asTransferAuthorization(body.authorization);
   if (!authorization) return badRequest("authorization_invalid", "A complete signed authorization is required.");
 
+  /* The accept, the endpoint, the price, the capability, the counterparty, the
+     clearance and whether the tier demanded verification all used to arrive
+     here, from the caller whose payment they governed. They are read from the
+     quote and the decision now. What is left is a quote id, a signature over
+     terms Veyra itself recorded, and the body the seller has to receive --
+     which is hashed and compared rather than believed. */
   const outcome = await settleX402Call({
-    resource: typeof body.resource === "string" ? body.resource : "",
-    method: body.method === "GET" ? "GET" : "POST",
+    quoteId: typeof body.quoteId === "string" ? body.quoteId : "",
+    ownerWallet: auth.tenant.requesterWallet,
     requestBody: body.requestBody,
-    accept,
     authorization,
     signature: typeof body.signature === "string" ? body.signature as `0x${string}` : "0x",
-    resourceDescriptor: body.resourceDescriptor,
-    verificationRequired: body.verificationRequired === true,
-    declaredOutputSchema: body.declaredOutputSchema,
-    selectionId: typeof body.selectionId === "string" ? body.selectionId : null,
-    selectionHash: typeof body.selectionHash === "string" ? body.selectionHash : null,
-    clearanceDigest: typeof body.clearanceDigest === "string" ? body.clearanceDigest : null,
-    counterpartyAgentId: typeof body.counterpartyAgentId === "string" ? body.counterpartyAgentId : null,
-    capability: typeof body.capability === "string" ? body.capability : null,
   });
 
   if (outcome.kind === "refused") {

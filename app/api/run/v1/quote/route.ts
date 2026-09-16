@@ -32,14 +32,14 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: { code: "invalid_body", message: "A JSON body is required." } }, { status: 400 });
   }
 
+  /* Two fields, and neither of them names an endpoint or a ceiling. Those come
+     from the decision, which the server reads for itself -- the point of F4.
+     A caller that could still name the resource could still have Veyra price
+     and authorize a purchase Veyra never decided on. */
   const outcome = await quoteX402Call({
-    resource: typeof body.resource === "string" ? body.resource : "",
-    method: body.method === "GET" ? "GET" : "POST",
+    selectionId: typeof body.selectionId === "string" ? body.selectionId : "",
+    ownerWallet: auth.tenant.requesterWallet,
     requestBody: body.requestBody,
-    maxAmountUsdc: Number(body.maxAmountUsdc),
-    inputSchema: body.inputSchema && typeof body.inputSchema === "object" && !Array.isArray(body.inputSchema)
-      ? body.inputSchema as Record<string, unknown>
-      : null,
   });
 
   if (outcome.kind === "refused") {
@@ -65,6 +65,12 @@ export async function POST(request: NextRequest) {
   const { quote } = outcome;
   return NextResponse.json({
     paymentRequired: true,
+    /* What settle will be given instead of a description of the purchase. */
+    quoteId: quote.quoteId,
+    selectionId: quote.selectionId,
+    expiresAt: quote.expiresAt,
+    verificationRequired: quote.verificationRequired,
+    decision: quote.decision,
     resource: quote.resource,
     inputSchema: quote.inputSchema,
     outputSchema: quote.outputSchema,

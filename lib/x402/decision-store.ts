@@ -61,6 +61,14 @@ export interface X402SelectionRecord {
   expiresAt: string;
 }
 
+/** Everything the live 402 said, as Veyra saw it. Public seller data only. */
+export interface X402QuoteChallenge {
+  accept: Record<string, unknown>;
+  resourceDescriptor?: unknown;
+  inputSchema?: unknown;
+  outputSchema?: unknown;
+}
+
 export interface X402QuoteRecord {
   quoteId: string;
   selectionId: string;
@@ -76,6 +84,11 @@ export interface X402QuoteRecord {
   gatewayBatched: boolean;
   paymentRequirementsHash?: string | null;
   authorizationNonce: string;
+  /** The live challenge this price came from, kept whole so settle rebuilds
+   *  every term -- including the declared output schema the post-call check
+   *  measures a delivery against -- instead of taking them back from the
+   *  browser. */
+  challenge: X402QuoteChallenge;
   state: X402QuoteState;
   executionId?: string | null;
   quotedAt: string;
@@ -206,6 +219,7 @@ export async function createX402Quote(input: {
   gatewayBatched: boolean;
   paymentRequirementsHash?: string | null;
   authorizationNonce: string;
+  challenge: X402QuoteChallenge;
   expiresAt: string;
 }): Promise<CreateQuoteResult> {
   const quoteId = newQuoteId();
@@ -241,6 +255,7 @@ export async function createX402Quote(input: {
       gatewayBatched: input.gatewayBatched,
       paymentRequirementsHash: input.paymentRequirementsHash ?? null,
       authorizationNonce: input.authorizationNonce,
+      challenge: input.challenge,
       state: "QUOTED",
       quotedAt: new Date().toISOString(),
       expiresAt: input.expiresAt,
@@ -269,6 +284,7 @@ export async function createX402Quote(input: {
     p_gateway_batched: input.gatewayBatched,
     p_payment_requirements_hash: input.paymentRequirementsHash ?? null,
     p_authorization_nonce: input.authorizationNonce,
+    p_challenge: input.challenge,
     p_expires_at: input.expiresAt,
   });
 
@@ -338,6 +354,7 @@ export async function claimX402Quote(
       gatewayBatched: row.gateway_batched === true,
       paymentRequirementsHash: row.payment_requirements_hash,
       authorizationNonce: row.authorization_nonce,
+      challenge: row.challenge as X402QuoteChallenge,
       state: "CLAIMED",
       executionId: row.execution_id,
       quotedAt: row.quoted_at,
@@ -353,12 +370,29 @@ export async function claimX402Quote(
  * CLAIMED forever, which costs one unusable quote and is the only safe reading
  * after F3: a broken HTTP call is not evidence that no money moved.
  */
+/**
+ * Which moves exist, checked here as well as in Postgres.
+ *
+ * Mirrored rather than duplicated by accident: the SQL function is the
+ * authority in production, and this is what makes the in-memory double refuse
+ * the same things. A test store that accepts a move the real one rejects is
+ * worse than no store, because every test passes while the failure waits in
+ * production -- the execution ledger learned that with a usage map keyed by
+ * mandate alone.
+ */
+const ALLOWED_QUOTE_MOVES: Record<string, readonly X402QuoteState[]> = {
+  /* Back to QUOTED only from CLAIMED, and only for a relay that never left. */
+  CLAIMED: ["DISPATCHED", "QUOTED"],
+  DISPATCHED: ["SETTLED", "SETTLEMENT_UNVERIFIED", "SETTLEMENT_FAILED"],
+};
+
 export async function advanceX402Quote(input: {
   quoteId: string;
   expectedState: X402QuoteState;
   targetState: X402QuoteState;
   executionId?: string | null;
 }): Promise<boolean> {
+  if (!ALLOWED_QUOTE_MOVES[input.expectedState]?.includes(input.targetState)) return false;
   if (memoryAllowed()) {
     const quote = memoryQuotes.get(input.quoteId);
     if (!quote || quote.state !== input.expectedState) return false;
@@ -403,6 +437,7 @@ export async function fetchX402Quote(quoteId: string): Promise<X402QuoteRecord |
     gatewayBatched: data.gateway_batched === true,
     paymentRequirementsHash: data.payment_requirements_hash,
     authorizationNonce: data.authorization_nonce,
+    challenge: data.challenge as X402QuoteChallenge,
     state: data.state,
     executionId: data.execution_id,
     quotedAt: data.quoted_at,

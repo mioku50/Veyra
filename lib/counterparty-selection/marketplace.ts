@@ -16,7 +16,7 @@ import { computeCanonicalDecisionHash } from "../trust-gate/canonical.ts";
 import { DENY_TIER, resolvePolicy } from "../trust-gate/policy.ts";
 import { signTrustClearance } from "../trust-gate/sign.ts";
 import type { TrustDecision, TrustRiskCode } from "../trust-gate/types.ts";
-import { TRUST_DECISION_EXPIRY_SECONDS, TRUST_POLICY_VERSION } from "../trust-gate/types.ts";
+import { isExecutableTrustDecision, TRUST_DECISION_EXPIRY_SECONDS, TRUST_POLICY_VERSION } from "../trust-gate/types.ts";
 import { verifyTrustClearanceOnchain } from "../trust-gate/verify.ts";
 import { hashCanonical, normalizeCapability } from "./canonical.ts";
 import { rankCounterparties } from "./engine.ts";
@@ -25,6 +25,7 @@ import {
   loadEndpointObservations,
   recordEndpointObservation,
 } from "../x402/trust-api/observations.ts";
+import { recordX402Selection } from "../x402/decision-store.ts";
 import { normalizeResourceUrl, resourceKeyFor } from "../x402/trust-api/resource.ts";
 import {
   discoverMarketplaceCandidates,
@@ -885,6 +886,74 @@ export async function selectMarketplaceCounterparty(input: {
       clearanceReason = error instanceof CounterpartySelectionError
         ? error.code
         : "clearance_signing_unavailable";
+    }
+  }
+
+  /* The verdict, written down, because from here it may authorize a payment.
+   *
+   * This file was deliberately stateless, and the reasoning was sound while the
+   * verdict was advice about a third-party endpoint: persisting it would have
+   * implied a durable Veyra relationship that does not exist. It stops being
+   * advice the moment Veyra's own relay moves money on the strength of it --
+   * and until now the relay took every policy-bearing field back from the
+   * browser, because there was nothing stored to check them against.
+   *
+   * Recorded only when there is a cleared winner with a payee: there is no
+   * spend to authorize otherwise, and a row for a refusal would be a permission
+   * slip for a decision that granted nothing.
+   *
+   * A failure to store is not a failure to advise. The caller still gets the
+   * verdict; what it will not get is a quote, because the quote route refuses
+   * a selection it cannot read back. The advisory surface keeps working and the
+   * paying one stops, which is the correct way round. */
+  if (
+    winner && winnerDecision && winnerPayTo && winnerContext && clearance
+    /* REVIEW_REQUIRED and DENY are verdicts too, and neither authorizes a
+       spend. The project already has one definition of which levels may
+       execute; using it rather than a second list here is what keeps the two
+       from diverging the next time a level is added. */
+    && isExecutableTrustDecision(winnerDecision.decision)
+  ) {
+    const winnerRanked = candidates.find(
+      (item) => item.identity.agentId === winner.identity.agentId,
+    );
+    const stored = await recordX402Selection({
+      selectionId,
+      tenantKey: input.tenant.tenantKey,
+      ownerWallet: getAddress(input.tenant.requesterWallet),
+      requesterAgentId: input.tenant.requesterAgentId ?? null,
+      candidateId: winnerContext.candidate.candidateId,
+      resource: winnerContext.candidate.resource,
+      /* The catalog publishes this per endpoint. The browser sent POST
+         unconditionally, so a GET endpoint could be quoted as a POST -- one
+         more thing the caller chose and the server accepted. */
+      method: winnerContext.candidate.method,
+      capability: request.capability,
+      payTo: getAddress(winnerPayTo),
+      settlementNetwork: winnerContext.candidate.selectedAccept.network,
+      asset: getAddress(winnerContext.candidate.selectedAccept.asset),
+      /* Atomic, never USDC decimals: a ceiling that rounds, rounds towards
+         spending more. */
+      maxExposureAtomic: BigInt(
+        Math.round(winner.recommendedMaxExposureUsdc * 1_000_000),
+      ).toString(),
+      decision: winnerDecision.decision as "ALLOW" | "ALLOW_WITH_LIMITS" | "REQUIRE_EVALUATOR",
+      verificationRequired: winnerDecision.decision !== "ALLOW",
+      policyVersion: TRUST_POLICY_VERSION,
+      evidenceHash: winnerRanked?.evidenceHash ?? null,
+      selectionHash: canonicalHash,
+      /* The digest and not the signature. The digest is what a reader checks
+         the decision against; the signature is what acts on it, and nothing on
+         this rail ever calls consumeClearance. */
+      clearanceDigest: clearance.clearanceDigest,
+      createdAt,
+      expiresAt,
+    });
+    if (!stored.stored) {
+      console.warn("x402_selection_not_recorded", {
+        selectionId,
+        reason: stored.reason ?? "unknown",
+      });
     }
   }
 

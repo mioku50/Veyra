@@ -380,27 +380,31 @@ export async function settleResearch(input: {
     );
   }
 
+  /* The quote the approval step wrote, and nothing else.
+   *
+   * Every field that used to be passed here -- the endpoint, the method, the
+   * accept, the descriptor, the tier, the selection, the clearance, the
+   * counterparty, the capability -- is read by settle from the quote and the
+   * decision it is bound to. Nova had been careful about them and stored them
+   * honestly on its own row; the point is that being careful was the only thing
+   * standing between a caller and a payment Veyra never decided on, and care is
+   * not a mechanism. The tier in particular now comes from the decision
+   * re-taken at approval, which is where Nova was already reading it from. */
+  const quoteId = typeof row.approval?.quote?.quoteId === "string" ? row.approval.quote.quoteId : "";
+  if (!quoteId) {
+    throw new NovaError(
+      "This approval predates Veyra's quote records and cannot be paid. Ask for a fresh look.",
+      "quote_missing",
+      409,
+    );
+  }
   const relay = input.settleImpl ?? settleX402Call;
   const outcome = await relay({
-    resource: row.terms.resource,
-    method: row.request_method,
+    quoteId,
+    ownerWallet: getAddress(row.payer_wallet),
     requestBody: row.request_body,
-    accept,
     authorization,
     signature: signature(input.signature),
-    resourceDescriptor: row.approval.quote.resourceDescriptor,
-    /* The tier as it was at approval, not at proposal. They are usually the
-       same and when they are not, the stale one is wrong in the direction that
-       matters: a counterparty whose tier tightened between the card being drawn
-       and the payment being cleared would have had its answer relayed
-       unchecked. */
-    verificationRequired: row.approval.verificationRequired ?? row.verification_required,
-    declaredOutputSchema: row.approval.outputSchema ?? row.output_schema,
-    selectionId: row.selection_id,
-    selectionHash: row.approval.selectionHash,
-    clearanceDigest: row.clearance_digest,
-    counterpartyAgentId: `x402:${row.approval.candidateId}`,
-    capability: row.approval.capability,
   });
 
   if (outcome.kind === "refused") {

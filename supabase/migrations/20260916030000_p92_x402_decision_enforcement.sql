@@ -126,6 +126,15 @@ CREATE TABLE IF NOT EXISTS public.x402_quotes (
   payment_requirements_hash TEXT CHECK (payment_requirements_hash IS NULL OR payment_requirements_hash ~ '^0x[0-9a-fA-F]{64}$'),
   authorization_nonce TEXT NOT NULL CHECK (authorization_nonce ~ '^0x[0-9a-fA-F]{64}$'),
 
+  /* The challenge the price came from, kept whole: the accept, the resource
+     descriptor the seller published, and the request and response schemas read
+     out of it. Settle rebuilds the terms from this rather than taking them back
+     through the browser -- including the declared output schema, which is what
+     the post-call check measures a delivery against and which used to arrive
+     from the buyer being measured. All of it is public data the seller
+     published: no key material, no request body, nothing the caller wrote. */
+  challenge JSONB NOT NULL CHECK (jsonb_typeof(challenge) = 'object'),
+
   /* QUOTED   -- priced and bound, nothing signed yet
      CLAIMED  -- won by exactly one settle, which is about to relay
      DISPATCHED -- the authorization has left Veyra; it may have been redeemed
@@ -177,6 +186,7 @@ CREATE OR REPLACE FUNCTION public.create_x402_quote(
   p_gateway_batched BOOLEAN,
   p_payment_requirements_hash TEXT,
   p_authorization_nonce TEXT,
+  p_challenge JSONB,
   p_expires_at TIMESTAMPTZ
 )
 RETURNS JSONB
@@ -228,12 +238,14 @@ BEGIN
   INSERT INTO public.x402_quotes (
     quote_id, selection_id, owner_wallet, resource, method, request_body_hash,
     amount_atomic, pay_to, asset, network, verifying_contract, gateway_batched,
-    payment_requirements_hash, authorization_nonce, state, quoted_at, expires_at
+    payment_requirements_hash, authorization_nonce, challenge,
+    state, quoted_at, expires_at
   ) VALUES (
     p_quote_id, p_selection_id, p_owner_wallet, v_selection.resource, v_selection.method,
     p_request_body_hash, p_amount_atomic, p_pay_to, p_asset, p_network,
     p_verifying_contract, p_gateway_batched, p_payment_requirements_hash,
-    p_authorization_nonce, 'QUOTED', v_now, p_expires_at
+    p_authorization_nonce, p_challenge,
+    'QUOTED', v_now, p_expires_at
   );
 
   RETURN jsonb_build_object(

@@ -738,15 +738,16 @@ export function RunClient() {
       } catch {
         throw new Error("The request body is not valid JSON. Fix it before paying.");
       }
+      if (!decision.selectionId) {
+        throw new Error("This decision cannot be paid: Veyra has no record of it. Run the decision again.");
+      }
+      /* The decision and the body, and nothing else. The endpoint, the method
+         and the ceiling used to be sent from here; the server reads them from
+         the decision now, so this page can no longer name what it is paying
+         for -- which is the point. */
       const quoted = await post("/api/run/v1/quote", {
-        resource: decision.resource,
-        method: "POST",
+        selectionId: decision.selectionId,
         requestBody,
-        maxAmountUsdc: decision.maxExposureUsdc,
-        chainId: wallet.chainId,
-        // Sent so the server can refuse the quote outright when the provider's
-        // own schema rejects the body, rather than letting it be paid for.
-        inputSchema: decision.inputSchema ?? undefined,
       });
       /* The endpoint publishes its request schema inside the 402 challenge,
          which the quote route reads and the catalog may not carry at all. When
@@ -770,7 +771,7 @@ export function RunClient() {
         return;
       }
 
-      const { accept, nonce, quotedUsdc, resourceDescriptor } = quoted.payload as { accept: any; nonce: string; quotedUsdc: number; resourceDescriptor: unknown };
+      const { accept, nonce, quotedUsdc, quoteId } = quoted.payload as { accept: any; nonce: string; quotedUsdc: number; quoteId: string };
 
       // 2. Sign. The wallet shows the same recipient and amount as the panel,
       //    and the signature is what caps the spend — not this page. The chain
@@ -836,25 +837,16 @@ export function RunClient() {
       // 3. Relay. Veyra carries the signed authorization to the seller and
       //    returns what came back.
       setPayment({ stage: "settling", quotedUsdc, payTo: accept.payTo, funding, quoteDrift });
+      /* Four fields. The endpoint, the price, the payee, the tier, the
+         clearance and the counterparty are all read by the server from the
+         quote it wrote and the decision that quote is bound to. This page can
+         no longer describe the purchase it is paying for, and the body it does
+         send is hashed against what the quote priced rather than believed. */
       const settled = await post("/api/run/v1/settle", {
-        resource: decision.resource,
-        method: "POST",
+        quoteId,
         requestBody,
-        accept,
         authorization,
         signature,
-        resourceDescriptor,
-        // The tier asked for verification; this is what makes it happen rather
-        // than merely be announced.
-        verificationRequired: decision.postCallVerificationRequired,
-        declaredOutputSchema: decision.outputSchema ?? undefined,
-        // Files this purchase against the decision that authorized it, instead
-        // of leaving the decision log blank while money moves.
-        selectionId: decision.selectionId ?? undefined,
-        selectionHash: decision.selectionHash ?? undefined,
-        clearanceDigest: decision.clearance?.digest ?? undefined,
-        counterpartyAgentId: decision.candidateId ?? undefined,
-        capability: decision.capability ?? undefined,
       });
       if (!settled.response.ok) throw new Error(failureText(settled.payload?.error ?? settled.payload, settled.response.status));
       const result = settled.payload as any;

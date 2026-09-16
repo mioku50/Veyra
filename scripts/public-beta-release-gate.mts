@@ -166,6 +166,10 @@ runStep("Canonical Request Binding Tests", () => {
   execSync("npm run canonical:test", { cwd: root, stdio: "inherit" });
 });
 
+runStep("x402 Mandatory Decision Enforcement Tests", () => {
+  execSync("npm run x402-decision:test", { cwd: root, stdio: "inherit" });
+});
+
 runStep("Trust-Routed Execution Unit Tests", () => {
   execSync("npm run execution:test", { cwd: root, stdio: "inherit" });
 });

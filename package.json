@@ -135,6 +135,7 @@
     "p83:production-migrate": "node --experimental-transform-types --no-warnings --env-file-if-exists=.env.local scripts/apply-p83-production-migration.mts",
     "security-audit:production-verify": "node --experimental-transform-types --no-warnings --env-file-if-exists=.env.local scripts/verify-production-security-audit-schema.mts",
     "counterparty:bootstrap": "node --experimental-transform-types --no-warnings --env-file-if-exists=.env.local scripts/bootstrap-p55-counterparties.mts",
+    "x402-decision:test": "node --experimental-transform-types --no-warnings scripts/x402-decision-enforcement-tests.mts",
     "canonical:test": "node --experimental-transform-types --no-warnings scripts/canonical-request-tests.mts",
     "execution:test": "node --experimental-transform-types --no-warnings scripts/execution-unit-tests.mts",
     "execution:product-test": "node --experimental-transform-types --no-warnings --env-file-if-exists=.env.local scripts/execution-product-tests.mts",

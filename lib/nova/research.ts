@@ -28,7 +28,7 @@ import type {
 } from "../counterparty-selection/marketplace.ts";
 import { isExecutableTrustDecision } from "../trust-gate/types.ts";
 import type { TrustDecision, TrustDecisionLevel } from "../trust-gate/types.ts";
-import { quoteX402Call, type X402Quote } from "../x402/execution.ts";
+import { priceX402Call, quoteX402Call, type X402PricedTerms, type X402Quote } from "../x402/execution.ts";
 import { buildRequestBody } from "../x402/request-body.ts";
 import type { JsonSchema } from "../seller/json-schema.ts";
 import {
@@ -312,7 +312,7 @@ type PayableOutcome =
       kind: "payable";
       winner: MarketplaceRankedCandidate;
       request: ReturnType<typeof buildRequestBody>;
-      quote: X402Quote;
+      quote: X402PricedTerms;
       /** Set only for research bought from somebody other than the subject. */
       skipped: string | null;
     }
@@ -441,7 +441,12 @@ async function firstPayable(input: {
       continue;
     }
 
-    const quoted = await quoteX402Call({
+    /* Priced, not quoted. This loop is deciding which endpoint to use, and a
+       quote now requires a decision to already exist -- the price is part of
+       what makes the decision, so asking for one here would be circular.
+       Nothing this returns can be signed against: it mints no nonce and no
+       quote id, and settle accepts neither from a caller. */
+    const quoted = await priceX402Call({
       resource: candidate.marketplace.resource,
       method: candidate.marketplace.method,
       requestBody: request.body,
@@ -870,12 +875,14 @@ export async function revalidateResearch(input: {
   /* The live 402 challenge, raised by the body that will be paid for. The probe
      above cannot substitute for this: it sends nothing, and an endpoint that
      charges per call answers a different price to an empty request. */
+  /* A paying quote, because this is the step a signature is made against. It
+     is bound to the decision just re-taken above: the endpoint, the method and
+     the ceiling are read from that decision rather than from anything on the
+     card, and the quote it writes is what settle will claim. */
   const quoted = await quoteX402Call({
-    resource: shown.resource,
-    method: input.method === "GET" ? "GET" : "POST",
+    selectionId: selection.selectionId,
+    ownerWallet: requesterWallet,
     requestBody: input.requestBody,
-    maxAmountUsdc: RESEARCH_BUDGET_USDC,
-    inputSchema: input.inputSchema ?? null,
   });
   if (quoted.kind === "free") {
     /* Not a change to confirm: there is nothing to pay, so a confirm button
