@@ -46,7 +46,7 @@ export function CommandCenterLayout({
       <MobileSidebar open={mobileOpen} onClose={() => setMobileOpen(false)} />
       <div className="flex flex-1">
         {isConsole ? <Sidebar /> : null}
-        <div className="min-w-0 flex-1 pb-16 md:pb-0">{children}</div>
+        <div className="min-w-0 flex-1 pb-16 lg:pb-0">{children}</div>
       </div>
       <MobileBottomNav />
     </div>

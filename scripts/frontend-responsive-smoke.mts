@@ -123,19 +123,25 @@ try {
   await desktopSidebar.getByRole("link", { name: "Operations", exact: true }).waitFor();
   assert.equal(await desktopSidebar.getByRole("link", { name: "Services / Seller", exact: true }).count(), 0);
 
-  /* Narrow screens keep the drawer, and it carries the same four public links
-     the top bar does -- so the navigation is never smaller than the product,
-     only differently shaped. */
+  /* Narrow screens keep the drawer, and it carries the same four canonical
+     public links — Today / My Agent / Memory / Arc — that the top bar does at
+     lg+. The navigation vocabulary is never split: one list, two shapes. */
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto(`${baseUrl()}/`, { waitUntil: "load" });
   await page.getByRole("button", { name: "Open navigation" }).click();
   const mobileSidebar = page.locator('[data-testid="mobile-sidebar"]');
   assert.equal(await mobileSidebar.getAttribute("aria-hidden"), "false");
-  await mobileSidebar.getByRole("link", { name: "Decisions", exact: true }).click();
-  await page.waitForURL(`${baseUrl()}/executions`);
+  // All four canonical routes must be reachable from the drawer.
+  await mobileSidebar.getByRole("link", { name: "Today", exact: true }).waitFor();
+  await mobileSidebar.getByRole("link", { name: "My Agent", exact: true }).waitFor();
+  await mobileSidebar.getByRole("link", { name: "Memory", exact: true }).waitFor();
+  await mobileSidebar.getByRole("link", { name: "Arc", exact: true }).waitFor();
+  // Navigate via the drawer and confirm it closes.
+  await mobileSidebar.getByRole("link", { name: "Today", exact: true }).click();
+  await page.waitForURL(`${baseUrl()}/`);
   assert.equal(await mobileSidebar.getAttribute("aria-hidden"), "true");
 
-  console.log("[frontend-responsive-smoke] passed: curated deep links, query-backed Results controls, helper/requester/provider copy, keyboard labels, desktop/125%/150%/tablet/mobile overflow, operations navigation, and mobile close-on-navigation");
+  console.log("[frontend-responsive-smoke] passed: curated deep links, query-backed Results controls, helper/requester/provider copy, keyboard labels, desktop/125%/150%/tablet/mobile overflow, operations navigation, mobile close-on-navigation, and canonical four-route invariant");
 } finally {
   await browser.close();
 }

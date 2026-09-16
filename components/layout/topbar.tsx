@@ -36,7 +36,7 @@ export function Topbar({
             type="button"
             size="icon"
             variant="ghost"
-            className="md:hidden hover:bg-white/10 text-muted-foreground hover:text-foreground"
+            className="lg:hidden hover:bg-white/10 text-muted-foreground hover:text-foreground"
             onClick={onMenuClick}
             aria-label="Open navigation"
           >
@@ -106,13 +106,16 @@ export function Topbar({
         )}
 
         <div className="flex shrink-0 items-center gap-2.5">
-          <ActivityDropdown />
-          {/* Only where an on-chain action lives. A wallet button in the chrome
-              of a page that has not asked for one tells a first-time visitor
-              that this is a thing you need a wallet to use -- which is false,
-              and is the first thing they read. Nova asks for a wallet on the
-              card that needs it, at the moment it needs it, with the amount
-              already on screen. */}
+          {/* Bell only in the developer console — it polls an operator-only API
+              and shows "Owner session required" to any public visitor. On the
+              public surface Nova surfaces its own notifications inline, on the
+              card that produced them, not in a global dropdown. */}
+          {isConsole ? <ActivityDropdown /> : null}
+          {/* Wallet only where an on-chain action lives. A wallet button in the
+              chrome of a page that has not asked for one tells a first-time
+              visitor that this is a thing you need a wallet to use — which is
+              false. Nova asks for a wallet on the card that needs it, at the
+              moment it needs it, with the amount already on screen. */}
           {isConsole ? <WalletWidget compact /> : null}
           {isConsole ? (
             <>
@@ -129,10 +132,19 @@ export function Topbar({
               ) : null}
             </>
           ) : (
-            <Button asChild size="sm" variant="outline" className="hidden sm:inline-flex border-white/10 hover:bg-white/5 hover:border-primary/40">
-              <Link href="/console">
-                <Wrench className="size-4 text-primary" />
-                {BRAND.developerConsole}
+            /* Small wrench icon — accessible but unobtrusive. A text label
+               next to it told every visitor "there are internals here", which
+               was the wrong first impression for a consumer surface. The icon
+               alone is enough for a developer who knows to look for it. */
+            <Button
+              asChild
+              size="icon"
+              variant="ghost"
+              className="text-muted-foreground/50 hover:text-muted-foreground hover:bg-white/5"
+              title={BRAND.developerConsole}
+            >
+              <Link href="/console" aria-label={BRAND.developerConsole}>
+                <Wrench className="size-4" />
               </Link>
             </Button>
           )}

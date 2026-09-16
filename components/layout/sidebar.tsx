@@ -196,7 +196,7 @@ export function MobileSidebar({
     <div
       data-testid="mobile-sidebar"
       aria-hidden={!open}
-      className={cn("fixed inset-0 z-50 md:hidden", !open && "pointer-events-none")}
+      className={cn("fixed inset-0 z-50 lg:hidden", !open && "pointer-events-none")}
     >
       <button
         type="button"
