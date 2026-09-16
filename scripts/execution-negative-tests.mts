@@ -24,6 +24,7 @@ import type { ExecutionMandate } from "../lib/execution/types.ts";
 import { Erc8183ExecutionAdapter } from "../lib/execution/adapters/erc8183.ts";
 import { privateKeyToAccount } from "viem/accounts";
 import { authenticateExecutionCaller, executionAuthMessage } from "../lib/execution/auth.ts";
+import { canonicalRequestHash } from "../lib/canonical-request.ts";
 import { clearMemoryAuthNonces } from "../lib/execution/auth-nonce.ts";
 
 async function runNegativeTests() {
@@ -258,6 +259,8 @@ async function runNegativeTests() {
     const signedRequest = async (url: string, nonce: string, options?: {
       signPath?: string;
       signAudience?: string;
+      signBody?: unknown;
+      sendBody?: unknown;
       signature?: string;
       timestamp?: number;
     }) => {
@@ -265,12 +268,15 @@ async function runNegativeTests() {
       const parsed = new URL(url);
       const path = options?.signPath ?? `${parsed.pathname}${parsed.search}`;
       const audience = options?.signAudience ?? parsed.origin;
+      const sendBody = options?.sendBody;
+      const signBody = options && "signBody" in options ? options.signBody : sendBody;
       const signature = options?.signature ?? await account.signMessage({
         message: executionAuthMessage({
           wallet: account.address,
           audience,
           method: "POST",
           path,
+          body: canonicalRequestHash(signBody === undefined ? null : signBody),
           nonce,
           timestamp: ts,
         }),
@@ -282,7 +288,9 @@ async function runNegativeTests() {
           "x-wallet-signature": signature,
           "x-wallet-timestamp": String(ts),
           "x-wallet-nonce": nonce,
+          ...(sendBody === undefined ? {} : { "content-type": "application/json" }),
         },
+        ...(sendBody === undefined ? {} : { body: JSON.stringify(sendBody) }),
       });
     };
 
@@ -356,6 +364,36 @@ async function runNegativeTests() {
       "Signed headers must not be served on an origin this deployment does not answer for",
     );
 
+    /* c5) The body. A signature made for one request body must not authenticate
+           another at the same path -- "transfer 1" and "transfer 1000" were the
+           same signed sentence until the digest went into it. */
+    await assert.rejects(
+      async () => authenticateExecutionCaller(
+        await signedRequest(MANDATES, "nonce_b6", {
+          signBody: { maxPerDayUsdc: 1 },
+          sendBody: { maxPerDayUsdc: 1000 },
+        }),
+      ),
+      (err: any) => err.code === "AUTH_SIGNATURE_INVALID",
+      "A signature made for one body must not authenticate another",
+    );
+    const sameBody = await authenticateExecutionCaller(
+      await signedRequest(MANDATES, "nonce_b7", { sendBody: { maxPerDayUsdc: 1 } }),
+    );
+    assert.equal(sameBody.source, "signed_header", "and the body it was signed for still authenticates");
+
+    /* c6) By value, not by bytes. The same request with its keys written in
+           another order is the same request, and must not need a new
+           signature. */
+    const reordered = await signedRequest(MANDATES, "nonce_b8", {
+      signBody: { a: 1, b: 2 },
+      sendBody: { b: 2, a: 1 },
+    });
+    assert.equal(
+      (await authenticateExecutionCaller(reordered)).source, "signed_header",
+      "key order is not meaning, and must not invalidate a signature",
+    );
+
     /* d) And the ordering. The nonce used to be consumed before the signature
           was checked, so anyone could burn somebody else's nonce for free. A
           rejected signature must leave the nonce spendable by its owner. */
@@ -386,7 +424,7 @@ async function runNegativeTests() {
       "The legacy wallet:timestamp message must no longer authenticate anything",
     );
 
-    console.log("✅ Signed-header auth binds audience, method, path with its query and nonce, is single-use, refuses the legacy message, refuses another deployment's signature, and cannot be burned by a forgery.");
+    console.log("✅ Signed-header auth binds audience, method, path with its query, the request body by value and nonce, is single-use, refuses the legacy message, refuses another deployment's signature, and cannot be burned by a forgery.");
   }
 
   // 14. x402 Protocol violations

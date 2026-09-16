@@ -112,6 +112,27 @@ export function clearX402DecisionMemory(): void {
   }
 }
 
+/**
+ * What one wallet may commit through the browser rail in a UTC day.
+ *
+ * There was no such number. X402_ABSOLUTE_MAX_USDC bounded a single call and
+ * nothing bounded a hundred of them, because a browser purchase carries no
+ * mandate and the daily cap lived on mandates. The deployment picks the figure
+ * -- it is a policy, not a fact -- and the default is deliberately modest:
+ * a ceiling nobody chose should be one that makes itself noticed rather than
+ * one that never binds.
+ *
+ * Set X402_BROWSER_DAILY_CAP_USDC to "0" to lift it, which is the state this
+ * rail was in until now and which should be a decision somebody makes on
+ * purpose.
+ */
+export function browserDailyCapAtomic(): string | null {
+  const configured = process.env.X402_BROWSER_DAILY_CAP_USDC?.trim();
+  const usdc = configured === undefined || configured === "" ? 25 : Number(configured);
+  if (!Number.isFinite(usdc) || usdc <= 0) return null;
+  return BigInt(Math.floor(usdc * 1_000_000)).toString();
+}
+
 export function newQuoteId(): string {
   return `vq_${randomBytes(16).toString("hex")}`;
 }
@@ -323,6 +344,21 @@ export async function claimX402Quote(
       memoryQuotes.set(quoteId, { ...quote, state: "EXPIRED" });
       return { ok: false, reason: "QUOTE_EXPIRED" };
     }
+    const cap = browserDailyCapAtomic();
+    if (cap) {
+      const dayStart = new Date();
+      dayStart.setUTCHours(0, 0, 0, 0);
+      let committed = BigInt(0);
+      for (const other of memoryQuotes.values()) {
+        if (other.ownerWallet.toLowerCase() !== ownerWallet.toLowerCase()) continue;
+        if (!COMMITTED_QUOTE_STATES.has(other.state)) continue;
+        if (Date.parse(other.quotedAt) < dayStart.getTime()) continue;
+        committed += BigInt(other.amountAtomic);
+      }
+      if (committed + BigInt(quote.amountAtomic) > BigInt(cap)) {
+        return { ok: false, reason: "DAILY_CAP_EXCEEDED" };
+      }
+    }
     memoryQuotes.set(quoteId, { ...quote, state: "CLAIMED" });
     return { ok: true, quote };
   }
@@ -330,6 +366,7 @@ export async function claimX402Quote(
   const { data, error } = await getByoaClient().rpc("claim_x402_quote", {
     p_quote_id: quoteId,
     p_owner_wallet: ownerWallet,
+    p_daily_cap_atomic: browserDailyCapAtomic(),
   });
   if (error) return { ok: false, reason: "QUOTE_STORE_UNAVAILABLE" };
   const result = data as { success?: boolean; reason?: string; state?: X402QuoteState; quote?: Record<string, any> } | null;
@@ -380,6 +417,13 @@ export async function claimX402Quote(
  * production -- the execution ledger learned that with a usage map keyed by
  * mandate alone.
  */
+/** Spend that has been committed: a signature exists and may be in a seller's
+ *  hands. SETTLEMENT_FAILED is excluded -- the chain said it was never
+ *  redeemed -- and so is QUOTED, against which nothing has been signed. */
+const COMMITTED_QUOTE_STATES = new Set<X402QuoteState>([
+  "CLAIMED", "DISPATCHED", "SETTLED", "SETTLEMENT_UNVERIFIED",
+]);
+
 const ALLOWED_QUOTE_MOVES: Record<string, readonly X402QuoteState[]> = {
   /* Back to QUOTED only from CLAIMED, and only for a relay that never left. */
   CLAIMED: ["DISPATCHED", "QUOTED"],

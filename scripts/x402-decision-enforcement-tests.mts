@@ -209,6 +209,54 @@ store.clearX402DecisionMemory();
   assert.deepEqual([claimed.ok, (claimed as any).reason], [false, "QUOTE_EXPIRED"]);
 }
 
+/* A per-call ceiling is not a budget. One wallet used to be able to make a
+   hundred separate five-dollar decisions, each individually within policy,
+   because a browser purchase carries no mandate and the daily cap lived on
+   mandates. Checked at the claim, which is the moment a signature is committed
+   -- checking at the quote would let ten quotes each under the remaining cap
+   be minted and then all claimed. */
+{
+  process.env.X402_BROWSER_DAILY_CAP_USDC = "0.03";
+  store.clearX402DecisionMemory();
+  const live = selection({ maxExposureAtomic: "20000" });
+  await store.recordX402Selection(live);
+
+  const makeQuote = async (amountAtomic: string) => {
+    const created = await store.createX402Quote(quoteInput(live.selectionId, {
+      amountAtomic,
+      authorizationNonce: `0x${Math.floor(Math.random() * 1e16).toString(16).padStart(64, "0")}`,
+    }));
+    assert.equal(created.ok, true);
+    return (created as any).quoteId as string;
+  };
+
+  // Three quotes of 0.02 each, all written: a quote is an opportunity.
+  const first = await makeQuote("20000");
+  const second = await makeQuote("20000");
+
+  assert.equal((await store.claimX402Quote(first, OWNER)).ok, true, "the first is within the day's cap");
+  const capped = await store.claimX402Quote(second, OWNER);
+  assert.deepEqual(
+    [capped.ok, (capped as any).reason], [false, "DAILY_CAP_EXCEEDED"],
+    "and the second would take the wallet past it, so nothing is relayed",
+  );
+
+  // A refused settlement does not count against the day: the chain said the
+  // authorization was never redeemed.
+  await store.advanceX402Quote({ quoteId: first, expectedState: "CLAIMED", targetState: "DISPATCHED" });
+  await store.advanceX402Quote({ quoteId: first, expectedState: "DISPATCHED", targetState: "SETTLEMENT_FAILED" });
+  assert.equal(
+    (await store.claimX402Quote(second, OWNER)).ok, true,
+    "a payment the chain proved was never redeemed must not hold budget hostage",
+  );
+
+  // Lifting it is a decision somebody makes, not a default.
+  process.env.X402_BROWSER_DAILY_CAP_USDC = "0";
+  assert.equal(store.browserDailyCapAtomic(), null);
+  delete process.env.X402_BROWSER_DAILY_CAP_USDC;
+  assert.equal(store.browserDailyCapAtomic(), BigInt(25_000_000).toString(), "and the default binds rather than never binding");
+}
+
 /* The body binds by value, and the binding is the shared canonical hash -- so
    the same request built in a different key order is the same request, and a
    changed one is not. */
@@ -218,4 +266,4 @@ store.clearX402DecisionMemory();
   assert.notEqual(priced, canonicalRequestHash({ query: "what changed", limit: 4 }));
 }
 
-console.log("[x402-decision-enforcement-test] passed: a quote exists only against a live decision owned by the same wallet, naming the decided payee, asset and chain at or under the decided ceiling and expiring no later than it; resource, method and verification tier come from the decision and cannot be sent; and one signature is claimed once, with the only walk-back being a relay that never left");
+console.log("[x402-decision-enforcement-test] passed: a quote exists only against a live decision owned by the same wallet, naming the decided payee, asset and chain at or under the decided ceiling and expiring no later than it; resource, method and verification tier come from the decision and cannot be sent; and one signature is claimed once, with the only walk-back being a relay that never left; and one wallet cannot turn a per-call ceiling into an unlimited day");

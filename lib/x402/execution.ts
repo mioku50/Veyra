@@ -472,6 +472,7 @@ export async function quoteX402Call(input: X402QuoteRequest): Promise<X402QuoteO
  *  database's. Each of these is a real disagreement between the live challenge
  *  and the decision, and none of them is retryable without deciding again. */
 const SETTLE_REFUSAL_MESSAGES: Record<string, string> = {
+  DAILY_CAP_EXCEEDED: "This wallet has reached what Veyra will relay for it today. Nothing was paid, and the authorization was never handed to the seller.",
   QUOTE_NOT_FOUND: "No quote with that id. Quote again before paying.",
   QUOTE_NOT_OWNED: "No quote with that id.",
   QUOTE_ALREADY_CLAIMED: "That quote has already been used. A signed authorization is relayed once and never re-sent -- if the result did not reach you, reconcile it rather than paying again.",

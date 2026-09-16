@@ -12,7 +12,17 @@ export const dynamic = "force-dynamic";
 
 export async function POST(req: Request) {
   try {
-    const body = await req.json();
+    /* Read once, as text, because the signed header covers the body and this
+       route authenticates after parsing it. Handing the same bytes to both is
+       what lets the binding exist here at all: cloning a request whose body has
+       already been consumed throws. */
+    const rawBody = await req.text();
+    let body: any;
+    try {
+      body = rawBody.trim() === "" ? {} : JSON.parse(rawBody);
+    } catch {
+      return NextResponse.json({ error: "A JSON body is required", code: "INVALID_REQUEST" }, { status: 400 });
+    }
     const { selectionId, mandateId, requestedAmountUsdc, mode = "PREPARE", executorWallet } = body;
 
     if (!selectionId) {
@@ -28,7 +38,7 @@ export async function POST(req: Request) {
     let finalExecutorWallet = executorWallet;
 
     if (mandateId) {
-      const caller = await authenticateExecutionCaller(req);
+      const caller = await authenticateExecutionCaller(req, { rawBody });
       const mandate = await getExecutionMandate(mandateId);
       if (!mandate) {
         return NextResponse.json({ error: "Mandate not found", code: "MANDATE_NOT_FOUND" }, { status: 404 });

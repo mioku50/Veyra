@@ -6,6 +6,7 @@
 import { getAddress, isAddress, verifyMessage, keccak256, toBytes, type Address } from "viem";
 import { BYOA_OWNER_SESSION_COOKIE, verifyOwnerSession } from "../byoa/auth.ts";
 import { originSet } from "../byoa/config.ts";
+import { canonicalRequestHash } from "../canonical-request.ts";
 import { claimAuthNonce } from "./auth-nonce.ts";
 import { ExecutionError } from "./executor.ts";
 
@@ -45,21 +46,25 @@ export const SIGNED_HEADER_WINDOW_MS = 60_000;
  * used to be signed, so every parameter after the `?` was a term the request
  * could change and the signature did not cover.
  *
- * The request body is still not covered. Binding it means every route must hand
- * the bytes it is going to parse to this function, and today some read the body
- * before authenticating and some after -- a change to the calling convention
- * rather than to a message format. It also needs one canonicalization rule
- * shared with the durable decision record, which has to bind the same digest;
- * two independent rules for hashing the same body is how a signature comes to
- * verify in one place and not the other. So it belongs with that work, not
- * beside it. Until then: audience, method, full path, nonce and timestamp,
- * single use enforced durably.
+ * `body` is the last term, and the one that took longest. Binding it needed one
+ * canonicalization rule shared with whatever else has to agree about "the same
+ * request" -- two independent JSON hashers is how a signature comes to verify
+ * in one place and not the other -- and it needed every route to hand over the
+ * bytes it is about to parse, which some read before authenticating and some
+ * after. Both exist now: {@link canonicalRequestHash} is the one rule, shared
+ * with the durable x402 quote, and routes that have already read the body pass
+ * it in rather than making this function guess.
+ *
+ * The body binds by value, not by bytes. A caller that serializes its keys in a
+ * different order sends the same request and gets the same signature; a caller
+ * that changes a value does not.
  */
 export function executionAuthMessage(input: {
   wallet: string;
   audience: string;
   method: string;
   path: string;
+  body: string;
   nonce: string;
   timestamp: number | string;
 }): string {
@@ -69,9 +74,62 @@ export function executionAuthMessage(input: {
     `Audience: ${input.audience}`,
     `Method: ${input.method.toUpperCase()}`,
     `Path: ${input.path}`,
+    `Body: ${input.body}`,
     `Nonce: ${input.nonce}`,
     `Timestamp: ${input.timestamp}`,
   ].join("\n");
+}
+
+/**
+ * The digest of the body this request carries, by value.
+ *
+ * Empty and absent hash alike, because a GET with no body and a POST with a
+ * null body are the same request to any route. A body that is not JSON is
+ * refused rather than hashed as text: every route behind this authenticator
+ * parses JSON, so a non-JSON body is a request that was going to fail anyway,
+ * and hashing raw bytes would quietly make the binding serialization-sensitive
+ * for exactly one caller.
+ */
+export async function executionAuthBodyDigest(
+  req: Request,
+  rawBody?: string,
+): Promise<string> {
+  let raw = rawBody;
+  if (raw === undefined) {
+    try {
+      /* Cloned, so the route still gets to read it. A route that has already
+         read the body passes the text in instead -- cloning a consumed request
+         throws, and falling back to "no body" there would hand out a signature
+         that covers nothing. */
+      raw = await req.clone().text();
+    } catch {
+      throw new ExecutionError(
+        "This request body could not be read for authentication.",
+        "AUTH_BODY_UNREADABLE",
+        400,
+      );
+    }
+  }
+  if (raw.trim() === "") return canonicalRequestHash(null);
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    throw new ExecutionError(
+      "Signed-header authentication covers the request body, which must be JSON.",
+      "AUTH_BODY_NOT_JSON",
+      415,
+    );
+  }
+  try {
+    return canonicalRequestHash(parsed);
+  } catch {
+    throw new ExecutionError(
+      "This request body cannot be represented canonically, so it cannot be signed for.",
+      "AUTH_BODY_UNREPRESENTABLE",
+      422,
+    );
+  }
 }
 
 /**
@@ -117,7 +175,15 @@ export function executionAuthAudience(req: Request): string {
  * Authenticates the caller for execution and mandate management routes.
  * Never trusts a client-supplied wallet string without cryptographic or session proof.
  */
-export async function authenticateExecutionCaller(req: Request): Promise<AuthenticatedCaller> {
+export async function authenticateExecutionCaller(
+  req: Request,
+  options?: {
+    /** For routes that read the body before authenticating. Cloning a consumed
+     *  request throws, and a signature that silently covered no body would be
+     *  the fallback this whole finding was about. */
+    rawBody?: string;
+  },
+): Promise<AuthenticatedCaller> {
   const now = Date.now();
 
   // 1. Check explicit test mode authorization
@@ -186,6 +252,7 @@ export async function authenticateExecutionCaller(req: Request): Promise<Authent
        being asked for as the pathname, and it used to be unsigned. */
     const pathname = `${url.pathname}${url.search}`;
     const audience = executionAuthAudience(req);
+    const bodyDigest = await executionAuthBodyDigest(req, options?.rawBody);
     const normWallet = getAddress(walletHeader);
     /* A caller who sends no nonce gets one derived from what they did sign, so
        the header stays optional without the message losing a term. It is a
@@ -196,7 +263,7 @@ export async function authenticateExecutionCaller(req: Request): Promise<Authent
     const valid = await verifyMessage({
       address: normWallet,
       message: executionAuthMessage({
-        wallet: walletHeader, audience, method, path: pathname, nonce, timestamp: ts,
+        wallet: walletHeader, audience, method, path: pathname, body: bodyDigest, nonce, timestamp: ts,
       }),
       signature: signatureHeader as `0x${string}`,
     }).catch(() => false);
@@ -206,7 +273,7 @@ export async function authenticateExecutionCaller(req: Request): Promise<Authent
          A caller holding a key and getting the message format wrong should not
          spend an afternoon reading it as a missing header. */
       throw new ExecutionError(
-        "Authentication signature does not match the request. Sign the exact message naming wallet, audience, method, path (with query), nonce and timestamp.",
+        "Authentication signature does not match the request. Sign the exact message naming wallet, audience, method, path (with query), body digest, nonce and timestamp.",
         "AUTH_SIGNATURE_INVALID",
         401
       );
