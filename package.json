@@ -166,7 +166,9 @@
     "nova-arc-proof:test": "node --experimental-transform-types --no-warnings scripts/nova-arc-proof-tests.mts",
     "p84:production-migrate": "node --experimental-transform-types --no-warnings --env-file-if-exists=.env.local scripts/apply-p84-production-migration.mts",
     "nova:arc:publish": "node --experimental-transform-types --no-warnings --env-file-if-exists=.env.local scripts/publish-nova-arc-proofs.mts",
-    "nova:research:live": "node --experimental-transform-types --no-warnings --env-file-if-exists=.env.local scripts/nova-research-live.mts"
+    "nova:research:live": "node --experimental-transform-types --no-warnings --env-file-if-exists=.env.local scripts/nova-research-live.mts",
+    "frontend:audit-test": "node --experimental-transform-types --no-warnings scripts/frontend-audit-tests.mts",
+    "frontend:audit-browser": "node --experimental-transform-types --no-warnings scripts/frontend-audit-browser.mts"
   },
   "dependencies": {
     "@circle-fin/adapter-viem-v2": "^1.14.0",

@@ -5,6 +5,8 @@
 
 "use client";
 
+import { formatUsdc } from "@/lib/execution/presentation";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { encodeFunctionData } from "viem";
@@ -55,6 +57,17 @@ import { signPaymentAuthorization, type SigningTerms } from "@/lib/x402/sign-pay
  * a legend.
  */
 
+function groupWatchlist(signals: NovaSignal[]): Array<[string, NovaSignal[]]> {
+  const groups = new Map<string, NovaSignal[]>();
+  for (const signal of signals) {
+    const source = signal.subjectLabel ?? signal.subjectId ?? signal.signalId;
+    const group = groups.get(source) ?? [];
+    group.push(signal);
+    groups.set(source, group);
+  }
+  return [...groups];
+}
+
 const STORAGE = { id: "veyra.nova.id", key: "veyra.nova.key" } as const;
 
 /**
@@ -72,7 +85,7 @@ export type NovaView = "today" | "agent" | "memory" | "arc";
 const VIEW_TITLE: Record<Exclude<NovaView, "today">, string> = {
   agent: "Your agent",
   memory: "What it has learned",
-  arc: "What it has earned",
+  arc: "Identity & Trust",
 };
 
 /* One claim, rendered the way the invariant tests read it. Figures are set
@@ -97,7 +110,7 @@ const VIEW_BLURB: Record<Exclude<NovaView, "today">, (name: string, state: ArcId
   arc: (name, state) => arcViewBlurb(state, name),
 };
 
-type Stage = "loading" | "create" | "working" | "brief";
+type Stage = "unavailable" | "loading" | "create" | "working" | "brief";
 
 /**
  * Where one item's investigation has got to.
@@ -208,6 +221,7 @@ export function NovaClient({ view = "today" }: { view?: NovaView } = {}) {
   const [identity, setIdentity] = useState<{ publicId: string; ownerSecret: string } | null>(null);
   const [brief, setBrief] = useState<NovaBrief | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [memoryTab, setMemoryTab] = useState<"learned" | "purchases">("learned");
   const [showNoise, setShowNoise] = useState(false);
 
   const [name, setName] = useState("Nova");
@@ -262,7 +276,7 @@ export function NovaClient({ view = "today" }: { view?: NovaView } = {}) {
       },
     });
     const payload = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(payload?.error?.message ?? "Nova could not be reached.");
+    if (!response.ok) throw new Error(response.status === 401 || response.status === 403 ? "This recovery key was not accepted. Your saved key has been kept." : response.status === 404 ? "This agent was not found. Your recovery key has been kept so you can retry or restore access." : "Nova is temporarily unavailable. Your saved access has been kept.");
     return payload;
   }, []);
 
@@ -308,15 +322,8 @@ export function NovaClient({ view = "today" }: { view?: NovaView } = {}) {
     }
     setIdentity(stored);
     loadBrief(stored).catch((cause: Error) => {
-      /* An agent this browser remembers but the server does not is a dead end a
-         person cannot reload their way out of, so the local record goes and
-         they land on the create screen rather than on an error forever. */
-      try {
-        window.localStorage.removeItem(STORAGE.id);
-        window.localStorage.removeItem(STORAGE.key);
-      } catch { /* nothing to clean up */ }
       setError(cause.message);
-      setStage("create");
+      setStage("unavailable");
     });
   }, [loadBrief]);
 
@@ -767,6 +774,21 @@ export function NovaClient({ view = "today" }: { view?: NovaView } = {}) {
     );
   }
 
+  if (stage === "unavailable" && identity) {
+    return <Shell>
+      <h1 className="text-2xl font-semibold">Your agent could not be loaded</h1>
+      <p className="mt-3 text-sm text-muted-foreground">Your saved access is still in this browser. Retry when the connection returns, or restore another recovery key below.</p>
+      <Notice tone="error">{error ?? "Nova is unavailable."}</Notice>
+      <button className="mt-4 rounded-lg border px-4 py-3" disabled={busy} onClick={async () => {
+        setBusy(true); setError(null);
+        try { await loadBrief(identity); } catch (cause) { setError(cause instanceof Error ? cause.message : "Could not load your agent."); }
+        finally { setBusy(false); }
+      }}>{busy ? "Retrying…" : "Retry"}</button>
+      <RecoveryKey who={identity} emphatic />
+      <Panel className="mt-4"><label htmlFor="restore-unavailable" className="text-sm">Restore from another recovery key</label><input id="restore-unavailable" className="mt-2 w-full rounded-lg border bg-card p-3" type="password" autoComplete="off" value={restoreText} onChange={event => setRestoreText(event.target.value)} /><button className="mt-3 rounded-lg border px-4 py-2" disabled={restoring || !restoreText.trim()} onClick={() => void restore()}>{restoring ? "Restoring…" : "Restore"}</button></Panel>
+    </Shell>;
+  }
+
   if (stage === "create") {
     return (
       <Shell>
@@ -1032,6 +1054,7 @@ export function NovaClient({ view = "today" }: { view?: NovaView } = {}) {
       </header>
 
       {error ? <Notice tone="error">{error}</Notice> : null}
+      {wallet.error ? <Notice tone="error">{wallet.error}</Notice> : null}
       {justCreated && identity ? <RecoveryKey who={identity} emphatic /> : null}
       {brief.wokeFromDormancy ? (
         <Notice tone="warn">
@@ -1103,17 +1126,11 @@ export function NovaClient({ view = "today" }: { view?: NovaView } = {}) {
                 ) : said[signal.signalId] === "investigating" ? null : (
                   <>
                     <Verb onClick={() => say(signal.signalId, "useful")}>Useful</Verb>
-                    <Verb onClick={() => say(signal.signalId, "follow")}>
-                      Follow {signal.subjectLabel ?? "this"}
-                    </Verb>
-                    <Verb onClick={() => say(signal.signalId, "not_interesting")}>
-                      Not interesting
-                    </Verb>
-                    {categoryPhraseFor(signal.kind) ? (
-                      <Verb onClick={() => say(signal.signalId, "ignore_kind")}>
-                        Ignore {categoryPhraseFor(signal.kind)}
-                      </Verb>
-                    ) : null}
+                    <DropdownMenu><DropdownMenuTrigger asChild><button className="rounded-lg border px-3 py-2 text-sm" aria-label={`More actions for ${signal.headline}`}>More</button></DropdownMenuTrigger><DropdownMenuContent>
+                      <DropdownMenuItem onSelect={() => void say(signal.signalId, "follow")}>Follow {signal.subjectLabel ?? "this"}</DropdownMenuItem>
+                      <DropdownMenuItem onSelect={() => void say(signal.signalId, "not_interesting")}>Not interesting</DropdownMenuItem>
+                      {categoryPhraseFor(signal.kind) && <DropdownMenuItem onSelect={() => void say(signal.signalId, "ignore_kind")}>Ignore {categoryPhraseFor(signal.kind)}</DropdownMenuItem>}
+                    </DropdownMenuContent></DropdownMenu>
                   </>
                 )}
               </div>
@@ -1193,16 +1210,8 @@ export function NovaClient({ view = "today" }: { view?: NovaView } = {}) {
 
       {view === "today" ? <ShadowNight brief={brief} onFeedback={rateDecision} /> : null}
 
-      {view === "agent" ? (
-        <AutonomyPanel
-          brief={brief}
-          onSign={() => void signPreviewMandate()}
-          signing={signingMandate}
-          note={mandateNote}
-          walletReady={wallet.providerAvailable || !wallet.providerSettled}
-        />
-      ) : null}
 
+      {view === "agent" && <Panel className="mt-4"><Label>Mode and budget</Label><p className="mt-3 text-sm">{brief.shadow.state === "watching" ? "Autonomy preview on · no automatic payments" : "Manual approval · asks before spending"}</p>{brief.shadow.limits && <p className="mt-2 text-sm text-muted-foreground">{formatUsdc(brief.shadow.limits.perActionUsdc)} USDC per action · {formatUsdc(brief.shadow.limits.dailyUsdc)} USDC per day</p>}</Panel>}
       {view === "agent" ? (
         <Panel className="mt-4">
           <Label>What {brief.agent.name} watches</Label>
@@ -1264,8 +1273,7 @@ export function NovaClient({ view = "today" }: { view?: NovaView } = {}) {
               {draftInterests.some((entry) => entry.toLowerCase() === "arc") ? (
                 <p className="mt-4 text-xs leading-relaxed text-muted-foreground">
                   Arc finds endpoints whose work is about Arc, USDC and stablecoins. They settle
-                  where the sellers are, which today is Base — Circle&apos;s catalogue lists none
-                  on Arc. Each card says which chain it pays on.
+                  where the sellers are. Each card says which chain it pays on.
                 </p>
               ) : null}
 
@@ -1306,10 +1314,10 @@ export function NovaClient({ view = "today" }: { view?: NovaView } = {}) {
                 of it.
               </p>
               <ul className="mt-4 space-y-3">
-                {brief.watchlist.map((signal) => (
+                {groupWatchlist(brief.watchlist).map(([source, signals]) => <li key={source}><details className="rounded-lg border p-3"><summary className="cursor-pointer text-sm">{source} · {signals.length} {signals.length === 1 ? "update" : "updates"}</summary><ul className="mt-3 space-y-3">{signals.map((signal) => (
                   <li key={signal.signalId} className="border-t border-border/40 pt-3 first:border-t-0 first:pt-0">
                     <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-                      <span className="text-sm text-foreground">{signal.headline}</span>
+                      <span className="text-sm text-foreground">{signal.headline}</span><time className="text-xs text-muted-foreground" dateTime={signal.observedAt}>{new Date(signal.observedAt).toLocaleString()}</time>
                       {signal.settlesOn ? (
                         <span className="font-mono text-[11px] text-muted-foreground">
                           pays on {signal.settlesOn}
@@ -1343,7 +1351,7 @@ export function NovaClient({ view = "today" }: { view?: NovaView } = {}) {
                       </div>
                     )}
                   </li>
-                ))}
+                ))}</ul></details></li>)}
               </ul>
             </div>
           ) : null}
@@ -1356,7 +1364,18 @@ export function NovaClient({ view = "today" }: { view?: NovaView } = {}) {
         </Panel>
       ) : null}
 
-      {view === "memory" ? (
+      {view === "agent" ? (
+        <details className="mt-4 rounded-xl border p-5"><summary className="cursor-pointer font-medium">Autonomy · mode and spending limits</summary><AutonomyPanel
+          brief={brief}
+          onSign={() => void signPreviewMandate()}
+          signing={signingMandate}
+          note={mandateNote}
+          walletReady={wallet.providerAvailable || !wallet.providerSettled}
+        /></details>
+      ) : null}
+
+      {view === "memory" && <div className="mt-4 flex gap-2" aria-label="Memory sections">{(["learned", "purchases"] as const).map(tab => <button key={tab} aria-pressed={memoryTab === tab} onClick={() => setMemoryTab(tab)} className={`rounded-lg px-4 py-3 text-sm ${memoryTab === tab ? "bg-primary/20" : "border"}`}>{tab === "learned" ? "Learned" : "Purchases"}</button>)}</div>}
+      {view === "memory" && memoryTab === "learned" ? (
       <Panel className="mt-4">
         <Label>What {brief.agent.name} knows about you</Label>
         <dl className="mt-4 space-y-0">
@@ -1393,7 +1412,7 @@ export function NovaClient({ view = "today" }: { view?: NovaView } = {}) {
       </Panel>
       ) : null}
 
-      {view === "memory" ? <Receipts brief={brief} /> : null}
+      {view === "memory" && memoryTab === "purchases" ? <Receipts brief={brief} /> : null}
 
       {view === "arc" ? (
         <>
@@ -1411,23 +1430,7 @@ export function NovaClient({ view = "today" }: { view?: NovaView } = {}) {
               Arc as an interest, gets shown a payment, and the payment settles
               on Base. That looks like a contradiction until you know which half
               of the transaction Arc holds, and nobody should have to guess. */}
-          <Panel className="mt-4">
-            <Label>Why the money is not on Arc</Label>
-            <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
-              Circle&apos;s service catalogue lists{" "}
-              <span className="font-mono text-foreground">1,139</span> paid endpoints and not one
-              of them is on Arc, so when {agentName} buys an answer it pays where the sellers
-              are — usually Base, and the card says so before you sign.
-            </p>
-            <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
-              What happens on Arc is the part {BRAND.name} is responsible for: the decision.
-              Every authorisation is signed against the Trust Gate on Arc and verified there
-              before a wallet is ever asked, so the record of what was allowed, for how much and
-              to whom lives on Arc even when the payment does not. That is also where this
-              agent&apos;s identity and standing will be, once there is a history worth pointing
-              at.
-            </p>
-          </Panel>
+          <details className="mt-4 rounded-xl border p-5"><summary className="cursor-pointer text-sm font-medium">Payment networks and Arc records</summary><p className="mt-3 text-sm text-muted-foreground">Each purchase names the seller’s network and source of funds before you sign. Payments can use mainnet USDC even when this agent’s identity is on Arc Testnet. Arc attestations record the decision and evidence separately from the payment.</p></details>
         </>
       ) : null}
       {view === "agent" && !justCreated && identity
@@ -1479,13 +1482,6 @@ function Standing({
   /* Counted from the purchases, not from three proxies for one of them. The
      old row printed "verified research 1 / decision 1 / outcome 1" off a
      single Exa call, which reads as a history and is one line of it. */
-  const steps = [
-    { label: "Attempts", value: String(standing.veyraDecisions) },
-    { label: "Money actually moved", value: String(standing.observedOutcomes) },
-    { label: "Passed the delivery check", value: String(standing.verifiedResearch) },
-    { label: "Spent", value: `$${standing.spentUsdc.toFixed(4)}` },
-    { label: "Attested on Arc", value: String(standing.attestedOnArc) },
-  ];
 
   /* What is actually on Arc, as opposed to what Veyra says about itself. The
      three numbers above are read out of Veyra's own database; these are
@@ -1558,20 +1554,6 @@ function Standing({
         </>
       )}
 
-      <div className="mt-6 border-t border-border/60 pt-5">
-        <Label>What it has earned</Label>
-      </div>
-      <dl className="mt-4 space-y-0">
-        {steps.map((step) => (
-          <Row
-            key={step.label}
-            label={step.label}
-            value={step.value}
-            tone={step.value === "0" ? "idle" : "good"}
-          />
-        ))}
-      </dl>
-
       {standing.providers.length > 0 ? (
         <div className="mt-6 border-t border-border/60 pt-5">
           <Label>Who {agent.name} has dealt with</Label>
@@ -1584,7 +1566,7 @@ function Standing({
               <li key={record.provider} className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
                 <span className="text-sm text-foreground">{record.provider}</span>
                 <span className="font-mono text-[11px] text-muted-foreground">
-                  ${record.spentUsdc.toFixed(4)}
+                  ${formatUsdc(record.spentUsdc)}
                 </span>
                 <span
                   className={`ml-auto font-mono text-[11px] uppercase tracking-wider ${
@@ -1649,7 +1631,7 @@ function Standing({
               <li key={entry.researchId} className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
                 <span className="text-sm text-foreground">{entry.provider ?? "an endpoint"}</span>
                 <span className="font-mono text-[11px] text-muted-foreground">
-                  ${(entry.paidUsdc ?? 0).toFixed(4)}
+                  ${formatUsdc(entry.paidUsdc ?? 0)}
                 </span>
                 <a
                   href={entry.arcProof!.explorerUrl}
@@ -1722,9 +1704,9 @@ function AutonomyPanel({
             <Row label="Mode" value={limits.mode} />
             <Row label="Allowed" value={capabilityList(limits.capabilities)} />
             <Row label="Expires" value={new Date(limits.expiresAt).toLocaleDateString()} />
-            <Row label="Per investigation" value={`$${limits.perActionUsdc.toFixed(4)}`} />
-            <Row label="Daily budget" value={`$${limits.dailyUsdc.toFixed(4)}`} />
-            <Row label="Total preview budget" value={`$${limits.totalUsdc.toFixed(4)}`} />
+            <Row label="Per investigation" value={`$${formatUsdc(limits.perActionUsdc)}`} />
+            <Row label="Daily budget" value={`$${formatUsdc(limits.dailyUsdc)}`} />
+            <Row label="Total preview budget" value={`$${formatUsdc(limits.totalUsdc)}`} />
             <Row label="Attempts per day" value={String(limits.attemptsPerDay)} />
             <Row label="Minimum trust" value={String(limits.minimumTrustScore)} />
             <Row label="Budget day" value={limits.timezone} />
@@ -1744,9 +1726,9 @@ function AutonomyPanel({
               </p>
               <dl className="mt-3 space-y-0">
                 <Row label="Allowed" value={capabilityList([...PREVIEW_MANDATE.allowedCapabilities])} />
-                <Row label="Max per investigation" value={`$${PREVIEW_MANDATE.maxPerTransactionUsdc.toFixed(4)}`} />
-                <Row label="Daily budget" value={`$${PREVIEW_MANDATE.maxPerDayUsdc.toFixed(4)}`} />
-                <Row label="Total preview budget" value={`$${PREVIEW_MANDATE.maxTotalUsdc.toFixed(4)}`} />
+                <Row label="Max per investigation" value={`$${formatUsdc(PREVIEW_MANDATE.maxPerTransactionUsdc)}`} />
+                <Row label="Daily budget" value={`$${formatUsdc(PREVIEW_MANDATE.maxPerDayUsdc)}`} />
+                <Row label="Total preview budget" value={`$${formatUsdc(PREVIEW_MANDATE.maxTotalUsdc)}`} />
                 <Row label="Attempts per day" value={String(PREVIEW_MANDATE.maxAutonomousAttemptsPerDay)} />
                 <Row label="Minimum trust" value={String(PREVIEW_MANDATE.minimumTrustScore)} />
               </dl>
@@ -1789,9 +1771,9 @@ function AutonomyPanel({
             </p>
           </div>
           <dl className="mt-4 space-y-0">
-            <Row label="Max per investigation" value={`$${PREVIEW_MANDATE.maxPerTransactionUsdc.toFixed(4)}`} />
-            <Row label="Daily budget" value={`$${PREVIEW_MANDATE.maxPerDayUsdc.toFixed(4)}`} />
-            <Row label="Total preview budget" value={`$${PREVIEW_MANDATE.maxTotalUsdc.toFixed(4)}`} />
+            <Row label="Max per investigation" value={`$${formatUsdc(PREVIEW_MANDATE.maxPerTransactionUsdc)}`} />
+            <Row label="Daily budget" value={`$${formatUsdc(PREVIEW_MANDATE.maxPerDayUsdc)}`} />
+            <Row label="Total preview budget" value={`$${formatUsdc(PREVIEW_MANDATE.maxTotalUsdc)}`} />
             <Row label="Attempts per day" value={String(PREVIEW_MANDATE.maxAutonomousAttemptsPerDay)} />
             <Row label="Minimum trust" value={String(PREVIEW_MANDATE.minimumTrustScore)} />
             <Row label="Budget day" value={browserTimezone()} />
@@ -1930,7 +1912,7 @@ function ShadowNight({
               <li key={entry.decisionId}>
                 <p className="text-sm text-foreground">{entry.question}</p>
                 <p className="mt-1.5 text-xs text-muted-foreground">
-                  {entry.provider ?? "an endpoint"} · ${entry.wouldSpendUsdc.toFixed(4)}
+                  {entry.provider ?? "an endpoint"} · ${formatUsdc(entry.wouldSpendUsdc)}
                   {entry.trustScore !== null ? ` · trust ${entry.trustScore}` : ""}
                 </p>
                 <p className={`mt-3 text-sm ${
@@ -1997,6 +1979,7 @@ function ShadowNight({
  * leaving it out would make the ledger flattering rather than true.
  */
 function Receipts({ brief }: { brief: NovaBrief }) {
+  const [query, setQuery] = useState("");
   const settled = brief.investigations
     .filter((entry) => entry.status === "verified" || entry.status === "paid_unverified" || entry.status === "unpaid")
     .sort((left, right) => (right.settledAt ?? "").localeCompare(left.settledAt ?? ""));
@@ -2017,6 +2000,7 @@ function Receipts({ brief }: { brief: NovaBrief }) {
      the same rows. Two counts of one fact is one more chance to print a number
      the rest of the screen disagrees with. */
   const counts = purchaseStanding(brief.standing);
+  const matches = settled.filter(entry => `${entry.question} ${entry.provider ?? ""}`.toLowerCase().includes(query.toLowerCase()));
 
   return (
     <Panel className="mt-4">
@@ -2033,12 +2017,14 @@ function Receipts({ brief }: { brief: NovaBrief }) {
           value={plain(purchaseSummary(counts))}
           tone={counts.passed > 0 ? "good" : "idle"}
         />
-        <Row label="Spent" value={`$${counts.spentUsdc.toFixed(4)}`} />
+        <Row label="Spent" value={`$${formatUsdc(counts.spentUsdc)}`} />
       </dl>
 
+      <input aria-label="Search purchases" placeholder="Search purchases" value={query} onChange={event => setQuery(event.target.value)} className="mt-4 w-full rounded-lg border bg-card p-3 text-sm" />
+      {matches.length === 0 && <p role="status" className="mt-4 text-sm text-muted-foreground">No purchases match your search.</p>}
       <ul className="mt-5 space-y-5">
-        {settled.map((entry) => {
-          const proposal = entry.proposal as { subjectLabel?: string | null } | null;
+        {matches.map((entry) => {
+          const proposal = entry.proposal as { subjectLabel?: string | null; paymentLabel?: string } | null;
           const subject = proposal?.subjectLabel?.trim() || entry.provider || "an endpoint";
           const paid = entry.paidUsdc ?? 0;
           return (
@@ -2067,18 +2053,21 @@ function Receipts({ brief }: { brief: NovaBrief }) {
 
               <dl className="mt-3 space-y-0">
                 <Row label="Provider" value={entry.provider ?? "unknown"} />
+                {proposal?.paymentLabel && <Row label="Payment route" value={proposal.paymentLabel} />}
                 {/* Named either way. An authorisation that took nothing still
                     has a number on it, and that number is the first thing
                     somebody checks against their wallet. */}
                 <Row
                   label={paid > 0 ? "Paid" : "You signed for"}
                   value={paid > 0
-                    ? `$${paid.toFixed(4)}`
-                    : `$${(entry.authorisedUsdc ?? 0).toFixed(4)} — still in your wallet`}
+                    ? `$${formatUsdc(paid)}`
+                    : `$${formatUsdc(entry.authorisedUsdc ?? 0)} — still in your wallet`}
                   tone={paid > 0 ? "plain" : "idle"}
                 />
+              </dl>
+              <details className="mt-3"><summary className="cursor-pointer py-2 text-sm text-muted-foreground">Details and evidence</summary><dl className="mt-2">
                 {entry.executionPublicId ? (
-                  <Row label="Execution" value={entry.executionPublicId} />
+                  <Row label="Execution" value={<Link className="text-link underline" href={`/execution/${entry.executionPublicId}`}>View payment receipt ↗</Link>} />
                 ) : null}
                 {entry.transaction ? <Row label="Transaction" value={entry.transaction} /> : null}
               </dl>
@@ -2151,6 +2140,7 @@ function Receipts({ brief }: { brief: NovaBrief }) {
               ) : entry.failure ? (
                 <p className="mt-3 text-sm leading-relaxed text-state-warn">{entry.failure}</p>
               ) : null}
+              </details>
             </li>
           );
         })}
@@ -2165,7 +2155,7 @@ function Row({
   tone = "plain",
 }: {
   label: string;
-  value: string;
+  value: React.ReactNode;
   tone?: "plain" | "good" | "warn" | "idle";
 }) {
   const toneClass = tone === "good"
@@ -2177,8 +2167,8 @@ function Row({
         : "text-foreground";
   return (
     <div className="flex items-baseline justify-between gap-4 border-b border-border/50 py-2.5 last:border-b-0">
-      <dt className="text-sm text-muted-foreground">{label}</dt>
-      <dd className={`text-right font-mono text-sm ${toneClass}`}>{value}</dd>
+      <dt className="min-w-0 text-sm text-muted-foreground">{label}</dt>
+      <dd className={`min-w-0 max-w-[68%] break-words text-right font-mono text-sm ${toneClass}`}>{value}</dd>
     </div>
   );
 }
@@ -2230,7 +2220,7 @@ function RecoveryKey({
 
   return (
     <Panel className={emphatic ? "mb-6 border-primary/60" : "mt-4"}>
-      <Label>Recovery key</Label>
+      <Label>Recovery key · use Nova on another device</Label>
       <p className="mt-3 max-w-xl text-sm leading-relaxed text-muted-foreground">
         {emphatic
           ? "Save this somewhere outside this browser. It is the only way back to your agent if this browser forgets, and nobody can reissue it — the server keeps a fingerprint of it, not the key."
@@ -2347,7 +2337,7 @@ function DeeperResearch({
      that forgets it fails here instead of at somebody's breakfast. */
   const proposal = "proposal" in state ? state.proposal : null;
   if (!proposal) return null;
-  const cost = `$${proposal.costUsdc.toFixed(4)}`;
+  const cost = `$${formatUsdc(proposal.costUsdc)}`;
 
   /* Once money has moved, the price and the trust score are history. What
      matters is what came back and whether it held up, so the proposal collapses
@@ -2581,7 +2571,7 @@ function MarketChanged({
           onClick={onConfirm}
           className="rounded-lg border border-state-warn/60 px-4 py-2 text-sm font-semibold text-state-warn transition hover:bg-state-warn/10"
         >
-          Pay ${costUsdc.toFixed(4)} on the new terms
+          Pay ${formatUsdc(costUsdc)} on the new terms
         </button>
         <span className="text-xs text-muted-foreground">
           Or leave it. Nothing has been paid.
@@ -2611,7 +2601,7 @@ function SigningPanel({ terms, note }: { terms: SigningTerms | null; note: strin
         Your wallet will show exactly this. Nothing else can be drawn against it.
       </p>
       <dl className="mt-3 space-y-0">
-        <Row label="Amount" value={`$${terms.amountUsdc.toFixed(4)}`} />
+        <Row label="Amount" value={`$${formatUsdc(terms.amountUsdc)}`} />
         <Row label="To" value={terms.recipient} />
         <Row label="Chain" value={String(terms.chainId)} />
         <Row label="Expires" value={new Date(terms.validBefore * 1000).toLocaleTimeString()} />
@@ -2653,7 +2643,7 @@ function Outcome({
       <dl className="mt-3 space-y-0">
         <Row label="Provider" value={investigation.provider ?? proposal.provider} />
         {paid > 0 ? (
-          <Row label="Paid" value={`$${paid.toFixed(4)}`} />
+          <Row label="Paid" value={`$${formatUsdc(paid)}`} />
         ) : investigation.authorisedUsdc ? (
           /* The amount is named even though it did not move. "Nothing was paid"
              with no number is a card nobody can check against their wallet,
@@ -2661,7 +2651,7 @@ function Outcome({
              screen tells them something went wrong. */
           <Row
             label="You signed for"
-            value={`$${investigation.authorisedUsdc.toFixed(4)} — still in your wallet`}
+            value={`$${formatUsdc(investigation.authorisedUsdc)} — still in your wallet`}
             tone="idle"
           />
         ) : null}

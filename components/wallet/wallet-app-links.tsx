@@ -95,8 +95,9 @@ export function NoWalletHere({ what }: { what: string }) {
       </button>
       <p className="text-xs text-muted-foreground">
         A phone browser has no wallet built in, so {what} cannot be signed here. Reopen this page
-        inside your wallet&apos;s own browser and it will work.
+        inside your wallet&apos;s browser to connect.
       </p>
+      <p className="text-xs text-muted-foreground">Your wallet app has separate browser storage. Save your Nova recovery key in My Agent before switching, then restore it there. Connecting the same wallet does not restore Nova. Copy any unsaved request before switching apps.</p>
       {open ? (
         <div className="mt-1 inline-flex flex-wrap gap-1.5">
           {walletDeepLinks().map((link) => (

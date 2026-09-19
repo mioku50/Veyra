@@ -381,6 +381,7 @@ export async function listExecutionAttempts(options?: {
    *  of re-reading the same recent page every hour and never reaching it. */
   oldestFirst?: boolean;
   limit?: number;
+  before?: { createdAt: string; executionId: string };
 }): Promise<ExecutionAttempt[]> {
   const limit = options?.limit || 50;
   const direction = options?.oldestFirst ? 1 : -1;
@@ -397,8 +398,12 @@ export async function listExecutionAttempts(options?: {
     if (options?.state) {
       attempts = attempts.filter((a) => a.state === options.state);
     }
+    if (options?.before) {
+      const before = options.before;
+      attempts = attempts.filter(a => a.createdAt < before.createdAt || (a.createdAt === before.createdAt && a.executionId < before.executionId));
+    }
     return attempts
-      .sort((a, b) => direction * (new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()))
+      .sort((a, b) => direction * (new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime() || a.executionId.localeCompare(b.executionId)))
       .slice(0, limit);
   }
 
@@ -408,6 +413,7 @@ export async function listExecutionAttempts(options?: {
       .from("execution_attempts")
       .select("*")
       .order("created_at", { ascending: options?.oldestFirst === true })
+      .order("execution_id", { ascending: options?.oldestFirst === true })
       .limit(limit);
     if (options?.state) {
       query = query.eq("state", options.state);
@@ -417,6 +423,10 @@ export async function listExecutionAttempts(options?: {
     }
     if (options?.counterpartyWallet) {
       query = query.eq("counterparty_wallet", options.counterpartyWallet.toLowerCase());
+    }
+    if (options?.before) {
+      const { createdAt, executionId } = options.before;
+      query = query.or(`created_at.lt.${createdAt},and(created_at.eq.${createdAt},execution_id.lt.${executionId})`);
     }
     const result = await query;
     return { data: result.data as any[] | null, error: result.error };

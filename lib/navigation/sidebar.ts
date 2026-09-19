@@ -14,33 +14,6 @@ export type SidebarIconName =
   | "templates"
   | "tools";
 
-// Five destinations, not twelve.
-//
-// Selections, Mandates, Trust Gate, Evaluator, Monitoring and Project 360 are
-// stages and inputs of a single decision, not places to go. Listing them as
-// co-equal top-level items asked the visitor to learn the architecture before
-// they could use the product, and it is what made the shell read as an internal
-// admin panel next to a screen carrying the product tagline.
-//
-// They are not orphaned: each one moves into the developer console below, and
-// each is reachable from the decision it belongs to.
-/**
- * Four destinations, and all four are the agent.
- *
- * What was here before -- Daily brief, Decisions, Payments, Choose and pay
- * yourself -- described a product for buying APIs with three of its four links,
- * over a page that is a personal agent's morning brief. A person who has just
- * been told an agent watches things for them was being offered a payments
- * ledger and a counterparty picker as the next places to go.
- *
- * These four are the life of that agent instead: what changed today, what it
- * is and watches, what it has learned about you, and what it has earned on Arc.
- * Buying is not a destination in it. When Nova wants to pay for something it
- * says so on the item, with a price and a verdict, and that is the whole of it.
- *
- * The old screens are not gone. They moved into the developer console, which is
- * where an execution ledger and a counterparty picker have always belonged.
- */
 export const publicSidebarNavigation = [
   {
     label: "Your agent",
@@ -48,7 +21,7 @@ export const publicSidebarNavigation = [
       { href: "/", label: "Today", icon: "agent" },
       { href: "/agent", label: "My Agent", icon: "my-agents" },
       { href: "/memory", label: "Memory", icon: "results" },
-      { href: "/arc", label: "Arc", icon: "passport" },
+      { href: "/arc", label: "Identity & Trust", icon: "passport" },
     ],
   },
 ] as const satisfies ReadonlyArray<{
@@ -76,7 +49,7 @@ export const consoleSidebarNavigation = [
     items: [
       { href: "/executions", label: "Decisions", icon: "activity" },
       { href: "/receipts", label: "Payments", icon: "receipt" },
-      { href: "/run", label: "Choose and pay yourself", icon: "activity" },
+      { href: "/run", label: "Manual purchase", icon: "activity" },
     ],
   },
   {
@@ -84,7 +57,7 @@ export const consoleSidebarNavigation = [
     // rather than spread across the product navigation.
     label: "Decision internals",
     items: [
-      { href: "/trust/select", label: "Counterparty Selection", icon: "proof" },
+      { href: "/trust/select", label: "Counterparties", icon: "proof" },
       { href: "/trust-gate", label: "Trust Gate", icon: "passport" },
       { href: "/trust/mandates", label: "Mandates", icon: "passport" },
       { href: "/evaluators", label: "Evaluator", icon: "proof" },
@@ -112,3 +85,10 @@ export const sidebarNavigation = publicSidebarNavigation;
 export const DESKTOP_SIDEBAR_SCROLL_CLASS = "overflow-y-auto overflow-x-hidden overscroll-contain";
 export const MOBILE_SIDEBAR_SCROLL_CLASS = "overflow-y-auto overflow-x-hidden overscroll-contain";
 import { BRAND } from "../brand.ts";
+
+export const publicLinks = publicSidebarNavigation.flatMap(section => section.items);
+export const secondaryLinks = [
+  { href: "/run", label: "Manual purchase" },
+  { href: "/executions", label: "Decisions" },
+  { href: "/console", label: BRAND.developerConsole },
+] as const;

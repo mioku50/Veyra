@@ -9,7 +9,8 @@ import Link from "next/link";
 import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import { BRAND } from "@/lib/brand";
 import { useArcWallet } from "@/components/wallet/use-arc-wallet";
-import { ConnectChip } from "@/components/wallet/connect-chip";
+import { NoWalletHere } from "@/components/wallet/wallet-app-links";
+import { formatUsdc, transactionUrl } from "@/lib/execution/presentation";
 import { signPaymentAuthorization } from "@/lib/x402/sign-payment";
 import { buildRequestBody } from "@/lib/x402/request-body";
 import { CandidateCard, type RunCandidate } from "@/components/run/candidate-card";
@@ -103,6 +104,7 @@ export function RunClient() {
     paidUsdc?: number;
     payTo?: string;
     transaction?: string | null;
+    network?: string | null;
     result?: unknown;
     message?: string;
     /* Where the money actually leaves from. Circle's batched scheme debits a
@@ -172,20 +174,21 @@ export function RunClient() {
      screen look broken to anyone who had not been through the owner flow on
      some other page. The flow now lives here, where it is needed. */
   const wallet = useArcWallet();
-  const [authenticated, setAuthenticated] = useState<boolean | null>(null);
+  const [sessionOwner, setSessionOwner] = useState<string | null | undefined>(undefined);
+  const authenticated = sessionOwner === undefined ? null : !!wallet.address && sessionOwner?.toLowerCase() === wallet.address.toLowerCase();
   const [verifying, setVerifying] = useState(false);
 
   const checkSession = useCallback(async () => {
     try {
       const response = await fetch("/api/byoa/management/session", { cache: "no-store" });
       const payload = await response.json().catch(() => null);
-      setAuthenticated(payload?.authenticated === true);
+      setSessionOwner(payload?.authenticated === true && typeof payload.ownerWallet === "string" ? payload.ownerWallet : null);
     } catch {
-      setAuthenticated(false);
+      setSessionOwner(null);
     }
   }, []);
 
-  useEffect(() => { void checkSession(); }, [checkSession]);
+  useEffect(() => { void checkSession(); }, [checkSession, wallet.address]);
 
   /* Two steps on purpose. `connect()` resolves before React has the address, so
      signing in the same handler would sign with a stale one; and a visitor who
@@ -212,7 +215,7 @@ export function RunClient() {
         signature,
       });
       if (!opened.response.ok) throw new Error(failureText(opened.payload, opened.response.status));
-      setAuthenticated(true);
+      setSessionOwner(address);
       setPhase("idle");
     } catch (caught: any) {
       setError(caught?.message || "Wallet verification failed.");
@@ -315,7 +318,7 @@ export function RunClient() {
       setPhase("decided");
     } catch (err: any) {
       if (err?.status === 401 || /credential|session/i.test(String(err?.message ?? ""))) {
-        setAuthenticated(false);
+        setSessionOwner(null);
         setError("This session is no longer verified. Verify your wallet again to decide.");
       } else {
         setError(err?.message || "Something went wrong.");
@@ -860,6 +863,7 @@ export function RunClient() {
           paidUsdc: result.paid ? result.paidUsdc : undefined,
           payTo: result.paid ? result.payTo : undefined,
           transaction: result.transaction ?? null,
+          network: accept.network,
           verification: result.verification ?? null,
           result: result.paid ? (result.result ?? result.body) : undefined,
           message: result.message
@@ -876,6 +880,7 @@ export function RunClient() {
         paidUsdc: result.paidUsdc,
         payTo: result.payTo,
         transaction: result.transaction ?? null,
+        network: accept.network,
         result: result.result ?? result.body,
         verification: result.verification ?? null,
         funding,
@@ -908,41 +913,7 @@ export function RunClient() {
 
   return (
     <div data-surface="run" className="min-h-screen">
-      <header className="sticky top-0 z-30 border-b border-[var(--run-line)] bg-[rgba(5,7,10,0.86)] backdrop-blur-xl">
-        <div className="mx-auto flex w-full max-w-[1180px] items-center justify-between px-5 py-2.5 sm:px-7">
-          <div className="flex items-center gap-3">
-            <Link href="/" className="run-focus flex items-center gap-2.5">
-              <span
-                className="flex h-[22px] w-[22px] items-center justify-center rounded-[6px] text-[11px] font-bold text-white"
-                style={{ background: "linear-gradient(180deg,var(--run-accent),var(--run-accent-deep))" }}
-              >
-                V
-              </span>
-              <span className="text-[13.5px] font-semibold tracking-tight">Veyra</span>
-            </Link>
-            <span aria-hidden className="h-3.5 w-px bg-[var(--run-line-strong)]" />
-            <span className="run-num hidden text-[10.5px] text-[var(--run-text-faint)] sm:inline">
-              Arc Testnet · 5042002
-            </span>
-          </div>
-          <nav className="flex items-center gap-0.5">
-            {[["/executions", "Decisions"], ["/agents", "Agents"], ["/console", "Developers"]].map(
-              ([href, text]) => (
-                <Link
-                  key={href}
-                  href={href}
-                  className="run-focus hidden rounded-[6px] px-2.5 py-1.5 text-[12px] text-[var(--run-text-muted)] transition-colors hover:bg-[var(--run-surface)] hover:text-[var(--run-text)] sm:block"
-                >
-                  {text}
-                </Link>
-              ),
-            )}
-            <span aria-hidden className="mx-1.5 hidden h-4 w-px bg-[var(--run-line-strong)] sm:block" />
-            <ConnectChip verified={authenticated} onVerify={() => void verifyOwner()} verifying={verifying} />
-          </nav>
-        </div>
-      </header>
-
+      {wallet.error && <p role="alert" className="mx-auto max-w-6xl px-5 pt-4 text-sm text-destructive">{wallet.error}</p>}
       <main className="mx-auto w-full max-w-[1180px] px-5 pb-20 pt-7 sm:px-7 sm:pt-9">
 
         {/* Product first. The pitch gets the height it earns and no more: the
@@ -999,13 +970,13 @@ export function RunClient() {
             report where the run actually is, and the line underneath says what
             it is doing right now. No box: this is not a panel, it is status. */}
         <section className="mt-7 border-t border-[var(--run-line)] pt-4" aria-label="Progress">
-          <div className="flex items-center gap-2 overflow-x-auto pb-0.5">
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-3 pb-0.5">
             {STEPS.map((s, i) => {
               const state = i < step ? "done" : i === step && phase !== "idle" ? "active" : "idle";
               return (
                 <Fragment key={s}>
                   {i > 0 ? (
-                    <span className="run-link min-w-[14px]">
+                    <span className="run-link hidden min-w-[14px] sm:block">
                       <span style={{ width: i <= step ? "100%" : "0%" }} />
                     </span>
                   ) : null}
@@ -1122,9 +1093,9 @@ export function RunClient() {
             </div>
 
             <div className="mt-5 flex flex-wrap items-center gap-3.5 border-t border-[var(--run-line)] pt-5">
-              {authenticated === false ? (
+              {authenticated !== true ? (
                 <>
-                  <button
+                  {!wallet.providerSettled ? <p role="status">Looking for a wallet…</p> : !wallet.providerAvailable ? <NoWalletHere what="this purchase" /> : <button
                     type="button"
                     onClick={() => (wallet.address ? void verifyOwner() : void wallet.connect())}
                     disabled={verifying || wallet.connecting}
@@ -1137,7 +1108,7 @@ export function RunClient() {
                         : wallet.address
                           ? "Verify wallet to decide"
                           : "Connect wallet"}
-                  </button>
+                  </button>}
                   <span className="max-w-[44ch] text-[11px] leading-relaxed text-[var(--run-text-faint)]">
                     A verdict is signed to a wallet, so Veyra needs to know whose it is.
                     One signature, no transaction, nothing spent.
@@ -1516,9 +1487,9 @@ export function RunClient() {
 
               {payment.executionId ? (
                 <p className="run-num mt-3 text-[11.5px] text-[var(--run-text-faint)]">
-                  recorded as{" "}
+                  Recorded as{" "}
                   <Link
-                    href="/executions"
+                    href={`/execution/${payment.executionId}`}
                     className="run-focus text-[var(--run-azure)] hover:underline"
                   >
                     {payment.executionId}
@@ -1527,16 +1498,16 @@ export function RunClient() {
                 </p>
               ) : null}
 
-              {payment.transaction ? (
+              {payment.transaction && transactionUrl(payment.network, payment.transaction) ? (
                 <a
-                  href={`https://basescan.org/tx/${payment.transaction}`}
+                  href={transactionUrl(payment.network, payment.transaction)!}
                   target="_blank"
                   rel="noreferrer"
                   className="run-focus run-num mt-3 inline-block text-[11.5px] text-[var(--run-azure)] hover:underline"
                 >
                   {payment.transaction.slice(0, 10)}…{payment.transaction.slice(-6)} ↗
                 </a>
-              ) : null}
+              ) : payment.transaction ? <p className="mt-3 break-all font-mono text-xs">Transaction (explorer unavailable): {payment.transaction}</p> : null}
 
               {payment.verification ? (
                 <div className="mt-4 rounded-[var(--run-radius-sm)] border border-[var(--run-line)] bg-[var(--run-canvas-raised)] p-4">

@@ -18,7 +18,7 @@
 
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { createContext, createElement, useContext, useCallback, useEffect, useState, type ReactNode } from "react";
 import {
   createPublicClient,
   formatEther,
@@ -126,7 +126,7 @@ export function formatArcBalance(value: bigint | null, decimals = 18) {
   });
 }
 
-export function useArcWallet() {
+function useWalletState() {
   const [address, setAddress] = useState<string | null>(null);
   const [chainId, setChainId] = useState<number | null>(null);
   const [nativeBalanceWei, setNativeBalanceWei] = useState<bigint | null>(null);
@@ -261,20 +261,9 @@ export function useArcWallet() {
 
       setAddress(nextAddress);
       setChainId(nextChainId);
-      if (nextAddress && nextChainId !== ARC_TESTNET_CHAIN_ID) {
-        setSwitching(true);
-        try {
-          await requestArcTestnet(provider);
-          setChainId(ARC_TESTNET_CHAIN_ID);
-          setError(null);
-        } catch (caught) {
-          setError(`Wallet connected. Switch to Arc Testnet to continue: ${getErrorMessage(caught)}`);
-        } finally {
-          setSwitching(false);
-        }
-      } else {
-        setError(null);
-      }
+      // Connecting identifies the wallet. Only the action that needs a
+      // particular chain should request a network switch.
+      setError(null);
     } catch (caught) {
       setError(getErrorMessage(caught));
     } finally {
@@ -527,4 +516,17 @@ export function useArcWallet() {
     sendTransaction,
     setError,
   };
+}
+
+const WalletContext = createContext<ReturnType<typeof useWalletState> | null>(null);
+
+export function ArcWalletProvider({ children }: { children: ReactNode }) {
+  const wallet = useWalletState();
+  return createElement(WalletContext.Provider, { value: wallet }, children);
+}
+
+export function useArcWallet() {
+  const wallet = useContext(WalletContext);
+  if (!wallet) throw new Error("Wallet controls require ArcWalletProvider.");
+  return wallet;
 }

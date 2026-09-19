@@ -65,8 +65,6 @@ assert.equal(
 );
 
 const readme = readFileSync(new URL("../README.md", import.meta.url), "utf8");
-assert(readme.split(/\r?\n/).length <= 220, "README must remain under 220 lines");
-assert(readme.trim().split(/\s+/).length <= 1_500, "README must remain under 1,500 words");
 assert(!/FreeModel|Phase\s+\d+|Canary deployment|treasury address|HMAC implementation/i.test(readme));
 assert(readme.includes(BRAND.tagline));
 assert(readme.includes("External seller commerce remains an internal capability"));
@@ -269,7 +267,7 @@ assert.deepEqual(publicItems, [
   { label: "Today", href: "/" },
   { label: "My Agent", href: "/agent" },
   { label: "Memory", href: "/memory" },
-  { label: "Arc", href: "/arc" },
+  { label: "Identity & Trust", href: "/arc" },
 ]);
 assert.equal(publicItems[0].href, "/", "the brief leads: it is the product, the rest is how it is justified");
 

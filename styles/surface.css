@@ -59,9 +59,9 @@
 body {
   background-image:
     var(--veyra-dust),
-    radial-gradient(88rem 48rem at 12% -12%, rgba(138, 76, 240, 0.26), transparent 62%),
-    radial-gradient(70rem 44rem at 90% 2%, rgba(96, 58, 210, 0.2), transparent 64%),
-    radial-gradient(90rem 60rem at 50% 110%, rgba(110, 62, 220, 0.16), transparent 68%),
+    radial-gradient(88rem 48rem at 12% -12%, rgba(138, 76, 240, 0.16), transparent 62%),
+    radial-gradient(70rem 44rem at 90% 2%, rgba(96, 58, 210, 0.12), transparent 64%),
+    radial-gradient(90rem 60rem at 50% 110%, rgba(110, 62, 220, 0.10), transparent 68%),
     linear-gradient(180deg, #0a0612 0%, #0d0818 52%, #0a0612 100%);
   background-size: var(--veyra-dust-size), auto, auto, auto, auto;
   background-attachment: fixed;
@@ -74,7 +74,7 @@ body {
      box instead of a surface. Partly transparent, so the dust and the glows
      behind it stay visible through the card. */
   .panel-glow {
-    border: 1px solid rgba(139, 92, 246, 0.38);
+    border: 1px solid rgba(139, 92, 246, 0.24);
     background:
       linear-gradient(
         180deg,

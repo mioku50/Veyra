@@ -4,14 +4,11 @@ import type React from "react";
 import { useState } from "react";
 import { usePathname } from "next/navigation";
 import { Sidebar, MobileSidebar } from "@/components/layout/sidebar";
+import { ArcWalletProvider } from "@/components/wallet/use-arc-wallet";
+import Link from "next/link";
+import { consoleSidebarNavigation } from "@/lib/navigation/sidebar";
 import { Topbar } from "@/components/layout/topbar";
 import { MobileBottomNav } from "@/components/layout/bottom-nav";
-
-/** Surfaces that own their entire viewport and supply their own chrome. The
- *  shell is built for browsing many tools; a single-purpose decision screen is
- *  not one of them, and nesting it inside a second palette makes both look
- *  unfinished. */
-const FULL_BLEED_ROUTES = ["/run"];
 
 export function CommandCenterLayout({
   loggedIn,
@@ -22,10 +19,6 @@ export function CommandCenterLayout({
 }) {
   const [mobileOpen, setMobileOpen] = useState(false);
   const pathname = usePathname();
-
-  if (FULL_BLEED_ROUTES.some((route) => pathname === route || pathname.startsWith(`${route}/`))) {
-    return <>{children}</>;
-  }
 
   /* The left rail is the console's. The public side navigates from the top bar
      and nothing else.
@@ -41,14 +34,31 @@ export function CommandCenterLayout({
      `bg-background` on this wrapper paints over all of it and the page reads
      as a flat void -- which is exactly what it did. */
   return (
-    <div className="min-h-screen text-foreground flex flex-col">
-      <Topbar loggedIn={loggedIn} onMenuClick={() => setMobileOpen(true)} />
-      <MobileSidebar open={mobileOpen} onClose={() => setMobileOpen(false)} />
-      <div className="flex flex-1">
-        {isConsole ? <Sidebar /> : null}
-        <div className="min-w-0 flex-1 pb-16 md:pb-0">{children}</div>
+    <ArcWalletProvider>
+      <div className="min-h-screen text-foreground flex flex-col">
+        <Topbar loggedIn={loggedIn} onMenuClick={() => setMobileOpen(true)} />
+        <MobileSidebar open={mobileOpen} onClose={() => setMobileOpen(false)} />
+        <div className="flex flex-1">
+          {isConsole ? <Sidebar /> : null}
+          <div className="min-w-0 flex-1 pb-[calc(4rem+env(safe-area-inset-bottom))] lg:pb-0">
+            {!isConsole &&
+            consoleSidebarNavigation.some((section) =>
+              section.items.some((item) => item.href === pathname),
+            ) ? (
+              <div className="mx-auto max-w-6xl px-5 pt-4 text-xs">
+                <Link
+                  href="/console"
+                  className="text-muted-foreground underline underline-offset-4"
+                >
+                  Developer Console
+                </Link>
+              </div>
+            ) : null}
+            {children}
+          </div>
+        </div>
+        <MobileBottomNav />
       </div>
-      <MobileBottomNav />
-    </div>
+    </ArcWalletProvider>
   );
 }

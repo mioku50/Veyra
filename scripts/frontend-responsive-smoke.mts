@@ -117,6 +117,7 @@ try {
   await page.goto(`${baseUrl()}/`, { waitUntil: "load" });
   assert.equal(await page.locator('[data-testid="desktop-sidebar"]').count(), 0);
 
+  await page.setViewportSize({ width: 1093, height: 768 });
   const desktopSidebar = page.locator('[data-testid="desktop-sidebar"]');
   await page.goto(`${baseUrl()}/console`, { waitUntil: "load" });
   await desktopSidebar.getByRole("link", { name: "Operations", exact: true }).scrollIntoViewIfNeeded();
@@ -130,10 +131,10 @@ try {
   await page.goto(`${baseUrl()}/`, { waitUntil: "load" });
   await page.getByRole("button", { name: "Open navigation" }).click();
   const mobileSidebar = page.locator('[data-testid="mobile-sidebar"]');
-  assert.equal(await mobileSidebar.getAttribute("aria-hidden"), "false");
-  await mobileSidebar.getByRole("link", { name: "Decisions", exact: true }).click();
-  await page.waitForURL(`${baseUrl()}/executions`);
-  assert.equal(await mobileSidebar.getAttribute("aria-hidden"), "true");
+  assert.equal(await mobileSidebar.isVisible(), true);
+  await mobileSidebar.getByRole("link", { name: "Memory", exact: true }).click();
+  await page.waitForURL(`${baseUrl()}/memory`);
+  await mobileSidebar.waitFor({ state: "detached" });
 
   console.log("[frontend-responsive-smoke] passed: curated deep links, query-backed Results controls, helper/requester/provider copy, keyboard labels, desktop/125%/150%/tablet/mobile overflow, operations navigation, and mobile close-on-navigation");
 } finally {

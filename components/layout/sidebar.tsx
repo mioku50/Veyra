@@ -1,6 +1,9 @@
 "use client";
 
 import Link from "next/link";
+import { useEffect } from "react";
+import { Dialog as Drawer } from "radix-ui";
+import { X } from "lucide-react";
 import { usePathname } from "next/navigation";
 import {
   Activity,
@@ -23,8 +26,8 @@ import {
 import { cn } from "@/lib/utils";
 import {
   DESKTOP_SIDEBAR_SCROLL_CLASS,
-  MOBILE_SIDEBAR_SCROLL_CLASS,
   publicSidebarNavigation,
+  secondaryLinks,
   consoleSidebarNavigation,
   type SidebarIconName,
 } from "@/lib/navigation/sidebar";
@@ -54,7 +57,9 @@ const iconByName: Record<SidebarIconName, LucideIcon> = {
   tools: Wrench,
 };
 
-function getNavSections(pathname: string): Array<{ label: string; items: NavItem[] }> {
+function getNavSections(
+  pathname: string,
+): Array<{ label: string; items: NavItem[] }> {
   const navigation = pathname.startsWith("/console")
     ? consoleSidebarNavigation
     : publicSidebarNavigation;
@@ -73,7 +78,13 @@ function isActive(pathname: string, href: string) {
   return pathname === href || pathname.startsWith(`${href}/`);
 }
 
-function SidebarLink({ item, collapsed }: { item: NavItem; collapsed?: boolean }) {
+function SidebarLink({
+  item,
+  collapsed,
+}: {
+  item: NavItem;
+  collapsed?: boolean;
+}) {
   const pathname = usePathname();
   const active = isActive(pathname, item.href);
   const Icon = item.icon;
@@ -81,7 +92,8 @@ function SidebarLink({ item, collapsed }: { item: NavItem; collapsed?: boolean }
   return (
     <Link
       href={item.href}
-      title={collapsed ? item.label : undefined}
+      title={item.label}
+      aria-current={active ? "page" : undefined}
       className={cn(
         "group relative flex min-w-0 items-center gap-3 rounded-lg border border-transparent px-3 py-2.5 text-sm font-medium text-muted-foreground transition-all duration-200 hover:border-white/10 hover:bg-white/5 hover:text-foreground",
         active &&
@@ -95,10 +107,14 @@ function SidebarLink({ item, collapsed }: { item: NavItem; collapsed?: boolean }
       <Icon
         className={cn(
           "size-4 shrink-0 transition-transform duration-200 group-hover:scale-110",
-          active ? "text-primary" : "text-muted-foreground group-hover:text-foreground",
+          active
+            ? "text-primary"
+            : "text-muted-foreground group-hover:text-foreground",
         )}
       />
-      <span className={cn("min-w-0 flex-1 truncate", collapsed && "sr-only")}>
+      <span
+        className={cn("min-w-0 flex-1 break-words", collapsed && "sr-only")}
+      >
         {item.label}
       </span>
       {item.badge && !collapsed ? (
@@ -113,13 +129,12 @@ function SidebarLink({ item, collapsed }: { item: NavItem; collapsed?: boolean }
 export function Sidebar({ collapsed = false }: { collapsed?: boolean }) {
   const pathname = usePathname();
   const navSections = getNavSections(pathname);
-  const isConsole = pathname.startsWith("/console");
 
   return (
     <aside
       data-testid="desktop-sidebar"
       className={cn(
-        "hidden border-r border-white/5 bg-[#080a0f]/80 backdrop-blur-2xl md:sticky md:top-16 md:block md:h-[calc(100vh-4rem)]",
+        "hidden border-r border-white/5 bg-[#080a0f]/80 backdrop-blur-2xl lg:sticky lg:top-16 lg:block lg:h-[calc(100vh-4rem)]",
         DESKTOP_SIDEBAR_SCROLL_CLASS,
         collapsed ? "w-16" : "w-60",
       )}
@@ -127,21 +142,33 @@ export function Sidebar({ collapsed = false }: { collapsed?: boolean }) {
       <div className="flex min-h-full flex-col justify-between p-3.5">
         <div className="grid gap-6">
           {navSections.map((section) => (
-            <div key={section.label}>
-              <p
+            <details
+              key={section.label}
+              open={
+                section === navSections[0] ||
+                section.items.some((item) => isActive(pathname, item.href))
+                  ? true
+                  : undefined
+              }
+            >
+              <summary
                 className={cn(
                   "mb-2.5 px-3 text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/70",
                   collapsed && "sr-only",
                 )}
               >
                 {section.label}
-              </p>
+              </summary>
               <div className="grid gap-1.5">
                 {section.items.map((item) => (
-                  <SidebarLink key={item.href} item={item} collapsed={collapsed} />
+                  <SidebarLink
+                    key={item.href}
+                    item={item}
+                    collapsed={collapsed}
+                  />
                 ))}
               </div>
-            </div>
+            </details>
           ))}
         </div>
 
@@ -164,16 +191,12 @@ export function Sidebar({ collapsed = false }: { collapsed?: boolean }) {
               "flex items-center gap-2.5 rounded-lg border border-sky-500/20 bg-sky-500/10 px-3 py-2.5 text-xs text-sky-300 backdrop-blur-md shadow-[0_0_15px_rgba(0,208,132,0.1)]",
               collapsed && "justify-center px-2",
             )}
-            title={collapsed ? "v0.2.0-beta.8 · System Operational" : undefined}
+            title={collapsed ? "v0.2.0-beta.8" : undefined}
           >
             <div className="flex h-2 w-2 items-center justify-center">
               <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-sky-500" />
             </div>
-            {!collapsed && (
-              <span className="truncate">
-                v0.2.0-beta.8 · System Operational
-              </span>
-            )}
+            {!collapsed && <span className="truncate">v0.2.0-beta.8</span>}
           </div>
         </div>
       </div>
@@ -189,65 +212,73 @@ export function MobileSidebar({
   onClose: () => void;
 }) {
   const pathname = usePathname();
-  const navSections = getNavSections(pathname);
-  const isConsole = pathname.startsWith("/console");
-
+  const sections = getNavSections(pathname);
+  useEffect(() => {
+    const media = window.matchMedia("(min-width: 1024px)");
+    const close = () => {
+      if (media.matches) onClose();
+    };
+    media.addEventListener("change", close);
+    return () => media.removeEventListener("change", close);
+  }, [onClose]);
   return (
-    <div
-      data-testid="mobile-sidebar"
-      aria-hidden={!open}
-      className={cn("fixed inset-0 z-50 md:hidden", !open && "pointer-events-none")}
+    <Drawer.Root
+      open={open}
+      onOpenChange={(value) => {
+        if (!value) onClose();
+      }}
     >
-      <button
-        type="button"
-        aria-label="Close navigation"
-        className={cn(
-          "absolute inset-0 bg-black/70 backdrop-blur-sm transition-opacity duration-300",
-          open ? "opacity-100" : "opacity-0",
-        )}
-        onClick={onClose}
-      />
-      <div
-        className={cn(
-          "absolute left-0 top-0 h-full w-[min(300px,85vw)] border-r border-white/10 bg-[#0a0d14]/95 p-5 shadow-2xl backdrop-blur-2xl transition-transform duration-300 cubic-bezier(0.32, 0.72, 0, 1)",
-          MOBILE_SIDEBAR_SCROLL_CLASS,
-          open ? "translate-x-0" : "-translate-x-full",
-        )}
-        role="dialog"
-        aria-label="Primary navigation"
-      >
-        <div className="mb-6 flex items-center gap-3 border-b border-white/5 pb-4">
-          <span
-            aria-label={`${BRAND.name} logo`}
-            data-testid="brand-monogram"
-            className="flex size-10 items-center justify-center rounded-xl from-[var(--run-accent)] to-[var(--run-accent-deep)] bg-gradient-to-b text-sm font-bold text-white shadow-[0_0_20px_rgba(123,108,255,0.4)]"
-          >
-            {BRAND.monogram}
-          </span>
-          <div>
-            <p className="text-sm font-bold tracking-tight text-foreground">
-              {isConsole ? BRAND.developerConsole : BRAND.name}
-            </p>
-            <p className="text-xs text-muted-foreground">
-              {isConsole ? "Developer and operator tools" : BRAND.tagline}
-            </p>
+      <Drawer.Portal>
+        <Drawer.Overlay className="fixed inset-0 z-50 bg-black/70" />
+        <Drawer.Content
+          data-testid="mobile-sidebar"
+          aria-describedby={undefined}
+          onCloseAutoFocus={(event) => {
+            event.preventDefault();
+            document
+              .querySelector<HTMLButtonElement>(
+                'button[aria-label="Open navigation"]',
+              )
+              ?.focus();
+          }}
+          className="fixed inset-y-0 left-0 z-50 w-[min(320px,90vw)] overflow-y-auto bg-[#0a0d14] p-5 pt-[max(1.25rem,env(safe-area-inset-top))] shadow-2xl"
+        >
+          <div className="mb-6 flex items-center justify-between">
+            <Drawer.Title className="text-lg font-semibold">
+              {BRAND.name}
+            </Drawer.Title>
+            <Drawer.Close
+              className="flex size-11 items-center justify-center rounded-lg hover:bg-white/10"
+              aria-label="Close navigation"
+            >
+              <X className="size-5" />
+            </Drawer.Close>
           </div>
-        </div>
-        <div className="grid gap-6">
-          {navSections.map((section) => (
-            <div key={section.label}>
-              <p className="mb-2 px-1 text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/70">
+          {sections.map((section) => (
+            <div key={section.label} className="mb-5">
+              <p className="mb-2 text-xs text-muted-foreground">
                 {section.label}
               </p>
-              <div className="grid gap-1.5" onClick={onClose}>
+              <div onClick={onClose}>
                 {section.items.map((item) => (
                   <SidebarLink key={item.href} item={item} />
                 ))}
               </div>
             </div>
           ))}
-        </div>
-      </div>
-    </div>
+          <div className="border-t pt-4" onClick={onClose}>
+            {secondaryLinks.map((link) => (
+              <Link
+                key={link.href}
+                href={link.href}
+                className="block rounded-lg px-3 py-3 text-sm text-muted-foreground"
+              >
+                {link.label}
+              </Link>
+            ))}
+          </div>
+        </Drawer.Content>
+      </Drawer.Portal>
+    </Drawer.Root>
   );
 }
