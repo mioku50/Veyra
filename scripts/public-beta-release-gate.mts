@@ -207,6 +207,19 @@ runStep("Nova Shadow Autonomy", () => {
   execSync("npm run nova-autonomy:test", { cwd: root, stdio: "inherit" });
 });
 
+runStep("Nova Calibration Report", () => {
+  execSync("npm run nova-calibration:test", { cwd: root, stdio: "inherit" });
+});
+
+runStep("Nova Shadow Diagnostics", () => {
+  execSync("npm run nova-shadow-observability:test", { cwd: root, stdio: "inherit" });
+});
+
+runStep("Nova Discovery and Request Preparation", () => {
+  execSync("npm run nova-discovery:test", { cwd: root, stdio: "inherit" });
+  execSync("npm run x402-request-body:test", { cwd: root, stdio: "inherit" });
+});
+
 runStep("Nova Arc Proof Tests", () => {
   execSync("npm run nova-arc-proof:test", { cwd: root, stdio: "inherit" });
 });

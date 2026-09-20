@@ -20,6 +20,7 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { getServerSupabaseConfig } from "../supabase/server-env.ts";
 import { runRefresh } from "./service.ts";
 import { runShadowPass } from "./shadow-run.ts";
+import { emptyShadowMetrics, observeShadowPass, type ShadowMetrics } from "./shadow-observability.ts";
 
 /**
  * Nova, working while nobody is looking.
@@ -127,21 +128,12 @@ type DueAgent = {
   last_scheduled_refresh_at: string | null;
 };
 
-export type TickOutcome = {
+export type TickOutcome = ShadowMetrics & {
   wentDormant: number;
   due: number;
   refreshed: number;
   failed: number;
   signalsKept: number;
-  /** Shadow autonomy, across every agent this tick touched. Decisions only --
-   *  nothing in this tick can move money, and these counts are the evidence
-   *  for that rather than a summary of spending. */
-  shadowDecided: number;
-  shadowWouldAllow: number;
-  shadowWouldSpendUsdc: number;
-  /** Why candidates could not be priced, across the tick. A pass that decided
-   *  nothing is uninformative without it. */
-  shadowUnpriced: Record<string, number>;
   /** Set when the tick stopped because of the clock rather than the queue. */
   stoppedEarly: boolean;
   durationMs: number;
@@ -350,10 +342,7 @@ export async function runScheduledTick(input?: {
   let failed = 0;
   let signalsKept = 0;
   let stoppedEarly = false;
-  let shadowDecided = 0;
-  let shadowWouldAllow = 0;
-  let shadowWouldSpendUsdc = 0;
-  const shadowUnpriced: Record<string, number> = {};
+  const shadowMetrics = emptyShadowMetrics();
 
   for (const agent of due) {
     if (refreshed + failed >= maxAgents) break;
@@ -382,31 +371,27 @@ export async function runScheduledTick(input?: {
          first: a rehearsal that costs somebody their morning is worse than a
          rehearsal that waits six hours.
 
-         Failures here are swallowed deliberately, for the same reason. */
-      const shadow = Date.now() - started > budgetMs - SHADOW_HEADROOM_MS ? null : await runShadowPass({
-        agent: {
-          agentId: agent.agent_id,
-          publicId: agent.public_id,
-          name: agent.name,
-          interests: agent.interests ?? [],
-          ownerWallet: agent.owner_wallet,
-        },
-        now: new Date(),
-        /* Whatever is left of the tick, less the headroom it keeps for itself.
-           The pass used to bound itself by a candidate count, so it could
-           overrun a nearly-spent tick or -- far more often -- stop looking
-           while there was still time to look. */
-        deadlineMs: Math.max(0, budgetMs - SHADOW_HEADROOM_MS - (Date.now() - started)),
-        fetchImpl: reader,
-      }).catch(() => null);
-      if (shadow) {
-        shadowDecided += shadow.decided;
-        shadowWouldAllow += shadow.wouldAllow;
-        shadowWouldSpendUsdc += shadow.wouldSpendUsdc;
-        for (const [reason, count] of Object.entries(shadow.unpricedReasons)) {
-          shadowUnpriced[reason] = (shadowUnpriced[reason] ?? 0) + count;
-        }
-      }
+         Failures preserve the refreshed brief and are counted separately. */
+      await observeShadowPass(
+        shadowMetrics,
+        Date.now() - started <= budgetMs - SHADOW_HEADROOM_MS,
+        () => runShadowPass({
+          agent: {
+            agentId: agent.agent_id,
+            publicId: agent.public_id,
+            name: agent.name,
+            interests: agent.interests ?? [],
+            ownerWallet: agent.owner_wallet,
+          },
+          now: new Date(),
+          /* Whatever is left of the tick, less the headroom it keeps for itself.
+             The pass used to bound itself by a candidate count, so it could
+             overrun a nearly-spent tick or -- far more often -- stop looking
+             while there was still time to look. */
+          deadlineMs: Math.max(0, budgetMs - SHADOW_HEADROOM_MS - (Date.now() - started)),
+          fetchImpl: reader,
+        }),
+      );
     } catch {
       /* One agent's bad pass is not the tick's. The claim is released so it is
          due again, and the loop continues -- a single unreachable source must
@@ -422,10 +407,7 @@ export async function runScheduledTick(input?: {
     refreshed,
     failed,
     signalsKept,
-    shadowDecided,
-    shadowWouldAllow,
-    shadowWouldSpendUsdc,
-    shadowUnpriced,
+    ...shadowMetrics,
     stoppedEarly,
     durationMs: Date.now() - started,
   };

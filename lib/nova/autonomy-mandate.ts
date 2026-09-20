@@ -39,11 +39,9 @@ export const PREVIEW_MANDATE = {
   mode: "PREVIEW",
   version: MANDATE_VERSION_V2,
   subjectWallet: "0x0000000000000000000000000000000000000000" as const,
-  /* Where the money would move, not where the signature lives. Circle's
-     catalogue publishes nothing on Arc, so Nova's x402 purchases settle on
-     Base; the EIP-712 domain stays Arc Testnet, which is the chain this
-     permission is expressed on. Two different questions, two different
-     answers, and conflating them would deny every decision. */
+  /* This calibration epoch is scoped to Base settlement; the EIP-712 domain
+     remains Arc Testnet. Arc mainnet sellers now exist, but changing these
+     signed terms requires a new mandate and a separate calibration epoch. */
   network: "eip155:8453",
   allowedRails: ["x402"],
   /*

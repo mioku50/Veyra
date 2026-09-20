@@ -25,9 +25,8 @@ export const MARKETPLACE_DISCOVERY_URL = "https://api.circle.com/v2/x402/discove
  *  into an unbounded number of upstream requests. */
 export const MARKETPLACE_QUERY_TERM_LIMIT = 3;
 
-/** Networks the Circle marketplace actually settles on. Arc is absent by design:
- *  the catalog publishes zero Arc resources, so pretending otherwise would
- *  produce empty results with a misleading error. */
+/** Networks enabled by Veyra's current settlement adapters. Arc mainnet sellers
+ * exist; enabling them requires the corresponding payment configuration. */
 export const MARKETPLACE_NETWORKS = {
   "eip155:8453": "Base",
   "eip155:137": "Polygon",
@@ -297,7 +296,10 @@ export function normalizeMarketplaceItem(
     path: textOrNull(metadata.path),
     providerName: provider.name,
   });
-  const method = String(metadata.method || "GET").toUpperCase() === "POST" ? "POST" : "GET";
+  const method = String(metadata.method || "GET").toUpperCase();
+  // The execution transport supports these two methods. Rewriting PATCH or
+  // DELETE to GET changes what is being discovered, probed and approved.
+  if (method !== "GET" && method !== "POST") return null;
   const inputSchema = metadata.input && typeof metadata.input === "object"
     ? (metadata.input as Record<string, unknown>).body
     : undefined;
@@ -465,12 +467,16 @@ export async function discoverMarketplaceCandidates(
 
   const seen = new Set<string>();
   const candidates: MarketplaceCandidate[] = [];
-  for (const item of items) {
+  function eligibleItem(item: unknown): MarketplaceCandidate | null {
     const candidate = normalizeMarketplaceItem(item, { capability, network });
+    if (!candidate || candidate.capabilityMatch === "none") return null;
+    if (maxPriceUsdc !== undefined && candidate.priceUsdc > maxPriceUsdc) return null;
+    if (!isAddress(candidate.selectedAccept.payTo)) return null;
+    return candidate;
+  }
+  for (const item of items) {
+    const candidate = eligibleItem(item);
     if (!candidate) continue;
-    if (candidate.capabilityMatch === "none") continue;
-    if (maxPriceUsdc !== undefined && candidate.priceUsdc > maxPriceUsdc) continue;
-    if (!isAddress(candidate.selectedAccept.payTo)) continue;
     if (seen.has(candidate.candidateId)) continue;
     seen.add(candidate.candidateId);
     candidates.push(candidate);
@@ -499,20 +505,23 @@ export async function discoverMarketplaceCandidates(
 
   const wanted = input.mustInclude?.trim() || null;
   if (wanted && !top.some((candidate) => candidate.candidateId === wanted)) {
-    /* Either it was found and the shortlist cut it, or the query never reached
-       it. One more read settles both: the capability alone, which is the search
-       that saw this subject in the first place. Recursion is bounded -- the
-       retry carries no mustInclude, so it cannot ask again. */
-    const named = candidates.find((candidate) => candidate.candidateId === wanted)
-      ?? (await discoverMarketplaceCandidates({
-        capability: input.capability,
-        network: input.network,
-        maxPriceUsdc: input.maxPriceUsdc,
-        limit,
-        requireCircleGateway: input.requireCircleGateway,
-        fetchImpl: input.fetchImpl,
-      }).catch(() => null))?.candidates.find((candidate) => candidate.candidateId === wanted)
-      ?? null;
+    /* Search the bounded fallback response BEFORE cutting its shortlist.
+       Recursing through discovery previously lost a named seller behind cheap
+       alternatives, even when Circle had returned that exact seller. The same
+       normalization and price filters apply; a changed payee changes its id. */
+    let named = candidates.find((candidate) => candidate.candidateId === wanted) ?? null;
+    if (!named) {
+      const fallbackQuery = capability.replace(/_/g, " ");
+      const fallbackTerms = Array.from(new Set(fallbackQuery.split(/\s+/).filter(term => term.length > 2)))
+        .slice(0, MARKETPLACE_QUERY_TERM_LIMIT);
+      const fallbackQueries = fallbackTerms.length > 1 ? fallbackTerms : [fallbackQuery];
+      const responses = await Promise.allSettled(fallbackQueries.map(fetchQuery));
+      for (const response of responses) {
+        if (response.status !== "fulfilled" || !Array.isArray(response.value.items)) continue;
+        named = response.value.items.map(eligibleItem).find(candidate => candidate?.candidateId === wanted) ?? null;
+        if (named) break;
+      }
+    }
 
     /* First, and the rest trimmed around it rather than after it. Appending
        inside a sliced list would put it back at the mercy of the same limit. */

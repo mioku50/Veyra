@@ -92,7 +92,10 @@ export function actionFor(signal: NovaSignal): NovaAction {
          classify: a repository publishes no route and sells nothing. */
       requiredCapability: "research",
       discoveryTerm: "research",
-      query: `${label} project update`,
+      /* Discovery searches descriptions of services, not the web. "project
+         update" found domain/webhook update APIs; the project belongs in the
+         research intent, while the catalog query names the service we need. */
+      query: "web search",
     };
   }
 

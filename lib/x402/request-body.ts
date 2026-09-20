@@ -25,7 +25,7 @@ const INTENT_WORDS = ["query", "search", "question", "prompt", "keyword", "text"
 
 const QUERY_FIELDS = [
   "q", "query", "search", "searchQuery", "text", "prompt", "input",
-  "question", "term", "keywords", "url",
+  "question", "term", "keywords",
 ];
 
 export type RequestBodyPlan = {
@@ -78,9 +78,18 @@ export function buildRequestBody(input: {
   const names = Object.keys(properties);
   const required = requiredFields(input.inputSchema);
 
+  const acceptsText = (name: string) => {
+    const property = properties[name] as { type?: unknown; format?: unknown } | undefined;
+    if (!property || typeof property !== "object") return false;
+    // A familiar field name does not turn an array/object or a URL into prose.
+    if (property.type !== undefined && property.type !== "string") return false;
+    if (property.format !== undefined) return false;
+    return true;
+  };
+
   // The published schema decides the field name, in its own vocabulary.
   const intentField = QUERY_FIELDS.find((candidate) =>
-    names.some((name) => name.toLowerCase() === candidate.toLowerCase()))
+    names.some((name) => name.toLowerCase() === candidate.toLowerCase() && acceptsText(name)))
     /* A provider's own spelling, when it is recognisably a field for words:
        searchQuery, userQuestion, inputText. Not "any required string" -- that
        was the rule, and it put "What changed in Ethereum EIPs, and does it
@@ -89,7 +98,7 @@ export function buildRequestBody(input: {
        an unusual name, and a request built that way is bought and wasted. */
     ?? names.find((name) => {
       const type = (properties[name] as { type?: unknown } | undefined)?.type;
-      if (type !== "string") return false;
+      if (type !== "string" || !acceptsText(name)) return false;
       const lower = name.toLowerCase();
       /* An identifier, however it is spelled. "messageId" contains "message"
          and is not a message; the suffix is what settles it. */

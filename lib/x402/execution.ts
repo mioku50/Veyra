@@ -240,6 +240,17 @@ async function observeX402Challenge(input: {
   maxAtomic: bigint;
   catalogSchema?: Record<string, unknown> | null;
 }): Promise<ObservedChallenge> {
+  if (input.method === "GET" && input.requestBody != null
+    && !(typeof input.requestBody === "object" && !Array.isArray(input.requestBody)
+      && Object.keys(input.requestBody).length === 0)) {
+    // GET transport below has no body. Never price a question that would be
+    // silently discarded. Query parameters need an explicitly bound URL;
+    // appending them here would change the resource approved by selection.
+    return {
+      kind: "refused", status: 422, code: "get_request_body_unsupported",
+      message: "This GET endpoint needs its parameters in the approved URL. A request body would not be sent. Nothing was quoted or spent.",
+    };
+  }
   /* Refuse before spending a round trip when the catalog already publishes a
      shape this body violates. Advisory: the endpoint's own published schema,
      read out of the live challenge below, is the check that protects money. */

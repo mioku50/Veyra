@@ -30,6 +30,7 @@ import { isExecutableTrustDecision } from "../trust-gate/types.ts";
 import type { TrustDecision, TrustDecisionLevel } from "../trust-gate/types.ts";
 import { priceX402Call, quoteX402Call, type X402PricedTerms, type X402Quote } from "../x402/execution.ts";
 import { buildRequestBody } from "../x402/request-body.ts";
+import { marketplaceCandidateId } from "../counterparty-selection/marketplace-source.ts";
 import type { JsonSchema } from "../seller/json-schema.ts";
 import {
   compareTerms,
@@ -832,6 +833,10 @@ export async function revalidateResearch(input: {
       request: {
         capability: shown.capability,
         query: input.query,
+        // The approved seller and settlement network must survive re-discovery
+        // just as they do when the original proposal is prepared.
+        mustInclude: marketplaceCandidateId(shown.resource, shown.payTo, shown.network),
+        network: shown.network,
         budgetUsdc: RESEARCH_BUDGET_USDC,
         limit: RESEARCH_CANDIDATE_LIMIT,
       },
