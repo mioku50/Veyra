@@ -71,6 +71,24 @@ low does not outrank the most important thing that happened today. An event
 with no reading at all is not a correction and waits its turn with the new
 ones.
 
+And the ranking still changed nothing, because the set being ranked was the
+wrong set. The backlog read took twelve rows ordered by observation time, and
+an agent's first look records every publication it finds in the same second:
+forty rows tied on that column hand back an arbitrary twelve. The two events
+the owner cared about were never in the set, so no amount of ranking could
+reach them. The pool is now the backlog itself (60 rows, ordered
+deterministically by time and then id) and is read through a projection —
+headline, band, and the goal and project state of any stored reading — so
+choosing three readings does not load forty articles. Material is fetched only
+for the candidates the budget actually reaches, and a row whose material never
+reached storage costs a lookup rather than a reading.
+
+This one is not unit-testable: it is the shape of a database query, and it
+failed in exactly the way that looks identical to working. It was found by
+comparing the app's behaviour with the stored rows, and the fix was verified
+by a read-only dry run of the same selection against live data, which put both
+stale Arc cards at the top of the next three readings.
+
 ### Project context
 
 A per-agent list of short statements about the state of the work

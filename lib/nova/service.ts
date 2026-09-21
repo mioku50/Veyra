@@ -349,6 +349,11 @@ export async function refreshNova(input: {
  */
 export const PUBLIC_READING_BUDGET = 3;
 
+/** How much of the backlog is ranked to choose those readings. Large enough
+ *  to cover an agent's whole unread history rather than an arbitrary slice of
+ *  it, and read through a projection that leaves the article text behind. */
+const BACKLOG_POOL = 60;
+
 /**
  * The candidates a reading budget should be spent on, best first: relevance
  * score, then the newest of an equal pair.
@@ -514,11 +519,14 @@ export async function runRefresh(input: {
      it whatever the reading said. */
   type ReadingCandidate = {
     headline: string;
-    material: PublicMaterial;
     relevance: NovaRelevance;
     correction: boolean;
     score: number;
     observedAt: string;
+    /** The material, fetched only if the budget reaches this candidate. The
+     *  pool is ranked on what a light projection says about each row, so the
+     *  text nobody is going to read is never loaded. */
+    open: () => Promise<PublicMaterial | null>;
     /** Where the reading goes when it comes back: into the row about to be
      *  written, or into the row already stored. */
     apply: (assessment: ValueAssessment) => Promise<void>;
@@ -527,13 +535,14 @@ export async function runRefresh(input: {
 
   for (const entry of pendingSignals) {
     if (!entry.readable || !entry.material) continue;
+    const material = entry.material;
     candidates.push({
       headline: String(entry.row.headline),
-      material: entry.material,
       relevance: entry.row.relevance as NovaRelevance,
       correction: false,
       score: entry.score,
       observedAt: String(entry.row.observed_at ?? ""),
+      open: async () => material,
       apply: async (valueAssessment) => {
         entry.row.evidence = { ...(entry.row.evidence as Record<string, unknown>), valueAssessment };
       },
@@ -546,28 +555,49 @@ export async function runRefresh(input: {
      band: pessimistic against a fresh candidate of the same band, and still
      ahead of any weaker one. */
   if (goal) {
-    const { data: pending, error: pendingError } = await db().from("nova_signals").select("signal_id,headline,evidence,relevance,observed_at")
+    /* The whole backlog, not a dozen of it.
+       This read used to take twelve rows ordered by observation time, and an
+       agent's first look records every publication it finds in the same
+       second. Forty rows tied on that column hand back an arbitrary twelve,
+       so the two events an owner actually cared about were never in the set
+       that got ranked -- no amount of ranking could reach them. The pool is
+       now the backlog, ordered deterministically, and projected down to what
+       ranking needs so that forty rows of article text are not loaded to
+       choose three. */
+    const { data: pending, error: pendingError } = await db().from("nova_signals")
+      .select("signal_id,headline,relevance,observed_at,assessedGoal:evidence->valueAssessment->>goal,assessedContext:evidence->valueAssessment->projectContext")
       .eq("agent_id", agent.agent_id).in("kind", ["repository_release", "official_publication"])
       .neq("relevance", "noise")
-      .in("status", ["new", "seen"]).order("observed_at", { ascending: false }).limit(12);
+      .in("status", ["new", "seen"])
+      .order("observed_at", { ascending: false })
+      .order("signal_id", { ascending: true })
+      .limit(BACKLOG_POOL);
     if (pendingError) throw new NovaError("Could not load public events.", "database_unavailable", 503);
     for (const row of (pending ?? []) as Array<Record<string, any>>) {
-      const stored = row.evidence?.valueAssessment;
-      if (stored?.goal === goal && readAgainst(stored.projectContext, projectContext)) continue;
-      const material = (row.evidence?.publicMaterial ?? row.evidence?.subject?.publicMaterial) as PublicMaterial | undefined;
-      if (!material?.text) continue;
+      const assessedGoal = typeof row.assessedGoal === "string" ? row.assessedGoal : null;
+      const assessedContext = Array.isArray(row.assessedContext) ? row.assessedContext as string[] : null;
+      if (assessedGoal === goal && readAgainst(assessedContext, projectContext)) continue;
+      const relevance = (row.relevance ?? "low") as NovaRelevance;
+      let evidence: Record<string, any> | null = null;
       candidates.push({
         headline: String(row.headline),
-        material,
-        relevance: (row.relevance ?? "low") as NovaRelevance,
+        relevance,
         /* It has a reading, and that reading answers a question about a goal
            or a project state that is gone. Never read at all is a different
            thing and waits its turn with the new events. */
-        correction: Boolean(stored),
-        score: scoreFloorFor((row.relevance ?? "low") as NovaRelevance),
+        correction: assessedGoal !== null,
+        score: scoreFloorFor(relevance),
         observedAt: String(row.observed_at ?? ""),
+        open: async () => {
+          const { data, error } = await db().from("nova_signals").select("evidence")
+            .eq("agent_id", agent.agent_id).eq("signal_id", row.signal_id).maybeSingle();
+          if (error) throw new NovaError("Could not load public events.", "database_unavailable", 503);
+          evidence = (data?.evidence as Record<string, any> | undefined) ?? null;
+          const material = (evidence?.publicMaterial ?? evidence?.subject?.publicMaterial) as PublicMaterial | undefined;
+          return material?.text ? material : null;
+        },
         apply: async (valueAssessment) => {
-          const { error } = await db().from("nova_signals").update({ evidence: { ...row.evidence, valueAssessment }, updated_at: new Date().toISOString() })
+          const { error } = await db().from("nova_signals").update({ evidence: { ...(evidence ?? {}), valueAssessment }, updated_at: new Date().toISOString() })
             .eq("agent_id", agent.agent_id).eq("signal_id", row.signal_id);
           if (error) throw new NovaError("Could not save public research.", "database_unavailable", 503);
         },
@@ -575,11 +605,19 @@ export async function runRefresh(input: {
     }
   }
 
+  let opened = 0;
   for (const candidate of readingOrder(candidates)) {
     if (assessments >= PUBLIC_READING_BUDGET) break;
     if (!goal) break;
+    /* A row whose material never made it to storage costs a lookup, not a
+       reading. Bounded anyway, so a backlog of unreadable rows cannot turn
+       one pass into forty queries. */
+    if (opened >= PUBLIC_READING_BUDGET * 3) break;
+    opened++;
+    const material = await candidate.open();
+    if (!material) continue;
     assessments++;
-    const context = await publicContext(candidate.material, input.fetchImpl);
+    const context = await publicContext(material, input.fetchImpl);
     const valueAssessment = await assessPublicMaterial({ goal, projectContext, headline: candidate.headline, sources: context.sources, now });
     if (!valueAssessment) {
       if (!sourcesUnavailable.includes("Nova public-source analysis")) sourcesUnavailable.push("Nova public-source analysis");
