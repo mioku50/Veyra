@@ -127,8 +127,8 @@ assert(scoreFloorFor("high") > scoreFloorFor("medium") && scoreFloorFor("medium"
 assert.equal(readingOrder(candidates).length, candidates.length, "Ranking selects an order, the budget selects how many");
 assert.deepEqual(readingOrder([candidate("no flag", { relevance: "low" }), candidate("high band")]).map(e => e.headline), ["high band", "no flag"], "onScreen is optional and absent means not on the screen");
 assert.deepEqual(readingOrder(candidates).slice(0, PUBLIC_READING_BUDGET).map(entry => entry.headline),
-  ["fresh high", "stale medium", "fresh medium, newer"],
-  "What three readings are actually spent on: today's most important event, then the card that is currently wrong");
+  ["fresh high", "stale medium"],
+  "What a scheduled tick's readings are actually spent on: today's most important event, then the card that is currently wrong");
 assert.deepEqual(readingOrder([candidate("a", { observedAt: "not a date" }), candidate("b")]).map(e => e.headline), ["b", "a"]);
 /* A pass somebody is waiting on reads further into the backlog than an
    unattended one, and neither is unbounded. */

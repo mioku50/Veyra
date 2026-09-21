@@ -22,8 +22,18 @@ import type { NovaSignal } from "./types.ts";
  * relativeToWork that began "no direct connection to the project state", and
  * an action that was to go and read the source it had just been given -- the
  * same abstraction one level down from the topic it replaced.
+ *
+ * 5: every returned string is written in the language of the goal. The rule
+ * existed and was followed about half the time by the model this edition ships
+ * with; restated per field, it held in nine runs out of nine.
+ *
+ * This bump also does a second job the mechanism does not model. A stored
+ * reading records which rules produced it but not which model did, and the
+ * model changed with this edition -- so every judgement made by the previous
+ * one is retired here as a side effect of the edition, rather than by a rule
+ * that would have caught it on its own.
  */
-export const READING_RULES = 4;
+export const READING_RULES = 5;
 
 export type PublicMaterial = {
   id: string;

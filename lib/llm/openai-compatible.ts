@@ -127,6 +127,40 @@ export function resolveLlmConfig(
   }
 }
 
+/** The settings a reading may override, each falling back to its plain
+ *  counterpart. LLM_PROVIDER is absent on purpose: it names the protocol, and
+ *  there is one. */
+const READING_OVERRIDES = ["BASE_URL", "API_KEY", "MODEL", "PROVIDER_LABEL", "USER_AGENT"] as const;
+
+/**
+ * The configuration for the one call that is not a rewrite.
+ *
+ * Nova asks a model for two very different things. Most are a sentence: a
+ * research question sharpened, a purchased result read back. One is judgement
+ * -- twenty rules applied to an article against a goal and a stated project
+ * state, returning grounded JSON with citations resolved by index.
+ *
+ * Measurement says no one model is good at both, in both directions. A
+ * reasoning model spends its entire budget reaching a single rewritten
+ * sentence and fails two calls in five (see .env.example, which records that
+ * on this exact model). A model fast enough for the sentence never once cited
+ * the owner's confirmed facts across twenty-four judgement runs.
+ *
+ * So the reading call may name its own provider. Every LLM_READING_* setting
+ * falls back to its plain counterpart, which means an environment that sets
+ * none of them behaves exactly as it did before this existed.
+ */
+export function resolveReadingLlmConfig(
+  environment: NodeJS.ProcessEnv = process.env,
+): LlmConfigResolution {
+  const overlay: NodeJS.ProcessEnv = { ...environment };
+  for (const name of READING_OVERRIDES) {
+    const value = normalizedEnvironmentValue(environment[`LLM_READING_${name}`]);
+    if (value) overlay[`LLM_${name}`] = value;
+  }
+  return resolveLlmConfig(overlay);
+}
+
 export function getLlmSynthesisDiagnostic(
   environment: NodeJS.ProcessEnv = process.env,
 ) {

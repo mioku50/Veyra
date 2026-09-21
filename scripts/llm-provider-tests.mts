@@ -3,6 +3,7 @@ import {
   generateOpenAiCompatibleText,
   getLlmSynthesisDiagnostic,
   resolveLlmConfig,
+  resolveReadingLlmConfig,
   type LlmGenerationResult,
   type OpenAiCompatibleConfig,
 } from "../lib/llm/openai-compatible.ts";
@@ -148,6 +149,43 @@ assert.deepEqual(resolveLlmConfig({
   reason: "unsupported_provider",
   model: "some-model",
 });
+
+/* Nova's judgement call may name its own provider, because measurement says
+   no one model serves both it and the one-sentence rewrites. The invariant is
+   the fallback: an environment that overrides nothing must resolve exactly as
+   it did before the override existed. */
+const base = {
+  LLM_PROVIDER: "openai-compatible",
+  LLM_BASE_URL: "https://api.example.com/v1",
+  LLM_API_KEY: "base-key",
+  LLM_MODEL: "small-fast-model",
+  LLM_PROVIDER_LABEL: "Base",
+} as NodeJS.ProcessEnv;
+assert.deepEqual(resolveReadingLlmConfig(base), resolveLlmConfig(base), "No override means no difference at all");
+const split = resolveReadingLlmConfig({
+  ...base,
+  LLM_READING_BASE_URL: "https://router.example.com/v1",
+  LLM_READING_API_KEY: "reading-key",
+  LLM_READING_MODEL: "big-judgement-model",
+  LLM_READING_PROVIDER_LABEL: "Router",
+  LLM_READING_USER_AGENT: "cline/3.1.0",
+} as NodeJS.ProcessEnv);
+assert(split.configured);
+assert.equal(split.config.model, "big-judgement-model");
+assert.equal(split.config.baseUrl, "https://router.example.com/v1");
+assert.equal(split.config.apiKey, "reading-key");
+assert.equal(split.config.provider, "Router");
+assert.equal(split.config.userAgent, "cline/3.1.0");
+assert.equal(resolveLlmConfig(base).configured && resolveLlmConfig(base).config.model, "small-fast-model",
+  "and the rewrite path is untouched by the reading override");
+/* A model named without a key of its own stays on the provider already
+   configured -- the same vendor, a different model. */
+const sameVendor = resolveReadingLlmConfig({ ...base, LLM_READING_MODEL: "bigger-model" } as NodeJS.ProcessEnv);
+assert(sameVendor.configured);
+assert.equal(sameVendor.config.apiKey, "base-key");
+assert.equal(sameVendor.config.model, "bigger-model");
+/* An override cannot conjure a configuration out of nothing. */
+assert.equal(resolveReadingLlmConfig({ LLM_READING_MODEL: "x" } as NodeJS.ProcessEnv).configured, false);
 
 const request = validateHostedWorkflowRequest({
   workflowType: "builder_update",
@@ -422,4 +460,4 @@ assert.equal(getLlmSynthesisDiagnostic({
   LLM_MODEL: "example-model-1",
 } as NodeJS.ProcessEnv).configured, false, "and a different value is still refused");
 
-console.log("[llm-provider-test] passed: OpenAI-compatible request boundary, routed provider label and User-Agent header, and a diagnostic that names the settings it needs without carrying one of their values, model config, timeout, 429 retry, response bounds, malformed output, legacy-key rejection, secret-safe prompt, input-leak fallback, AI metadata, deterministic fallback, and partial failure");
+console.log("[llm-provider-test] passed: OpenAI-compatible request boundary, routed provider label and User-Agent header, and a diagnostic that names the settings it needs without carrying one of their values, model config, timeout, 429 retry, response bounds, malformed output, a reading model configurable apart from the rewrite model without changing it, legacy-key rejection, secret-safe prompt, input-leak fallback, AI metadata, deterministic fallback, and partial failure");

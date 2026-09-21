@@ -342,24 +342,35 @@ export async function refreshNova(input: {
  * A reading is a fetch plus a model call the application pays for, so the
  * number is small -- and while it was small, the order it was spent in decided
  * what a person saw. A publication Nova has not read cannot clear the
- * significance gate, so the ten publications a three-reading pass never
- * reached were not judged unimportant; they were never judged. The budget is
- * unchanged and now spent on the highest-scoring candidates first, and what it
- * does not reach is reported as unread rather than absent.
+ * significance gate, so the publications a short pass never reached were not
+ * judged unimportant; they were never judged. The budget is spent on the
+ * highest-scoring candidates first, and what it does not reach is reported as
+ * unread rather than absent.
+ *
+ * It came down from three when the reading model changed. A tick serves every
+ * agent inside one 300-second function, and a reading that took six seconds
+ * now takes twenty at the median and forty at the tail. Reaching fewer events
+ * per tick is a cost; a tick killed halfway through, which writes some rows
+ * and not others, is a worse one.
  */
-export const PUBLIC_READING_BUDGET = 3;
+export const PUBLIC_READING_BUDGET = 2;
 
 /**
  * And what a pass somebody is waiting on may spend.
  *
  * A scheduled tick serves every agent and nobody is watching it, so it stays
  * frugal. A person who pressed the button is waiting on one agent and has
- * asked for exactly this, and a backlog two dozen deep drained three at a
- * time asks them to press it eight times to see the effect of a change they
- * just made. Each reading is a few seconds, so this is still a pass somebody
- * waits through rather than abandons.
+ * asked for exactly this, so it reads further into the backlog.
+ *
+ * Further, not far. The route has 180 seconds, and three readings at the
+ * measured tail -- forty seconds each, plus the source fetches and the
+ * observation pass ahead of them -- already spends most of it. Five would not
+ * finish, and a refresh killed by the platform is worse than a smaller one
+ * that completes. What used to justify a bigger number here was an owner
+ * pressing the button eight times to drain a backlog; they now have a button
+ * on the card itself for that.
  */
-export const ATTENDED_READING_BUDGET = 5;
+export const ATTENDED_READING_BUDGET = 3;
 
 /** How much of the backlog is ranked to choose those readings. Large enough
  *  to cover an agent's whole unread history rather than an arbitrary slice of
