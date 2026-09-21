@@ -281,6 +281,7 @@ npm run lint && npm run build
 npm run erc8004:test && npm run erc8183:test && npm run trust-gate:test
 npm run x402-payment:test && npm run x402-trust-api:test
 npm run nova:test && npm run nova-standing:test && npm run nova-identity:test
+npm run nova-product-value:test && npm run nova-project-context:test
 npm run nova-presentation:test && npm run nova-autonomy:test && npm run nova-arc-proof:test
 (cd contracts && forge test)
 ```
