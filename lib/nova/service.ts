@@ -349,6 +349,18 @@ export async function refreshNova(input: {
  */
 export const PUBLIC_READING_BUDGET = 3;
 
+/**
+ * And what a pass somebody is waiting on may spend.
+ *
+ * A scheduled tick serves every agent and nobody is watching it, so it stays
+ * frugal. A person who pressed the button is waiting on one agent and has
+ * asked for exactly this, and a backlog two dozen deep drained three at a
+ * time asks them to press it eight times to see the effect of a change they
+ * just made. Each reading is a few seconds, so this is still a pass somebody
+ * waits through rather than abandons.
+ */
+export const ATTENDED_READING_BUDGET = 5;
+
 /** How much of the backlog is ranked to choose those readings. Large enough
  *  to cover an agent's whole unread history rather than an arbitrary slice of
  *  it, and read through a projection that leaves the article text behind. */
@@ -403,6 +415,7 @@ export async function runRefresh(input: {
 }): Promise<{ refresh: NovaRefresh; newSignals: number }> {
   const agent = input.agent;
   const now = input.now ?? new Date();
+  const readingBudget = input.trigger === "scheduled" ? PUBLIC_READING_BUDGET : ATTENDED_READING_BUDGET;
   const startedAt = now.toISOString();
   const started = Date.now();
 
@@ -611,12 +624,12 @@ export async function runRefresh(input: {
 
   let opened = 0;
   for (const candidate of readingOrder(candidates)) {
-    if (assessments >= PUBLIC_READING_BUDGET) break;
+    if (assessments >= readingBudget) break;
     if (!goal) break;
     /* A row whose material never made it to storage costs a lookup, not a
        reading. Bounded anyway, so a backlog of unreadable rows cannot turn
        one pass into forty queries. */
-    if (opened >= PUBLIC_READING_BUDGET * 3) break;
+    if (opened >= readingBudget * 3) break;
     opened++;
     const material = await candidate.open();
     if (!material) continue;
@@ -949,6 +962,12 @@ export async function loadBrief(input: {
       .eq("agent_id", agent.agent_id)
       .in("status", ["new", "seen", "investigating", "investigated"])
       .order("observed_at", { ascending: false })
+      /* The same total order the reading pass ranks by. A first look records
+         every publication it finds in the same second, and two queries that
+         break that tie differently disagree about which cards exist: the pass
+         re-reads one dozen and the brief shows another, so a correction lands
+         on a card nobody is looking at. */
+      .order("signal_id", { ascending: true })
       .limit(60),
     db().from("nova_refreshes")
       .select(REFRESH_COLUMNS)

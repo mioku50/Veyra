@@ -1,7 +1,7 @@
 /** Copyright 2026 Veyra. SPDX-License-Identifier: Apache-2.0 */
 import assert from "node:assert/strict";
 import { assembleBrief } from "../lib/nova/brief.ts";
-import { PUBLIC_READING_BUDGET, readingOrder } from "../lib/nova/service.ts";
+import { ATTENDED_READING_BUDGET, PUBLIC_READING_BUDGET, readingOrder } from "../lib/nova/service.ts";
 import { scoreFloorFor } from "../lib/nova/relevance.ts";
 import { NOVA_WITHHOLD_REASONS } from "../lib/nova/types.ts";
 import { changesForSubject, repositoryDigest } from "../lib/nova/observation.ts";
@@ -114,6 +114,9 @@ assert.deepEqual(readingOrder(candidates).slice(0, PUBLIC_READING_BUDGET).map(en
   ["fresh high", "stale medium", "fresh medium, newer"],
   "What three readings are actually spent on: today's most important event, then the card that is currently wrong");
 assert.deepEqual(readingOrder([candidate("a", { observedAt: "not a date" }), candidate("b")]).map(e => e.headline), ["b", "a"]);
+/* A pass somebody is waiting on reads further into the backlog than an
+   unattended one, and neither is unbounded. */
+assert(ATTENDED_READING_BUDGET > PUBLIC_READING_BUDGET && ATTENDED_READING_BUDGET <= 8);
 const xml = `<rss><channel><item><title>Release</title><link>https://blog.ethereum.org/release</link><pubDate>2026-09-19T12:00:00Z</pubDate><description>${source.text}</description></item><item><title>Future</title><link>https://blog.ethereum.org/future</link><pubDate>2027-01-01</pubDate><description>${source.text}</description></item><item><title>Bad link</title><link>http://127.0.0.1/private</link><pubDate>2026-09-19</pubDate><description>${source.text}</description></item></channel></rss>`;
 assert.equal(parseFeed(xml, "https://blog.ethereum.org/feed.xml", now).length, 1);
 assert.throws(() => parseFeed("<html>not RSS</html>", source.url, now));

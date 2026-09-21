@@ -161,6 +161,20 @@ produced it, and a reading stands only while the goal, the project state and
 the edition all still hold. The fourteen assessments written before this are
 reconsidered a budget at a time.
 
+### Two queries that disagreed about which rows exist
+
+The reading pass and the brief both take the most recent rows, and a first
+look records every publication in the same second: ordering by observation
+time alone leaves the tie to the database, and the two queries broke it
+differently. The pass re-read one dozen while the brief displayed another, so
+a correction could land on a card nobody was looking at. Both now order by
+time and then id, which is the same total order in both places.
+
+A pass an owner is waiting on also reads five candidates instead of three. A
+scheduled tick serves every agent with nobody watching and stays frugal; a
+backlog two dozen deep drained three at a time asks the person who just
+changed something to press the button eight times to see it.
+
 ## Deliberate limits
 
 - A confirmed statement is the owner's claim, not a verified fact. Nothing
