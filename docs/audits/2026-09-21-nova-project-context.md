@@ -58,8 +58,18 @@ refresh with three new publications spent the whole budget on them, and two
 higher-relevance Arc events the owner cared about kept a reading made before
 the project context existed. Both populations are now ranked together. A
 stored signal keeps its band and not the number behind it, so it is ranked
-from that band's floor: pessimistic against a fresh candidate of the same
-band, and still ahead of any weaker one.
+from that band's floor.
+
+That floor was still not enough: on the next pass two fresh `medium`
+publications outscored the two stored `medium` Arc cards and the same cards
+starved again, still showing a judgement made before their owner had said
+where the work was. Inside a band, a **correction** now goes first — a reading
+made against a project state that no longer exists is wrong on the screen now,
+while an unread event is only missing, and missing is the better of the two to
+still be true at the end of a pass. Across bands the band still wins: a stale
+low does not outrank the most important thing that happened today. An event
+with no reading at all is not a correction and waits its turn with the new
+ones.
 
 ### Project context
 

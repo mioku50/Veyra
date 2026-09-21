@@ -359,13 +359,35 @@ export const PUBLIC_READING_BUDGET = 3;
  * event nobody had read yet sitting there, which is how the two Arc cards an
  * owner cared about kept their old reading while three lesser ones got a new
  * one.
+ *
+ * Ranking them together by band alone was not enough either: a fresh medium
+ * outscored a stored medium and the same two cards starved a second time,
+ * still showing a judgement made before their owner said where the work was.
  */
-export function readingOrder<T extends { score: number; observedAt: string }>(entries: T[]): T[] {
+export function readingOrder<T extends {
+  relevance: NovaRelevance;
+  /** A reading already on the screen, judged against a goal or a project
+   *  state the owner has since changed. */
+  correction: boolean;
+  score: number;
+  observedAt: string;
+}>(entries: T[]): T[] {
+  const band: Record<NovaRelevance, number> = { high: 0, medium: 1, low: 2, noise: 3 };
   const at = (entry: T) => {
     const parsed = Date.parse(entry.observedAt);
     return Number.isFinite(parsed) ? parsed : 0;
   };
-  return [...entries].sort((a, b) => b.score - a.score || at(b) - at(a));
+  return [...entries].sort((a, b) =>
+    band[a.relevance] - band[b.relevance]
+    /* Inside a band, a correction goes first. A card whose reading was made
+       against a project that no longer exists is wrong on the screen right
+       now; an unread event is merely missing, and missing is the better of
+       the two to still be true at the end of the pass. Across bands the band
+       still wins: a stale low does not outrank the most important thing that
+       happened today. */
+    || Number(b.correction) - Number(a.correction)
+    || b.score - a.score
+    || at(b) - at(a));
 }
 
 export async function runRefresh(input: {
@@ -493,6 +515,8 @@ export async function runRefresh(input: {
   type ReadingCandidate = {
     headline: string;
     material: PublicMaterial;
+    relevance: NovaRelevance;
+    correction: boolean;
     score: number;
     observedAt: string;
     /** Where the reading goes when it comes back: into the row about to be
@@ -506,6 +530,8 @@ export async function runRefresh(input: {
     candidates.push({
       headline: String(entry.row.headline),
       material: entry.material,
+      relevance: entry.row.relevance as NovaRelevance,
+      correction: false,
       score: entry.score,
       observedAt: String(entry.row.observed_at ?? ""),
       apply: async (valueAssessment) => {
@@ -533,6 +559,11 @@ export async function runRefresh(input: {
       candidates.push({
         headline: String(row.headline),
         material,
+        relevance: (row.relevance ?? "low") as NovaRelevance,
+        /* It has a reading, and that reading answers a question about a goal
+           or a project state that is gone. Never read at all is a different
+           thing and waits its turn with the new events. */
+        correction: Boolean(stored),
         score: scoreFloorFor((row.relevance ?? "low") as NovaRelevance),
         observedAt: String(row.observed_at ?? ""),
         apply: async (valueAssessment) => {

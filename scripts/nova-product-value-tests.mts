@@ -85,23 +85,35 @@ for (const sample of [brief, held, capped]) {
 /* The reading budget is spent by relevance, not by whatever the source list
    returned first and not on the new events merely for being new: an unread
    publication cannot clear the significance gate, so this order decides the
-   brief. A stored signal is ranked from the floor of the band it kept. */
+   brief. Inside a band a correction goes first -- a card whose reading was
+   made against a project state the owner has since changed is wrong on the
+   screen now, while an unread event is only missing. */
+const candidate = (headline: string, over: Partial<{ relevance: "high" | "medium" | "low"; correction: boolean; score: number; observedAt: string }> = {}) => ({
+  headline, relevance: "medium" as const, correction: false, score: 50, observedAt: "2026-09-20T10:00:00Z", ...over,
+});
 const candidates = [
-  { score: 10, observedAt: "2026-09-20T10:00:00Z", headline: "weak" },
-  { score: scoreFloorFor("high"), observedAt: "2026-09-18T10:00:00Z", headline: "backlog, unread, high" },
-  { score: 45, observedAt: "2026-09-19T10:00:00Z", headline: "fresh medium, older" },
-  { score: 45, observedAt: "2026-09-20T12:00:00Z", headline: "fresh medium, newer" },
-  { score: 25, observedAt: "not a date", headline: "middling" },
+  candidate("fresh medium, newer", { observedAt: "2026-09-20T12:00:00Z" }),
+  candidate("fresh medium, older"),
+  candidate("stale medium", { correction: true, score: scoreFloorFor("medium") }),
+  candidate("unread medium", { score: scoreFloorFor("medium"), observedAt: "2026-09-18T10:00:00Z" }),
+  candidate("fresh high", { relevance: "high", score: 80 }),
+  candidate("stale low", { relevance: "low", correction: true, score: scoreFloorFor("low") }),
 ];
-assert.deepEqual(readingOrder(candidates).map(entry => entry.headline),
-  ["backlog, unread, high", "fresh medium, newer", "fresh medium, older", "middling", "weak"],
-  "An unread high-relevance event outranks three fresher lesser ones");
+assert.deepEqual(readingOrder(candidates).map(entry => entry.headline), [
+  "fresh high",
+  "stale medium",
+  "fresh medium, newer",
+  "fresh medium, older",
+  "unread medium",
+  "stale low",
+], "Band first, then the correction, then score and recency");
 assert.equal(scoreFloorFor("noise"), 0);
 assert(scoreFloorFor("high") > scoreFloorFor("medium") && scoreFloorFor("medium") > scoreFloorFor("low"));
 assert.equal(readingOrder(candidates).length, candidates.length, "Ranking selects an order, the budget selects how many");
 assert.deepEqual(readingOrder(candidates).slice(0, PUBLIC_READING_BUDGET).map(entry => entry.headline),
-  ["backlog, unread, high", "fresh medium, newer", "fresh medium, older"],
-  "What three readings are actually spent on");
+  ["fresh high", "stale medium", "fresh medium, newer"],
+  "What three readings are actually spent on: today's most important event, then the card that is currently wrong");
+assert.deepEqual(readingOrder([candidate("a", { observedAt: "not a date" }), candidate("b")]).map(e => e.headline), ["b", "a"]);
 const xml = `<rss><channel><item><title>Release</title><link>https://blog.ethereum.org/release</link><pubDate>2026-09-19T12:00:00Z</pubDate><description>${source.text}</description></item><item><title>Future</title><link>https://blog.ethereum.org/future</link><pubDate>2027-01-01</pubDate><description>${source.text}</description></item><item><title>Bad link</title><link>http://127.0.0.1/private</link><pubDate>2026-09-19</pubDate><description>${source.text}</description></item></channel></rss>`;
 assert.equal(parseFeed(xml, "https://blog.ethereum.org/feed.xml", now).length, 1);
 assert.throws(() => parseFeed("<html>not RSS</html>", source.url, now));
