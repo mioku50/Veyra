@@ -235,3 +235,81 @@ attempts swung the wrong way.
 Prompt wording is close to exhausted as a lever here. The remaining variable is
 the model, which is configuration (`LLM_*`), a cost decision, and the owner's to
 make. Nothing in this note recommends spending it.
+
+## Choosing a model for the judgement call, 2026-09-21
+
+Prompt wording had stopped paying. The owner asked for a comparison before
+changing anything, so this is the measurement it rests on: same prompt, the
+owner's real goal, their four confirmed facts, the stored material of five
+events, 25 runs per model.
+
+| | ministral-8b-latest (was) | deepseek-v4-flash (now) |
+| --- | --- | --- |
+| Verdict matches the reference | 5 of 5 subjects | 4 of 5 |
+| Same verdict across runs | 4 of 5 | 5 of 5 |
+| Usable answers | 24/25 | 24/25 |
+| Latency median / p90 / max | 5.1s / 6.6s / 7.8s | 16.4s / 33.4s / 36.6s |
+| Over the 25s reading timeout | 0 of 24 | 6 of 24 |
+| Answered in the goal's language | 24/24 | 13/24, then 9/9 |
+| Cited a confirmed project fact | **0 of 24** | **15 of 24** |
+
+The last row decided it. Nothing was wrong with the mechanism that resolves a
+project statement from an index; the model simply never used it, so the "what
+you already have" half of every finding was empty by construction. The
+difference shows in the actions too — "создать список файлов, ответственных за
+обработку балансов, и проверить их на совместимость" against "составить перечень
+файлов и путей, где читаются `address.balance`/`balanceOf`, переводят native
+USDC или ERC-20 и индексируют Transfer, затем проверить каждый на 18↔6".
+
+### What the reference got wrong
+
+Arc Portal is the one subject the two models disagree on, and this note called
+deepseek's *significant* the error. Re-read afterwards with the project context
+actually in use, it proposed: build a checklist for choosing the operational
+wallet — networks, agent delegation, limits, permissions — and settle it
+against what Arc Portal offers. Against a confirmed "operational wallet не
+выбран" that is not ecosystem news; it is material for a decision the owner has
+said is open. The 4-of-5 above should be read as 5 of 5, and the reference
+judgement as the thing that was wrong.
+
+### Two models, because the workloads are not the same
+
+`.env.example` already recorded deepseek-v4-flash failing two calls in five on
+Nova's one-sentence rewrite — a reasoning model spending its whole budget
+reaching a single sentence. Pointing `LLM_MODEL` at it would have traded one
+regression for another.
+
+So `LLM_READING_*` overlays the judgement call alone, each setting falling back
+to its plain counterpart. An environment that sets none of them resolves
+exactly as before, and that fallback is pinned by a test in
+`scripts/llm-provider-tests.mts`.
+
+### What the slower model cost, paid before deploying
+
+- Reading timeout 25s → 45s. At 25s roughly a quarter of readings were killed
+  mid-answer and shown as the model declining rather than the clock expiring.
+- Reading budgets 3 → 2 scheduled and 5 → 3 attended, so a refresh finishes
+  inside the route's 180 seconds. Three readings at the measured tail plus the
+  source fetches and the observation pass already spend most of it. The
+  per-card button means the backlog is no longer the only way through.
+- Response cap 24 KB → 96 KB **for this call only**. This was not predicted: the
+  first live call through the real path returned no answer after 34 seconds
+  with everything configured correctly. The model returns its working inside
+  the body — 6150 completion tokens for a 1.2 KB reply — and across eight
+  readings the raw bodies ran 6.7 KB to 22.9 KB. The largest sat at 95% of the
+  cap and one call crossed it. Nothing was failing consistently, which is why
+  only a live run found it.
+- Rules edition 5 states the language rule per field. It also retires every
+  judgement the previous model made, as a side effect of the edition rather
+  than through any rule that models which model wrote a reading.
+
+### Verified
+
+Six of six readings through the real path — `resolveReadingLlmConfig` →
+`generateOpenAiCompatibleText` → AgentRouter, no test double — 12 to 24
+seconds, every one in Russian, every one citing two or three confirmed facts.
+
+Not verified: cost. AgentRouter publishes no pricing in its model catalogue and
+this note does not estimate one. Nor is there evidence yet from a scheduled
+tick in production, or from the owner's own judgement of whether the proposed
+work is worth doing. That is still gate V.
