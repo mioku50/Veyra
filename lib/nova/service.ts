@@ -10,6 +10,7 @@ import {
   contextForPrompt,
   normalizeStatement,
   normalizeStatements,
+  readAgainst,
   type NovaProjectContext,
 } from "./project-context.ts";
 import { assessPublicMaterial } from "./free-research.ts";
@@ -539,7 +540,8 @@ export async function runRefresh(input: {
     );
     for (const row of ranked) {
       if (assessments >= PUBLIC_READING_BUDGET) break;
-      if (row.evidence?.valueAssessment?.goal === goal) continue;
+      const stored = row.evidence?.valueAssessment;
+      if (stored?.goal === goal && readAgainst(stored.projectContext, projectContext)) continue;
       const material = (row.evidence?.publicMaterial ?? row.evidence?.subject?.publicMaterial) as PublicMaterial | undefined;
       if (!material?.text) continue;
       assessments++;
@@ -1368,16 +1370,17 @@ export async function researchPublicSources(input: { publicId: string; ownerSecr
   if (signal.kind !== "repository_release" && signal.kind !== "official_publication") {
     throw new NovaError("This is background activity or an operational alert, not an event that needs research.", "background_activity");
   }
+  const projectContext = contextForPrompt(await loadProjectContext(agent.agent_id));
   const current = assessmentOf(signal);
-  if (current?.goal === agent.goal && Date.now() - Date.parse(current.generatedAt) < 24 * 3_600_000) return current;
+  /* A fresh reading of the same event under the same goal is reused -- unless
+     the owner has since said something different about where the work is, in
+     which case it is a reading of a project that no longer exists. */
+  if (current?.goal === agent.goal && readAgainst(current.projectContext, projectContext)
+    && Date.now() - Date.parse(current.generatedAt) < 24 * 3_600_000) return current;
   const subject = signal.evidence.subject as Record<string, unknown> | undefined;
   const material = (signal.evidence.publicMaterial ?? subject?.publicMaterial) as PublicMaterial | undefined;
   if (!material?.text || !material.url) throw new NovaError("No readable public material is stored for this event. Open the original source or look again later.", "source_unavailable");
   const context = await publicContext(material);
-  /* The same project state a scheduled reading gets. An owner-requested one
-     that judged the event against the goal alone would answer a different
-     question from the card beside it. */
-  const projectContext = contextForPrompt(await loadProjectContext(agent.agent_id));
   const assessment = await assessPublicMaterial({ goal: agent.goal, projectContext, headline: signal.headline, sources: context.sources });
   if (assessment) assessment.sourcesUnavailable = context.unavailable;
   if (!assessment) throw new NovaError("Could not produce a source-supported analysis. No paid tool was requested.", "analysis_unavailable", 503);

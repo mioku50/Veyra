@@ -17,6 +17,7 @@ import {
   PROJECT_CONTEXT_LIMITS,
   confirmedContext as confirmedProjectContext,
   proposedContext as proposedProjectContext,
+  splitStatements,
 } from "@/lib/nova/project-context";
 /* The same mapping the scorer uses. A third copy would be a third chance for
    the button to offer a ban the scorer does not honour. Null for the kinds
@@ -479,11 +480,18 @@ export function NovaClient({ view = "today" }: { view?: NovaView } = {}) {
       }) as { context: NovaProjectContext[] };
       setDraftContext(null);
       setBrief((current) => (current ? { ...current, projectContext: saved.context } : current));
-      /* Said plainly: this changes what Nova is told next time, not what it
-         already wrote. A card read against the old context stays read against
-         the old context, and pretending otherwise would make every stored
-         assessment unfalsifiable. */
-      setContextNote("Saved. Readings from here on are judged against this; the ones already written are not rewritten.");
+      /* Then look again. A context nobody sees the effect of is a form, not a
+         memory: the pass reconsiders recent events against the new state,
+         within the same reading budget. Cards it does not reach keep the
+         reading they had, and each one says which state it was read
+         against. */
+      await call(`/api/nova/v1/agents/${identity.publicId}/refresh`, {
+        method: "POST",
+        ownerSecret: identity.ownerSecret,
+        body: JSON.stringify({ trigger: "manual" }),
+      });
+      await loadBrief(identity);
+      setContextNote("Saved. Nova re-read what it could against this; older readings keep, and name, the state they were judged against.");
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Could not save your project context.");
     } finally {
@@ -1141,6 +1149,11 @@ export function NovaClient({ view = "today" }: { view?: NovaView } = {}) {
   const withheldTotal = withheldGroups.reduce((total, [, signals]) => total + signals.length, 0);
   const confirmedContext = confirmedProjectContext(brief.projectContext ?? []);
   const proposedContext = proposedProjectContext(brief.projectContext ?? []);
+  const splitSuggestion = (draftContext ?? []).reduce<{ index: number; parts: string[] } | null>((found, statement, index) => {
+    if (found) return found;
+    const parts = splitStatements(statement);
+    return parts.length > 1 ? { index, parts } : null;
+  }, null);
 
   return (
     <Shell>
@@ -1562,6 +1575,24 @@ export function NovaClient({ view = "today" }: { view?: NovaView } = {}) {
                   </li>
                 ))}
               </ul>
+              {/* Four facts in one row read the same to the model and cannot be
+                  corrected one at a time -- and being correctable is what
+                  keeps this list from going stale. Offered, not applied:
+                  rewriting what somebody typed about their own project is not
+                  ours to do silently. */}
+              {splitSuggestion ? (
+                <div className="mt-3 rounded-lg border p-3">
+                  <p className="text-xs leading-relaxed text-muted-foreground">
+                    Line {splitSuggestion.index + 1} looks like {splitSuggestion.parts.length} separate
+                    facts. Kept as one, you cannot retire a single line of it later.
+                  </p>
+                  <Verb onClick={() => setDraftContext((current) => {
+                    const rows = [...(current ?? [])];
+                    rows.splice(splitSuggestion.index, 1, ...splitSuggestion.parts);
+                    return rows.slice(0, PROJECT_CONTEXT_LIMITS.confirmed);
+                  })}>Split into {splitSuggestion.parts.length} facts</Verb>
+                </div>
+              ) : null}
               <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-3">
                 {draftContext.length < PROJECT_CONTEXT_LIMITS.confirmed ? (
                   <Verb onClick={() => setDraftContext((current) => [...(current ?? []), ""])}>Add a fact</Verb>
@@ -1576,7 +1607,7 @@ export function NovaClient({ view = "today" }: { view?: NovaView } = {}) {
                   disabled={savingContext}
                   className="rounded-lg bg-primary px-5 py-2.5 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-40"
                 >
-                  {savingContext ? "Saving…" : "Save project context"}
+                  {savingContext ? "Saving and looking again…" : "Save and look again"}
                 </button>
                 <Verb onClick={() => setDraftContext(null)}>Cancel</Verb>
               </div>

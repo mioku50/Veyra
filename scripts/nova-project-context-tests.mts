@@ -8,6 +8,8 @@ import {
   normalizeStatement,
   normalizeStatements,
   proposedContext,
+  readAgainst,
+  splitStatements,
   type NovaProjectContext,
 } from "../lib/nova/project-context.ts";
 import { assessPublicMaterial, parseValueAssessment } from "../lib/nova/free-research.ts";
@@ -104,4 +106,27 @@ assert.deepEqual(sent.projectState, [
 assert.equal(sent.projectState?.includes("Veyra migrated to Arc mainnet."), false, "A proposal Nova wrote must never be read back to it as fact");
 assert.equal(assessed.projectContext?.length, 2);
 
-console.log("PASS: project context — one fact per line, owner-confirmed statements only in the prompt, a reading that says what changed against work already done, and an inference Nova cannot confirm for itself.");
+/* A reading carries the state it was judged against, so a pass can tell which
+   readings are answering a question about a project that no longer exists. */
+assert.equal(readAgainst(["a", "b"], ["a", "b"]), true);
+assert.equal(readAgainst(["a", "b"], ["b", "a"]), false);
+assert.equal(readAgainst(["a"], ["a", "b"]), false);
+assert.equal(readAgainst(undefined, []), true, "An assessment written before context existed matches an empty context and nothing else");
+assert.equal(readAgainst(undefined, ["a"]), false);
+
+/* Real input from the first owner to use the panel: four facts typed into one
+   row. It reads the same to the model and cannot be corrected a line at a
+   time, which is what keeps the list from going stale. */
+const blob = "ERC-8183 escrow протестирован. ERC-8004 identity живёт на Arc Testnet . Operational wallet не выбран. «Приоритет — полезность исследований Nova";
+assert.deepEqual(splitStatements(blob), [
+  "ERC-8183 escrow протестирован.",
+  "ERC-8004 identity живёт на Arc Testnet .",
+  "Operational wallet не выбран.",
+  "«Приоритет — полезность исследований Nova",
+]);
+assert.deepEqual(splitStatements("Line one\nLine two"), ["Line one", "Line two"]);
+assert.deepEqual(splitStatements("One fact and nothing else."), [], "A single fact is not a suggestion to split");
+assert.deepEqual(splitStatements("Version 1.2 shipped."), [], "A decimal point does not end a sentence");
+assert(splitStatements(blob).every(part => part.length <= PROJECT_CONTEXT_LIMITS.statement));
+
+console.log("PASS: project context — one fact per line, owner-confirmed statements only in the prompt, a reading that says what changed against work already done, an inference Nova cannot confirm for itself, a reading reconsidered when the state it was judged against changes, and a pasted blob offered back as the facts it is.");

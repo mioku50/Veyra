@@ -115,3 +115,36 @@ export function contextForPrompt(entries: NovaProjectContext[]): string[] {
   }
   return lines;
 }
+
+/**
+ * Whether a stored reading was judged against the state in force now.
+ *
+ * A reading carries the statements it was given. When those change, the
+ * reading is answering a question about a project that no longer exists --
+ * "this is new to you" said against last week's state is the exact mistake
+ * this feature was built to stop -- so the pass reconsiders it, the same way
+ * it reconsiders a changed goal. An older assessment stored no context at
+ * all; that matches an empty one and nothing else.
+ */
+export function readAgainst(stored: string[] | undefined | null, current: string[]): boolean {
+  const before = stored ?? [];
+  return before.length === current.length && before.every((statement, index) => statement === current[index]);
+}
+
+/**
+ * A blob somebody pasted, as the facts it probably is.
+ *
+ * Offered, never applied: the panel shows what it would split into and the
+ * owner presses the button. Four facts in one row read the same to the model
+ * and cannot be corrected one at a time, which is the whole point of keeping
+ * this list short and current -- but silently rewriting what somebody typed
+ * about their own project is not the way to fix that.
+ */
+export function splitStatements(value: string): string[] {
+  const parts = value
+    .split(/\n+|(?<=[.!?;])\s+(?=[A-ZА-ЯЁ«"'0-9])/u)
+    .map((part) => part.trim().replace(/\s+/g, " "))
+    .filter((part) => part.replace(/[^\p{L}\p{N}]/gu, "").length >= 3)
+    .map((part) => part.slice(0, PROJECT_CONTEXT_LIMITS.statement));
+  return parts.length > 1 ? parts.slice(0, PROJECT_CONTEXT_LIMITS.confirmed) : [];
+}

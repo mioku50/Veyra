@@ -72,6 +72,30 @@ Limits: 12 confirmed statements, 200 characters each, at most 6 unanswered
 proposals, and 1,200 characters of context per prompt so a growing context
 cannot crowd the source excerpts out of it.
 
+### Changing the context reconsiders recent readings
+
+Each stored assessment carries the statements it was judged against, so a pass
+can tell which readings answer a question about a project that no longer
+exists. A changed context now reopens them the same way a changed goal does,
+within the same reading budget and in the same relevance order; saving the
+context asks Nova to look again, so the effect is visible rather than deferred
+to the next scheduled tick. Cards the budget does not reach keep the reading
+they had, and every card names the state it was read against.
+
+An assessment written before this existed stores no context, which matches an
+empty context and nothing else — set one statement and the old readings are
+reconsidered.
+
+### One fact per row, offered rather than imposed
+
+The first owner to use the panel typed four facts into one row. It reads the
+same to the model, but it cannot be corrected a line at a time, and being
+correctable is what keeps this list from going stale — "operational wallet is
+not chosen" has to be removable on the day one is. The editor now detects a
+row that is several sentences and offers to split it. It does not split
+anything on its own: silently rewriting what somebody typed about their own
+project is the same mistake as confirming an inference for them.
+
 ## Deliberate limits
 
 - A confirmed statement is the owner's claim, not a verified fact. Nothing
