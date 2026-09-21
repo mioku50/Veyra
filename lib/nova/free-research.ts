@@ -138,7 +138,7 @@ export async function assessPublicMaterial(input: {
   projectContext?: string[];
   /** Told why, when there is no assessment. A diagnostic channel, not a
    *  result: a caller that does not care goes on reading null as before. */
-  onFailure?: (reason: ReadingFailure) => void;
+  onFailure?: (reason: ReadingFailure, detail?: string) => void;
   generate?: typeof generateOpenAiCompatibleText;
 }): Promise<ValueAssessment | null> {
   if (!input.goal || !input.sources.length) return null;
@@ -201,7 +201,7 @@ export async function assessPublicMaterial(input: {
     }),
   }).catch(() => null);
   if (!result?.ok) {
-    input.onFailure?.(result?.reason ?? "upstream_error");
+    input.onFailure?.(result?.reason ?? "upstream_error", result && !result.ok ? result.detail : undefined);
     return null;
   }
   const assessment = parseValueAssessment(result.text, { goal: input.goal, sources: input.sources, projectContext, now: input.now ?? new Date(), writtenBy: `${result.provider} · ${result.model}` });

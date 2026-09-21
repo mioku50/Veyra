@@ -150,6 +150,25 @@ assert.deepEqual(resolveLlmConfig({
   model: "some-model",
 });
 
+/* A router that refuses can answer 200 with an error object, which from the
+   client's side looks exactly like a model with nothing to say. The reason is
+   the same either way; the note is what tells them apart. */
+const refusedAt200 = await generateOpenAiCompatibleText({
+  config: { provider: "Router", protocol: "openai-compatible", baseUrl: "https://router.example.com/v1", apiKey: "k", model: "m", userAgent: "cline/3.1.0" },
+  systemPrompt: "x", userPrompt: "y", maxAttempts: 1,
+  fetchImpl: async () => new Response(JSON.stringify({ error: { message: "insufficient balance for model m" } }), { status: 200 }),
+});
+assert.equal(refusedAt200.ok, false);
+assert.equal(refusedAt200.ok === false && refusedAt200.reason, "invalid_response");
+assert(refusedAt200.ok === false && refusedAt200.detail?.includes("insufficient balance"), "the provider's own words reach the caller");
+assert(refusedAt200.ok === false && refusedAt200.detail?.includes("error"), "and which keys the body actually had");
+const emptyChoices = await generateOpenAiCompatibleText({
+  config: { provider: "Router", protocol: "openai-compatible", baseUrl: "https://router.example.com/v1", apiKey: "k", model: "m", userAgent: null },
+  systemPrompt: "x", userPrompt: "y", maxAttempts: 1,
+  fetchImpl: async () => new Response(JSON.stringify({ id: "1", choices: [] }), { status: 200 }),
+});
+assert(emptyChoices.ok === false && emptyChoices.detail?.includes("keys id,choices"), "and a body with no error still says what it did have");
+
 /* Nova's judgement call may name its own provider, because measurement says
    no one model serves both it and the one-sentence rewrites. The invariant is
    the fallback: an environment that overrides nothing must resolve exactly as
@@ -460,4 +479,4 @@ assert.equal(getLlmSynthesisDiagnostic({
   LLM_MODEL: "example-model-1",
 } as NodeJS.ProcessEnv).configured, false, "and a different value is still refused");
 
-console.log("[llm-provider-test] passed: OpenAI-compatible request boundary, routed provider label and User-Agent header, and a diagnostic that names the settings it needs without carrying one of their values, model config, timeout, 429 retry, response bounds, malformed output, a reading model configurable apart from the rewrite model without changing it, legacy-key rejection, secret-safe prompt, input-leak fallback, AI metadata, deterministic fallback, and partial failure");
+console.log("[llm-provider-test] passed: OpenAI-compatible request boundary, routed provider label and User-Agent header, and a diagnostic that names the settings it needs without carrying one of their values, model config, timeout, 429 retry, response bounds, malformed output, a reading model configurable apart from the rewrite model without changing it, a 200 that carries a refusal rather than an answer telling the caller which it was, legacy-key rejection, secret-safe prompt, input-leak fallback, AI metadata, deterministic fallback, and partial failure");

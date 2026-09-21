@@ -661,12 +661,13 @@ export async function runRefresh(input: {
     assessments++;
     const context = await publicContext(material, input.fetchImpl);
     let readingFailure: ReadingFailure | null = null;
-    const valueAssessment = await assessPublicMaterial({ goal, projectContext, headline: candidate.headline, sources: context.sources, now, onFailure: (reason) => { readingFailure = reason; } });
+    let readingDetail: string | undefined;
+    const valueAssessment = await assessPublicMaterial({ goal, projectContext, headline: candidate.headline, sources: context.sources, now, onFailure: (reason, detail) => { readingFailure = reason; readingDetail = detail; } });
     if (!valueAssessment) {
       /* Which reading failed and why, rather than one line that says a
          reading failed. A pass that lost three to a rate limit and a pass
          that lost three to ungrounded answers are different problems. */
-      const note = `Nova public-source analysis (${readingFailure ?? "upstream_error"})`;
+      const note = `Nova public-source analysis (${readingFailure ?? "upstream_error"}${readingDetail ? `: ${readingDetail}` : ""})`;
       if (!sourcesUnavailable.includes(note)) sourcesUnavailable.push(note);
       continue;
     }
@@ -1535,12 +1536,13 @@ export async function researchPublicSources(input: { publicId: string; ownerSecr
   if (!material?.text || !material.url) throw new NovaError("No readable public material is stored for this event. Open the original source or look again later.", "source_unavailable");
   const context = await publicContext(material);
   let failure: ReadingFailure | null = null;
-  const assessment = await assessPublicMaterial({ goal: agent.goal, projectContext, headline: signal.headline, sources: context.sources, onFailure: (reason) => { failure = reason; } });
+  let failureDetail: string | undefined;
+  const assessment = await assessPublicMaterial({ goal: agent.goal, projectContext, headline: signal.headline, sources: context.sources, onFailure: (reason, detail) => { failure = reason; failureDetail = detail; } });
   if (assessment) assessment.sourcesUnavailable = context.unavailable;
   /* Named, because the six ways this fails ask for six different things from
      the person reading the card, and "no paid tool was requested" is true of
      all of them. */
-  if (!assessment) throw new NovaError(`${READING_FAILURE_DETAIL[(failure ?? "upstream_error") as ReadingFailure]} No paid tool was requested; the earlier reading is unchanged.`, `analysis_unavailable_${failure ?? "upstream_error"}`, 503);
+  if (!assessment) throw new NovaError(`${READING_FAILURE_DETAIL[(failure ?? "upstream_error") as ReadingFailure]}${failureDetail ? ` (${failureDetail})` : ""} No paid tool was requested; the earlier reading is unchanged.`, `analysis_unavailable_${failure ?? "upstream_error"}`, 503);
   const { error } = await db().from("nova_signals").update({ evidence: { ...signal.evidence, valueAssessment: assessment }, updated_at: new Date().toISOString() })
     .eq("agent_id", agent.agent_id).eq("signal_id", signal.signalId);
   if (error) throw new NovaError("Could not save the analysis.", "database_unavailable", 503);

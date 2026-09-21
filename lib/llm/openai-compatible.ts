@@ -63,6 +63,11 @@ export type LlmGenerationResult =
       protocol: typeof LLM_PROVIDER_PROTOCOL;
       model: string | null;
       reason: LlmFailureReason;
+      /** A bounded note about the shape of what came back, for the case where
+       *  a provider answers 200 with something that is not an answer. The
+       *  payload's top-level keys and its own error message -- never the
+       *  model's output, which is either the result or nothing. */
+      detail?: string;
       attempted: boolean;
       attempts: number;
     };
@@ -241,6 +246,29 @@ async function boundedResponseText(response: Response, maxBytes: number) {
   return text + decoder.decode();
 }
 
+/**
+ * What came back, when what came back was not an answer.
+ *
+ * A router that refuses can answer 200 with an error object, and from the
+ * client's side that is indistinguishable from a model with nothing to say:
+ * both are `invalid_response`, and neither says which. This reports the
+ * payload's top-level keys and the provider's own error message, bounded, and
+ * never any model output.
+ */
+function responseDiagnostic(payload: unknown, raw: string): string {
+  if (!payload || typeof payload !== "object") {
+    return `body was not JSON (${raw.trim().slice(0, 60) || "empty"})`;
+  }
+  const keys = Object.keys(payload as Record<string, unknown>).slice(0, 8).join(",") || "no keys";
+  const error = (payload as { error?: unknown }).error;
+  const message = typeof error === "string"
+    ? error
+    : typeof (error as { message?: unknown })?.message === "string"
+      ? (error as { message: string }).message
+      : null;
+  return message ? `${keys}; provider said: ${message.slice(0, 200)}` : `keys ${keys}`;
+}
+
 function responseContent(payload: unknown) {
   if (!payload || typeof payload !== "object") return null;
   const choices = (payload as { choices?: unknown }).choices;
@@ -383,6 +411,7 @@ export async function generateOpenAiCompatibleText(input: {
           protocol: config.protocol,
           model: config.model,
           reason: "invalid_response",
+          detail: responseDiagnostic(payload, raw),
           attempted: true,
           attempts: attempt,
         };
