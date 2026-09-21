@@ -3,21 +3,13 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import { assessmentOf, isBackgroundKind } from "./value.ts";
 import { orderByRelevance } from "./relevance.ts";
 import type { NovaRelevance, NovaSignalKind } from "./types.ts";
 
-/**
- * Turning everything Nova found into the few lines a person will actually read.
- *
- * The first live run produced thirteen items, which is a list, not a brief. A
- * person who opens thirteen items every morning stops opening them, and then
- * the one that mattered -- the changed payee -- is the one they miss.
- *
- * So this caps hard, and the cap is not arbitrary. Findings ("this exists and
- * costs this") are what a first look produces and there can be dozens; changes
- * ("this moved") are rare and are the reason to come back. Changes therefore
- * always outrank findings regardless of score, and findings are limited to a
- * handful so they can never crowd out a change.
+/** Select a bounded brief. Raw activity stays in background history;
+ * publications and releases require a goal-matched significance assessment.
+ * Financial-change alerts retain their deterministic priority.
  */
 
 /** A first look produces these. They describe the world, not a change in it. */
@@ -38,6 +30,9 @@ export type BriefCandidate = {
   kind: NovaSignalKind;
   relevance: NovaRelevance;
   observedAt: string;
+  subjectId?: string | null;
+  subjectRef?: string | null;
+  evidence?: Record<string, unknown>;
 };
 
 export type AssembledBrief<T extends BriefCandidate> = {
@@ -58,7 +53,7 @@ export type AssembledBrief<T extends BriefCandidate> = {
 
 export function assembleBrief<T extends BriefCandidate>(
   signals: T[],
-  limits: { attention?: number; findings?: number } = {},
+  limits: { attention?: number; findings?: number; goal?: string | null } = {},
 ): AssembledBrief<T> {
   const attentionLimit = limits.attention ?? BRIEF_LIMITS.attention;
   const findingLimit = limits.findings ?? BRIEF_LIMITS.findings;
@@ -66,11 +61,24 @@ export function assembleBrief<T extends BriefCandidate>(
   const ordered = orderByRelevance(signals);
   const noise = ordered.filter((signal) => signal.relevance === "noise");
   const eligible = ordered.filter((signal) => signal.relevance !== "noise");
+  const seen = new Set<string>();
+  const qualified = eligible.filter(signal => {
+    if (isBackgroundKind(signal.kind)) return false;
+    if (signal.kind === "official_publication" || signal.kind === "repository_release") {
+      const assessment = assessmentOf({ evidence: signal.evidence ?? {} });
+      if (!assessment?.significant || assessment.goal !== limits.goal) return false;
+    }
+    const subject = signal.subjectRef ?? signal.subjectId;
+    if (!subject) return true;
+    const key = `${subject}:${signal.kind}`;
+    if (seen.has(key)) return false;
+    seen.add(key); return true;
+  });
 
   /* Changes first, all of them, in relevance order. A change is the thing Nova
      exists to catch and it is never dropped to make room for a finding. */
-  const changes = eligible.filter((signal) => !isFinding(signal.kind));
-  const findings = eligible.filter((signal) => isFinding(signal.kind));
+  const changes = qualified.filter((signal) => !isFinding(signal.kind));
+  const findings = qualified.filter((signal) => isFinding(signal.kind));
 
   const worthAttention: T[] = [];
   for (const change of changes) {
@@ -126,5 +134,5 @@ export function quietSummary(input: {
   if (input.subjectsChecked === 0) {
     return "Nova is not watching anything yet.";
   }
-  return `Nothing moved across the ${input.subjectsChecked} things Nova watches for you.`;
+  return `No source-supported finding was selected from the ${input.subjectsChecked} things checked.`;
 }

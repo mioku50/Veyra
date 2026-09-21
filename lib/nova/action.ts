@@ -36,7 +36,7 @@ export type NovaActionType =
   | "interact_with_subject";
 
 export type NovaActionSubject = {
-  kind: "x402_resource" | "github_repository";
+  kind: "x402_resource" | "github_repository" | "official_publication";
   /** The subject's id in the source it came from. For a catalogue listing this
    *  is the candidate id, which is what pins routing to it. */
   ref: string | null;
@@ -82,10 +82,10 @@ export function actionFor(signal: NovaSignal): NovaAction {
   const subjectContext = (signal.evidence?.subject ?? {}) as Record<string, unknown>;
   const label = signal.subjectLabel ?? "this";
 
-  if (signal.subjectKind === "github_repository") {
+  if (signal.subjectKind === "github_repository" || signal.subjectKind === "official_publication") {
     return {
       actionType: "research_subject",
-      subject: { kind: "github_repository", ref: signal.subjectRef ?? null, label },
+      subject: { kind: signal.subjectKind, ref: signal.subjectRef ?? null, label },
       intent: `What changed in ${label}, and does it matter?`,
       /* Reading a repository and writing up what changed is research whoever
          is paid to do it, and unlike an endpoint there is nothing here to

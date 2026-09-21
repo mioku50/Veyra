@@ -68,6 +68,10 @@ assert.equal((JSON.parse(capturedBody) as { reasoning_effort?: unknown }).reason
 assert(!capturedBody.includes(config.apiKey), "LLM API key leaked into the request body.");
 assert(!JSON.stringify(success).includes(config.apiKey), "LLM API key leaked into the public result.");
 
+assert.equal(JSON.parse(capturedBody).response_format, undefined, "Existing text callers remain unchanged");
+await generateOpenAiCompatibleText({ config, systemPrompt: "Return JSON.", userPrompt: "Summarize.", responseFormat: "json_object", fetchImpl: successFetch });
+assert.deepEqual(JSON.parse(capturedBody).response_format, { type: "json_object" });
+
 let rateLimitCalls = 0;
 const rateLimitFetch: typeof fetch = async () => {
   rateLimitCalls += 1;

@@ -21,10 +21,11 @@ export const dynamic = "force-dynamic";
  */
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json() as { name?: unknown; interests?: unknown };
+    const body = await request.json() as { name?: unknown; interests?: unknown; goal?: unknown };
     const { agent, ownerSecret } = await createNova({
       name: typeof body.name === "string" ? body.name : "",
       interests: body.interests,
+      goal: body.goal,
     });
     return NextResponse.json({ agent, ownerSecret }, { status: 201, headers: NOVA_HEADERS });
   } catch (error) {

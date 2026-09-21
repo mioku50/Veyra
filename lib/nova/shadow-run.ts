@@ -155,6 +155,8 @@ export async function runShadowPass(input: {
     period,
   });
 
+  const { data: profile, error: profileError } = await db().from("nova_agents").select("goal").eq("agent_id", input.agent.agentId).single();
+  if (profileError) throw new Error("Nova goal unavailable");
   const memory = await recentLearnings(input.agent.agentId).catch(() => [] as string[]);
   const candidates = await candidatesFor(input.agent.agentId, SHADOW_POOL);
 
@@ -187,6 +189,7 @@ export async function runShadowPass(input: {
 
     const outcome = await proposeResearch({
       signal,
+      goal: profile?.goal ?? null,
       wallet: input.agent.ownerWallet,
       agentName: input.agent.name,
       interests: input.agent.interests,

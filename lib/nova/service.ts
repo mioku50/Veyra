@@ -3,6 +3,9 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import { normalizeGoal, assessmentOf, type PublicMaterial } from "./value.ts";
+import { assessPublicMaterial } from "./free-research.ts";
+import { observePublications, publicContext } from "./public-sources.ts";
 import { createHash, randomBytes } from "node:crypto";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { getServerSupabaseConfig } from "../supabase/server-env.ts";
@@ -89,6 +92,7 @@ export function ownerDigest(secret: string): string {
 /* ---- rows ---- */
 
 export type AgentRow = {
+  goal: string | null;
   agent_id: string;
   public_id: string;
   name: string;
@@ -109,6 +113,7 @@ export type AgentRow = {
 function toAgent(row: AgentRow): NovaAgent {
   return {
     publicId: row.public_id,
+    goal: row.goal ?? null,
     name: row.name,
     interests: row.interests ?? [],
     ownerWallet: row.owner_wallet,
@@ -130,13 +135,14 @@ function toAgent(row: AgentRow): NovaAgent {
 }
 
 const AGENT_COLUMNS =
-  "agent_id, public_id, name, interests, owner_wallet, arc_identity_registry, arc_identity_agent_id, arc_identity_owner, arc_identity_chain_id, arc_identity_tx, arc_identity_registered_at, last_brief_at, last_opened_at, dormant_since, created_at";
+  "agent_id, public_id, name, interests, goal, owner_wallet, arc_identity_registry, arc_identity_agent_id, arc_identity_owner, arc_identity_chain_id, arc_identity_tx, arc_identity_registered_at, last_brief_at, last_opened_at, dormant_since, created_at";
 
 /* ---- creating ---- */
 
 export async function createNova(input: {
   name: string;
   interests: unknown;
+  goal?: unknown;
 }): Promise<{ agent: NovaAgent; ownerSecret: string }> {
   const name = input.name.trim().replace(/\s+/g, " ").slice(0, 40);
   if (!name) throw new NovaError("Give your agent a name.", "name_required");
@@ -157,6 +163,7 @@ export async function createNova(input: {
       owner_secret_digest: ownerDigest(ownerSecret),
       name,
       interests,
+      goal: checkedGoal(input.goal),
       /* Creating an agent is a visit: somebody was here, choosing a name. Left
          null, the scheduler's dormancy sweep -- which compares last_opened_at
          against a cutoff -- would never match this row, because NULL compares
@@ -221,6 +228,7 @@ export async function updateNova(input: {
   publicId: string;
   ownerSecret: string;
   interests: unknown;
+  goal?: unknown;
 }): Promise<{ agent: NovaAgent; retiredSignals: number; droppedInterests: string[] }> {
   const agent = await loadOwned(input.publicId, input.ownerSecret);
 
@@ -238,7 +246,7 @@ export async function updateNova(input: {
 
   const { data, error } = await db()
     .from("nova_agents")
-    .update({ interests, updated_at: new Date().toISOString() })
+    .update({ interests, ...(input.goal !== undefined ? { goal: checkedGoal(input.goal) } : {}), updated_at: new Date().toISOString() })
     .eq("agent_id", agent.agent_id)
     .select(AGENT_COLUMNS)
     .single();
@@ -279,7 +287,7 @@ export async function updateNova(input: {
 
 type SubjectRow = {
   subject_id: string;
-  kind: "x402_resource" | "github_repository";
+  kind: "x402_resource" | "github_repository" | "official_publication";
   ref: string;
   label: string;
   interest: string;
@@ -329,17 +337,22 @@ export async function runRefresh(input: {
   const startedAt = now.toISOString();
   const started = Date.now();
 
-  const [catalog, repositories] = await Promise.all([
+  const { data: goalRow, error: goalError } = await db().from("nova_agents").select("goal").eq("agent_id", agent.agent_id).single();
+  if (goalError) throw new NovaError("Could not load your research goal.", "database_unavailable", 503);
+  const goal = goalRow?.goal ?? null;
+  const [catalog, repositories, publications] = await Promise.all([
     observeX402Catalog({ interests: agent.interests, fetchImpl: input.fetchImpl }),
     observeRepositories({ interests: agent.interests, now, fetchImpl: input.fetchImpl }),
+    observePublications({ interests: agent.interests, now, fetchImpl: input.fetchImpl }),
   ]);
-  const observations = [...catalog.observations, ...repositories.observations];
-  const sourcesUnavailable = [...catalog.unavailable, ...repositories.unavailable];
+  const observations = [...publications.observations, ...repositories.observations, ...catalog.observations];
+  const sourcesUnavailable = [...catalog.unavailable, ...repositories.unavailable, ...publications.unavailable];
 
-  const { data: existingRows } = await db()
+  const { data: existingRows, error: existingError } = await db()
     .from("nova_subjects")
     .select("subject_id, kind, ref, label, interest, last_digest")
     .eq("agent_id", agent.agent_id);
+  if (existingError) throw new NovaError("Could not load source history.", "database_unavailable", 503);
   const existing = new Map<string, SubjectRow>();
   for (const row of (existingRows ?? []) as SubjectRow[]) {
     existing.set(`${row.kind} ${row.ref}`, row);
@@ -349,6 +362,7 @@ export async function runRefresh(input: {
   const keywords = keywordsForInterests(agent.interests);
 
   const signalRows: Array<Record<string, unknown>> = [];
+  let assessments = 0;
   let kept = 0;
   let asNoise = 0;
 
@@ -370,6 +384,15 @@ export async function runRefresh(input: {
     });
 
     for (const change of changes) {
+      const material = observation.context.publicMaterial as PublicMaterial | undefined;
+      let valueAssessment = null;
+      if (goal && material?.text && (change.kind === "official_publication" || change.kind === "repository_release") && assessments < 3) {
+        assessments++;
+        const context = await publicContext(material, input.fetchImpl);
+        valueAssessment = await assessPublicMaterial({ goal, headline: change.headline, sources: context.sources, now });
+        if (valueAssessment) valueAssessment.sourcesUnavailable = context.unavailable;
+        else if (!sourcesUnavailable.includes("Nova public-source analysis")) sourcesUnavailable.push("Nova public-source analysis");
+      }
       const verdict = scoreRelevance({
         change,
         keywords,
@@ -388,7 +411,7 @@ export async function runRefresh(input: {
         detail: change.detail,
         relevance: verdict.relevance,
         relevance_reason: verdict.reason,
-        evidence: { ...change.evidence, subject: observation.context, label: observation.label },
+        evidence: { ...change.evidence, subject: observation.context, label: observation.label, ...(valueAssessment ? { valueAssessment } : {}) },
         observed_at: change.observedAt,
       });
     }
@@ -397,22 +420,44 @@ export async function runRefresh(input: {
        write below fails, the next refresh compares against the same old state
        and reports the change a second time. A repeat is recoverable; a change
        nobody ever saw is not. */
-    await db()
-      .from("nova_subjects")
-      .update({ last_digest: observation.digest, last_observed_at: now.toISOString() })
-      .eq("subject_id", subjectId);
+    const pending = signalRows.filter(row => row.subject_id === subjectId);
+    if (pending.length) {
+      const { error } = await db().from("nova_signals").upsert(pending, { onConflict: "agent_id,kind,subject_id,observed_at", ignoreDuplicates: true });
+      if (error) throw new NovaError("Could not save observed events.", "database_unavailable", 503);
+    }
+    const { error: digestError } = await db().from("nova_subjects")
+      .update({ last_digest: observation.digest, last_observed_at: now.toISOString() }).eq("subject_id", subjectId);
+    if (digestError) throw new NovaError("Could not save source state.", "database_unavailable", 503);
   }
 
-  if (signalRows.length > 0) {
-    // Duplicates are ignored rather than rejected: two refreshes in the same
-    // second must neither fail nor double-report.
-    await db().from("nova_signals").upsert(signalRows, {
-      onConflict: "agent_id,kind,subject_id,observed_at",
-      ignoreDuplicates: true,
-    });
+
+  // Reassess recent events after the owner sets/changes a goal, even when the
+  // source digest is unchanged. Bounded with the same three-reading budget.
+  if (goal && assessments < 3) {
+    const { data: pending, error: pendingError } = await db().from("nova_signals").select("signal_id,headline,evidence")
+      .eq("agent_id", agent.agent_id).in("kind", ["repository_release", "official_publication"])
+      .in("status", ["new", "seen"]).order("observed_at", { ascending: false }).limit(12);
+    if (pendingError) throw new NovaError("Could not load public events.", "database_unavailable", 503);
+    for (const row of pending ?? []) {
+      if (assessments >= 3) break;
+      if (row.evidence?.valueAssessment?.goal === goal) continue;
+      const material = (row.evidence?.publicMaterial ?? row.evidence?.subject?.publicMaterial) as PublicMaterial | undefined;
+      if (!material?.text) continue;
+      assessments++;
+      const context = await publicContext(material, input.fetchImpl);
+      const valueAssessment = await assessPublicMaterial({ goal, headline: row.headline, sources: context.sources, now });
+      if (valueAssessment) valueAssessment.sourcesUnavailable = context.unavailable;
+      if (!valueAssessment) {
+        if (!sourcesUnavailable.includes("Nova public-source analysis")) sourcesUnavailable.push("Nova public-source analysis");
+        continue;
+      }
+      const { error } = await db().from("nova_signals").update({ evidence: { ...row.evidence, valueAssessment }, updated_at: new Date().toISOString() })
+        .eq("agent_id", agent.agent_id).eq("signal_id", row.signal_id);
+      if (error) throw new NovaError("Could not save public research.", "database_unavailable", 503);
+    }
   }
 
-  const { data: refreshRow } = await db()
+  const { data: refreshRow, error: refreshError } = await db()
     .from("nova_refreshes")
     .insert({
       agent_id: agent.agent_id,
@@ -429,8 +474,9 @@ export async function runRefresh(input: {
     .select(REFRESH_COLUMNS)
     .single();
 
+  if (refreshError) throw new NovaError("Could not save refresh results.", "database_unavailable", 503);
   const finishedAt = new Date().toISOString();
-  await db()
+  const { error: clockError } = await db()
     .from("nova_agents")
     .update({
       last_brief_at: finishedAt,
@@ -442,6 +488,7 @@ export async function runRefresh(input: {
     })
     .eq("agent_id", agent.agent_id);
 
+  if (clockError) throw new NovaError("Could not save refresh time.", "database_unavailable", 503);
   return { refresh: toRefresh(refreshRow), newSignals: kept };
 }
 
@@ -449,7 +496,7 @@ const REFRESH_COLUMNS =
   "refresh_id, trigger, subjects_checked, signals_found, signals_kept, signals_as_noise, sources_unavailable, started_at, finished_at";
 
 async function insertSubject(agentId: string, observation: SourceObservation): Promise<string | null> {
-  const { data } = await db()
+  const { data, error } = await db()
     .from("nova_subjects")
     .insert({
       agent_id: agentId,
@@ -460,6 +507,7 @@ async function insertSubject(agentId: string, observation: SourceObservation): P
     })
     .select("subject_id")
     .single();
+  if (error) throw new NovaError("Could not save a watched source.", "database_unavailable", 503);
   return (data as { subject_id: string } | null)?.subject_id ?? null;
 }
 
@@ -588,7 +636,7 @@ export async function loadBrief(input: {
     headline: row.headline,
     detail: row.detail,
     evidence: row.evidence ?? {},
-    relevance: row.relevance,
+    relevance: row.kind === "repository_activity" ? "noise" : row.relevance,
     relevanceReason: row.relevance_reason,
     status: row.status,
     executionPublicId: row.execution_public_id,
@@ -596,7 +644,7 @@ export async function loadBrief(input: {
     refusal: row.refusal ?? null,
   }));
 
-  const { worthAttention, noise, overflow } = assembleBrief(signals);
+  const { worthAttention, noise, overflow } = assembleBrief(signals, { goal: agent.goal });
   const memory: NovaMemory[] = ((memoryResult.data ?? []) as Array<Record<string, any>>).map((row) => ({
     memoryId: row.memory_id,
     kind: row.kind,
@@ -828,7 +876,7 @@ export function signalFromRow(row: Record<string, any>): NovaSignal {
     headline: row.headline,
     detail: row.detail,
     evidence: row.evidence ?? {},
-    relevance: row.relevance,
+    relevance: row.kind === "repository_activity" ? "noise" : row.relevance,
     relevanceReason: row.relevance_reason,
     status: row.status,
     executionPublicId: row.execution_public_id,
@@ -914,16 +962,25 @@ export async function markSignal(input: {
   const agent = await loadOwned(input.publicId, input.ownerSecret);
   const status = FEEDBACK_STATUS[input.feedback];
 
-  const { data } = await db()
+  const { data, error: markError } = await db()
     .from("nova_signals")
     .update({ status, updated_at: new Date().toISOString() })
     .eq("agent_id", agent.agent_id)
     .eq("signal_id", input.signalId)
-    .select("kind, nova_subjects(label)")
+    .select("kind, evidence, nova_subjects(label)")
     .maybeSingle();
 
-  if (!data) return;
-  const row = data as { kind: string; nova_subjects?: { label?: string } | null };
+  if (markError) throw new NovaError("Could not save your feedback.", "database_unavailable", 503);
+  if (!data) throw new NovaError("No such item.", "not_found", 404);
+  const row = data as { evidence: Record<string, unknown>; kind: string; nova_subjects?: { label?: string } | null };
+  const assessment = assessmentOf({ evidence: row.evidence });
+  if (assessment?.goal === agent.goal && (input.feedback === "useful" || input.feedback === "not_interesting")) {
+    const { error } = await db().from("nova_value_feedback").upsert({
+      signal_id: input.signalId, agent_id: agent.agent_id, assessment_at: assessment.generatedAt,
+      goal: assessment.goal, feedback: input.feedback, updated_at: new Date().toISOString(),
+    }, { onConflict: "signal_id,assessment_at" });
+    if (error) throw new NovaError("Could not save your result rating.", "database_unavailable", 503);
+  }
   const category = preferencePhraseFor(row.kind);
   const label = row.nova_subjects?.label?.trim() ?? "";
 
@@ -947,7 +1004,8 @@ export async function markSignal(input: {
       /* The topic, not the category. Dismissing one noisy repository should not
          cost the person every release notice they have. Soft, and it
          accumulates: the weight climbs only if they keep saying it. */
-      if (label) await rememberPreference(agent.agent_id, "usually_ignores", label, { learnedFrom: "not_interesting" });
+      // One unhelpful article is not a request to suppress its entire publisher.
+      if (label && row.kind !== "official_publication") await rememberPreference(agent.agent_id, "usually_ignores", label, { learnedFrom: "not_interesting" });
       return;
 
     case "ignore_kind":
@@ -1024,3 +1082,30 @@ async function rememberPreference(
  * you" the whole time -- which is worse than not offering the ban at all.
  */
 export const preferencePhraseFor = categoryPhraseFor;
+
+function checkedGoal(value: unknown): string | null {
+  try { return normalizeGoal(value); } catch (error) { throw new NovaError((error as Error).message, "invalid_goal"); }
+}
+
+/** Owner-authenticated public-material reading. No payment discovery, signer or wallet is called. */
+export async function researchPublicSources(input: { publicId: string; ownerSecret: string; signalId: string }) {
+  const agent = await loadOwned(input.publicId, input.ownerSecret);
+  const signal = await loadSignalForOwner(input);
+  if (!agent.goal) throw new NovaError("Set a concrete research goal in My Agent first.", "goal_required");
+  if (signal.kind !== "repository_release" && signal.kind !== "official_publication") {
+    throw new NovaError("This is background activity or an operational alert, not an event that needs research.", "background_activity");
+  }
+  const current = assessmentOf(signal);
+  if (current?.goal === agent.goal && Date.now() - Date.parse(current.generatedAt) < 24 * 3_600_000) return current;
+  const subject = signal.evidence.subject as Record<string, unknown> | undefined;
+  const material = (signal.evidence.publicMaterial ?? subject?.publicMaterial) as PublicMaterial | undefined;
+  if (!material?.text || !material.url) throw new NovaError("No readable public material is stored for this event. Open the original source or look again later.", "source_unavailable");
+  const context = await publicContext(material);
+  const assessment = await assessPublicMaterial({ goal: agent.goal, headline: signal.headline, sources: context.sources });
+  if (assessment) assessment.sourcesUnavailable = context.unavailable;
+  if (!assessment) throw new NovaError("Could not produce a source-supported analysis. No paid tool was requested.", "analysis_unavailable", 503);
+  const { error } = await db().from("nova_signals").update({ evidence: { ...signal.evidence, valueAssessment: assessment }, updated_at: new Date().toISOString() })
+    .eq("agent_id", agent.agent_id).eq("signal_id", signal.signalId);
+  if (error) throw new NovaError("Could not save the analysis.", "database_unavailable", 503);
+  return assessment;
+}

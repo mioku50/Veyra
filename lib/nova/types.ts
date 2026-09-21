@@ -12,20 +12,21 @@
  *
  * Two rules shape every type here.
  *
- * A signal must trace to an observation. Nothing in the brief is generated
- * prose about a topic; every line is a difference between two states Veyra
- * recorded, and the evidence travels with the sentence.
+ * A signal must trace to an observation. Public-event interpretations carry
+ * source excerpts and the owner goal; payment changes carry their recorded
+ * before/after states. Model interpretation is never a financial permission.
  *
  * Nova never holds money. It can want to spend, and it says so; the spend
  * itself goes through the same selection, clearance and wallet signature as any
  * other Veyra purchase. "Nova wants to investigate" is a request, not a debit.
  */
 
+import type { PublicMaterial } from "./value.ts";
 import type { NovaDerivedStanding } from "./standing.ts";
 import type { NovaArcIdentity } from "./identity.ts";
 import type { ShadowRecord, ShadowSummary } from "./autonomy.ts";
 
-export const NOVA_SUBJECT_KINDS = ["x402_resource", "github_repository"] as const;
+export const NOVA_SUBJECT_KINDS = ["x402_resource", "github_repository", "official_publication"] as const;
 export type NovaSubjectKind = (typeof NOVA_SUBJECT_KINDS)[number];
 
 export const NOVA_SIGNAL_KINDS = [
@@ -37,6 +38,7 @@ export const NOVA_SIGNAL_KINDS = [
   "rail_changed",
   "repository_activity",
   "repository_release",
+  "official_publication",
 ] as const;
 export type NovaSignalKind = (typeof NOVA_SIGNAL_KINDS)[number];
 
@@ -95,6 +97,7 @@ export type NovaPreferences = {
 };
 
 export type NovaAgent = {
+  goal?: string | null;
   publicId: string;
   name: string;
   interests: string[];
@@ -151,6 +154,7 @@ export type NovaSubject = {
  * "change", and a brief that reports every byte is the same as no brief.
  */
 export type SubjectDigest =
+  | { kind: "official_publication"; material: PublicMaterial }
   | {
       kind: "x402_resource";
       /** Atomic USDC, as a string: a price is money, never a float. */
@@ -170,6 +174,7 @@ export type SubjectDigest =
       commitsInWindow: number;
       contributorCount: number;
       latestRelease: string | null;
+      releaseMaterial?: PublicMaterial | null;
       stars: number;
     };
 

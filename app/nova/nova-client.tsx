@@ -5,6 +5,7 @@
 
 "use client";
 
+import { assessmentOf, paidResearchReadiness, type ValueAssessment } from "@/lib/nova/value";
 import { formatUsdc } from "@/lib/execution/presentation";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { useCallback, useEffect, useState } from "react";
@@ -253,6 +254,10 @@ export function NovaClient({ view = "today" }: { view?: NovaView } = {}) {
   const [claimNote, setClaimNote] = useState<string | null>(null);
   const [attesting, setAttesting] = useState(false);
   const [attestNote, setAttestNote] = useState<string | null>(null);
+  const [goal, setGoal] = useState("");
+  const [draftGoal, setDraftGoal] = useState("");
+  const [reading, setReading] = useState<Record<string, boolean>>({});
+  const [readNotes, setReadNotes] = useState<Record<string, string>>({});
   const [draftInterests, setDraftInterests] = useState<string[] | null>(null);
   const [savingInterests, setSavingInterests] = useState(false);
   const [interestsNote, setInterestsNote] = useState<string | null>(null);
@@ -395,7 +400,7 @@ export function NovaClient({ view = "today" }: { view?: NovaView } = {}) {
       const saved = await call(`/api/nova/v1/agents/${identity.publicId}`, {
         method: "PATCH",
         ownerSecret: identity.ownerSecret,
-        body: JSON.stringify({ interests: draftInterests }),
+        body: JSON.stringify({ interests: draftInterests, goal: draftGoal }),
       }) as { droppedInterests: string[]; retiredSignals: number };
 
       setDraftInterests(null);
@@ -429,7 +434,7 @@ export function NovaClient({ view = "today" }: { view?: NovaView } = {}) {
     try {
       const created = await call("/api/nova/v1/agents", {
         method: "POST",
-        body: JSON.stringify({ name, interests: chosen }),
+        body: JSON.stringify({ name, interests: chosen, goal }),
       }) as { agent: { publicId: string }; ownerSecret: string };
 
       const who = { publicId: created.agent.publicId, ownerSecret: created.ownerSecret };
@@ -560,6 +565,24 @@ export function NovaClient({ view = "today" }: { view?: NovaView } = {}) {
    * provider, a price, a trust score and a rail, gathered by probing the live
    * endpoints a few seconds ago. The person decides afterwards, or does not.
    */
+  const readSources = async (signal: NovaSignal) => {
+    if (!identity || reading[signal.signalId]) return;
+    setReading(v => ({ ...v, [signal.signalId]: true }));
+    setReadNotes(v => ({ ...v, [signal.signalId]: "" }));
+    try {
+      const result = await call(`/api/nova/v1/agents/${identity.publicId}/signals/${signal.signalId}/read`, {
+        method: "POST", ownerSecret: identity.ownerSecret,
+      }) as { assessment: ValueAssessment };
+      // Keep the card in place until reload, so a low-value finding can explain
+      // why it was held back instead of disappearing before the owner reads it.
+      setBrief(previous => previous ? { ...previous,
+        worthAttention: previous.worthAttention.map(s => s.signalId === signal.signalId ? { ...s, evidence: { ...s.evidence, valueAssessment: result.assessment } } : s),
+        watchlist: previous.watchlist.map(s => s.signalId === signal.signalId ? { ...s, evidence: { ...s.evidence, valueAssessment: result.assessment } } : s),
+      } : previous);
+    } catch (cause) { setReadNotes(v => ({ ...v, [signal.signalId]: (cause as Error).message })); }
+    finally { setReading(v => ({ ...v, [signal.signalId]: false })); }
+  };
+
   const price = async (signal: NovaSignal) => {
     if (!identity) return;
     setResearch((current) => ({ ...current, [signal.signalId]: { stage: "looking" } }));
@@ -757,9 +780,9 @@ export function NovaClient({ view = "today" }: { view?: NovaView } = {}) {
         body: JSON.stringify({ feedback }),
       });
     } catch {
-      /* Feedback that failed to record reappears in the next brief, which is
-         the honest outcome: it was not written down, so it should not look as
-         though it was. */
+      if (removes) setBrief(brief);
+      else setSaid(current => { const next = { ...current }; delete next[signalId]; return next; });
+      setError("Could not save your feedback. Please try again.");
     }
   };
 
@@ -803,7 +826,7 @@ export function NovaClient({ view = "today" }: { view?: NovaView } = {}) {
           </p>
         </header>
 
-        {error ? <Notice tone="error">{error}</Notice> : null}
+      {error ? <Notice tone="error">{error}</Notice> : null}
 
         <Panel>
           <Label>Name</Label>
@@ -815,6 +838,12 @@ export function NovaClient({ view = "today" }: { view?: NovaView } = {}) {
             onChange={(event) => setName(event.target.value)}
             className="field mt-3 w-full max-w-xs rounded-lg px-3 py-2.5 font-mono text-base outline-none transition"
           />
+
+          <label className="mt-6 block text-sm" htmlFor="nova-goal">What do you want Nova to help you achieve?</label>
+          <textarea id="nova-goal" value={goal} onChange={e => setGoal(e.target.value)} maxLength={600} rows={3}
+            placeholder="Track Arc and Circle changes that could help me build Veyra, and explain what I should do next."
+            className="field mt-2 w-full rounded-lg p-3 text-sm" />
+          <p className="mt-2 text-xs text-muted-foreground">A goal guides research. It never authorizes spending. Public-source research uses the app’s model; it does not charge your wallet.</p>
 
           <div className="mt-8">
             <Label>What should {name.trim() || "it"} care about?</Label>
@@ -1053,6 +1082,8 @@ export function NovaClient({ view = "today" }: { view?: NovaView } = {}) {
         ) : null}
       </header>
 
+        {view === "today" && !brief.agent.goal ? <Notice tone="warn">Set a concrete goal in <a href="/agent" className="underline">My Agent</a> so Nova can explain which events matter to you. Ordinary commits and API listings stay in background observations.</Notice> : null}
+      {view === "today" && brief.agent.goal ? <p className="mb-5 text-sm text-muted-foreground"><span className="font-medium text-foreground">Your goal:</span> {brief.agent.goal}</p> : null}
       {error ? <Notice tone="error">{error}</Notice> : null}
       {wallet.error ? <Notice tone="error">{wallet.error}</Notice> : null}
       {justCreated && identity ? <RecoveryKey who={identity} emphatic /> : null}
@@ -1097,23 +1128,17 @@ export function NovaClient({ view = "today" }: { view?: NovaView } = {}) {
               </div>
 
               <h2 className="mt-3 text-lg font-medium leading-snug">{signal.headline}</h2>
-              <p className="mt-1.5 text-sm leading-relaxed text-muted-foreground">{signal.detail}</p>
+              {assessmentOf(signal)?.goal !== brief.agent.goal ? <>
+                <p className="mt-1.5 text-sm leading-relaxed text-muted-foreground">{signal.detail}</p>
+                <p className="mt-4 border-t border-border/60 pt-3 text-xs text-muted-foreground">{signal.relevanceReason}</p>
+              </> : null}
 
-              <p className="mt-4 border-t border-border/60 pt-3 text-xs text-muted-foreground">
-                <span className="font-mono text-[11px] uppercase tracking-wider">why</span>
-                {"  "}{signal.relevanceReason}
-              </p>
-
+              <PublicReading signal={signal} goal={brief.agent.goal} />
+              {readNotes[signal.signalId] ? <p role="status" className="mt-3 text-sm text-state-warn">{readNotes[signal.signalId]}</p> : null}
               <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-3">
-                {research[signal.signalId] ? null : (
-                  <button
-                    type="button"
-                    onClick={() => price(signal)}
-                    className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90"
-                  >
-                    Let {brief.agent.name} investigate
-                  </button>
-                )}
+                {(signal.kind === "repository_release" || signal.kind === "official_publication") ? <button type="button" onClick={() => void readSources(signal)} disabled={reading[signal.signalId]}
+                  className="rounded-lg border px-4 py-2 text-sm disabled:opacity-50">{reading[signal.signalId] ? "Reading sources…" : "Review public sources"}</button> : null}
+                {!research[signal.signalId] && paidResearchReadiness(signal, brief.agent.goal).ready ? <button type="button" onClick={() => void price(signal)} className="rounded-lg border px-4 py-2 text-sm">Find a tool for this open question</button> : null}
 
                 {/* Nothing for "investigating": the priced proposal below is the
                     acknowledgement, and a chip above it saying so would be the
@@ -1178,7 +1203,7 @@ export function NovaClient({ view = "today" }: { view?: NovaView } = {}) {
           ) : null}
           <dl className="mt-4 space-y-0">
             <Row label="Things checked" value={String(away?.subjectsChecked ?? brief.lastRefresh?.subjectsChecked ?? 0)} />
-            <Row label="Worth your attention" value={String(away?.signalsKept ?? brief.lastRefresh?.signalsKept ?? 0)} />
+            <Row label="In today’s brief" value={String(attention.length)} />
             <Row label="Held back as noise" value={String(away?.signalsAsNoise ?? brief.lastRefresh?.signalsAsNoise ?? 0)} />
             {blind.length > 0 ? (
               <Row label="Could not read" value={blind.join(", ")} tone="warn" />
@@ -1219,6 +1244,7 @@ export function NovaClient({ view = "today" }: { view?: NovaView } = {}) {
           {draftInterests === null ? (
             <>
               <dl className="mt-4 space-y-0">
+                <Row label="Your goal" value={brief.agent.goal || "Not set yet"} />
                 <Row label="You care about" value={brief.agent.interests.join(" · ")} />
                 <Row label="Things watched" value={String(brief.lastRefresh?.subjectsChecked ?? 0)} />
                 <Row label="Watching since" value={new Date(brief.agent.createdAt).toLocaleDateString()} />
@@ -1229,18 +1255,22 @@ export function NovaClient({ view = "today" }: { view?: NovaView } = {}) {
                   this panel and did not see it. */}
               <button
                 type="button"
-                onClick={() => { setInterestsNote(null); setDraftInterests(brief.agent.interests); }}
+                onClick={() => { setInterestsNote(null); setDraftInterests(brief.agent.interests); setDraftGoal(brief.agent.goal ?? ""); }}
                 className="field mt-5 w-full rounded-lg px-4 py-3 text-left text-sm transition hover:border-primary/60 hover:text-foreground"
               >
-                <span className="font-medium text-foreground">Change what it watches</span>
+                <span className="font-medium text-foreground">Change goal and sources</span>
                 <span className="mt-0.5 block text-xs text-muted-foreground">
-                  Add or remove interests. {brief.agent.name} keeps its memory and everything you
+                  Set a goal and choose topics. {brief.agent.name} keeps its memory and everything you
                   have paid for.
                 </span>
               </button>
             </>
           ) : (
             <>
+              <label htmlFor="nova-edit-goal" className="mt-4 block text-sm">What result should Nova help you achieve?</label>
+              <textarea id="nova-edit-goal" value={draftGoal} onChange={e => setDraftGoal(e.target.value)} maxLength={600} rows={3} className="field mt-2 w-full rounded-lg p-3 text-sm"
+                placeholder="Track Arc and Circle changes that could help me build Veyra." />
+              <p className="mt-2 text-xs text-muted-foreground">Choose topics below to select sources. The goal guides their analysis; changing it does not change any signed spending limits.</p>
               <p className="mt-3 text-xs text-muted-foreground">
                 Pick up to <span className="font-mono">{MAX_INTERESTS}</span>. {brief.agent.name} keeps
                 everything it has learned and everything it has paid for either way.
@@ -1345,9 +1375,11 @@ export function NovaClient({ view = "today" }: { view?: NovaView } = {}) {
                       />
                     ) : (
                       <div className="mt-2">
-                        <Verb onClick={() => price(signal)}>
-                          Let {brief.agent.name} investigate
-                        </Verb>
+                        <PublicReading signal={signal} goal={brief.agent.goal} />
+                        {(signal.kind === "repository_release" || signal.kind === "official_publication") ? <button type="button" onClick={() => void readSources(signal)} disabled={reading[signal.signalId]} className="mt-3 rounded-lg border px-3 py-2 text-sm">{reading[signal.signalId] ? "Reading…" : "Review public sources"}</button> : null}
+                        {paidResearchReadiness(signal, brief.agent.goal).ready ? <button type="button" onClick={() => void price(signal)} className="ml-2 mt-3 rounded-lg border px-3 py-2 text-sm">Find a tool for this open question</button> : null}
+                        {readNotes[signal.signalId] ? <p role="status" className="mt-2 text-sm text-state-warn">{readNotes[signal.signalId]}</p> : null}
+                        <div className="mt-3 flex gap-3"><Verb onClick={() => void say(signal.signalId, "useful")}>Useful result</Verb><Verb onClick={() => void say(signal.signalId, "not_interesting")}>Not useful</Verb></div>
                       </div>
                     )}
                   </li>
@@ -1877,12 +1909,12 @@ function ShadowNight({
     <Panel className="mt-4">
       <Label>While you were away</Label>
       <p className="mt-3 max-w-xl text-sm leading-relaxed text-muted-foreground">
-        <Said claim={shadowNightClaim(summary)} />
+        <Said claim={shadowNightClaim(summary)} /> Policy permission does not establish usefulness.
       </p>
       <dl className="mt-4 space-y-0">
-        <Row label="Would investigate" value={String(summary.wouldInvestigate)}
+        <Row label="Allowed by policy" value={String(summary.wouldInvestigate)}
           tone={summary.wouldInvestigate > 0 ? "good" : "idle"} />
-        <Row label="Would decline" value={String(summary.wouldDecline)} />
+        <Row label="Refused by policy" value={String(summary.wouldDecline)} />
         <Row label="Would spend" value={plain(shadowSpendClaim(summary))} />
         <Row label="Left today" value={plain(shadowRemainingClaim(summary))} />
       </dl>
@@ -2149,6 +2181,29 @@ function Receipts({ brief }: { brief: NovaBrief }) {
   );
 }
 
+function PublicReading({ signal, goal }: { signal: NovaSignal; goal?: string | null }) {
+  const analysis = assessmentOf(signal);
+  const valid = analysis && analysis.goal === goal;
+  const subject = signal.evidence.subject as { url?: string; publicMaterial?: { url: string } } | undefined;
+  const source = signal.evidence.publicMaterial as { url?: string } | undefined;
+  const url = source?.url ?? subject?.publicMaterial?.url ?? subject?.url;
+  const safeUrl = url && /^https:\/\//i.test(url) ? url : null;
+  if (!valid) return <div className="mt-3 text-sm text-muted-foreground">{safeUrl ? <a href={safeUrl} target="_blank" rel="noreferrer" className="text-accent underline">Open original source ↗</a> : null}{analysis ? <p>The goal changed. Review this event against your current goal.</p> : null}</div>;
+  return <div className="mt-4 space-y-3 border-t pt-4 text-sm">
+    <p className="text-xs text-muted-foreground">Public-source analysis · no wallet charge · {analysis.writtenBy}</p>
+    <p><strong>What changed:</strong> {analysis.whatChanged}</p>
+    <p><strong>Why it matters to your goal:</strong> {analysis.whyItMatters}</p>
+    <p><strong>Suggested next step:</strong> {analysis.nextStep}</p>
+    {!analysis.significant ? <p className="text-muted-foreground">Held back: this material does not establish a significant change for your goal.</p> : null}
+    {analysis.gap ? <div className="rounded-lg border p-3"><p><strong>Still unknown:</strong> {analysis.gap.missing}</p><p className="mt-2"><strong>Useful result to seek:</strong> {analysis.gap.expectedResult}</p><p className="mt-2 text-xs text-muted-foreground">An open question is not proof that a paid service is needed. Review the sources first.</p></div> : <p className="text-muted-foreground">No additional paid research need identified.</p>}
+    {analysis.sourcesUnavailable?.length ? <p className="text-state-warn">Could not read: {analysis.sourcesUnavailable.join(", ")}. Coverage is incomplete.</p> : null}
+    <details><summary className="cursor-pointer">Sources and supporting excerpts</summary><ul className="mt-3 space-y-3">{analysis.citations.map((cite, i) => {
+      const material = analysis.sources.find(s => s.id === cite.sourceId);
+      return material ? <li key={i}><a className="text-accent underline" href={material.url} target="_blank" rel="noreferrer">{material.title} ↗</a><blockquote className="mt-1 border-l pl-3 text-muted-foreground">{cite.quote}</blockquote><p className="mt-1 text-xs text-muted-foreground">Published {material.publishedAt ? new Date(material.publishedAt).toLocaleDateString() : "date unavailable"} · read {new Date(material.fetchedAt).toLocaleString()}</p></li> : null;
+    })}</ul><p className="mt-2 text-xs text-muted-foreground">Nova’s interpretation can be wrong. Quotes are matched to the source text; that does not verify every conclusion.</p></details>
+  </div>;
+}
+
 function Row({
   label,
   value,
@@ -2368,6 +2423,12 @@ function DeeperResearch({
         </p>
       )}
 
+      {proposal.researchNeed ? <div className="mt-4 space-y-2 text-sm">
+        <p><strong>Goal:</strong> {proposal.researchNeed.goal}</p>
+        <p><strong>What the public material does not answer:</strong> {proposal.researchNeed.missing}</p>
+        <p><strong>Requested result:</strong> {proposal.researchNeed.expectedResult}</p>
+        <p className="text-xs text-muted-foreground">This tool accepts the question; its answer may still be incomplete. Veyra checks whether the spend is permitted, not whether it is worth buying.</p>
+      </div> : null}
       <dl className="mt-4 space-y-0">
         {proposal.performedVia ? (
           /* Whose work this is. The subject of the question and the party being

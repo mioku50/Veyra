@@ -172,7 +172,8 @@
     "nova:arc:publish": "node --experimental-transform-types --no-warnings --env-file-if-exists=.env.local scripts/publish-nova-arc-proofs.mts",
     "nova:research:live": "node --experimental-transform-types --no-warnings --env-file-if-exists=.env.local scripts/nova-research-live.mts",
     "frontend:audit-test": "node --experimental-transform-types --no-warnings scripts/frontend-audit-tests.mts",
-    "frontend:audit-browser": "node --experimental-transform-types --no-warnings scripts/frontend-audit-browser.mts"
+    "frontend:audit-browser": "node --experimental-transform-types --no-warnings scripts/frontend-audit-browser.mts",
+    "nova-product-value:test": "node --experimental-transform-types --no-warnings scripts/nova-product-value-tests.mts"
   },
   "dependencies": {
     "@circle-fin/adapter-viem-v2": "^1.14.0",
@@ -189,6 +190,7 @@
     "@types/pg": "^8.20.0",
     "@x402/core": "^2.6.0",
     "@x402/evm": "^2.6.0",
+    "cheerio": "1.2.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "deepagents": "^1.8.2",

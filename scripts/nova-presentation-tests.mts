@@ -153,7 +153,7 @@ must(five, /^5 items in today/, "and reports it exactly");
 
 /* 14. One item is an item. */
 must(briefSummary({ inBrief: 1, unreachable: [], watched: 9 }), /^1 item in/, "singular");
-must(briefSummary({ inBrief: 0, unreachable: [], watched: 1 }), /1 thing being/, "singular");
+must(briefSummary({ inBrief: 0, unreachable: [], watched: 1 }), /1 thing checked/, "singular");
 
 /* 15. A blind day reported as a quiet day is a lie a daily product would tell
       every day it was broken. */

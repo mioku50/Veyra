@@ -280,8 +280,8 @@ export function briefSummary(state: BriefState): Claim {
     ];
   }
   return [
-    "Nothing moved across the ", figure(state.watched),
-    count(state.watched, " thing", " things"), " being watched for you.",
+    "No source-supported finding was selected from the ", figure(state.watched),
+    count(state.watched, " thing", " things"), " checked.",
   ];
 }
 
@@ -419,7 +419,7 @@ export function shadowNightClaim(summary: ShadowSummary): Claim {
   return [
     figure(summary.wouldInvestigate),
     summary.wouldInvestigate === 1 ? " thing" : " things",
-    " worth investigating, ",
+    " allowed by spending policy, ",
     figure(summary.wouldDecline), " stopped by your limits. ",
     NO_MONEY_MOVED,
   ];

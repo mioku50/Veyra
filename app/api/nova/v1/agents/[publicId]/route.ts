@@ -40,9 +40,9 @@ export async function PATCH(request: NextRequest, { params }: RouteContext) {
   try {
     const { publicId } = await params;
     const ownerSecret = ownerSecretFrom(request);
-    const body = await request.json().catch(() => ({})) as { interests?: unknown };
+    const body = await request.json().catch(() => ({})) as { interests?: unknown; goal?: unknown };
 
-    const result = await updateNova({ publicId, ownerSecret, interests: body.interests });
+    const result = await updateNova({ publicId, ownerSecret, interests: body.interests, goal: body.goal });
 
     return NextResponse.json({
       agent: result.agent,

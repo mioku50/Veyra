@@ -247,6 +247,8 @@ export async function generateOpenAiCompatibleText(input: {
   timeoutMs?: number;
   maxAttempts?: number;
   maxResponseBytes?: number;
+  /** Opt-in for callers that require JSON; no fallback to unstructured output. */
+  responseFormat?: "json_object";
 }): Promise<LlmGenerationResult> {
   const resolution = input.config
     ? ({ configured: true, config: input.config } as const)
@@ -293,6 +295,7 @@ export async function generateOpenAiCompatibleText(input: {
             { role: "user", content: input.userPrompt },
           ],
           max_completion_tokens: LLM_MAX_COMPLETION_TOKENS,
+          ...(input.responseFormat ? { response_format: { type: input.responseFormat } } : {}),
         }),
         signal: controller.signal,
       });

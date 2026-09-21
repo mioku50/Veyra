@@ -51,6 +51,7 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
     const outcome = await proposeResearch({
       signal,
       wallet,
+      goal: agent.goal,
       agentName: agent.name,
       interests: agent.interests ?? [],
       memory: await recentLearnings(agent.agent_id),

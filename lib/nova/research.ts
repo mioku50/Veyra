@@ -42,7 +42,8 @@ import {
 import type { NovaSignal } from "./types.ts";
 import { networkName } from "./network.ts";
 import { actionFor, type NovaAction, type NovaActionType } from "./action.ts";
-import { sharpenIntent } from "./intent.ts";
+import { paidResearchReadiness, assessmentOf } from "./value.ts";
+import type { sharpenIntent } from "./intent.ts";
 
 /**
  * What it would cost to look deeper, and who would be paid.
@@ -79,6 +80,7 @@ const RESEARCH_CANDIDATE_LIMIT = 8;
 const NO_WALLET = "0x0000000000000000000000000000000000000000" as const;
 
 export type NovaResearchProposal = {
+  researchNeed?: { goal: string; missing: string; expectedResult: string };
   signalId: string;
   /** What Nova would ask, in the words it would ask it. */
   question: string;
@@ -437,7 +439,7 @@ async function firstPayable(input: {
        not that it was asked anything. If the intent cannot be expressed in the
        provider's own field names, this endpoint cannot answer this question,
        and no amount of verification afterwards recovers the money. */
-    if (!request.guessed && request.intentField === null) {
+    if (request.guessed || request.intentField === null) {
       note("its published inputs have nowhere to put a question, so it cannot be asked this one.");
       continue;
     }
@@ -511,6 +513,7 @@ async function firstPayable(input: {
 
 export async function proposeResearch(input: {
   signal: NovaSignal;
+  goal?: string | null;
   /** The owner's wallet when one is connected, which makes the Gateway balance
    *  a real read rather than an assumption. */
   wallet?: string | null;
@@ -524,42 +527,11 @@ export async function proposeResearch(input: {
   /** The writing model, injectable the way the relay and the reader are. */
   generateImpl?: Parameters<typeof sharpenIntent>[0]["generate"];
 }): Promise<NovaResearchOutcome> {
+  const readiness = paidResearchReadiness(input.signal, input.goal, input.now);
+  if (!readiness.ready) return { ok: false, reason: readiness.reason, detail: readiness.detail };
+  const assessment = assessmentOf(input.signal)!;
   const base = actionFor(input.signal);
-
-  /* The question, before the quote.
-     x402 prices the call, so the body has to be settled before anything is
-     priced -- pricing one question and then asking another is a bug this
-     codebase has already paid for. The template stands whenever the model is
-     down, slow, or wanders off the subject, and the person reads whichever one
-     survived on the card before they sign. */
-  const sharpened = await sharpenIntent({
-    action: base,
-    headline: input.signal.headline,
-    detail: input.signal.detail,
-    agentName: input.agentName ?? "Nova",
-    interests: input.interests ?? [],
-    memory: input.memory,
-    generate: input.generateImpl,
-  }).catch(() => ({ intent: base.intent, written: false }));
-
-  /* For an interaction the template is not a safe fallback, it is a bad buy.
-     "What is Exa search for, and is it worth paying for?" sent to Exa's search
-     API is a web search for the seller's own name, and that is exactly what it
-     bought: $0.0070 for ten links about Exa, none of them answering anything.
-     Where the object of the action is the endpoint itself, a question has to be
-     written for it or there is nothing worth paying for, so a model that did
-     not answer refuses the card instead of pricing a question already known to
-     be worthless. Research keeps its template -- there the subject's name is
-     genuinely what a stranger needs. */
-  if (base.actionType === "interact_with_subject" && !sharpened.written) {
-    return {
-      ok: false,
-      reason: "no_question",
-      detail: `${input.agentName ?? "Nova"} could not write a question worth sending to ${base.subject?.label ?? "this endpoint"} just now, and the stock one would only search for its name. Nothing was paid. Try again in a moment.`,
-    };
-  }
-
-  const action: NovaAction = { ...base, intent: sharpened.intent };
+  const action: NovaAction = { ...base, intent: assessment.gap!.question };
   const { requiredCapability: capability, discoveryTerm, query, intent: question } = action;
   const subjectRefWanted = action.subject?.ref ?? null;
   const requesterWallet = input.wallet && isAddress(input.wallet)
@@ -710,6 +682,7 @@ export async function proposeResearch(input: {
   return {
     ok: true,
     proposal: {
+      researchNeed: { goal: assessment.goal, missing: assessment.gap!.missing, expectedResult: assessment.gap!.expectedResult },
       signalId: input.signal.signalId,
       question,
       capability,

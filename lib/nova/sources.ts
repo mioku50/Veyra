@@ -18,21 +18,12 @@ import type { SubjectDigest } from "./types.ts";
 import { buildRequestBody } from "../x402/request-body.ts";
 import type { JsonSchema } from "../seller/json-schema.ts";
 
-/**
- * Reading the two things Nova can honestly watch for free.
- *
- * Circle's x402 catalog, which Veyra already reads for every purchase, and
- * public GitHub activity. Nothing else: a feed is only as trustworthy as its
- * thinnest source, and a product that pads a quiet day with a source it cannot
- * verify has spent the credibility of the sources it can.
- *
- * Both readers report unavailability rather than emptiness. "Circle did not
- * answer" and "nothing changed" look identical in a brief and mean opposite
- * things, and a daily product that confuses them tells a small lie every day.
+/** Catalog and GitHub readers. Curated official publications live in
+ * public-sources.ts. Unavailability remains distinct from an empty result.
  */
 
 export type SourceObservation = {
-  kind: "x402_resource" | "github_repository";
+  kind: "x402_resource" | "github_repository" | "official_publication";
   ref: string;
   label: string;
   interest: string;
@@ -346,6 +337,13 @@ export async function observeRepositoryPulse(input: {
 
   const pushedAt = typeof repository.pushed_at === "string" ? repository.pushed_at : null;
 
+  const releaseMaterial = typeof release?.body === "string" && typeof release?.html_url === "string"
+    && release.html_url.startsWith(`https://github.com/${input.ref}/releases/`)
+    && typeof release?.published_at === "string"
+    ? { id: release.html_url, url: release.html_url, title: String(release.name || release.tag_name).slice(0, 160),
+        text: release.body.slice(0, 6000), publishedAt: release.published_at, fetchedAt: input.now.toISOString() }
+    : null;
+
   return {
     kind: "github_repository",
     ref: input.ref,
@@ -356,6 +354,7 @@ export async function observeRepositoryPulse(input: {
       commitsInWindow: commitList.length,
       contributorCount: authors.size,
       latestRelease: typeof release?.tag_name === "string" ? release.tag_name : null,
+      releaseMaterial,
       stars: typeof repository.stargazers_count === "number" ? repository.stargazers_count : 0,
     }),
     catalogUpdatedAt: null,
@@ -363,6 +362,7 @@ export async function observeRepositoryPulse(input: {
       .filter(Boolean).join(" "),
     context: {
       url: `https://github.com/${input.ref}`,
+      publicMaterial: releaseMaterial,
       description: typeof repository.description === "string" ? repository.description : null,
       windowHours: PULSE_WINDOW_HOURS,
       commitsAreLowerBound,

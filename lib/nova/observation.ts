@@ -83,6 +83,7 @@ export function repositoryDigest(input: {
   commitsInWindow: number;
   contributorCount: number;
   latestRelease: string | null;
+  releaseMaterial?: import("./value.ts").PublicMaterial | null;
   stars: number;
 }): SubjectDigest {
   return {
@@ -91,6 +92,7 @@ export function repositoryDigest(input: {
     commitsInWindow: Math.max(0, Math.trunc(input.commitsInWindow)),
     contributorCount: Math.max(0, Math.trunc(input.contributorCount)),
     latestRelease: input.latestRelease,
+    releaseMaterial: input.releaseMaterial ?? null,
     stars: Math.max(0, Math.trunc(input.stars)),
   };
 }
@@ -111,6 +113,14 @@ export type ChangeInput = {
 };
 
 export function changesForSubject(input: ChangeInput): ObservedChange[] {
+  if (input.next.kind === "official_publication") {
+    if (input.previous?.kind === "official_publication") return [];
+    const material = input.next.material;
+    const age = input.now.getTime() - Date.parse(material.publishedAt ?? "");
+    if (!Number.isFinite(age) || age < 0 || age > 21 * 86400_000) return [];
+    return [{ kind: "official_publication", headline: material.title, detail: material.text.slice(0, 580),
+      evidence: { publicMaterial: material }, observedAt: input.now.toISOString() }];
+  }
   if (input.next.kind === "x402_resource") {
     const previous = input.previous?.kind === "x402_resource" ? input.previous : null;
     return previous
@@ -305,6 +315,12 @@ function repositoryFirstLook(
   const changes: ObservedChange[] = [];
   const observedAt = now.toISOString();
   const commitAge = hoursSince(next.lastCommitAt, now);
+  const releaseAge = hoursSince(next.releaseMaterial?.publishedAt ?? null, now);
+  if (next.latestRelease && releaseAge !== null && releaseAge >= 0 && releaseAge <= FIRST_LOOK_WINDOW.releaseDays * 24) {
+    changes.push({ kind: "repository_release", headline: `${label} released ${next.latestRelease}`.slice(0,160),
+      detail: next.releaseMaterial!.text.slice(0,580), evidence: { release: next.latestRelease, firstLook: true }, observedAt });
+  }
+
 
   if (commitAge !== null && commitAge >= 0 && commitAge <= FIRST_LOOK_WINDOW.commitHours && next.commitsInWindow > 0) {
     changes.push({

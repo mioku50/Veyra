@@ -1,10 +1,10 @@
 # Nova: D0 evidence and D1 wallet decision
 
-Date: 2026-09-20. Status: **D0 in progress; D1 research complete enough to define tests, wallet acceptance not passed.**
+Date: 2026-09-20. Updated 2026-09-21. Status: **D1 deferred: establish Nova product value before operational-wallet work.**
 
 ## Decision
 
-Continue the Nova roadmap: finish calibration, validate an operational wallet, then run one explicitly funded autonomy pilot. Reuse the existing execution boundary. No new queue, separate execution engine or B2B platform is justified by this investigation.
+The owner found the proposed commit-count investigations insufficiently useful. The next stage is [Nova Product Value V1](2026-09-21-nova-product-value-v1.md): explicit goals, substantive events, public-source analysis and usefulness feedback. Operational-wallet acceptance and a funded autonomy pilot remain deferred. The technical D0 evidence and D1 test matrix below remain reference material, not authorization to proceed to funding.
 
 This work neither enables AUTOPILOT nor migrates Veyra to Arc mainnet. The current signed PREVIEW mandate remains unchanged.
 
@@ -97,7 +97,9 @@ Define the signer integration around a durable execution ID and exact approved t
 
 If Agent Wallet session isolation, hosting or signing cannot meet acceptance, compare Developer-Controlled Wallets and restricted smart-account permissions. Document the change in custody/control; do not promise equivalent independent enforcement from server-held credentials.
 
-## Ordered next actions
+## Original ordered actions — deferred by the September 21 product decision
+
+Complete Product Value V1 and owner usefulness review first. The sequence below documents the former technical plan; it is not the active next-stage instruction.
 
 1. Deploy the count-only shadow diagnostics, investigate `nothing_askable` / `subject_missing`, and review both allowances plus representative refusals in Nova. Record actual owner feedback. One aggregate cron run has been explained; historical coverage remains incomplete.
 2. At expiry, regenerate the report and conclude D0 as sufficient or insufficient; propose any new limits from evidence.

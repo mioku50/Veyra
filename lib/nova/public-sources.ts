@@ -1,0 +1,134 @@
+/** Copyright 2026 Veyra. SPDX-License-Identifier: Apache-2.0 */
+import { load } from "cheerio";
+import type { PublicMaterial } from "./value.ts";
+import type { SourceObservation, SourceResult } from "./sources.ts";
+
+export const PUBLIC_FEEDS = [
+  { label: "Arc announcements", url: "https://www.arc.io/blog", interests: ["arc", "agent payments"], format: "html" },
+  { label: "Circle announcements", url: "https://www.circle.com/blog", interests: ["arc", "agent payments"], format: "html" },
+  { label: "Ethereum announcements", url: "https://blog.ethereum.org/en/feed.xml", interests: ["agent standards", "onchain data"], format: "xml" },
+  { label: "LangChain announcements", url: "https://www.langchain.com/blog", interests: ["ai"], format: "html" },
+] as const;
+const ORIGINS = new Set([...PUBLIC_FEEDS.map(f => new URL(f.url).origin), "https://docs.arc.io", "https://developers.circle.com"]);
+const REFERENCE_DOCS = [
+  { url: "https://docs.arc.io/arc/references/connect-to-arc.md", title: "Arc network connection reference" },
+  { url: "https://developers.circle.com/gateway/nanopayments/supported-networks.md", title: "Circle Nanopayments supported networks" },
+];
+
+export function publicationUrl(value: string, base: string): string | null {
+  try {
+    const u = new URL(value, base);
+    if (!ORIGINS.has(u.origin) || u.username || u.password || u.port || u.protocol !== "https:") return null;
+    if (u.origin !== new URL(base).origin) return null;
+    u.hash = ""; u.search = "";
+    return u.toString();
+  } catch { return null; }
+}
+
+/** Fixed official hosts only, no auth, no redirects, bounded bytes and time. Never retries a 402 with payment. */
+export async function readPublicPage(url: string, fetchImpl = fetch): Promise<string> {
+  if (!publicationUrl(url, url)) throw new Error("Unapproved public source");
+  const response = await fetchImpl(url, { redirect: "error", signal: AbortSignal.timeout(7000), headers: { Accept: "text/html,application/rss+xml,application/atom+xml,application/xml", "User-Agent": "Veyra-Nova/1.0" } });
+  if (!response.ok || !response.body) throw new Error("Public source unavailable");
+  if (Number(response.headers.get("content-length") ?? 0) > 1_500_000) throw new Error("Source too large");
+  const reader = response.body.getReader(); const chunks: Uint8Array[] = []; let size = 0;
+  try {
+    for (;;) {
+      const part = await reader.read(); if (part.done) break;
+      size += part.value.byteLength;
+      if (size > 1_500_000) throw new Error("Source too large");
+      chunks.push(part.value);
+    }
+  } finally { await reader.cancel(); }
+  return Buffer.concat(chunks).toString("utf8");
+}
+const plain = (html: string) => load(html).text().replace(/\s+/g, " ").trim();
+function recentDate(value: string, now: Date): string | null {
+  const date = Date.parse(value); const age = now.getTime() - date;
+  return Number.isFinite(date) && age >= 0 && age <= 21 * 86400_000 ? new Date(date).toISOString() : null;
+}
+
+export function parsePublication(html: string, url: string, now: Date): PublicMaterial | null {
+  const $ = load(html);
+  let date = $("meta[property='article:published_time']").attr("content") ?? $("time").first().attr("datetime") ?? "";
+  for (const node of $("script[type='application/ld+json']").toArray()) {
+    try {
+      const raw = JSON.parse($(node).text());
+      const entries = Array.isArray(raw) ? raw : Array.isArray(raw["@graph"]) ? raw["@graph"] : [raw];
+      const article = entries.find((e: Record<string, unknown>) => typeof e?.datePublished === "string");
+      if (article) date = article.datePublished;
+    } catch { /* Invalid publisher metadata is not a date. */ }
+  }
+  const rawDate = date || $(".blog_date-time").first().text();
+  if (!Number.isFinite(Date.parse(rawDate))) throw new Error("Publication date unavailable");
+  const publishedAt = recentDate(rawDate, now);
+  if (!publishedAt) return null;
+  const title = $("h1").first().text().trim().slice(0, 160);
+  $("script,style,nav,footer,header,form").remove();
+  const text = $("article, .w-richtext").toArray().map(node => $(node).text().replace(/\s+/g, " ").trim()).sort((a,b) => b.length - a.length)[0]?.slice(0, 6000) ?? "";
+  if (!title || text.length < 80) throw new Error("Publication content unavailable");
+  return { id: url, title, url, text, publishedAt, fetchedAt: now.toISOString() };
+}
+
+export function parseFeed(xml: string, base: string, now: Date): PublicMaterial[] {
+  const $ = load(xml, { xml: true });
+  if (!$("rss,feed").length) throw new Error("Not a publication feed");
+  const items: PublicMaterial[] = [];
+  for (const node of $("item,entry").toArray().slice(0, 20)) {
+    const item = $(node);
+    const link = item.find("link").first();
+    const url = publicationUrl(link.attr("href") || link.text(), base);
+    const publishedAt = recentDate(item.find("pubDate,published,updated").first().text(), now);
+    const title = plain(item.find("title").first().text()).slice(0, 160);
+    const text = plain(item.find("description,summary,content,content\\:encoded").first().text()).slice(0, 6000);
+    if (!url || !publishedAt || !title || text.length < 80) continue;
+    if (items.some(s => s.url === url)) continue;
+    items.push({ id: url, title, url, text, publishedAt, fetchedAt: now.toISOString() });
+  }
+  return items.sort((a,b) => b.publishedAt!.localeCompare(a.publishedAt!)).slice(0, 6);
+}
+
+export async function observePublications(input: { interests: string[]; now: Date; fetchImpl?: typeof fetch }): Promise<SourceResult> {
+  const interests = new Set(input.interests.map(i => i.toLowerCase()));
+  const selected = PUBLIC_FEEDS.filter(f => f.interests.some(i => interests.has(i)));
+  const results = await Promise.all(selected.map(async feed => {
+    const unavailable: string[] = [];
+    try {
+      const body = await readPublicPage(feed.url, input.fetchImpl);
+      let materials: PublicMaterial[];
+      if (feed.format === "xml") materials = parseFeed(body, feed.url, input.now);
+      else {
+        const $ = load(body);
+        const urls = Array.from(new Set($("a[href]").toArray().map(a => publicationUrl($(a).attr("href") ?? "", feed.url))
+          .filter((u): u is string => !!u && new URL(u).pathname.startsWith("/blog/") && !/\/blog\/(tag|category|author)\//.test(u)))).slice(0, 10);
+        if (!urls.length) throw new Error("Publication index unavailable");
+        const reads = await Promise.allSettled(urls.map(async url => parsePublication(await readPublicPage(url, input.fetchImpl), url, input.now)));
+        materials = reads.flatMap(r => r.status === "fulfilled" && r.value ? [r.value] : [])
+          .sort((a,b) => b.publishedAt!.localeCompare(a.publishedAt!));
+        if (reads.some(r => r.status === "rejected")) unavailable.push(`${feed.label} (some articles unavailable)`);
+      }
+      const interest = input.interests.find(i => feed.interests.some(f => f === i.toLowerCase()))!;
+      const observations: SourceObservation[] = materials.map(material => ({
+        kind: "official_publication", ref: material.url, label: feed.label, interest,
+        digest: { kind: "official_publication", material }, catalogUpdatedAt: material.publishedAt,
+        subjectText: `${material.title} ${material.text}`, context: { url: material.url, publicMaterial: material },
+      }));
+      return { observations, unavailable };
+    } catch { return { observations: [], unavailable: [feed.label] }; }
+  }));
+  return { observations: results.flatMap(r => r.observations), unavailable: results.flatMap(r => r.unavailable) };
+}
+
+/** A bounded second look at first-party references. Failure stays visible and
+ * cannot be reinterpreted as evidence that a paid tool is necessary. */
+export async function publicContext(material: PublicMaterial, fetchImpl = fetch): Promise<{ sources: PublicMaterial[]; unavailable: string[] }> {
+  const host = new URL(material.url).hostname;
+  if (!["www.arc.io", "www.circle.com"].includes(host)) return { sources: [material], unavailable: [] };
+  const results = await Promise.allSettled(REFERENCE_DOCS.map(async doc => {
+    const text = await readPublicPage(doc.url, fetchImpl);
+    if (!text.trim() || text.trimStart().startsWith("<!")) throw new Error("Reference unavailable");
+    return { id: doc.url, url: doc.url, title: doc.title, text: text.slice(0, 6000), publishedAt: null, fetchedAt: new Date().toISOString() } satisfies PublicMaterial;
+  }));
+  return { sources: [material, ...results.flatMap(r => r.status === "fulfilled" ? [r.value] : [])],
+    unavailable: results.flatMap((r,i) => r.status === "rejected" ? [REFERENCE_DOCS[i].title] : []) };
+}

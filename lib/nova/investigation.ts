@@ -16,6 +16,7 @@ import {
   type NovaResearchPlan,
   type NovaResearchProposal,
 } from "./research.ts";
+import { paidResearchReadiness, assessmentOf } from "./value.ts";
 import { loadSignalForOwner } from "./service.ts";
 import { hashTerms, type NovaResearchTerms, type TermsChange } from "./research-terms.ts";
 import { db, loadOwned, NovaError } from "./service.ts";
@@ -247,6 +248,12 @@ export async function approveResearch(input: {
     ownerSecret: input.ownerSecret,
     signalId: input.signalId,
   });
+  const readiness = paidResearchReadiness(signal, agent.goal, input.now);
+  if (!readiness.ready) return { ok: false, reason: readiness.reason, detail: readiness.detail };
+  const assessment = assessmentOf(signal)!;
+  if (row.proposal.researchNeed?.goal !== agent.goal || row.question !== assessment.gap?.question) {
+    return { ok: false, reason: "research_need_changed", detail: "Your goal or research question changed. Review a new proposal before paying." };
+  }
   const { query } = researchRequestFor(signal);
 
   const outcome = await revalidateResearch({

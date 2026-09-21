@@ -8,7 +8,7 @@ import { NOVA_HEADERS, novaErrorResponse, ownerSecretFrom } from "@/lib/nova/htt
 import { refreshNova } from "@/lib/nova/service";
 
 export const dynamic = "force-dynamic";
-export const maxDuration = 60;
+export const maxDuration = 180;
 
 type RouteContext = { params: Promise<{ publicId: string }> };
 

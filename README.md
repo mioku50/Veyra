@@ -29,28 +29,29 @@ trust-routed action, authorization and onchain settlement as it happened
 ## The agent in front of it
 
 The front door creates **Nova**, a personal agent owned by the person who made it.
-Nova watches the part of the world Veyra can actually measure, brings back what
-changed, and asks before spending anything. When it wants to spend, what it asks
-is the decision engine below.
+Nova starts from an owner-stated goal and interests. It reads official publications
+and release notes, explains significant changes with source excerpts, and keeps
+ordinary commit counts and API listings in background history. Public-source
+analysis uses the app's model without charging the owner's wallet.
 
 ```text
-WATCH      repositories · Circle's x402 catalogue              every six hours
-              ↓
-NOTICE     a price moved · a payee changed · an endpoint came back
-           every line is a difference between two recorded states, never prose
-              ↓
-ASK        a question written for that change, not a template
-              ↓
-PRICE      discovery · live 402 probe · Veyra's verdict        four numbers
-              ↓
-SIGN       the owner signs with their own wallet               Nova holds no key
-              ↓
-VERIFY     the answer is re-fetched and re-hashed
-              ↓
-ATTEST     amount, parties, request hash, response hash → Arc proof registry
-              ↓
-IDENTITY   one verified purchase carrying a public attestation → ERC-8004
+GOAL       a concrete result the owner wants
+  ↓
+OBSERVE    official publications · release notes · payment changes
+  ↓
+EXPLAIN    what changed · why it matters · next step · source excerpts
+  ↓
+FEEDBACK   was this result useful?
+  ↓ only for a specific unanswered question
+PROPOSE    suitable tool · expected result · exact price · Veyra policy
+  ↓ only after owner approval and existing execution checks
+SIGN → EXECUTE → VERIFY → RECEIPT / ARC ATTESTATION
 ```
+
+A missing answer is a research hypothesis, not permission to spend. Financial
+permission remains Veyra's separate deterministic decision. The operational-wallet
+phase is deferred until Nova demonstrates useful work; see
+[Nova Product Value V1](docs/audits/2026-09-21-nova-product-value-v1.md).
 
 Nova never holds money and there is no signing path in its code. It can want to
 spend and it says so, with a price and a verdict on the item; the payment goes

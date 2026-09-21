@@ -5,17 +5,9 @@
 
 import type { NovaPreferences, NovaRelevance, NovaSignalKind, ObservedChange } from "./types.ts";
 
-/**
- * How much a change is worth this person's attention.
- *
- * This is deterministic on purpose, and it is the same argument as the router:
- * a language model is good at understanding what someone meant and bad at being
- * accountable for it. If Nova ever has to answer "why did you show me this",
- * the answer has to be a rule someone can read, not a sample from a model.
- *
- * So the model's job is upstream -- turning a sentence into interests -- and
- * everything from here down is arithmetic anyone can check. The reason string
- * is not decoration; it is the audit trail, and it is shown.
+/** Deterministic topic/preferences ranking and financial-change alerts.
+ * Public events additionally need a source-supported goal assessment in the
+ * brief selector. Model significance is product judgment, never spend policy.
  */
 
 export type RelevanceInput = {
@@ -61,6 +53,7 @@ const BASE_SCORE: Record<NovaSignalKind, number> = {
   rail_changed: 58,
   price_changed: 52,
   repository_release: 48,
+  official_publication: 48,
   endpoint_recovered: 40,
   capability_available: 30,
   repository_activity: 34,
@@ -87,6 +80,7 @@ const THRESHOLD = { high: 70, medium: 45, low: 25 } as const;
 const CATEGORY_PHRASE: Partial<Record<NovaSignalKind, string>> = {
   repository_activity: "commits",
   repository_release: "releases",
+  official_publication: "announcements",
   capability_available: "new capabilities",
   price_changed: "price changes",
   endpoint_recovered: "recoveries",
@@ -265,7 +259,8 @@ export function scoreRelevance(input: RelevanceInput): RelevanceVerdict {
     }
   }
 
-  const relevance: NovaRelevance =
+  if (input.change.kind === "repository_activity") reasons.push("commit activity is background context, not evidence of importance");
+  const relevance: NovaRelevance = input.change.kind === "repository_activity" ? "noise" :
     score >= THRESHOLD.high ? "high"
       : score >= THRESHOLD.medium ? "medium"
         : score >= THRESHOLD.low ? "low"

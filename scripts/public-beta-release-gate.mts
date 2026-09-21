@@ -207,6 +207,10 @@ runStep("Nova Shadow Autonomy", () => {
   execSync("npm run nova-autonomy:test", { cwd: root, stdio: "inherit" });
 });
 
+runStep("Nova Product Value", () => {
+  execSync("npm run nova-product-value:test", { cwd: root, stdio: "inherit" });
+});
+
 runStep("Nova Calibration Report", () => {
   execSync("npm run nova-calibration:test", { cwd: root, stdio: "inherit" });
 });

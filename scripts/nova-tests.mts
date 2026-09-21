@@ -19,7 +19,7 @@ import {
   x402Digest,
 } from "../lib/nova/observation.ts";
 import { orderByRelevance, scoreRelevance } from "../lib/nova/relevance.ts";
-import { BRIEF_LIMITS, assembleBrief, greeting, quietSummary } from "../lib/nova/brief.ts";
+import { assembleBrief, greeting, quietSummary } from "../lib/nova/brief.ts";
 import { observeRepositories } from "../lib/nova/sources.ts";
 import { EXPLICIT_IGNORE_SUPPORT, ignoreWeight, summariseAway } from "../lib/nova/service.ts";
 import { networkName, settlementNetworkOf } from "../lib/nova/network.ts";
@@ -293,7 +293,7 @@ const shrugged = scoreRelevance({
   preferences: { ...NOTHING_SAID, ignored: [{ phrase: "commit", weight: ignoreWeight(1) }] },
 });
 assert.match(shrugged.reason, /usually dismiss/);
-assert.notEqual(shrugged.relevance, "noise", "one dismissal must not bury a topic");
+assert.equal(shrugged.relevance, "noise", "raw commit counts stay background even before feedback");
 
 /* Repetition is what turns a shrug into a preference, and an explicit "never
    show me this" enters at the same weight repetition would take days to earn --
@@ -538,8 +538,8 @@ assert.equal(brief.worthAttention[0].id, "payee", "the change leads");
 /* A change must never be crowded out by findings, however many there are and
    whatever they score: findings describe the world, changes are the reason to
    come back. */
-assert(brief.worthAttention.some((s) => s.id === "repo"), "a low-relevance change still outranks a medium finding");
-assert.equal(brief.worthAttention.filter((s) => s.kind === "capability_available").length, 3, "findings are capped");
+assert(!brief.worthAttention.some((s) => s.id === "repo"), "activity counts do not establish a meaningful event");
+assert.equal(brief.worthAttention.filter((s) => s.kind === "capability_available").length, 0, "API listings are tools, not brief items");
 
 // Noise is kept, not discarded: "1 ignored as noise" has to be openable.
 assert.deepEqual(brief.noise.map((s) => s.id), ["tiny"]);
@@ -557,11 +557,11 @@ const manyFindings = Array.from({ length: 9 }, (_, i) => ({
   observedAt: `2026-09-14T0${i}:00:00.000Z`,
 }));
 const cappedFindings = assembleBrief(manyFindings);
-assert.equal(cappedFindings.worthAttention.length, BRIEF_LIMITS.findings, "the brief still caps hard");
+assert.equal(cappedFindings.worthAttention.length, 0, "catalog listings stay out of the brief");
 assert.equal(cappedFindings.noise.length, 0, "nothing here was rejected for relevance");
 assert.equal(
   cappedFindings.overflow.length,
-  manyFindings.length - BRIEF_LIMITS.findings,
+  manyFindings.length,
   "everything the cap dropped stays reachable",
 );
 assert.equal(
@@ -572,7 +572,7 @@ assert.equal(
 
 /* "Nothing changed" and "I could not look" produce the same empty screen and
    mean opposite things. */
-assert.match(quietSummary({ subjectsChecked: 16, sourcesUnavailable: [] }), /Nothing moved across the 16/);
+assert.match(quietSummary({ subjectsChecked: 16, sourcesUnavailable: [] }), /No source-supported finding was selected from the 16/);
 const blind = quietSummary({ subjectsChecked: 16, sourcesUnavailable: ["GitHub"] });
 assert.match(blind, /could not reach GitHub/);
 assert.doesNotMatch(blind, /Nothing moved/, "a blind day must not be dressed as a quiet one");
@@ -1253,8 +1253,8 @@ const refusedForSilence = await proposeResearch({
   fetchImpl: (async () => { throw new Error("no endpoint should ever be probed"); }) as never,
 });
 assert.equal(refusedForSilence.ok, false);
-assert.equal(refusedForSilence.ok === false && refusedForSilence.reason, "no_question");
-assert.match(refusedForSilence.ok === false ? refusedForSilence.detail : "", /only search for its name/);
+assert.equal(refusedForSilence.ok === false && refusedForSilence.reason, "background_activity");
+assert.match(refusedForSilence.ok === false ? refusedForSilence.detail : "", /background observations/);
 
 /* A repository has no capability of its own, so the question is written for a
    stranger and has to carry the subject's name into it. */
