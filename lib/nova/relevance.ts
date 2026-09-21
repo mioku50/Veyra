@@ -62,6 +62,18 @@ const BASE_SCORE: Record<NovaSignalKind, number> = {
 const THRESHOLD = { high: 70, medium: 45, low: 25 } as const;
 
 /**
+ * The lowest score a band can hold.
+ *
+ * A stored signal keeps its band and not the number behind it, so ranking one
+ * against a freshly scored candidate needs a floor to stand on. Using the
+ * floor is deliberately pessimistic: a stored "high" ranks below a fresh
+ * "high" that actually scored higher, and still above any "medium".
+ */
+export function scoreFloorFor(relevance: NovaRelevance): number {
+  return relevance === "high" ? THRESHOLD.high : relevance === "medium" ? THRESHOLD.medium : relevance === "low" ? THRESHOLD.low : 0;
+}
+
+/**
  * The category a kind belongs to, as a person would name it.
  *
  * This is the canonical copy: scoring needs it to match a category preference

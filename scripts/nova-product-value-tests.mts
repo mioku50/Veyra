@@ -2,6 +2,7 @@
 import assert from "node:assert/strict";
 import { assembleBrief } from "../lib/nova/brief.ts";
 import { PUBLIC_READING_BUDGET, readingOrder } from "../lib/nova/service.ts";
+import { scoreFloorFor } from "../lib/nova/relevance.ts";
 import { NOVA_WITHHOLD_REASONS } from "../lib/nova/types.ts";
 import { changesForSubject, repositoryDigest } from "../lib/nova/observation.ts";
 import { normalizeGoal, paidResearchReadiness, type PublicMaterial } from "../lib/nova/value.ts";
@@ -82,18 +83,25 @@ for (const sample of [brief, held, capped]) {
 }
 
 /* The reading budget is spent by relevance, not by whatever the source list
-   returned first: an unread publication cannot clear the significance gate, so
-   traversal order was deciding the brief. */
+   returned first and not on the new events merely for being new: an unread
+   publication cannot clear the significance gate, so this order decides the
+   brief. A stored signal is ranked from the floor of the band it kept. */
 const candidates = [
-  { readable: true, score: 10, row: { observed_at: "2026-09-20T10:00:00Z", headline: "weak" } },
-  { readable: false, score: 99, row: { observed_at: "2026-09-20T11:00:00Z", headline: "not readable" } },
-  { readable: true, score: 40, row: { observed_at: "2026-09-19T10:00:00Z", headline: "strong, older" } },
-  { readable: true, score: 40, row: { observed_at: "2026-09-20T12:00:00Z", headline: "strong, newer" } },
-  { readable: true, score: 25, row: { observed_at: "not a date", headline: "middling" } },
+  { score: 10, observedAt: "2026-09-20T10:00:00Z", headline: "weak" },
+  { score: scoreFloorFor("high"), observedAt: "2026-09-18T10:00:00Z", headline: "backlog, unread, high" },
+  { score: 45, observedAt: "2026-09-19T10:00:00Z", headline: "fresh medium, older" },
+  { score: 45, observedAt: "2026-09-20T12:00:00Z", headline: "fresh medium, newer" },
+  { score: 25, observedAt: "not a date", headline: "middling" },
 ];
-assert.deepEqual(readingOrder(candidates).map(entry => entry.row.headline),
-  ["strong, newer", "strong, older", "middling", "weak"]);
-assert.equal(readingOrder(candidates).slice(0, PUBLIC_READING_BUDGET).some(entry => !entry.readable), false);
+assert.deepEqual(readingOrder(candidates).map(entry => entry.headline),
+  ["backlog, unread, high", "fresh medium, newer", "fresh medium, older", "middling", "weak"],
+  "An unread high-relevance event outranks three fresher lesser ones");
+assert.equal(scoreFloorFor("noise"), 0);
+assert(scoreFloorFor("high") > scoreFloorFor("medium") && scoreFloorFor("medium") > scoreFloorFor("low"));
+assert.equal(readingOrder(candidates).length, candidates.length, "Ranking selects an order, the budget selects how many");
+assert.deepEqual(readingOrder(candidates).slice(0, PUBLIC_READING_BUDGET).map(entry => entry.headline),
+  ["backlog, unread, high", "fresh medium, newer", "fresh medium, older"],
+  "What three readings are actually spent on");
 const xml = `<rss><channel><item><title>Release</title><link>https://blog.ethereum.org/release</link><pubDate>2026-09-19T12:00:00Z</pubDate><description>${source.text}</description></item><item><title>Future</title><link>https://blog.ethereum.org/future</link><pubDate>2027-01-01</pubDate><description>${source.text}</description></item><item><title>Bad link</title><link>http://127.0.0.1/private</link><pubDate>2026-09-19</pubDate><description>${source.text}</description></item></channel></rss>`;
 assert.equal(parseFeed(xml, "https://blog.ethereum.org/feed.xml", now).length, 1);
 assert.throws(() => parseFeed("<html>not RSS</html>", source.url, now));

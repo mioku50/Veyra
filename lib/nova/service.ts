@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { normalizeGoal, assessmentOf, type PublicMaterial } from "./value.ts";
+import { normalizeGoal, assessmentOf, type PublicMaterial, type ValueAssessment } from "./value.ts";
 import {
   PROJECT_CONTEXT_LIMITS,
   ProjectContextError,
@@ -21,7 +21,7 @@ import { getServerSupabaseConfig } from "../supabase/server-env.ts";
 import { assembleBrief, greeting, quietSummary } from "./brief.ts";
 import { MAX_INTERESTS, interestKey, keywordsForInterests, normalizeInterests } from "./interests.ts";
 import { changesForSubject } from "./observation.ts";
-import { categoryPhraseFor, orderByRelevance, scoreRelevance } from "./relevance.ts";
+import { categoryPhraseFor, scoreFloorFor, scoreRelevance } from "./relevance.ts";
 import { observeRepositories, observeX402Catalog, type SourceObservation } from "./sources.ts";
 import { settlementNetworkOf } from "./network.ts";
 import { standingFrom } from "./standing.ts";
@@ -349,16 +349,23 @@ export async function refreshNova(input: {
  */
 export const PUBLIC_READING_BUDGET = 3;
 
-/** The candidates a reading budget should be spent on, best first: relevance
- *  score, then the newest of an equal pair. */
-export function readingOrder<T extends { readable: boolean; score: number; row: Record<string, unknown> }>(entries: T[]): T[] {
-  const observedAt = (entry: T) => {
-    const parsed = Date.parse(String(entry.row.observed_at ?? ""));
+/**
+ * The candidates a reading budget should be spent on, best first: relevance
+ * score, then the newest of an equal pair.
+ *
+ * Both populations go through here together. Ranking the new events and then
+ * the unread backlog separately repeated the bug one level up -- a pass with
+ * three new items spent the whole budget on them and left a high-relevance
+ * event nobody had read yet sitting there, which is how the two Arc cards an
+ * owner cared about kept their old reading while three lesser ones got a new
+ * one.
+ */
+export function readingOrder<T extends { score: number; observedAt: string }>(entries: T[]): T[] {
+  const at = (entry: T) => {
+    const parsed = Date.parse(entry.observedAt);
     return Number.isFinite(parsed) ? parsed : 0;
   };
-  return entries
-    .filter((entry) => entry.readable)
-    .sort((a, b) => b.score - a.score || observedAt(b) - observedAt(a));
+  return [...entries].sort((a, b) => b.score - a.score || at(b) - at(a));
 }
 
 export async function runRefresh(input: {
@@ -475,31 +482,85 @@ export async function runRefresh(input: {
     observed.push({ subjectId, digest: observation.digest });
   }
 
-  /* The budget is spent on the best candidates in the pass, not on the first
-     ones the source list returned. A publication with no reading cannot clear
-     the significance gate, so traversal order used to decide the brief
-     silently: thirteen publications, three readings, and the other ten were
-     never judged at all. What the budget does not reach stays unread and
-     visible as unread, and the next pass reconsiders it. Relevance-rejected
-     material is skipped outright -- the brief would drop it whatever the
-     reading said, and spending the budget there buys nothing. */
-  for (const entry of readingOrder(pendingSignals)) {
+  /* Everything this pass could read, in one list.
+     The budget is spent on the best candidates, not on the first ones the
+     source list returned and not on the new ones merely for being new. A
+     publication with no reading cannot clear the significance gate, so the
+     order this is spent in decides the brief. What the budget does not reach
+     stays unread, is visible as unread, and is reconsidered next pass.
+     Relevance-rejected material is skipped outright -- the brief would drop
+     it whatever the reading said. */
+  type ReadingCandidate = {
+    headline: string;
+    material: PublicMaterial;
+    score: number;
+    observedAt: string;
+    /** Where the reading goes when it comes back: into the row about to be
+     *  written, or into the row already stored. */
+    apply: (assessment: ValueAssessment) => Promise<void>;
+  };
+  const candidates: ReadingCandidate[] = [];
+
+  for (const entry of pendingSignals) {
+    if (!entry.readable || !entry.material) continue;
+    candidates.push({
+      headline: String(entry.row.headline),
+      material: entry.material,
+      score: entry.score,
+      observedAt: String(entry.row.observed_at ?? ""),
+      apply: async (valueAssessment) => {
+        entry.row.evidence = { ...(entry.row.evidence as Record<string, unknown>), valueAssessment };
+      },
+    });
+  }
+
+  /* Events an earlier pass left unread, and readings judged against a goal or
+     a project state that has since changed. A stored signal keeps its band
+     and not the number behind it, so it is ranked from the floor of that
+     band: pessimistic against a fresh candidate of the same band, and still
+     ahead of any weaker one. */
+  if (goal) {
+    const { data: pending, error: pendingError } = await db().from("nova_signals").select("signal_id,headline,evidence,relevance,observed_at")
+      .eq("agent_id", agent.agent_id).in("kind", ["repository_release", "official_publication"])
+      .neq("relevance", "noise")
+      .in("status", ["new", "seen"]).order("observed_at", { ascending: false }).limit(12);
+    if (pendingError) throw new NovaError("Could not load public events.", "database_unavailable", 503);
+    for (const row of (pending ?? []) as Array<Record<string, any>>) {
+      const stored = row.evidence?.valueAssessment;
+      if (stored?.goal === goal && readAgainst(stored.projectContext, projectContext)) continue;
+      const material = (row.evidence?.publicMaterial ?? row.evidence?.subject?.publicMaterial) as PublicMaterial | undefined;
+      if (!material?.text) continue;
+      candidates.push({
+        headline: String(row.headline),
+        material,
+        score: scoreFloorFor((row.relevance ?? "low") as NovaRelevance),
+        observedAt: String(row.observed_at ?? ""),
+        apply: async (valueAssessment) => {
+          const { error } = await db().from("nova_signals").update({ evidence: { ...row.evidence, valueAssessment }, updated_at: new Date().toISOString() })
+            .eq("agent_id", agent.agent_id).eq("signal_id", row.signal_id);
+          if (error) throw new NovaError("Could not save public research.", "database_unavailable", 503);
+        },
+      });
+    }
+  }
+
+  for (const candidate of readingOrder(candidates)) {
     if (assessments >= PUBLIC_READING_BUDGET) break;
-    if (!goal || !entry.material) continue;
+    if (!goal) break;
     assessments++;
-    const context = await publicContext(entry.material, input.fetchImpl);
-    const valueAssessment = await assessPublicMaterial({ goal, projectContext, headline: String(entry.row.headline), sources: context.sources, now });
+    const context = await publicContext(candidate.material, input.fetchImpl);
+    const valueAssessment = await assessPublicMaterial({ goal, projectContext, headline: candidate.headline, sources: context.sources, now });
     if (!valueAssessment) {
       if (!sourcesUnavailable.includes("Nova public-source analysis")) sourcesUnavailable.push("Nova public-source analysis");
       continue;
     }
     valueAssessment.sourcesUnavailable = context.unavailable;
-    entry.row.evidence = { ...(entry.row.evidence as Record<string, unknown>), valueAssessment };
+    await candidate.apply(valueAssessment);
     if (valueAssessment.contextProposal) {
       contextProposals.push({
         statement: valueAssessment.contextProposal.statement,
         why: valueAssessment.contextProposal.why,
-        evidence: { headline: String(entry.row.headline), sources: valueAssessment.sources.map((source) => source.url).slice(0, 2), suggestedAt: now.toISOString() },
+        evidence: { headline: candidate.headline, sources: valueAssessment.sources.map((source) => source.url).slice(0, 2), suggestedAt: now.toISOString() },
       });
     }
   }
@@ -519,51 +580,6 @@ export async function runRefresh(input: {
     if (digestError) throw new NovaError("Could not save source state.", "database_unavailable", 503);
   }
 
-
-  /* Reassess recent events after the owner sets or changes a goal, and drain
-     what an earlier pass left unread, even when the source digest is
-     unchanged. Same budget, and the same rule about how to spend it: by
-     relevance, not by whatever the query returned first. Material relevance
-     already rejected is not read at all. */
-  if (goal && assessments < PUBLIC_READING_BUDGET) {
-    const { data: pending, error: pendingError } = await db().from("nova_signals").select("signal_id,headline,evidence,relevance,observed_at")
-      .eq("agent_id", agent.agent_id).in("kind", ["repository_release", "official_publication"])
-      .neq("relevance", "noise")
-      .in("status", ["new", "seen"]).order("observed_at", { ascending: false }).limit(12);
-    if (pendingError) throw new NovaError("Could not load public events.", "database_unavailable", 503);
-    const ranked = orderByRelevance<Record<string, any> & { relevance: NovaRelevance; observedAt: string }>(
-      ((pending ?? []) as Array<Record<string, any>>).map((row) => ({
-        ...row,
-        relevance: (row.relevance ?? "low") as NovaRelevance,
-        observedAt: String(row.observed_at ?? ""),
-      })),
-    );
-    for (const row of ranked) {
-      if (assessments >= PUBLIC_READING_BUDGET) break;
-      const stored = row.evidence?.valueAssessment;
-      if (stored?.goal === goal && readAgainst(stored.projectContext, projectContext)) continue;
-      const material = (row.evidence?.publicMaterial ?? row.evidence?.subject?.publicMaterial) as PublicMaterial | undefined;
-      if (!material?.text) continue;
-      assessments++;
-      const context = await publicContext(material, input.fetchImpl);
-      const valueAssessment = await assessPublicMaterial({ goal, projectContext, headline: row.headline, sources: context.sources, now });
-      if (valueAssessment) valueAssessment.sourcesUnavailable = context.unavailable;
-      if (!valueAssessment) {
-        if (!sourcesUnavailable.includes("Nova public-source analysis")) sourcesUnavailable.push("Nova public-source analysis");
-        continue;
-      }
-      if (valueAssessment.contextProposal) {
-        contextProposals.push({
-          statement: valueAssessment.contextProposal.statement,
-          why: valueAssessment.contextProposal.why,
-          evidence: { headline: row.headline, sources: valueAssessment.sources.map((source) => source.url).slice(0, 2), suggestedAt: now.toISOString() },
-        });
-      }
-      const { error } = await db().from("nova_signals").update({ evidence: { ...row.evidence, valueAssessment }, updated_at: new Date().toISOString() })
-        .eq("agent_id", agent.agent_id).eq("signal_id", row.signal_id);
-      if (error) throw new NovaError("Could not save public research.", "database_unavailable", 503);
-    }
-  }
 
   /* After the observations are written, never before: a suggestion about the
      project is worth less than the pass that produced it, and a failure here

@@ -52,6 +52,15 @@ instead of by recency alone.
 This does not increase coverage per pass. It decides which three of thirteen
 get read, and reports the other ten instead of dropping them silently.
 
+Observed on the first real run and then fixed: ranking the new events and the
+unread backlog as two separate passes repeated the same bug one level up. A
+refresh with three new publications spent the whole budget on them, and two
+higher-relevance Arc events the owner cared about kept a reading made before
+the project context existed. Both populations are now ranked together. A
+stored signal keeps its band and not the number behind it, so it is ranked
+from that band's floor: pessimistic against a fresh candidate of the same
+band, and still ahead of any weaker one.
+
 ### Project context
 
 A per-agent list of short statements about the state of the work
