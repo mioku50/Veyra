@@ -173,7 +173,9 @@
     "nova:research:live": "node --experimental-transform-types --no-warnings --env-file-if-exists=.env.local scripts/nova-research-live.mts",
     "frontend:audit-test": "node --experimental-transform-types --no-warnings scripts/frontend-audit-tests.mts",
     "frontend:audit-browser": "node --experimental-transform-types --no-warnings scripts/frontend-audit-browser.mts",
-    "nova-product-value:test": "node --experimental-transform-types --no-warnings scripts/nova-product-value-tests.mts"
+    "nova-product-value:test": "node --experimental-transform-types --no-warnings scripts/nova-product-value-tests.mts",
+    "nova-project-context:test": "node --experimental-transform-types --no-warnings scripts/nova-project-context-tests.mts",
+    "nova-project-context:migrate": "node --experimental-transform-types --no-warnings --env-file-if-exists=.env.local scripts/apply-nova-project-context-migration.mts"
   },
   "dependencies": {
     "@circle-fin/adapter-viem-v2": "^1.14.0",

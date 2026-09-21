@@ -46,10 +46,20 @@ The [Product Value V1 implementation and audit note](audits/2026-09-21-nova-prod
 
 Migrations, focused checks and a temporary-agent browser smoke were recorded in the [implementation note](audits/2026-09-21-nova-product-value-v1.md). The smoke demonstrated the workflow, **not** owner-value acceptance. Confirm actual release/runtime status separately when reviewing later changes.
 
+### Also implemented on 2026-09-21, after the first real briefs
+
+See [project context and held-back reporting](audits/2026-09-21-nova-project-context.md).
+
+- **Project context.** Owner-confirmed short statements of what is already true about the work, supplied to every reading alongside the goal. An assessment now says what an event changes relative to work already done, and carries the statements it was judged against. Nova may **propose** a statement and may never confirm one; a proposal never reaches a prompt, and a dismissed one is not raised again.
+- **A reading budget spent by relevance.** The three public readings per pass go to the highest-scoring candidates instead of whatever the source list returned first. An unread publication cannot clear the significance gate, so traversal order was deciding the brief. Coverage per pass is unchanged; what the budget does not reach is now reported as unread and reconsidered next pass.
+- **Held back, by reason.** The brief reports noise, background, not-read-yet, not-significant, duplicate and over-cap separately. "Held back as noise: 0" on a day that filtered twenty-one things was a true number in front of a false impression.
+
+None of this is evidence of product value. It changes what Nova is told and what the owner can audit; gate V is unchanged.
+
 ### Remaining work, in order
 
 1. **Owner goal and real-use review.** Have the owner set a concrete goal in My Agent, use Nova for several days and assess findings in Today, including `useful` / `not interesting` and the reason. Do not substitute test-agent ratings or historical D0 approvals for user feedback.
-2. **Improve the substance of findings.** Explain changes to a release, policy, integration, product or API rather than presenting a raw commit count as a headline. Show evidence links, observation/publication dates, what's new relative to the previous brief, relevance to the goal and a concrete next step. If evidence is incomplete, say so.
+2. **Improve the substance of findings.** *(partly addressed by project context: a finding can now be stated against work already done. The rest stands.)* Explain changes to a release, policy, integration, product or API rather than presenting a raw commit count as a headline. Show evidence links, observation/publication dates, what's new relative to the previous brief, relevance to the goal and a concrete next step. If evidence is incomplete, say so.
 3. **Source coverage and reliability.** Measure inaccessible publications, missed important events, duplicates, stale cards, content-read failures, model invalid-output rates, processing time and app-side model/RPC costs. Extend source coverage based on missed owner-relevant events, not raw item volume. Preserve bounded SSRF-safe reads and untrusted-source isolation.
 4. **Free-first tool selection.** The task must come before discovery. Use available public sources before offering a paid API. Show the unresolved question, expected incremental result, reason public information is insufficient, exact quoted price and provider limitations. If no suitable askable service exists, stop honestly.
 5. **Feedback-to-brief loop.** Verify that explicit owner feedback changes future prioritization without silently suppressing safety alerts or whole publishers. Keep feedback failures visible and avoid claiming personalization without demonstrated effect.
@@ -57,6 +67,8 @@ Migrations, focused checks and a temporary-agent browser smoke were recorded in 
 **Exit gate V:** Over several real scheduled cycles, the owner can point to recurring, source-backed, goal-relevant findings or completed work they actually found useful, including runs with **zero paid calls**. Review accepted and rejected findings, important misses, noise/duplicates, evidence gaps and per-agent operating cost. Do not use an arbitrary count of positive cards as a substitute for the owner's assessment. If this gate fails, iterate on goals/sources/analysis before D1.
 
 ## D0 — Close shadow calibration honestly
+
+**Closed as insufficient for funding on 2026-09-21: [D0 PREVIEW closure](audits/2026-09-21-d0-preview-closure.md).** The mandate runs to its expiry and is not renewed; the capture required at expiry is listed there.
 
 The active PREVIEW epoch predates this product-value change. Its original snapshot contained 11 priced decisions (2 WOULD_ALLOW, 9 WOULD_DENY); the 2026-09-20 postrelease record contained 13 (4 WOULD_ALLOW, 9 WOULD_DENY), **$0.030000 hypothetical allowed spend**, and no recorded owner feedback. These are observations from the configured database, correlated with scheduled-run evidence; they do not prove delivery, usefulness, settlement or wallet enforcement. See [D0/D1 readiness](audits/2026-09-20-nova-d0-d1-readiness.md).
 

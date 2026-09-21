@@ -5,7 +5,8 @@
 
 import { assessmentOf, isBackgroundKind } from "./value.ts";
 import { orderByRelevance } from "./relevance.ts";
-import type { NovaRelevance, NovaSignalKind } from "./types.ts";
+import { NOVA_WITHHOLD_REASONS } from "./types.ts";
+import type { NovaRelevance, NovaSignalKind, NovaWithholdReason } from "./types.ts";
 
 /** Select a bounded brief. Raw activity stays in background history;
  * publications and releases require a goal-matched significance assessment.
@@ -49,6 +50,14 @@ export type AssembledBrief<T extends BriefCandidate> = {
    *  brief and the wrong product: the cap is there so a daily read stays a
    *  daily read, not so the market becomes unreachable. */
   overflow: T[];
+  /** The same rows again, grouped by why they were held.
+   *
+   *  `noise` here is the bucket above and every other bucket together is
+   *  `overflow`. They are separated because a single "held back" number hides
+   *  which filter did the work: the goal-significance gate now decides most of
+   *  a brief, and while only relevance was counted, a day that filtered
+   *  twenty-one things could report zero. */
+  withheld: Record<NovaWithholdReason, T[]>;
 };
 
 export function assembleBrief<T extends BriefCandidate>(
@@ -61,17 +70,27 @@ export function assembleBrief<T extends BriefCandidate>(
   const ordered = orderByRelevance(signals);
   const noise = ordered.filter((signal) => signal.relevance === "noise");
   const eligible = ordered.filter((signal) => signal.relevance !== "noise");
+  const withheld = Object.fromEntries(
+    NOVA_WITHHOLD_REASONS.map((reason) => [reason, [] as T[]]),
+  ) as Record<NovaWithholdReason, T[]>;
+  withheld.noise = noise;
   const seen = new Set<string>();
   const qualified = eligible.filter(signal => {
-    if (isBackgroundKind(signal.kind)) return false;
+    if (isBackgroundKind(signal.kind)) { withheld.background.push(signal); return false; }
     if (signal.kind === "official_publication" || signal.kind === "repository_release") {
       const assessment = assessmentOf({ evidence: signal.evidence ?? {} });
-      if (!assessment?.significant || assessment.goal !== limits.goal) return false;
+      /* No assessment for the goal in force is not the same statement as an
+         assessment that found nothing. The first says Nova has not read it
+         yet -- the analysis budget ran out, the model was unavailable, or the
+         goal changed after the reading -- and that is a gap in coverage the
+         owner should see rather than a verdict about the material. */
+      if (!assessment || assessment.goal !== limits.goal) { withheld.not_analyzed.push(signal); return false; }
+      if (!assessment.significant) { withheld.not_significant.push(signal); return false; }
     }
     const subject = signal.subjectRef ?? signal.subjectId;
     if (!subject) return true;
     const key = `${subject}:${signal.kind}`;
-    if (seen.has(key)) return false;
+    if (seen.has(key)) { withheld.duplicate.push(signal); return false; }
     seen.add(key); return true;
   });
 
@@ -96,8 +115,9 @@ export function assembleBrief<T extends BriefCandidate>(
 
   const shown = new Set(worthAttention);
   const overflow = eligible.filter((signal) => !shown.has(signal));
+  withheld.over_cap = qualified.filter((signal) => !shown.has(signal));
 
-  return { worthAttention, noise, overflow };
+  return { worthAttention, noise, overflow, withheld };
 }
 
 /**

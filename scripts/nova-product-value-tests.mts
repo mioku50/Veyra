@@ -1,6 +1,8 @@
 /** Copyright 2026 Veyra. SPDX-License-Identifier: Apache-2.0 */
 import assert from "node:assert/strict";
 import { assembleBrief } from "../lib/nova/brief.ts";
+import { PUBLIC_READING_BUDGET, readingOrder } from "../lib/nova/service.ts";
+import { NOVA_WITHHOLD_REASONS } from "../lib/nova/types.ts";
 import { changesForSubject, repositoryDigest } from "../lib/nova/observation.ts";
 import { normalizeGoal, paidResearchReadiness, type PublicMaterial } from "../lib/nova/value.ts";
 import { assessPublicMaterial, parseValueAssessment } from "../lib/nova/free-research.ts";
@@ -51,6 +53,47 @@ const brief = assembleBrief([old, signal, commits, listing, security], { goal })
 assert.deepEqual(new Set(brief.worthAttention.map(s => s.signalId)), new Set(["sig", "warning"]));
 assert.equal(assembleBrief([signal], { goal: "different" }).worthAttention.length, 0);
 assert.equal(assembleBrief([{ ...signal, evidence: { valueAssessment: { ...value, significant: false } } }], { goal }).worthAttention.length, 0);
+
+/* Held back, by the reason it was held. A brief driven by a goal rejects most
+   of its material at the significance gate, so counting only relevance told
+   somebody "held back as noise: 0" on a pass that filtered everything. */
+assert.deepEqual(brief.withheld.duplicate.map(s => s.signalId), ["old"]);
+assert.deepEqual(new Set(brief.withheld.background.map(s => s.signalId)), new Set(["commits", "listing"]));
+assert.deepEqual(brief.withheld.noise, []);
+const unread = { ...signal, signalId: "unread", subjectRef: "https://www.arc.io/blog/unread", evidence: {} };
+const insignificant = { ...signal, signalId: "dull", subjectRef: "https://www.arc.io/blog/dull", evidence: { valueAssessment: { ...value, significant: false } } };
+const staleGoal = { ...signal, signalId: "stale", subjectRef: "https://www.arc.io/blog/stale", evidence: { valueAssessment: { ...value, goal: "an older goal" } } };
+const held = assembleBrief([signal, unread, insignificant, staleGoal], { goal });
+assert.deepEqual(held.worthAttention.map(s => s.signalId), ["sig"]);
+assert.deepEqual(new Set(held.withheld.not_analyzed.map(s => s.signalId)), new Set(["unread", "stale"]),
+  "No reading for the goal in force is a gap in coverage, not a verdict on the material");
+assert.deepEqual(held.withheld.not_significant.map(s => s.signalId), ["dull"]);
+const crowd = Array.from({ length: 6 }, (_, index) => ({ ...security, signalId: `alert-${index}`, subjectRef: `subject-${index}` }));
+const capped = assembleBrief(crowd, { goal });
+assert.equal(capped.worthAttention.length, 5);
+assert.equal(capped.withheld.over_cap.length, 1);
+/* Every bucket but noise is the watchlist, and nothing is counted twice: the
+   panel adds these up in front of a person. */
+for (const sample of [brief, held, capped]) {
+  const grouped = NOVA_WITHHOLD_REASONS.flatMap((reason) => sample.withheld[reason]);
+  assert.equal(grouped.length, new Set(grouped).size);
+  assert.deepEqual(new Set(grouped), new Set([...sample.noise, ...sample.overflow]));
+  assert.equal(grouped.length + sample.worthAttention.length, new Set([...grouped, ...sample.worthAttention]).size);
+}
+
+/* The reading budget is spent by relevance, not by whatever the source list
+   returned first: an unread publication cannot clear the significance gate, so
+   traversal order was deciding the brief. */
+const candidates = [
+  { readable: true, score: 10, row: { observed_at: "2026-09-20T10:00:00Z", headline: "weak" } },
+  { readable: false, score: 99, row: { observed_at: "2026-09-20T11:00:00Z", headline: "not readable" } },
+  { readable: true, score: 40, row: { observed_at: "2026-09-19T10:00:00Z", headline: "strong, older" } },
+  { readable: true, score: 40, row: { observed_at: "2026-09-20T12:00:00Z", headline: "strong, newer" } },
+  { readable: true, score: 25, row: { observed_at: "not a date", headline: "middling" } },
+];
+assert.deepEqual(readingOrder(candidates).map(entry => entry.row.headline),
+  ["strong, newer", "strong, older", "middling", "weak"]);
+assert.equal(readingOrder(candidates).slice(0, PUBLIC_READING_BUDGET).some(entry => !entry.readable), false);
 const xml = `<rss><channel><item><title>Release</title><link>https://blog.ethereum.org/release</link><pubDate>2026-09-19T12:00:00Z</pubDate><description>${source.text}</description></item><item><title>Future</title><link>https://blog.ethereum.org/future</link><pubDate>2027-01-01</pubDate><description>${source.text}</description></item><item><title>Bad link</title><link>http://127.0.0.1/private</link><pubDate>2026-09-19</pubDate><description>${source.text}</description></item></channel></rss>`;
 assert.equal(parseFeed(xml, "https://blog.ethereum.org/feed.xml", now).length, 1);
 assert.throws(() => parseFeed("<html>not RSS</html>", source.url, now));
@@ -80,4 +123,4 @@ assert.equal(changesForSubject({ label: "Arc", previous: publication, next: publ
 const release = repositoryDigest({ lastCommitAt: null, commitsInWindow: 0, contributorCount: 0, latestRelease: "v2", stars: 1, releaseMaterial: source });
 assert.equal(changesForSubject({ label: "Repo", previous: null, next: release, now })[0].kind, "repository_release");
 assert.equal(await assessPublicMaterial({ goal, headline: "Release", sources: [source], generate: async () => { throw new Error("offline"); } }), null);
-console.log("PASS: goals, significant-event selection, historical noise, deduplication, grounded citations, unavailable-source handling, paid-need gates, bounded official readers and release first-look.");
+console.log("PASS: goals, significant-event selection, historical noise, deduplication, why each held-back item was held, a reading budget spent by relevance, grounded citations, unavailable-source handling, paid-need gates, bounded official readers and release first-look.");

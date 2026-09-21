@@ -4,6 +4,14 @@
  */
 
 import { normalizeGoal, assessmentOf, type PublicMaterial } from "./value.ts";
+import {
+  PROJECT_CONTEXT_LIMITS,
+  ProjectContextError,
+  contextForPrompt,
+  normalizeStatement,
+  normalizeStatements,
+  type NovaProjectContext,
+} from "./project-context.ts";
 import { assessPublicMaterial } from "./free-research.ts";
 import { observePublications, publicContext } from "./public-sources.ts";
 import { createHash, randomBytes } from "node:crypto";
@@ -12,7 +20,7 @@ import { getServerSupabaseConfig } from "../supabase/server-env.ts";
 import { assembleBrief, greeting, quietSummary } from "./brief.ts";
 import { MAX_INTERESTS, interestKey, keywordsForInterests, normalizeInterests } from "./interests.ts";
 import { changesForSubject } from "./observation.ts";
-import { categoryPhraseFor, scoreRelevance } from "./relevance.ts";
+import { categoryPhraseFor, orderByRelevance, scoreRelevance } from "./relevance.ts";
 import { observeRepositories, observeX402Catalog, type SourceObservation } from "./sources.ts";
 import { settlementNetworkOf } from "./network.ts";
 import { standingFrom } from "./standing.ts";
@@ -27,6 +35,7 @@ import type {
   NovaMemory,
   NovaPreferences,
   NovaRefresh,
+  NovaRelevance,
   NovaArcIdentity,
   NovaRefusal,
   NovaShadowView,
@@ -326,6 +335,31 @@ export async function refreshNova(input: {
  * nearly all watch the same repositories, and it passes a reader that answers
  * each URL once.
  */
+/**
+ * How many public readings one pass may spend.
+ *
+ * A reading is a fetch plus a model call the application pays for, so the
+ * number is small -- and while it was small, the order it was spent in decided
+ * what a person saw. A publication Nova has not read cannot clear the
+ * significance gate, so the ten publications a three-reading pass never
+ * reached were not judged unimportant; they were never judged. The budget is
+ * unchanged and now spent on the highest-scoring candidates first, and what it
+ * does not reach is reported as unread rather than absent.
+ */
+export const PUBLIC_READING_BUDGET = 3;
+
+/** The candidates a reading budget should be spent on, best first: relevance
+ *  score, then the newest of an equal pair. */
+export function readingOrder<T extends { readable: boolean; score: number; row: Record<string, unknown> }>(entries: T[]): T[] {
+  const observedAt = (entry: T) => {
+    const parsed = Date.parse(String(entry.row.observed_at ?? ""));
+    return Number.isFinite(parsed) ? parsed : 0;
+  };
+  return entries
+    .filter((entry) => entry.readable)
+    .sort((a, b) => b.score - a.score || observedAt(b) - observedAt(a));
+}
+
 export async function runRefresh(input: {
   agent: { agent_id: string; interests: string[] };
   trigger: "creation" | "manual" | "scheduled";
@@ -340,6 +374,10 @@ export async function runRefresh(input: {
   const { data: goalRow, error: goalError } = await db().from("nova_agents").select("goal").eq("agent_id", agent.agent_id).single();
   if (goalError) throw new NovaError("Could not load your research goal.", "database_unavailable", 503);
   const goal = goalRow?.goal ?? null;
+  /* Confirmed statements only. A reading judged against Nova's own unconfirmed
+     inference would be reading its own notes back to itself. */
+  const projectContext = contextForPrompt(await loadProjectContext(agent.agent_id));
+  const contextProposals: Array<{ statement: string; why: string; evidence: Record<string, unknown> }> = [];
   const [catalog, repositories, publications] = await Promise.all([
     observeX402Catalog({ interests: agent.interests, fetchImpl: input.fetchImpl }),
     observeRepositories({ interests: agent.interests, now, fetchImpl: input.fetchImpl }),
@@ -362,6 +400,21 @@ export async function runRefresh(input: {
   const keywords = keywordsForInterests(agent.interests);
 
   const signalRows: Array<Record<string, unknown>> = [];
+  /** One observed change, scored, and waiting to be written. The row is held
+   *  rather than written immediately because its reading -- if it earns one --
+   *  belongs in the same evidence blob, and which changes earn one cannot be
+   *  decided until every change in the pass has been scored. */
+  type PendingSignal = {
+    subjectId: string;
+    row: Record<string, unknown>;
+    material: PublicMaterial | null;
+    score: number;
+    /** A publication or release Nova could read for this goal, if the budget
+     *  reaches it. */
+    readable: boolean;
+  };
+  const pendingSignals: PendingSignal[] = [];
+  const observed: Array<{ subjectId: string; digest: SubjectDigest }> = [];
   let assessments = 0;
   let kept = 0;
   let asNoise = 0;
@@ -384,15 +437,7 @@ export async function runRefresh(input: {
     });
 
     for (const change of changes) {
-      const material = observation.context.publicMaterial as PublicMaterial | undefined;
-      let valueAssessment = null;
-      if (goal && material?.text && (change.kind === "official_publication" || change.kind === "repository_release") && assessments < 3) {
-        assessments++;
-        const context = await publicContext(material, input.fetchImpl);
-        valueAssessment = await assessPublicMaterial({ goal, headline: change.headline, sources: context.sources, now });
-        if (valueAssessment) valueAssessment.sourcesUnavailable = context.unavailable;
-        else if (!sourcesUnavailable.includes("Nova public-source analysis")) sourcesUnavailable.push("Nova public-source analysis");
-      }
+      const material = (observation.context.publicMaterial as PublicMaterial | undefined) ?? null;
       const verdict = scoreRelevance({
         change,
         keywords,
@@ -403,7 +448,7 @@ export async function runRefresh(input: {
       });
       if (verdict.relevance === "noise") asNoise += 1;
       else kept += 1;
-      signalRows.push({
+      const row = {
         agent_id: agent.agent_id,
         subject_id: subjectId,
         kind: change.kind,
@@ -411,51 +456,117 @@ export async function runRefresh(input: {
         detail: change.detail,
         relevance: verdict.relevance,
         relevance_reason: verdict.reason,
-        evidence: { ...change.evidence, subject: observation.context, label: observation.label, ...(valueAssessment ? { valueAssessment } : {}) },
+        evidence: { ...change.evidence, subject: observation.context, label: observation.label },
         observed_at: change.observedAt,
+      };
+      signalRows.push(row);
+      pendingSignals.push({
+        subjectId,
+        row,
+        material,
+        score: verdict.score,
+        readable: Boolean(
+          goal && material?.text && verdict.relevance !== "noise"
+          && (change.kind === "official_publication" || change.kind === "repository_release"),
+        ),
       });
     }
+    observed.push({ subjectId, digest: observation.digest });
+  }
 
+  /* The budget is spent on the best candidates in the pass, not on the first
+     ones the source list returned. A publication with no reading cannot clear
+     the significance gate, so traversal order used to decide the brief
+     silently: thirteen publications, three readings, and the other ten were
+     never judged at all. What the budget does not reach stays unread and
+     visible as unread, and the next pass reconsiders it. Relevance-rejected
+     material is skipped outright -- the brief would drop it whatever the
+     reading said, and spending the budget there buys nothing. */
+  for (const entry of readingOrder(pendingSignals)) {
+    if (assessments >= PUBLIC_READING_BUDGET) break;
+    if (!goal || !entry.material) continue;
+    assessments++;
+    const context = await publicContext(entry.material, input.fetchImpl);
+    const valueAssessment = await assessPublicMaterial({ goal, projectContext, headline: String(entry.row.headline), sources: context.sources, now });
+    if (!valueAssessment) {
+      if (!sourcesUnavailable.includes("Nova public-source analysis")) sourcesUnavailable.push("Nova public-source analysis");
+      continue;
+    }
+    valueAssessment.sourcesUnavailable = context.unavailable;
+    entry.row.evidence = { ...(entry.row.evidence as Record<string, unknown>), valueAssessment };
+    if (valueAssessment.contextProposal) {
+      contextProposals.push({
+        statement: valueAssessment.contextProposal.statement,
+        why: valueAssessment.contextProposal.why,
+        evidence: { headline: String(entry.row.headline), sources: valueAssessment.sources.map((source) => source.url).slice(0, 2), suggestedAt: now.toISOString() },
+      });
+    }
+  }
+
+  for (const { subjectId, digest } of observed) {
     /* The digest is advanced only after its changes have been recorded. If the
        write below fails, the next refresh compares against the same old state
        and reports the change a second time. A repeat is recoverable; a change
        nobody ever saw is not. */
-    const pending = signalRows.filter(row => row.subject_id === subjectId);
+    const pending = pendingSignals.filter(entry => entry.subjectId === subjectId).map(entry => entry.row);
     if (pending.length) {
       const { error } = await db().from("nova_signals").upsert(pending, { onConflict: "agent_id,kind,subject_id,observed_at", ignoreDuplicates: true });
       if (error) throw new NovaError("Could not save observed events.", "database_unavailable", 503);
     }
     const { error: digestError } = await db().from("nova_subjects")
-      .update({ last_digest: observation.digest, last_observed_at: now.toISOString() }).eq("subject_id", subjectId);
+      .update({ last_digest: digest, last_observed_at: now.toISOString() }).eq("subject_id", subjectId);
     if (digestError) throw new NovaError("Could not save source state.", "database_unavailable", 503);
   }
 
 
-  // Reassess recent events after the owner sets/changes a goal, even when the
-  // source digest is unchanged. Bounded with the same three-reading budget.
-  if (goal && assessments < 3) {
-    const { data: pending, error: pendingError } = await db().from("nova_signals").select("signal_id,headline,evidence")
+  /* Reassess recent events after the owner sets or changes a goal, and drain
+     what an earlier pass left unread, even when the source digest is
+     unchanged. Same budget, and the same rule about how to spend it: by
+     relevance, not by whatever the query returned first. Material relevance
+     already rejected is not read at all. */
+  if (goal && assessments < PUBLIC_READING_BUDGET) {
+    const { data: pending, error: pendingError } = await db().from("nova_signals").select("signal_id,headline,evidence,relevance,observed_at")
       .eq("agent_id", agent.agent_id).in("kind", ["repository_release", "official_publication"])
+      .neq("relevance", "noise")
       .in("status", ["new", "seen"]).order("observed_at", { ascending: false }).limit(12);
     if (pendingError) throw new NovaError("Could not load public events.", "database_unavailable", 503);
-    for (const row of pending ?? []) {
-      if (assessments >= 3) break;
+    const ranked = orderByRelevance<Record<string, any> & { relevance: NovaRelevance; observedAt: string }>(
+      ((pending ?? []) as Array<Record<string, any>>).map((row) => ({
+        ...row,
+        relevance: (row.relevance ?? "low") as NovaRelevance,
+        observedAt: String(row.observed_at ?? ""),
+      })),
+    );
+    for (const row of ranked) {
+      if (assessments >= PUBLIC_READING_BUDGET) break;
       if (row.evidence?.valueAssessment?.goal === goal) continue;
       const material = (row.evidence?.publicMaterial ?? row.evidence?.subject?.publicMaterial) as PublicMaterial | undefined;
       if (!material?.text) continue;
       assessments++;
       const context = await publicContext(material, input.fetchImpl);
-      const valueAssessment = await assessPublicMaterial({ goal, headline: row.headline, sources: context.sources, now });
+      const valueAssessment = await assessPublicMaterial({ goal, projectContext, headline: row.headline, sources: context.sources, now });
       if (valueAssessment) valueAssessment.sourcesUnavailable = context.unavailable;
       if (!valueAssessment) {
         if (!sourcesUnavailable.includes("Nova public-source analysis")) sourcesUnavailable.push("Nova public-source analysis");
         continue;
+      }
+      if (valueAssessment.contextProposal) {
+        contextProposals.push({
+          statement: valueAssessment.contextProposal.statement,
+          why: valueAssessment.contextProposal.why,
+          evidence: { headline: row.headline, sources: valueAssessment.sources.map((source) => source.url).slice(0, 2), suggestedAt: now.toISOString() },
+        });
       }
       const { error } = await db().from("nova_signals").update({ evidence: { ...row.evidence, valueAssessment }, updated_at: new Date().toISOString() })
         .eq("agent_id", agent.agent_id).eq("signal_id", row.signal_id);
       if (error) throw new NovaError("Could not save public research.", "database_unavailable", 503);
     }
   }
+
+  /* After the observations are written, never before: a suggestion about the
+     project is worth less than the pass that produced it, and a failure here
+     must not cost the events it was derived from. */
+  await proposeProjectContext(agent.agent_id, contextProposals);
 
   const { data: refreshRow, error: refreshError } = await db()
     .from("nova_refreshes")
@@ -572,6 +683,161 @@ export function ignoreWeight(supportCount: number): number {
   return Math.min(IGNORE_WEIGHT.ceiling, IGNORE_WEIGHT.floor + IGNORE_WEIGHT.step * (support - 1));
 }
 
+/* ---- project context ---- */
+
+const PROJECT_CONTEXT_COLUMNS = "context_id, statement, status, origin, evidence, updated_at, confirmed_at";
+
+/** How many unanswered proposals may queue up. Past this Nova stops asking:
+ *  a list of suggestions nobody answers is not a working memory, and the
+ *  owner's silence is not a confirmation to route around. */
+const MAX_OPEN_PROPOSALS = 6;
+
+function toProjectContext(row: Record<string, unknown>): NovaProjectContext {
+  return {
+    contextId: String(row.context_id),
+    statement: String(row.statement),
+    status: row.status as NovaProjectContext["status"],
+    origin: row.origin as NovaProjectContext["origin"],
+    evidence: (row.evidence as Record<string, unknown>) ?? {},
+    updatedAt: String(row.updated_at),
+    confirmedAt: (row.confirmed_at as string | null) ?? null,
+  };
+}
+
+async function loadProjectContext(agentId: string): Promise<NovaProjectContext[]> {
+  const { data, error } = await db()
+    .from("nova_project_context")
+    .select(PROJECT_CONTEXT_COLUMNS)
+    .eq("agent_id", agentId)
+    .neq("status", "dismissed")
+    .order("updated_at", { ascending: true })
+    .limit(40);
+  if (error) throw new NovaError("Could not load your project context.", "database_unavailable", 503);
+  return ((data ?? []) as Array<Record<string, unknown>>).map(toProjectContext);
+}
+
+/** The owner's own view of it, proposals included. */
+export async function projectContextFor(input: { publicId: string; ownerSecret: string }): Promise<NovaProjectContext[]> {
+  const agent = await loadOwned(input.publicId, input.ownerSecret);
+  return loadProjectContext(agent.agent_id);
+}
+
+/**
+ * Replace the confirmed list with what the owner just wrote.
+ *
+ * Confirmed rows the owner deleted are deleted: a project fact that is no
+ * longer true has to be able to stop being one, and keeping a retired
+ * statement "for history" means later readings keep being judged against it.
+ * Proposals are left alone -- this button is not an answer to them.
+ */
+export async function setProjectContext(input: {
+  publicId: string;
+  ownerSecret: string;
+  statements: unknown;
+}): Promise<NovaProjectContext[]> {
+  const agent = await loadOwned(input.publicId, input.ownerSecret);
+  let statements: string[];
+  try {
+    statements = normalizeStatements(input.statements);
+  } catch (error) {
+    if (error instanceof ProjectContextError) throw new NovaError(error.message, "project_context_invalid");
+    throw error;
+  }
+
+  const existing = await loadProjectContext(agent.agent_id);
+  const byStatement = new Map(existing.map((entry) => [entry.statement.toLowerCase(), entry]));
+  const wanted = new Set(statements.map((statement) => statement.toLowerCase()));
+  const now = new Date().toISOString();
+
+  const removed = existing.filter((entry) => entry.status === "confirmed" && !wanted.has(entry.statement.toLowerCase()));
+  if (removed.length) {
+    const { error } = await db().from("nova_project_context").delete()
+      .eq("agent_id", agent.agent_id).in("context_id", removed.map((entry) => entry.contextId));
+    if (error) throw new NovaError("Could not save your project context.", "database_unavailable", 503);
+  }
+
+  for (const statement of statements) {
+    const current = byStatement.get(statement.toLowerCase());
+    /* Typing out a sentence Nova proposed is a confirmation of that row, not
+       a second copy of the same fact. The origin stays as it was, so "Nova
+       suggested this and I agreed" is still distinguishable later. */
+    const { error } = current
+      ? await db().from("nova_project_context")
+        .update({ statement, status: "confirmed", confirmed_at: current.confirmedAt ?? now, updated_at: now })
+        .eq("agent_id", agent.agent_id).eq("context_id", current.contextId)
+      : await db().from("nova_project_context")
+        .insert({ agent_id: agent.agent_id, statement, status: "confirmed", origin: "owner", confirmed_at: now, updated_at: now });
+    if (error) throw new NovaError("Could not save your project context.", "database_unavailable", 503);
+  }
+
+  return loadProjectContext(agent.agent_id);
+}
+
+/** Answer one of Nova's proposals. This is the only path by which a statement
+ *  Nova wrote becomes one an assessment may rely on. */
+export async function resolveProjectContextProposal(input: {
+  publicId: string;
+  ownerSecret: string;
+  contextId: string;
+  action: "confirm" | "dismiss";
+}): Promise<NovaProjectContext[]> {
+  const agent = await loadOwned(input.publicId, input.ownerSecret);
+  const entries = await loadProjectContext(agent.agent_id);
+  const target = entries.find((entry) => entry.contextId === input.contextId);
+  if (!target) throw new NovaError("That suggestion is no longer there.", "project_context_not_found", 404);
+  if (target.status !== "proposed") throw new NovaError("That is already part of your project context.", "project_context_settled");
+  if (input.action === "confirm" && entries.filter((entry) => entry.status === "confirmed").length >= PROJECT_CONTEXT_LIMITS.confirmed) {
+    throw new NovaError(`Remove a project fact first. ${PROJECT_CONTEXT_LIMITS.confirmed} is the limit.`, "project_context_full");
+  }
+  const now = new Date().toISOString();
+  const { error } = await db().from("nova_project_context")
+    .update(input.action === "confirm"
+      ? { status: "confirmed", confirmed_at: now, updated_at: now }
+      : { status: "dismissed", confirmed_at: null, updated_at: now })
+    .eq("agent_id", agent.agent_id).eq("context_id", input.contextId);
+  if (error) throw new NovaError("Could not save that answer.", "database_unavailable", 503);
+  return loadProjectContext(agent.agent_id);
+}
+
+/**
+ * Write down what a reading implied about the owner's project, as a question.
+ *
+ * Never as a fact, and never twice: a statement already confirmed, already
+ * queued, or already dismissed is not raised again. Re-asking a dismissed
+ * suggestion is how an agent argues with its owner until the owner stops
+ * reading, and the dismissal is itself information.
+ */
+async function proposeProjectContext(agentId: string, proposals: Array<{ statement: string; why: string; evidence: Record<string, unknown> }>): Promise<void> {
+  if (!proposals.length) return;
+  const { data, error: readError } = await db()
+    .from("nova_project_context")
+    .select("statement, status")
+    .eq("agent_id", agentId)
+    .limit(60);
+  if (readError) throw new NovaError("Could not load your project context.", "database_unavailable", 503);
+  const known = new Set(((data ?? []) as Array<{ statement: string }>).map((row) => row.statement.toLowerCase()));
+  let open = ((data ?? []) as Array<{ status: string }>).filter((row) => row.status === "proposed").length;
+  const now = new Date().toISOString();
+  const rows: Array<Record<string, unknown>> = [];
+  for (const proposal of proposals) {
+    if (open + rows.length >= MAX_OPEN_PROPOSALS) break;
+    let statement: string;
+    try {
+      statement = normalizeStatement(proposal.statement);
+    } catch { continue; }
+    const key = statement.toLowerCase();
+    if (known.has(key)) continue;
+    known.add(key);
+    rows.push({
+      agent_id: agentId, statement, status: "proposed", origin: "nova_reading",
+      evidence: { why: proposal.why, ...proposal.evidence }, confirmed_at: null, updated_at: now,
+    });
+  }
+  if (!rows.length) return;
+  const { error } = await db().from("nova_project_context").insert(rows);
+  if (error) throw new NovaError("Could not save a project-context suggestion.", "database_unavailable", 503);
+}
+
 /* ---- reading ---- */
 
 export async function loadBrief(input: {
@@ -586,7 +852,7 @@ export async function loadBrief(input: {
      empty on every visit -- correct-looking, always wrong. */
   const awaySince = agent.last_opened_at ?? agent.created_at;
 
-  const [signalResult, refreshResult, awayResult, memoryResult, researchResult] = await Promise.all([
+  const [signalResult, refreshResult, awayResult, memoryResult, researchResult, projectContext] = await Promise.all([
     db().from("nova_signals")
       .select(SIGNAL_COLUMNS)
       .eq("agent_id", agent.agent_id)
@@ -622,6 +888,11 @@ export async function loadBrief(input: {
       .eq("agent_id", agent.agent_id)
       .order("created_at", { ascending: false })
       .limit(60),
+    /* Read with the brief rather than on demand: the panel that edits it and
+       the readings that used it are the same fact, and a page that shows one
+       without the other invites somebody to correct a statement they cannot
+       see the effect of. */
+    loadProjectContext(agent.agent_id),
   ]);
 
   const signals: NovaSignal[] = ((signalResult.data ?? []) as Array<Record<string, any>>).map((row) => ({
@@ -644,7 +915,7 @@ export async function loadBrief(input: {
     refusal: row.refusal ?? null,
   }));
 
-  const { worthAttention, noise, overflow } = assembleBrief(signals, { goal: agent.goal });
+  const { worthAttention, noise, overflow, withheld } = assembleBrief(signals, { goal: agent.goal });
   const memory: NovaMemory[] = ((memoryResult.data ?? []) as Array<Record<string, any>>).map((row) => ({
     memoryId: row.memory_id,
     kind: row.kind,
@@ -704,6 +975,8 @@ export async function loadBrief(input: {
     worthAttention,
     noise,
     watchlist: overflow,
+    withheld,
+    projectContext,
     lastRefresh: lastRefreshRow ? toRefresh(lastRefreshRow) : null,
     whileAway,
     wokeFromDormancy,
@@ -1101,11 +1374,22 @@ export async function researchPublicSources(input: { publicId: string; ownerSecr
   const material = (signal.evidence.publicMaterial ?? subject?.publicMaterial) as PublicMaterial | undefined;
   if (!material?.text || !material.url) throw new NovaError("No readable public material is stored for this event. Open the original source or look again later.", "source_unavailable");
   const context = await publicContext(material);
-  const assessment = await assessPublicMaterial({ goal: agent.goal, headline: signal.headline, sources: context.sources });
+  /* The same project state a scheduled reading gets. An owner-requested one
+     that judged the event against the goal alone would answer a different
+     question from the card beside it. */
+  const projectContext = contextForPrompt(await loadProjectContext(agent.agent_id));
+  const assessment = await assessPublicMaterial({ goal: agent.goal, projectContext, headline: signal.headline, sources: context.sources });
   if (assessment) assessment.sourcesUnavailable = context.unavailable;
   if (!assessment) throw new NovaError("Could not produce a source-supported analysis. No paid tool was requested.", "analysis_unavailable", 503);
   const { error } = await db().from("nova_signals").update({ evidence: { ...signal.evidence, valueAssessment: assessment }, updated_at: new Date().toISOString() })
     .eq("agent_id", agent.agent_id).eq("signal_id", signal.signalId);
   if (error) throw new NovaError("Could not save the analysis.", "database_unavailable", 503);
+  if (assessment.contextProposal) {
+    await proposeProjectContext(agent.agent_id, [{
+      statement: assessment.contextProposal.statement,
+      why: assessment.contextProposal.why,
+      evidence: { headline: signal.headline, sources: assessment.sources.map((entry) => entry.url).slice(0, 2), suggestedAt: assessment.generatedAt },
+    }]);
+  }
   return assessment;
 }

@@ -27,7 +27,7 @@ export function sourceExcerpts(sources: PublicMaterial[]) {
 }
 
 /** Reject invented citations and quotes. This checks provenance, not semantic entailment. */
-export function parseValueAssessment(text: string, input: { goal: string; sources: PublicMaterial[]; now: Date; writtenBy: string }): ValueAssessment | null {
+export function parseValueAssessment(text: string, input: { goal: string; sources: PublicMaterial[]; now: Date; writtenBy: string; projectContext?: string[] }): ValueAssessment | null {
   try {
     const raw = JSON.parse(text.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, ""));
     if (Array.isArray(raw.citationIds)) {
@@ -52,16 +52,34 @@ export function parseValueAssessment(text: string, input: { goal: string; source
       question: clean(raw.gap.question, 220), missing: clean(raw.gap.missing, 500), expectedResult: clean(raw.gap.expectedResult, 400),
     } : null;
     if (gap && (!gap.question || !gap.missing || !gap.expectedResult)) return null;
+    const projectContext = (input.projectContext ?? []).slice();
+    /* Said against nothing, "this is new to you" is not a claim anybody can
+       check. Without a supplied project state the field is dropped rather
+       than kept as an unsourced comparison. */
+    const relativeToWork = projectContext.length ? prose(raw.relativeToWork, 300) || null : null;
+    /* An inference about the owner's project, carried out as a question. The
+       sources can establish what a release says; they cannot establish what
+       this person has built, so this never arrives confirmed. */
+    const proposal = raw.contextProposal && typeof raw.contextProposal === "object" ? {
+      statement: clean(raw.contextProposal.statement, 200), why: prose(raw.contextProposal.why, 240),
+    } : null;
+    const contextProposal = proposal && proposal.statement && proposal.why ? proposal : null;
     return { version: 1, goal: input.goal, significant: raw.significant, whatChanged, whyItMatters, nextStep, citations,
-      gap: raw.significant ? gap : null, sources: input.sources, generatedAt: input.now.toISOString(), writtenBy: input.writtenBy };
+      gap: raw.significant ? gap : null, projectContext, relativeToWork, contextProposal,
+      sources: input.sources, generatedAt: input.now.toISOString(), writtenBy: input.writtenBy };
   } catch { return null; }
 }
 
 export async function assessPublicMaterial(input: {
   goal: string | null; headline: string; sources: PublicMaterial[]; now?: Date;
+  /** What the owner says is already true about the work. Owner-confirmed
+   *  statements only -- see lib/nova/project-context.ts for why a proposal
+   *  never reaches this call. */
+  projectContext?: string[];
   generate?: typeof generateOpenAiCompatibleText;
 }): Promise<ValueAssessment | null> {
   if (!input.goal || !input.sources.length) return null;
+  const projectContext = input.projectContext ?? [];
   const result = await (input.generate ?? generateOpenAiCompatibleText)({
     timeoutMs: 25_000, maxAttempts: 1, responseFormat: "json_object",
     systemPrompt: [
@@ -72,20 +90,22 @@ export async function assessPublicMaterial(input: {
       "A recent tutorial can describe an old capability. Do not claim now, new or no longer unless the source establishes a change. Say the source explains a behavior for a tutorial; a tutorial alone is not a new release.",
       "Explain what changed, why it helps the goal, and one actionable next step. If the material is irrelevant, set significant=false.",
       "Significance requires a concrete decision or compatibility issue for the explicit goal. Shared keywords, ecosystem growth, promotions, demos and calls for builders alone are insufficient. Do not invent a use case to make the event relevant.",
+      "projectState is what the owner states is already true about their work. Treat each line as given, judge the event against it, and set relativeToWork to what this changes for work already done. An event that only restates something already finished is not significant.",
+      "Never treat a fact about the owner project as established beyond projectState and the goal. If the material implies their state has changed, return contextProposal for the owner to confirm and do not rely on it in this assessment. Set contextProposal=null when the material implies nothing about their work.",
       "Do not invent dates, addresses, network compatibility, releases, links or facts. Support factual claims using the supplied excerpt IDs.",
       "Prefer an answer from the supplied public sources. A gap is NOT permission to spend and does not prove paid data is needed.",
       "Set gap=null unless a SPECIFIC remaining question changes a user decision, the sources cannot answer it, and you can name a concrete expected result.",
       "Never propose buying a summary of ordinary commits or investigating a seller merely because it exists. Do not select providers or set budgets.",
-      'Return JSON only: {significant:boolean,whatChanged:string,whyItMatters:string,nextStep:string,citationIds:[string],gap:null|{question:string,missing:string,expectedResult:string}}.',
+      'Return JSON only: {significant:boolean,whatChanged:string,whyItMatters:string,nextStep:string,relativeToWork:string,citationIds:[string],gap:null|{question:string,missing:string,expectedResult:string},contextProposal:null|{statement:string,why:string}}.',
       "Each prose field must be one short sentence, at most 45 words. Choose at most 2 citationIds from the provided excerpts, including one s1 excerpt from the event itself. Never write or alter quotes.",
       "Never assume facts about the user project, its assets, configuration or enterprise requirements beyond the stated goal. Missing user context requires asking the owner, not paid research: gap=null.",
       "Use the language of the goal. All factual statements need support in citations. Plain text only, no markdown, lists, URLs or line breaks inside strings. Return valid JSON, without code fences.",
     ].join("\n"),
-    userPrompt: JSON.stringify({ goal: input.goal, event: input.headline,
+    userPrompt: JSON.stringify({ goal: input.goal, projectState: projectContext, event: input.headline,
       sources: input.sources.map(({ id, title, url, publishedAt, fetchedAt }) => ({ id, title, url, publishedAt, fetchedAt })),
       excerpts: sourceExcerpts(input.sources),
     }),
   }).catch(() => null);
   if (!result?.ok) return null;
-  return parseValueAssessment(result.text, { goal: input.goal, sources: input.sources, now: input.now ?? new Date(), writtenBy: `${result.provider} · ${result.model}` });
+  return parseValueAssessment(result.text, { goal: input.goal, sources: input.sources, projectContext, now: input.now ?? new Date(), writtenBy: `${result.provider} · ${result.model}` });
 }

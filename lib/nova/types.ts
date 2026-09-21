@@ -3,6 +3,9 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import type { NovaProjectContext } from "./project-context.ts";
+export type { NovaProjectContext } from "./project-context.ts";
+
 /**
  * Nova: the personal agent.
  *
@@ -46,6 +49,23 @@ export type NovaSignalKind = (typeof NOVA_SIGNAL_KINDS)[number];
  *  stored and countable, because "4 ignored as noise" has to be inspectable. */
 export const NOVA_RELEVANCE = ["high", "medium", "low", "noise"] as const;
 export type NovaRelevance = (typeof NOVA_RELEVANCE)[number];
+
+/** Why something Nova looked at did not reach the brief.
+ *
+ *  Relevance is one of six reasons and, for as long as this panel existed, the
+ *  only one anybody could see: a day that filtered twenty-one things reported
+ *  "held back as noise: 0", which was true about relevance and false about the
+ *  brief. Every reason is counted and openable for the same purpose the noise
+ *  list was: a filter nobody can inspect is a claim, not a feature. */
+export const NOVA_WITHHOLD_REASONS = [
+  "noise",
+  "background",
+  "not_analyzed",
+  "not_significant",
+  "duplicate",
+  "over_cap",
+] as const;
+export type NovaWithholdReason = (typeof NOVA_WITHHOLD_REASONS)[number];
 
 export const NOVA_SIGNAL_STATUS = [
   "new",
@@ -326,6 +346,15 @@ export type NovaBrief = {
    *  stays short because a brief nobody finishes is worse than no brief; the
    *  market it was drawn from should still have a page. */
   watchlist: NovaSignal[];
+  /** The same rows as `noise` and `watchlist`, grouped by the reason they did
+   *  not reach the brief, so the filtering a person cannot see is the
+   *  filtering a person can open. */
+  withheld: Record<NovaWithholdReason, NovaSignal[]>;
+  /** What the owner says is already true about the work, plus anything Nova
+   *  has asked them to confirm. A goal says where they are going; this says
+   *  where they are, and without it a reading can only report that a thing
+   *  exists. */
+  projectContext: NovaProjectContext[];
   lastRefresh: NovaRefresh | null;
   whileAway: NovaWhileAway | null;
   /**

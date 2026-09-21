@@ -29,17 +29,23 @@ trust-routed action, authorization and onchain settlement as it happened
 ## The agent in front of it
 
 The front door creates **Nova**, a personal agent owned by the person who made it.
-Nova starts from an owner-stated goal and interests. It reads official publications
-and release notes, explains significant changes with source excerpts, and keeps
-ordinary commit counts and API listings in background history. Public-source
-analysis uses the app's model without charging the owner's wallet.
+Nova starts from an owner-stated goal, interests, and a short owner-confirmed
+account of where the work already is. It reads official publications and release
+notes, explains significant changes against what has already been built, with
+source excerpts, and keeps ordinary commit counts and API listings in background
+history. Nova may propose a change to that project context and can never confirm
+one itself. Public-source analysis uses the app's model without charging the
+owner's wallet.
 
 ```text
 GOAL       a concrete result the owner wants
   ↓
+STATE      what is already true about the work, confirmed by the owner
+  ↓
 OBSERVE    official publications · release notes · payment changes
   ↓
-EXPLAIN    what changed · why it matters · next step · source excerpts
+EXPLAIN    what changed · why it matters against work already done ·
+           next step · source excerpts
   ↓
 FEEDBACK   was this result useful?
   ↓ only for a specific unanswered question

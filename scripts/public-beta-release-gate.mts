@@ -211,6 +211,10 @@ runStep("Nova Product Value", () => {
   execSync("npm run nova-product-value:test", { cwd: root, stdio: "inherit" });
 });
 
+runStep("Nova Project Context", () => {
+  execSync("npm run nova-project-context:test", { cwd: root, stdio: "inherit" });
+});
+
 runStep("Nova Calibration Report", () => {
   execSync("npm run nova-calibration:test", { cwd: root, stdio: "inherit" });
 });

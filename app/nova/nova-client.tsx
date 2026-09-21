@@ -13,6 +13,11 @@ import Link from "next/link";
 import { encodeFunctionData } from "viem";
 import { BRAND } from "@/lib/brand";
 import { INTEREST_CATALOG, MAX_INTERESTS } from "@/lib/nova/interests";
+import {
+  PROJECT_CONTEXT_LIMITS,
+  confirmedContext as confirmedProjectContext,
+  proposedContext as proposedProjectContext,
+} from "@/lib/nova/project-context";
 /* The same mapping the scorer uses. A third copy would be a third chance for
    the button to offer a ban the scorer does not honour. Null for the kinds
    that are not matters of taste -- a payee change, a rail change, an endpoint
@@ -31,7 +36,8 @@ import {
 } from "@/lib/nova/presentation";
 import { IDENTITY_REGISTER_ABI, NOVA_IDENTITY_REGISTRY } from "@/lib/nova/identity";
 import { PREVIEW_MANDATE, type PreviewMandateTerms } from "@/lib/nova/autonomy-mandate";
-import type { NovaBrief, NovaFeedback, NovaInvestigation, NovaSignal } from "@/lib/nova/types";
+import { NOVA_WITHHOLD_REASONS } from "@/lib/nova/types";
+import type { NovaBrief, NovaFeedback, NovaInvestigation, NovaProjectContext, NovaSignal, NovaWithholdReason } from "@/lib/nova/types";
 import type { NovaResearchProposal } from "@/lib/nova/research";
 import type { TermsChange } from "@/lib/nova/research-terms";
 import { useArcWallet } from "@/components/wallet/use-arc-wallet";
@@ -217,6 +223,26 @@ function formatAway(iso: string): string {
   return label === "just now" ? "your last visit" : `your last visit ${label}`;
 }
 
+/**
+ * Why a thing Nova looked at is not in the brief, in the owner's words.
+ *
+ * Only one of these was ever on the screen. A brief built from a goal holds
+ * most of its material back at the significance gate, and a panel that counted
+ * relevance alone could report "held back as noise: 0" on a day when
+ * twenty-one things were filtered -- a true number doing the work of a false
+ * one. "Not read yet" in particular is a coverage gap and not a verdict, which
+ * is the distinction that decides whether the answer is patience or a bigger
+ * reading budget.
+ */
+const WITHHELD_LABEL: Record<NovaWithholdReason, (goal: string | null) => string> = {
+  noise: () => "Held back as noise",
+  background: () => "Background context",
+  not_analyzed: (goal) => (goal ? "Not read for your goal yet" : "Waiting for a goal to read it against"),
+  not_significant: () => "No significant change for your goal",
+  duplicate: () => "Same subject, already shown",
+  over_cap: () => "Over today\u2019s cap",
+};
+
 export function NovaClient({ view = "today" }: { view?: NovaView } = {}) {
   const [stage, setStage] = useState<Stage>("loading");
   const [identity, setIdentity] = useState<{ publicId: string; ownerSecret: string } | null>(null);
@@ -224,6 +250,9 @@ export function NovaClient({ view = "today" }: { view?: NovaView } = {}) {
   const [error, setError] = useState<string | null>(null);
   const [memoryTab, setMemoryTab] = useState<"learned" | "purchases">("learned");
   const [showNoise, setShowNoise] = useState(false);
+  const [draftContext, setDraftContext] = useState<string[] | null>(null);
+  const [savingContext, setSavingContext] = useState(false);
+  const [contextNote, setContextNote] = useState<string | null>(null);
 
   const [name, setName] = useState("Nova");
   const [chosen, setChosen] = useState<string[]>([]);
@@ -425,6 +454,61 @@ export function NovaClient({ view = "today" }: { view?: NovaView } = {}) {
       setError(cause instanceof Error ? cause.message : "Could not save that.");
     } finally {
       setSavingInterests(false);
+    }
+  };
+
+  /**
+   * The owner's own account of where the work is.
+   *
+   * Sent as the whole list, because a project fact that stopped being true has
+   * to be removable, and an endpoint that could only add would turn the
+   * context into a place stale statements accumulate and later readings are
+   * judged against.
+   */
+  const saveProjectContext = async () => {
+    if (!identity || draftContext === null) return;
+    setSavingContext(true);
+    setError(null);
+    setContextNote(null);
+    try {
+      const statements = draftContext.map((statement) => statement.trim()).filter(Boolean);
+      const saved = await call(`/api/nova/v1/agents/${identity.publicId}/project-context`, {
+        method: "PUT",
+        ownerSecret: identity.ownerSecret,
+        body: JSON.stringify({ statements }),
+      }) as { context: NovaProjectContext[] };
+      setDraftContext(null);
+      setBrief((current) => (current ? { ...current, projectContext: saved.context } : current));
+      /* Said plainly: this changes what Nova is told next time, not what it
+         already wrote. A card read against the old context stays read against
+         the old context, and pretending otherwise would make every stored
+         assessment unfalsifiable. */
+      setContextNote("Saved. Readings from here on are judged against this; the ones already written are not rewritten.");
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not save your project context.");
+    } finally {
+      setSavingContext(false);
+    }
+  };
+
+  /** Answer one of Nova's suggestions. Confirming is the only way an inference
+   *  about the project becomes something an assessment may rely on. */
+  const answerContextProposal = async (contextId: string, action: "confirm" | "dismiss") => {
+    if (!identity) return;
+    setError(null);
+    setContextNote(null);
+    try {
+      const saved = await call(`/api/nova/v1/agents/${identity.publicId}/project-context`, {
+        method: "POST",
+        ownerSecret: identity.ownerSecret,
+        body: JSON.stringify({ contextId, action }),
+      }) as { context: NovaProjectContext[] };
+      setBrief((current) => (current ? { ...current, projectContext: saved.context } : current));
+      setContextNote(action === "confirm"
+        ? "Added to your project context."
+        : "Rejected, and not suggested again.");
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not save that answer.");
     }
   };
 
@@ -1048,6 +1132,15 @@ export function NovaClient({ view = "today" }: { view?: NovaView } = {}) {
   /* Across an absence, the blind spots are the union of every pass's. The last
      pass reading GitHub fine does not undo the four before it that could not. */
   const blind = away?.sourcesUnavailable ?? brief.lastRefresh?.sourcesUnavailable ?? [];
+  /* Everything Nova is holding right now, by the reason it is held. Scoped to
+     the signals behind this brief rather than to one pass, which is why it is
+     not folded into the refresh counters beside it. */
+  const withheldGroups = NOVA_WITHHOLD_REASONS
+    .map((reason) => [reason, brief.withheld?.[reason] ?? []] as const)
+    .filter(([, signals]) => signals.length > 0);
+  const withheldTotal = withheldGroups.reduce((total, [, signals]) => total + signals.length, 0);
+  const confirmedContext = confirmedProjectContext(brief.projectContext ?? []);
+  const proposedContext = proposedProjectContext(brief.projectContext ?? []);
 
   return (
     <Shell>
@@ -1204,12 +1297,12 @@ export function NovaClient({ view = "today" }: { view?: NovaView } = {}) {
           <dl className="mt-4 space-y-0">
             <Row label="Things checked" value={String(away?.subjectsChecked ?? brief.lastRefresh?.subjectsChecked ?? 0)} />
             <Row label="In today’s brief" value={String(attention.length)} />
-            <Row label="Held back as noise" value={String(away?.signalsAsNoise ?? brief.lastRefresh?.signalsAsNoise ?? 0)} />
+            <Row label="Held back" value={String(withheldTotal)} />
             {blind.length > 0 ? (
               <Row label="Could not read" value={blind.join(", ")} tone="warn" />
             ) : null}
           </dl>
-          {brief.noise.length > 0 ? (
+          {withheldTotal > 0 ? (
             <>
               <button
                 type="button"
@@ -1219,14 +1312,31 @@ export function NovaClient({ view = "today" }: { view?: NovaView } = {}) {
                 {showNoise ? "Hide what was held back" : "Show what was held back"}
               </button>
               {showNoise ? (
-                <ul className="mt-3 space-y-2 border-t border-border/60 pt-3">
-                  {brief.noise.map((signal) => (
-                    <li key={signal.signalId} className="text-sm text-muted-foreground">
-                      {signal.headline}
-                      <span className="text-muted-foreground/70"> — {signal.relevanceReason}</span>
-                    </li>
+                <div className="mt-3 space-y-5 border-t border-border/60 pt-3">
+                  <p className="text-xs leading-relaxed text-muted-foreground">
+                    Everything {agentName} is holding, and why. Relevance rejects some of it; most
+                    of a brief built from a goal is decided at the reading that judges significance,
+                    and a thing nobody read yet is a gap in coverage rather than a verdict about it.
+                  </p>
+                  {withheldGroups.map(([reason, signals]) => (
+                    <div key={reason}>
+                      <p className="text-xs uppercase tracking-wider text-muted-foreground">
+                        {WITHHELD_LABEL[reason](brief.agent.goal ?? null)}{" "}
+                        <span className="font-mono text-foreground">{signals.length}</span>
+                      </p>
+                      <ul className="mt-2 space-y-2">
+                        {signals.map((signal) => (
+                          <li key={signal.signalId} className="text-sm text-muted-foreground">
+                            {signal.headline}
+                            {reason === "noise" && signal.relevanceReason ? (
+                              <span className="text-muted-foreground/70"> — {signal.relevanceReason}</span>
+                            ) : null}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
                   ))}
-                </ul>
+                </div>
               ) : null}
             </>
           ) : null}
@@ -1393,6 +1503,119 @@ export function NovaClient({ view = "today" }: { view?: NovaView } = {}) {
             after a fortnight with nobody here, and starts again the moment you come back — an
             agent nobody reads is not worth the requests it costs.
           </p>
+        </Panel>
+      ) : null}
+
+      {view === "agent" ? (
+        <Panel className="mt-4">
+          <Label>Project context</Label>
+          <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
+            What is already true about your work. Your goal says where you are going; this says
+            where you are, and it is the difference between {brief.agent.name} telling you a thing
+            exists and telling you what it changes for what you have built. Short facts, and only
+            the ones you confirm.
+          </p>
+
+          {draftContext === null ? (
+            <>
+              {confirmedContext.length > 0 ? (
+                <ul className="mt-4 space-y-2">
+                  {confirmedContext.map((entry) => (
+                    <li key={entry.contextId} className="field rounded-lg px-4 py-3 text-sm">
+                      {entry.statement}
+                      {entry.origin !== "owner" ? (
+                        <span className="ml-2 text-xs text-muted-foreground">you confirmed this suggestion</span>
+                      ) : null}
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="mt-4 text-sm text-muted-foreground">
+                  Nothing yet. Until there is, a reading can only judge an event against your goal.
+                </p>
+              )}
+              <button
+                type="button"
+                onClick={() => { setContextNote(null); setDraftContext(confirmedContext.map((entry) => entry.statement)); }}
+                className="field mt-4 w-full rounded-lg px-4 py-3 text-left text-sm transition hover:border-primary/60 hover:text-foreground"
+              >
+                <span className="font-medium text-foreground">Edit project context</span>
+                <span className="mt-0.5 block text-xs text-muted-foreground">
+                  Up to {PROJECT_CONTEXT_LIMITS.confirmed} facts, {PROJECT_CONTEXT_LIMITS.statement} characters each.
+                </span>
+              </button>
+            </>
+          ) : (
+            <>
+              <ul className="mt-4 space-y-2">
+                {draftContext.map((statement, index) => (
+                  <li key={index} className="flex items-start gap-2">
+                    <textarea
+                      value={statement}
+                      onChange={(event) => setDraftContext((current) => (current ?? []).map((entry, at) => at === index ? event.target.value : entry))}
+                      maxLength={PROJECT_CONTEXT_LIMITS.statement}
+                      rows={2}
+                      className="field min-w-0 flex-1 rounded-lg p-3 text-sm"
+                      placeholder="ERC-8183 escrow is tested on Arc Testnet."
+                    />
+                    <Verb onClick={() => setDraftContext((current) => (current ?? []).filter((_, at) => at !== index))}>Remove</Verb>
+                  </li>
+                ))}
+              </ul>
+              <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-3">
+                {draftContext.length < PROJECT_CONTEXT_LIMITS.confirmed ? (
+                  <Verb onClick={() => setDraftContext((current) => [...(current ?? []), ""])}>Add a fact</Verb>
+                ) : (
+                  <span className="text-xs text-muted-foreground">
+                    {PROJECT_CONTEXT_LIMITS.confirmed} is the limit. A working memory nobody rereads is one nobody corrects.
+                  </span>
+                )}
+                <button
+                  type="button"
+                  onClick={() => void saveProjectContext()}
+                  disabled={savingContext}
+                  className="rounded-lg bg-primary px-5 py-2.5 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  {savingContext ? "Saving…" : "Save project context"}
+                </button>
+                <Verb onClick={() => setDraftContext(null)}>Cancel</Verb>
+              </div>
+            </>
+          )}
+
+          {/* Nova's own reading of the project, held as a question.
+              It never enters an analysis before this button is pressed: an
+              inference that could confirm itself would be indistinguishable,
+              a week later, from something its owner said. */}
+          {proposedContext.length > 0 && draftContext === null ? (
+            <div className="mt-6 border-t border-border/60 pt-5">
+              <Label>{brief.agent.name} suggests</Label>
+              <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
+                Read from public sources, not from your project. Nothing here counts until you say so.
+              </p>
+              <ul className="mt-4 space-y-3">
+                {proposedContext.map((entry) => (
+                  <li key={entry.contextId} className="rounded-lg border p-3">
+                    <p className="text-sm text-foreground">{entry.statement}</p>
+                    {typeof entry.evidence.why === "string" ? (
+                      <p className="mt-1 text-xs text-muted-foreground">{entry.evidence.why}</p>
+                    ) : null}
+                    {typeof entry.evidence.headline === "string" ? (
+                      <p className="mt-1 text-xs text-muted-foreground">From: {entry.evidence.headline}</p>
+                    ) : null}
+                    <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2">
+                      <Verb onClick={() => void answerContextProposal(entry.contextId, "confirm")}>That is true</Verb>
+                      <Verb onClick={() => void answerContextProposal(entry.contextId, "dismiss")}>Not true</Verb>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+
+          {contextNote ? (
+            <p className="mt-4 text-xs leading-relaxed text-muted-foreground">{contextNote}</p>
+          ) : null}
         </Panel>
       ) : null}
 
@@ -2193,8 +2416,11 @@ function PublicReading({ signal, goal }: { signal: NovaSignal; goal?: string | n
     <p className="text-xs text-muted-foreground">Public-source analysis · no wallet charge · {analysis.writtenBy}</p>
     <p><strong>What changed:</strong> {analysis.whatChanged}</p>
     <p><strong>Why it matters to your goal:</strong> {analysis.whyItMatters}</p>
+    {analysis.relativeToWork ? <p><strong>Against what you already have:</strong> {analysis.relativeToWork}</p> : null}
     <p><strong>Suggested next step:</strong> {analysis.nextStep}</p>
     {!analysis.significant ? <p className="text-muted-foreground">Held back: this material does not establish a significant change for your goal.</p> : null}
+    {analysis.contextProposal ? <p className="text-muted-foreground">Nova thinks this changes your project context: “{analysis.contextProposal.statement}”. Confirm or reject it under My Agent; it is not treated as true until you do.</p> : null}
+    {analysis.projectContext?.length ? <details><summary className="cursor-pointer text-xs text-muted-foreground">Read against {analysis.projectContext.length} project {analysis.projectContext.length === 1 ? "fact" : "facts"} you confirmed</summary><ul className="mt-2 space-y-1 text-xs text-muted-foreground">{analysis.projectContext.map((statement, index) => <li key={index}>{statement}</li>)}</ul></details> : null}
     {analysis.gap ? <div className="rounded-lg border p-3"><p><strong>Still unknown:</strong> {analysis.gap.missing}</p><p className="mt-2"><strong>Useful result to seek:</strong> {analysis.gap.expectedResult}</p><p className="mt-2 text-xs text-muted-foreground">An open question is not proof that a paid service is needed. Review the sources first.</p></div> : <p className="text-muted-foreground">No additional paid research need identified.</p>}
     {analysis.sourcesUnavailable?.length ? <p className="text-state-warn">Could not read: {analysis.sourcesUnavailable.join(", ")}. Coverage is incomplete.</p> : null}
     <details><summary className="cursor-pointer">Sources and supporting excerpts</summary><ul className="mt-3 space-y-3">{analysis.citations.map((cite, i) => {

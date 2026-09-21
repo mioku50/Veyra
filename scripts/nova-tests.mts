@@ -544,8 +544,11 @@ assert.equal(brief.worthAttention.filter((s) => s.kind === "capability_available
 // Noise is kept, not discarded: "1 ignored as noise" has to be openable.
 assert.deepEqual(brief.noise.map((s) => s.id), ["tiny"]);
 
-// Nothing in, nothing out, no crash.
-assert.deepEqual(assembleBrief([]), { worthAttention: [], noise: [], overflow: [] });
+// Nothing in, nothing out, no crash -- and a reason table with nothing in it.
+assert.deepEqual(assembleBrief([]), {
+  worthAttention: [], noise: [], overflow: [],
+  withheld: { noise: [], background: [], not_analyzed: [], not_significant: [], duplicate: [], over_cap: [] },
+});
 
 /* A finding that lost only the cap has to be reachable. It used to be in
    neither list: "held back" means relevance rejected it, and an item the cap

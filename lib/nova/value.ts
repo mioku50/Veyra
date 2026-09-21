@@ -19,6 +19,18 @@ export type ValueAssessment = {
   citations: Array<{ sourceId: string; quote: string }>;
   /** A hypothesis about further work, never a financial permission. */
   gap: { question: string; missing: string; expectedResult: string } | null;
+  /** The owner-confirmed project statements this reading was given, copied in
+   *  as they stood. A finding read against a project state is only as good as
+   *  that state, and a month later nobody can reconstruct which one it was. */
+  projectContext?: string[];
+  /** What the event changes relative to that state -- the difference between
+   *  "Arc supports sponsored transactions" and "this is the piece you were
+   *  missing in July". Null when no context was supplied. */
+  relativeToWork?: string | null;
+  /** A statement about the owner's project the material implies. Held as a
+   *  question for the owner; Nova cannot confirm its own inference, because a
+   *  confirmed one would be judged as fact by every later reading. */
+  contextProposal?: { statement: string; why: string } | null;
   sources: PublicMaterial[];
   sourcesUnavailable?: string[];
   generatedAt: string;
