@@ -6,7 +6,7 @@ import { scoreFloorFor } from "../lib/nova/relevance.ts";
 import { NOVA_WITHHOLD_REASONS } from "../lib/nova/types.ts";
 import { changesForSubject, repositoryDigest } from "../lib/nova/observation.ts";
 import { normalizeGoal, paidResearchReadiness, type PublicMaterial } from "../lib/nova/value.ts";
-import { assessPublicMaterial, parseValueAssessment } from "../lib/nova/free-research.ts";
+import { READING_FAILURE_DETAIL, assessPublicMaterial, parseValueAssessment } from "../lib/nova/free-research.ts";
 import { parseFeed, parsePublication, publicationUrl, readPublicPage, observePublications } from "../lib/nova/public-sources.ts";
 import { proposeResearch } from "../lib/nova/research.ts";
 import type { NovaSignal } from "../lib/nova/types.ts";
@@ -25,6 +25,20 @@ assert.equal(parseValueAssessment(JSON.stringify({ ...raw, citations: [{ sourceI
 assert.equal(parseValueAssessment(JSON.stringify({ ...raw, citations: [{ sourceId: "invented", quote: source.text }] }), input), null);
 assert.equal(parseValueAssessment(JSON.stringify({ ...raw, citations: [{ sourceId: source.id, quote: "The application is definitely ready to spend on mainnet." }] }), input), null);
 assert.equal(parseValueAssessment('{"significant":true}', input), null);
+
+/* Six causes used to arrive as one sentence. A provider that is not
+   configured, a clock that ran out and an answer that did not match its
+   sources ask three different things of whoever reads the card. */
+const failures: string[] = [];
+assert.equal(await assessPublicMaterial({ goal, headline: "x", sources: [source], now,
+  generate: async () => ({ ok: false, provider: "p", protocol: "openai-compatible", model: "m", reason: "timeout", attempted: true, attempts: 1 }),
+  onFailure: (reason) => failures.push(reason) }), null);
+assert.equal(await assessPublicMaterial({ goal, headline: "x", sources: [source], now,
+  generate: async () => ({ ok: true, provider: "p", protocol: "openai-compatible", model: "m", text: '{"significant":true}', attempts: 1 }),
+  onFailure: (reason) => failures.push(reason) }), null);
+assert.deepEqual(failures, ["timeout", "ungrounded"], "No answer and a rejected answer are not the same event");
+assert(READING_FAILURE_DETAIL.not_configured.includes("not configured"));
+assert.equal(Object.values(READING_FAILURE_DETAIL).some(text => !text.trim()), false, "Every cause has words of its own");
 assert.equal(normalizeGoal("  Build   Veyra  "), "Build Veyra");
 assert.throws(() => normalizeGoal("x".repeat(601)));
 assert.equal(normalizeGoal(null), null);
@@ -162,4 +176,4 @@ assert.equal(changesForSubject({ label: "Arc", previous: publication, next: publ
 const release = repositoryDigest({ lastCommitAt: null, commitsInWindow: 0, contributorCount: 0, latestRelease: "v2", stars: 1, releaseMaterial: source });
 assert.equal(changesForSubject({ label: "Repo", previous: null, next: release, now })[0].kind, "repository_release");
 assert.equal(await assessPublicMaterial({ goal, headline: "Release", sources: [source], generate: async () => { throw new Error("offline"); } }), null);
-console.log("PASS: goals, significant-event selection, historical noise, deduplication, why each held-back item was held, a reading budget spent by relevance, grounded citations, unavailable-source handling, paid-need gates, bounded official readers and release first-look.");
+console.log("PASS: goals, significant-event selection, historical noise, deduplication, why each held-back item was held, a reading budget spent by relevance, grounded citations, unavailable-source handling, paid-need gates, bounded official readers, a failed reading that says which of six things failed, and release first-look.");

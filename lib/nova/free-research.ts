@@ -1,5 +1,6 @@
 /** Copyright 2026 Veyra. SPDX-License-Identifier: Apache-2.0 */
 import { generateOpenAiCompatibleText, resolveReadingLlmConfig } from "../llm/openai-compatible.ts";
+import type { LlmFailureReason } from "../llm/types.ts";
 import { READING_RULES, type PublicMaterial, type ValueAssessment, type ValueWorkPlan } from "./value.ts";
 
 /** The edition of the rules written below. It is declared with the field that
@@ -105,12 +106,39 @@ export function parseValueAssessment(text: string, input: { goal: string; source
   } catch { return null; }
 }
 
+/**
+ * Why a reading did not happen, in words the owner can act on.
+ *
+ * Six causes used to arrive as one sentence -- "could not produce a
+ * source-supported analysis" -- which reads as the model having looked and
+ * declined. It covers a provider that is not configured in this environment,
+ * a clock that ran out, an answer too large to read and an answer that did
+ * not match its own sources, and those call for four different responses
+ * from whoever is reading the card.
+ */
+export type ReadingFailure = LlmFailureReason | "ungrounded";
+
+export const READING_FAILURE_DETAIL: Record<ReadingFailure, string> = {
+  not_configured: "The reading model is not configured in this environment. Nothing was asked of it.",
+  unsupported_provider: "The reading model is configured with a protocol this build does not speak.",
+  no_paid_api_results: "No material reached the reading model.",
+  timeout: "The reading model did not answer in time. Nothing is wrong with the event; try it again.",
+  rate_limited: "The reading provider is rate-limiting this key right now. Try again shortly.",
+  upstream_error: "The reading provider refused the request.",
+  response_too_large: "The reading model's answer was too long to read safely.",
+  invalid_response: "The reading model did not return a usable answer.",
+  ungrounded: "The model's answer did not match the sources it was given, so it was rejected rather than shown.",
+};
+
 export async function assessPublicMaterial(input: {
   goal: string | null; headline: string; sources: PublicMaterial[]; now?: Date;
   /** What the owner says is already true about the work. Owner-confirmed
    *  statements only -- see lib/nova/project-context.ts for why a proposal
    *  never reaches this call. */
   projectContext?: string[];
+  /** Told why, when there is no assessment. A diagnostic channel, not a
+   *  result: a caller that does not care goes on reading null as before. */
+  onFailure?: (reason: ReadingFailure) => void;
   generate?: typeof generateOpenAiCompatibleText;
 }): Promise<ValueAssessment | null> {
   if (!input.goal || !input.sources.length) return null;
@@ -172,6 +200,13 @@ export async function assessPublicMaterial(input: {
       excerpts: sourceExcerpts(input.sources),
     }),
   }).catch(() => null);
-  if (!result?.ok) return null;
-  return parseValueAssessment(result.text, { goal: input.goal, sources: input.sources, projectContext, now: input.now ?? new Date(), writtenBy: `${result.provider} · ${result.model}` });
+  if (!result?.ok) {
+    input.onFailure?.(result?.reason ?? "upstream_error");
+    return null;
+  }
+  const assessment = parseValueAssessment(result.text, { goal: input.goal, sources: input.sources, projectContext, now: input.now ?? new Date(), writtenBy: `${result.provider} · ${result.model}` });
+  /* An answer arrived and was thrown away. That is a different event from no
+     answer, and the one case where the model is the thing at fault. */
+  if (!assessment) input.onFailure?.("ungrounded");
+  return assessment;
 }
