@@ -16,8 +16,14 @@ import type { NovaSignal } from "./types.ts";
  * compatibility guide that had been significant before the context existed.
  *
  * 3: a significant reading carries proposed work, not a topic to study.
+ *
+ * 4: an event nobody can act on is not significant. Under 3, an ecosystem
+ * addition came back significant with no confirmed statement behind it, a
+ * relativeToWork that began "no direct connection to the project state", and
+ * an action that was to go and read the source it had just been given -- the
+ * same abstraction one level down from the topic it replaced.
  */
-export const READING_RULES = 3;
+export const READING_RULES = 4;
 
 export type PublicMaterial = {
   id: string;

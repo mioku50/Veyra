@@ -160,3 +160,78 @@ Not verified here: the quality of any real plan, whether a reassessment
 produces a better reading than the one it replaces, and the behaviour of the
 failure paths against the deployed database. Those are observations to collect
 after the deploy, not claims to make now.
+
+## Edition 4, written against the first real reassessment
+
+The owner pressed the new button on *Arc Portal: The Easiest Place To Get
+Started on Arc*. The chain worked end to end and the verdict was wrong, in a
+way the stored reading states plainly:
+
+- `significant: true`
+- `plan.established: []`
+- `relativeToWork`: "Нет прямой связи с проектным состоянием, но расширяет
+  функционал…"
+- `plan.action`: "Обратиться к документации Arc Portal и Circle для получения
+  списка доступных API"
+
+The model said there is no direct connection to the project state, stood on
+none of the owner's confirmed statements, and proposed going to read the source
+it had just been handed. That last part is the abstraction this release was
+built to remove, one level down: "study the three sponsorship models" became
+"go and find out which APIs exist".
+
+Edition 3 already forbade this — an ecosystem addition naming no concrete
+decision is not significant — so the gap was not a missing rule. Two rules were
+added anyway, because both are inferences from what the model itself wrote
+rather than new opinions about the subject:
+
+- `plan.action` is work on the owner's side: a check, a comparison, a decision
+  or a change. Reading the handed-over material, visiting a site to see what it
+  offers, or finding out which APIs exist is not an action; naming a document
+  belongs inside a larger action. **If nothing beyond that is supported, the
+  event is not significant** — an event nobody can act on is news about the
+  ecosystem, not work for this owner.
+- If `relativeToWork` would say the event has no direct connection to
+  `projectState`, `significant` is false. "May be useful", "could help" and
+  "expands possibilities" are not significance.
+
+### Measured, on the stored material, three runs per subject
+
+| Subject | significant | action |
+| --- | --- | --- |
+| Arc Compatibility Guide | true, *unusable*, true | analyse Veyra contracts for balance operations; build a compatibility test case |
+| Sponsored Transactions on Arc | true, true, true | compare Veyra's gas handling against the documented models |
+| cirBTC Is Now Live on Arc | false, false, false | — |
+| Circle discontinuing Noble | false, false, false | — |
+| Arc Portal | *unusable*, true, false | — |
+
+The actions are now work rather than reading. Four of the five subjects are
+stable across runs. **Arc Portal remains a coin flip**, and that is not fixed.
+
+### An experiment that was reverted
+
+`plan.established` came back empty on every run, so the "what you already have"
+part of the format is almost always the empty branch. For the Compatibility
+Guide that is honest: the owner's four confirmed facts say nothing about USDC
+units — that came from the illustration in the request, not from their context.
+For Sponsored Transactions it is a miss: "operational wallet не выбран" is
+exactly what the work turns on.
+
+Rewording `establishedFrom` to include "the reason the work is needed" made it
+worse, and the trial is why we know: cirBTC flipped to significant, and Arc
+Portal justified itself with "«Приоритет — полезность исследований Nova". A
+model told to find an anchor finds one, and having found one, judges the event
+relevant. Reverted to the narrower wording. Empty stays the common case.
+
+### What this says about the model
+
+The deployed reading model is `ministral-8b-latest`. It is applying twenty
+judgement rules to Russian-language material and returning a different verdict
+on repeat runs of identical input, and roughly one run in seven is rejected
+outright as unusable — correctly, and visibly, but rejected. Every prompt fix
+in this release had to be trialled against that variance, and one of the three
+attempts swung the wrong way.
+
+Prompt wording is close to exhausted as a lever here. The remaining variable is
+the model, which is configuration (`LLM_*`), a cost decision, and the owner's to
+make. Nothing in this note recommends spending it.
