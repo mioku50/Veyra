@@ -1,6 +1,24 @@
 /** Copyright 2026 Veyra. SPDX-License-Identifier: Apache-2.0 */
 import type { NovaSignal } from "./types.ts";
 
+/**
+ * The edition of the reading rules in lib/nova/free-research.ts.
+ *
+ * It lives here, next to the field that records it, because the page needs it
+ * too: a card read under an older edition is a card asserting something the
+ * current rules would not say, and the owner is the one who has to be told
+ * that before they act on it.
+ *
+ * 2: project state is a baseline and not the list of everything that matters.
+ * Under 1, four confirmed facts about ERC-8183, ERC-8004 and a wallet turned
+ * into a checklist, and eight readings in a row answered "does not change
+ * ERC-8183 or ERC-8004" to material the owner's goal asked for -- including a
+ * compatibility guide that had been significant before the context existed.
+ *
+ * 3: a significant reading carries proposed work, not a topic to study.
+ */
+export const READING_RULES = 3;
+
 export type PublicMaterial = {
   id: string;
   title: string;
@@ -9,6 +27,35 @@ export type PublicMaterial = {
   publishedAt: string | null;
   fetchedAt: string;
 };
+/**
+ * What this event asks of the owner, written as work rather than as a subject.
+ *
+ * "Study the three sponsorship models on Arc" describes possible work; it is
+ * not the work. These four parts are what a person needs to start: what they
+ * already have, what the event changes, what is still not established, and one
+ * action concrete enough to be finished.
+ *
+ * The dangerous half is the first one. A model told two facts about a project
+ * will cheerfully generalise them into a verdict about the whole of it -- "your
+ * paths are Arc-compatible" from "native USDC differences are handled" -- so
+ * `established` is not prose the model wrote. The model chooses which of the
+ * owner's confirmed statements it is relying on, by index, and the server
+ * copies in the owner's own words. The same trick as citations, for the same
+ * reason: a claim nobody can check is worse than no claim.
+ *
+ * Nothing here is a finding. Nova has not read the owner's code, and the
+ * status line that says so is fixed in the page rather than a field the model
+ * can fill in.
+ */
+export type ValueWorkPlan = {
+  /** The owner's confirmed statements this work builds on, in their words. */
+  established: string[];
+  /** What the sources and that state do not settle, and what would settle it. */
+  unverified: string;
+  /** One action, named against something checkable. */
+  action: string;
+};
+
 export type ValueAssessment = {
   version: 1;
   goal: string;
@@ -19,6 +66,9 @@ export type ValueAssessment = {
   citations: Array<{ sourceId: string; quote: string }>;
   /** A hypothesis about further work, never a financial permission. */
   gap: { question: string; missing: string; expectedResult: string } | null;
+  /** Proposed work, on a significant reading. Null when the event names none,
+   *  and never a claim that the work was done -- see ValueWorkPlan. */
+  plan?: ValueWorkPlan | null;
   /** The owner-confirmed project statements this reading was given, copied in
    *  as they stood. A finding read against a project state is only as good as
    *  that state, and a month later nobody can reconstruct which one it was. */
@@ -31,7 +81,7 @@ export type ValueAssessment = {
    *  question for the owner; Nova cannot confirm its own inference, because a
    *  confirmed one would be judged as fact by every later reading. */
   contextProposal?: { statement: string; why: string } | null;
-  /** Which edition of the reading rules produced this.
+  /** Which edition of the reading rules produced this: READING_RULES above.
    *
    *  A stored judgement is only as good as the instructions behind it, and
    *  changing those instructions silently leaves every earlier card asserting

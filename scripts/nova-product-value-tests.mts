@@ -88,16 +88,16 @@ for (const sample of [brief, held, capped]) {
    brief. Inside a band a correction goes first -- a card whose reading was
    made against a project state the owner has since changed is wrong on the
    screen now, while an unread event is only missing. */
-const candidate = (headline: string, over: Partial<{ relevance: "high" | "medium" | "low"; correction: boolean; score: number; observedAt: string }> = {}) => ({
-  headline, relevance: "medium" as const, correction: false, score: 50, observedAt: "2026-09-20T10:00:00Z", ...over,
+const candidate = (headline: string, over: Partial<{ relevance: "high" | "medium" | "low"; correction: boolean; onScreen: boolean; score: number; observedAt: string }> = {}) => ({
+  headline, relevance: "medium" as const, correction: false, onScreen: false, score: 50, observedAt: "2026-09-20T10:00:00Z", ...over,
 });
 const candidates = [
   candidate("fresh medium, newer", { observedAt: "2026-09-20T12:00:00Z" }),
   candidate("fresh medium, older"),
-  candidate("stale medium", { correction: true, score: scoreFloorFor("medium") }),
+  candidate("stale medium", { correction: true, onScreen: true, score: scoreFloorFor("medium") }),
   candidate("unread medium", { score: scoreFloorFor("medium"), observedAt: "2026-09-18T10:00:00Z" }),
   candidate("fresh high", { relevance: "high", score: 80 }),
-  candidate("stale low", { relevance: "low", correction: true, score: scoreFloorFor("low") }),
+  candidate("stale low", { relevance: "low", correction: true, onScreen: true, score: scoreFloorFor("low") }),
 ];
 assert.deepEqual(readingOrder(candidates).map(entry => entry.headline), [
   "fresh high",
@@ -107,9 +107,25 @@ assert.deepEqual(readingOrder(candidates).map(entry => entry.headline), [
   "unread medium",
   "stale low",
 ], "Band first, then the correction, then score and recency");
+
+/* Bumping the reading rules retires every stored reading at once, and a flag
+   every candidate carries sorts nothing. What separates them then is whether
+   the stale paragraph is one the owner is looking at: a card held back as
+   insignificant is very likely to be held back again, and re-reading it
+   changes nothing on the screen. */
+const allStale = [
+  candidate("held back, newest", { correction: true, observedAt: "2026-09-20T18:00:00Z" }),
+  candidate("held back, newer", { correction: true, observedAt: "2026-09-20T17:00:00Z" }),
+  candidate("on Today", { correction: true, onScreen: true, observedAt: "2026-09-20T09:00:00Z" }),
+  candidate("never read", { observedAt: "2026-09-20T08:00:00Z" }),
+];
+assert.deepEqual(readingOrder(allStale).map(entry => entry.headline), [
+  "on Today", "never read", "held back, newest", "held back, newer",
+], "A stale reading the owner can see, then one nobody has made, then one nobody sees");
 assert.equal(scoreFloorFor("noise"), 0);
 assert(scoreFloorFor("high") > scoreFloorFor("medium") && scoreFloorFor("medium") > scoreFloorFor("low"));
 assert.equal(readingOrder(candidates).length, candidates.length, "Ranking selects an order, the budget selects how many");
+assert.deepEqual(readingOrder([candidate("no flag", { relevance: "low" }), candidate("high band")]).map(e => e.headline), ["high band", "no flag"], "onScreen is optional and absent means not on the screen");
 assert.deepEqual(readingOrder(candidates).slice(0, PUBLIC_READING_BUDGET).map(entry => entry.headline),
   ["fresh high", "stale medium", "fresh medium, newer"],
   "What three readings are actually spent on: today's most important event, then the card that is currently wrong");

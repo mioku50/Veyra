@@ -71,6 +71,11 @@ const reply = {
   relativeToWork: "You have identity on Arc Testnet but no operational wallet, so this decides the next step rather than repeating one.",
   citations: [{ sourceId: source.id, quote: "Arc supports sponsored transactions with USDC as the gas token." }],
   gap: null,
+  plan: {
+    establishedFrom: [2],
+    unverified: "Which of the three models Veyra will use is not settled by the material or by your confirmed state.",
+    action: "Compare the relayer and the paymaster against the wallet you have not chosen yet, and write down which one the choice depends on.",
+  },
   contextProposal: { statement: "Gas sponsorship model is still undecided.", why: "The material names three models and your context does not name a choice." },
 };
 const withContext = parseValueAssessment(JSON.stringify(reply), { goal, sources: [source], now, writtenBy: "fixture", projectContext: contextForPrompt(mixed) });
@@ -79,19 +84,53 @@ assert.equal(withContext.relativeToWork, reply.relativeToWork);
 assert.deepEqual(withContext.projectContext, contextForPrompt(mixed));
 assert.deepEqual(withContext.contextProposal, reply.contextProposal);
 
+/* The work Nova proposes, with the owner's own words where the owner's words
+   belong. The model chose an index; the server copied the statement. */
+assert.deepEqual(withContext.plan, {
+  established: ["Operational wallet is not chosen yet."],
+  unverified: reply.plan.unverified,
+  action: reply.plan.action,
+});
+
+/* And the failure this guards against: a sentence about somebody's project
+   that nobody in this conversation ever said. An index nobody supplied fails
+   the whole reading, exactly as an invented citation does. */
+assert.equal(parseValueAssessment(JSON.stringify({ ...reply, plan: { ...reply.plan, establishedFrom: [7] } }), { goal, sources: [source], now, writtenBy: "fixture", projectContext: contextForPrompt(mixed) }), null,
+  "A project statement the owner never confirmed cannot be cited as one");
+assert.equal(parseValueAssessment(JSON.stringify({ ...reply, plan: { ...reply.plan, establishedFrom: ["Operational wallet is not chosen yet."] } }), { goal, sources: [source], now, writtenBy: "fixture", projectContext: contextForPrompt(mixed) }), null,
+  "The statement is resolved from the index, never taken as written prose");
+
+/* Work with nothing confirmed behind it is still work; work with no action in
+   it is not, and the one-line next step stands in for it. */
+const fromSourceAlone = parseValueAssessment(JSON.stringify({ ...reply, plan: { ...reply.plan, establishedFrom: [] } }), { goal, sources: [source], now, writtenBy: "fixture", projectContext: contextForPrompt(mixed) });
+assert.deepEqual(fromSourceAlone?.plan?.established, []);
+const halfPlan = parseValueAssessment(JSON.stringify({ ...reply, plan: { establishedFrom: [1], action: "Do the thing." } }), { goal, sources: [source], now, writtenBy: "fixture", projectContext: contextForPrompt(mixed) });
+assert.equal(halfPlan?.plan, null);
+
+/* Nothing worth doing about material that changes nothing. A plan under an
+   insignificant reading is a suggestion the card has already withheld. */
+const insignificant = parseValueAssessment(JSON.stringify({ ...reply, significant: false }), { goal, sources: [source], now, writtenBy: "fixture", projectContext: contextForPrompt(mixed) });
+assert.equal(insignificant?.plan, null);
+assert.equal(insignificant?.gap, null);
+
+/* An owner who has confirmed nothing has confirmed nothing, and an index into
+   an empty list is the same invention as an index past the end of a full one. */
+assert.equal(parseValueAssessment(JSON.stringify(reply), { goal, sources: [source], now, writtenBy: "fixture" }), null,
+  "With no project state supplied there is nothing for proposed work to build on");
+
 /* Said against nothing, "this is new to you" is not checkable. */
-const without = parseValueAssessment(JSON.stringify(reply), { goal, sources: [source], now, writtenBy: "fixture" });
+const without = parseValueAssessment(JSON.stringify({ ...reply, plan: { ...reply.plan, establishedFrom: [] } }), { goal, sources: [source], now, writtenBy: "fixture" });
 assert(without);
 assert.equal(without.relativeToWork, null);
 assert.deepEqual(without.projectContext, []);
 
 /* A half-written proposal is not a question anybody can answer. */
-const partial = parseValueAssessment(JSON.stringify({ ...reply, contextProposal: { statement: "Something changed." } }), { goal, sources: [source], now, writtenBy: "fixture", projectContext: ["A fact."] });
+const partial = parseValueAssessment(JSON.stringify({ ...reply, contextProposal: { statement: "Something changed." } }), { goal, sources: [source], now, writtenBy: "fixture", projectContext: ["A fact.", "A second fact."] });
 assert(partial);
 assert.equal(partial.contextProposal, null);
 
 /* End to end: the confirmed state reaches the model, the unconfirmed does not. */
-let sent: { projectState?: string[] } = {};
+let sent: { projectState?: Array<{ index: number; statement: string }> } = {};
 const assessed = await assessPublicMaterial({
   goal, projectContext: contextForPrompt(mixed), headline: "Sponsored transactions on Arc", sources: [source], now,
   generate: async (request) => {
@@ -101,10 +140,10 @@ const assessed = await assessPublicMaterial({
 });
 assert(assessed);
 assert.deepEqual(sent.projectState, [
-  "ERC-8004 identity is live on Arc Testnet.",
-  "Operational wallet is not chosen yet.",
-]);
-assert.equal(sent.projectState?.includes("Veyra migrated to Arc mainnet."), false, "A proposal Nova wrote must never be read back to it as fact");
+  { index: 1, statement: "ERC-8004 identity is live on Arc Testnet." },
+  { index: 2, statement: "Operational wallet is not chosen yet." },
+], "Numbered, because the proposed work points back into this list by index");
+assert.equal(sent.projectState?.some(entry => entry.statement === "Veyra migrated to Arc mainnet."), false, "A proposal Nova wrote must never be read back to it as fact");
 assert.equal(assessed.projectContext?.length, 2);
 
 /* A reading carries the state it was judged against, so a pass can tell which
@@ -141,4 +180,4 @@ assert.deepEqual(splitStatements("One fact and nothing else."), [], "A single fa
 assert.deepEqual(splitStatements("Version 1.2 shipped."), [], "A decimal point does not end a sentence");
 assert(splitStatements(blob).every(part => part.length <= PROJECT_CONTEXT_LIMITS.statement));
 
-console.log("PASS: project context — one fact per line, owner-confirmed statements only in the prompt, a reading that says what changed against work already done, an inference Nova cannot confirm for itself, a reading reconsidered when the state it was judged against changes, a pasted blob offered back as the facts it is, and a reading retired when the rules that produced it change.");
+console.log("PASS: project context — work proposed with the owner's own words and never a verdict on their code, one fact per line, owner-confirmed statements only in the prompt, a reading that says what changed against work already done, an inference Nova cannot confirm for itself, a reading reconsidered when the state it was judged against changes, a pasted blob offered back as the facts it is, and a reading retired when the rules that produced it change.");

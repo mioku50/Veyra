@@ -383,26 +383,35 @@ const BACKLOG_POOL = 60;
  */
 export function readingOrder<T extends {
   relevance: NovaRelevance;
-  /** A reading already on the screen, judged against a goal or a project
-   *  state the owner has since changed. */
+  /** A stored reading judged against a goal, a project state or an edition of
+   *  the rules the owner has since changed. */
   correction: boolean;
+  /** Whether that stored reading is one the owner can see. A reading found
+   *  significant is what puts a card on Today; the brief's cap and its
+   *  deduplication can still keep it off, so this is "could be on the
+   *  screen" rather than a promise that it is. */
+  onScreen?: boolean;
   score: number;
   observedAt: string;
 }>(entries: T[]): T[] {
   const band: Record<NovaRelevance, number> = { high: 0, medium: 1, low: 2, noise: 3 };
+  /* Wrong where it shows, then missing, then wrong where nobody looks.
+     Bumping the rules retires every stored reading at once, and when all
+     twenty-seven are corrections the flag stops telling them apart: what
+     still does is whether the paragraph going stale is one the owner is
+     reading. A card held back as insignificant will most likely be held back
+     again, and re-reading it changes nothing anybody sees. */
+  const priority = (entry: T) => entry.correction ? (entry.onScreen ? 0 : 2) : 1;
   const at = (entry: T) => {
     const parsed = Date.parse(entry.observedAt);
     return Number.isFinite(parsed) ? parsed : 0;
   };
   return [...entries].sort((a, b) =>
     band[a.relevance] - band[b.relevance]
-    /* Inside a band, a correction goes first. A card whose reading was made
-       against a project that no longer exists is wrong on the screen right
-       now; an unread event is merely missing, and missing is the better of
-       the two to still be true at the end of the pass. Across bands the band
-       still wins: a stale low does not outrank the most important thing that
-       happened today. */
-    || Number(b.correction) - Number(a.correction)
+    /* Inside a band, by that priority. Across bands the band still wins: a
+       stale low does not outrank the most important thing that happened
+       today. */
+    || priority(a) - priority(b)
     || b.score - a.score
     || at(b) - at(a));
 }
@@ -534,6 +543,7 @@ export async function runRefresh(input: {
     headline: string;
     relevance: NovaRelevance;
     correction: boolean;
+    onScreen: boolean;
     score: number;
     observedAt: string;
     /** The material, fetched only if the budget reaches this candidate. The
@@ -553,6 +563,7 @@ export async function runRefresh(input: {
       headline: String(entry.row.headline),
       relevance: entry.row.relevance as NovaRelevance,
       correction: false,
+      onScreen: false,
       score: entry.score,
       observedAt: String(entry.row.observed_at ?? ""),
       open: async () => material,
@@ -578,7 +589,7 @@ export async function runRefresh(input: {
        ranking needs so that forty rows of article text are not loaded to
        choose three. */
     const { data: pending, error: pendingError } = await db().from("nova_signals")
-      .select("signal_id,headline,relevance,observed_at,assessedGoal:evidence->valueAssessment->>goal,assessedContext:evidence->valueAssessment->projectContext,assessedRules:evidence->valueAssessment->>rules")
+      .select("signal_id,headline,relevance,observed_at,assessedGoal:evidence->valueAssessment->>goal,assessedContext:evidence->valueAssessment->projectContext,assessedRules:evidence->valueAssessment->>rules,assessedSignificant:evidence->valueAssessment->>significant")
       .eq("agent_id", agent.agent_id).in("kind", ["repository_release", "official_publication"])
       .neq("relevance", "noise")
       .in("status", ["new", "seen"])
@@ -603,6 +614,9 @@ export async function runRefresh(input: {
            or a project state that is gone. Never read at all is a different
            thing and waits its turn with the new events. */
         correction: assessedGoal !== null,
+        /* Its stored reading is the reason it is on Today, so its staleness
+           is the staleness the owner can actually see. */
+        onScreen: row.assessedSignificant === "true",
         score: scoreFloorFor(relevance),
         observedAt: String(row.observed_at ?? ""),
         open: async () => {
@@ -1470,8 +1484,17 @@ function checkedGoal(value: unknown): string | null {
   try { return normalizeGoal(value); } catch (error) { throw new NovaError((error as Error).message, "invalid_goal"); }
 }
 
-/** Owner-authenticated public-material reading. No payment discovery, signer or wallet is called. */
-export async function researchPublicSources(input: { publicId: string; ownerSecret: string; signalId: string }) {
+/**
+ * Owner-authenticated public-material reading. No payment discovery, signer or
+ * wallet is called.
+ *
+ * `reassess` is the owner asking this event to be read again against the
+ * project as it stands now. It is a separate act from the scheduled pass and
+ * spends none of its budget: a backlog two dozen deep drained a few at a time
+ * cannot answer "what does this one mean for me", which is the question
+ * somebody with a card open in front of them is actually asking.
+ */
+export async function researchPublicSources(input: { publicId: string; ownerSecret: string; signalId: string; reassess?: boolean }) {
   const agent = await loadOwned(input.publicId, input.ownerSecret);
   const signal = await loadSignalForOwner(input);
   if (!agent.goal) throw new NovaError("Set a concrete research goal in My Agent first.", "goal_required");
@@ -1482,8 +1505,12 @@ export async function researchPublicSources(input: { publicId: string; ownerSecr
   const current = assessmentOf(signal);
   /* A fresh reading of the same event under the same goal is reused -- unless
      the owner has since said something different about where the work is, in
-     which case it is a reading of a project that no longer exists. */
-  if (current && readingStands(
+     which case it is a reading of a project that no longer exists.
+
+     Never when they asked for a reassessment. A button that sometimes returns
+     the stored paragraph is a button that sometimes answers yesterday's
+     question, and the person pressing it cannot tell which time it did. */
+  if (!input.reassess && current && readingStands(
     { goal: current.goal, context: current.projectContext ?? null, rules: current.rules ?? null },
     { goal: agent.goal, context: projectContext, rules: READING_RULES },
   ) && Date.now() - Date.parse(current.generatedAt) < 24 * 3_600_000) return current;

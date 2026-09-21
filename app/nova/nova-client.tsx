@@ -5,7 +5,7 @@
 
 "use client";
 
-import { assessmentOf, paidResearchReadiness, type ValueAssessment } from "@/lib/nova/value";
+import { READING_RULES, assessmentOf, paidResearchReadiness, type ValueAssessment } from "@/lib/nova/value";
 import { formatUsdc } from "@/lib/execution/presentation";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { useCallback, useEffect, useState } from "react";
@@ -16,7 +16,9 @@ import { INTEREST_CATALOG, MAX_INTERESTS } from "@/lib/nova/interests";
 import {
   PROJECT_CONTEXT_LIMITS,
   confirmedContext as confirmedProjectContext,
+  contextForPrompt,
   proposedContext as proposedProjectContext,
+  readAgainst,
   splitStatements,
 } from "@/lib/nova/project-context";
 /* The same mapping the scorer uses. A third copy would be a third chance for
@@ -664,6 +666,10 @@ export function NovaClient({ view = "today" }: { view?: NovaView } = {}) {
     try {
       const result = await call(`/api/nova/v1/agents/${identity.publicId}/signals/${signal.signalId}/read`, {
         method: "POST", ownerSecret: identity.ownerSecret,
+        /* The owner pressed a button asking what this event means for the
+           project as it stands now. Handing back the stored paragraph would
+           answer the question they asked the last time they pressed it. */
+        body: JSON.stringify({ reassess: true }),
       }) as { assessment: ValueAssessment };
       // Keep the card in place until reload, so a low-value finding can explain
       // why it was held back instead of disappearing before the owner reads it.
@@ -1148,6 +1154,10 @@ export function NovaClient({ view = "today" }: { view?: NovaView } = {}) {
     .filter(([, signals]) => signals.length > 0);
   const withheldTotal = withheldGroups.reduce((total, [, signals]) => total + signals.length, 0);
   const confirmedContext = confirmedProjectContext(brief.projectContext ?? []);
+  /* Exactly what a reading started now would be told -- same function, same
+     order, same truncation -- so the page can say whether the paragraph on a
+     card was written about this project or an earlier one. */
+  const promptContext = contextForPrompt(brief.projectContext ?? []);
   const proposedContext = proposedProjectContext(brief.projectContext ?? []);
   const splitSuggestion = (draftContext ?? []).reduce<{ index: number; parts: string[] } | null>((found, statement, index) => {
     if (found) return found;
@@ -1239,11 +1249,11 @@ export function NovaClient({ view = "today" }: { view?: NovaView } = {}) {
                 <p className="mt-4 border-t border-border/60 pt-3 text-xs text-muted-foreground">{signal.relevanceReason}</p>
               </> : null}
 
-              <PublicReading signal={signal} goal={brief.agent.goal} />
+              <PublicReading signal={signal} goal={brief.agent.goal} context={promptContext} unrefreshed={Boolean(readNotes[signal.signalId])} />
               {readNotes[signal.signalId] ? <p role="status" className="mt-3 text-sm text-state-warn">{readNotes[signal.signalId]}</p> : null}
               <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-3">
                 {(signal.kind === "repository_release" || signal.kind === "official_publication") ? <button type="button" onClick={() => void readSources(signal)} disabled={reading[signal.signalId]}
-                  className="rounded-lg border px-4 py-2 text-sm disabled:opacity-50">{reading[signal.signalId] ? "Reading sources…" : "Review public sources"}</button> : null}
+                  className="rounded-lg border px-4 py-2 text-sm disabled:opacity-50">{reading[signal.signalId] ? "Reading sources…" : assessmentOf(signal) ? "Reassess for my project" : "Read the public sources"}</button> : null}
                 {!research[signal.signalId] && paidResearchReadiness(signal, brief.agent.goal).ready ? <button type="button" onClick={() => void price(signal)} className="rounded-lg border px-4 py-2 text-sm">Find a tool for this open question</button> : null}
 
                 {/* Nothing for "investigating": the priced proposal below is the
@@ -1498,8 +1508,8 @@ export function NovaClient({ view = "today" }: { view?: NovaView } = {}) {
                       />
                     ) : (
                       <div className="mt-2">
-                        <PublicReading signal={signal} goal={brief.agent.goal} />
-                        {(signal.kind === "repository_release" || signal.kind === "official_publication") ? <button type="button" onClick={() => void readSources(signal)} disabled={reading[signal.signalId]} className="mt-3 rounded-lg border px-3 py-2 text-sm">{reading[signal.signalId] ? "Reading…" : "Review public sources"}</button> : null}
+                        <PublicReading signal={signal} goal={brief.agent.goal} context={promptContext} unrefreshed={Boolean(readNotes[signal.signalId])} />
+                        {(signal.kind === "repository_release" || signal.kind === "official_publication") ? <button type="button" onClick={() => void readSources(signal)} disabled={reading[signal.signalId]} className="mt-3 rounded-lg border px-3 py-2 text-sm">{reading[signal.signalId] ? "Reading…" : assessmentOf(signal) ? "Reassess for my project" : "Read the public sources"}</button> : null}
                         {paidResearchReadiness(signal, brief.agent.goal).ready ? <button type="button" onClick={() => void price(signal)} className="ml-2 mt-3 rounded-lg border px-3 py-2 text-sm">Find a tool for this open question</button> : null}
                         {readNotes[signal.signalId] ? <p role="status" className="mt-2 text-sm text-state-warn">{readNotes[signal.signalId]}</p> : null}
                         <div className="mt-3 flex gap-3"><Verb onClick={() => void say(signal.signalId, "useful")}>Useful result</Verb><Verb onClick={() => void say(signal.signalId, "not_interesting")}>Not useful</Verb></div>
@@ -2435,7 +2445,20 @@ function Receipts({ brief }: { brief: NovaBrief }) {
   );
 }
 
-function PublicReading({ signal, goal }: { signal: NovaSignal; goal?: string | null }) {
+/**
+ * A stored reading, and how far it can still be trusted.
+ *
+ * `context` is what a reading started right now would be given, and `rules`
+ * the edition that would produce it. A paragraph written against neither is
+ * not wrong so much as answering an older question, and the difference
+ * matters most exactly when it is invisible -- the card looks identical.
+ *
+ * `unrefreshed` says the owner just asked for a new reading and did not get
+ * one. What follows is then the earlier text, and it says so.
+ */
+function PublicReading({ signal, goal, context = [], unrefreshed = false }: {
+  signal: NovaSignal; goal?: string | null; context?: string[]; unrefreshed?: boolean;
+}) {
   const analysis = assessmentOf(signal);
   const valid = analysis && analysis.goal === goal;
   const subject = signal.evidence.subject as { url?: string; publicMaterial?: { url: string } } | undefined;
@@ -2443,12 +2466,30 @@ function PublicReading({ signal, goal }: { signal: NovaSignal; goal?: string | n
   const url = source?.url ?? subject?.publicMaterial?.url ?? subject?.url;
   const safeUrl = url && /^https:\/\//i.test(url) ? url : null;
   if (!valid) return <div className="mt-3 text-sm text-muted-foreground">{safeUrl ? <a href={safeUrl} target="_blank" rel="noreferrer" className="text-accent underline">Open original source ↗</a> : null}{analysis ? <p>The goal changed. Review this event against your current goal.</p> : null}</div>;
+  const againstOlderContext = !readAgainst(analysis.projectContext ?? null, context);
+  const againstOlderRules = (analysis.rules ?? 0) !== READING_RULES;
   return <div className="mt-4 space-y-3 border-t pt-4 text-sm">
     <p className="text-xs text-muted-foreground">Public-source analysis · no wallet charge · {analysis.writtenBy}</p>
+    {unrefreshed ? <p className="text-sm text-state-warn">Not re-read just now. What follows is the earlier reading, written {new Date(analysis.generatedAt).toLocaleString()}.</p> : null}
+    {againstOlderContext || againstOlderRules ? <p className="text-xs text-state-warn">
+      Written {againstOlderContext ? "before your project facts last changed" : "under an earlier edition of Nova’s reading rules"}. Reassess it for the project as it stands.
+    </p> : null}
     <p><strong>What changed:</strong> {analysis.whatChanged}</p>
     <p><strong>Why it matters to your goal:</strong> {analysis.whyItMatters}</p>
     {analysis.relativeToWork ? <p><strong>Against what you already have:</strong> {analysis.relativeToWork}</p> : null}
-    <p><strong>Suggested next step:</strong> {analysis.nextStep}</p>
+    {/* The work, where there is work. A one-line step and a four-part plan of
+        the same step on one card is the card saying it twice, so the plan
+        replaces the line rather than joining it. */}
+    {analysis.plan ? <div className="rounded-lg border p-3">
+      <p className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">Proposed work</p>
+      {analysis.plan.established.length
+        ? <><p className="mt-2"><strong>Building on what you confirmed:</strong></p>
+            <ul className="mt-1 space-y-1 text-muted-foreground">{analysis.plan.established.map((statement, index) => <li key={index}>— {statement}</li>)}</ul></>
+        : <p className="mt-2 text-muted-foreground">Nothing you have confirmed covers this yet, so it starts from the source alone.</p>}
+      <p className="mt-2"><strong>Not established:</strong> {analysis.plan.unverified}</p>
+      <p className="mt-2"><strong>Do this:</strong> {analysis.plan.action}</p>
+      <p className="mt-2 text-xs text-muted-foreground">Proposed work, not a completed check. Nova reads public sources; it has not seen your code.</p>
+    </div> : <p><strong>Suggested next step:</strong> {analysis.nextStep}</p>}
     {!analysis.significant ? <p className="text-muted-foreground">Held back: this material does not establish a significant change for your goal.</p> : null}
     {analysis.contextProposal ? <p className="text-muted-foreground">Nova thinks this changes your project context: “{analysis.contextProposal.statement}”. Confirm or reject it under My Agent; it is not treated as true until you do.</p> : null}
     {analysis.projectContext?.length ? <details><summary className="cursor-pointer text-xs text-muted-foreground">Read against {analysis.projectContext.length} project {analysis.projectContext.length === 1 ? "fact" : "facts"} you confirmed</summary><ul className="mt-2 space-y-1 text-xs text-muted-foreground">{analysis.projectContext.map((statement, index) => <li key={index}>{statement}</li>)}</ul></details> : null}
