@@ -2,6 +2,17 @@
 import { generateOpenAiCompatibleText } from "../llm/openai-compatible.ts";
 import type { PublicMaterial, ValueAssessment } from "./value.ts";
 
+/**
+ * The edition of the reading rules below.
+ *
+ * 2: project state is a baseline and not the list of everything that matters.
+ * Under 1, four confirmed facts about ERC-8183, ERC-8004 and a wallet turned
+ * into a checklist, and eight readings in a row answered "does not change
+ * ERC-8183 or ERC-8004" to material the owner's goal asked for -- including a
+ * compatibility guide that had been significant before the context existed.
+ */
+export const READING_RULES = 2;
+
 const clean = (v: unknown, max: number) => typeof v === "string" ? v.trim().slice(0, max) : "";
 const prose = (v: unknown, max: number) => {
   const text = clean(v, 10_000).replace(/\*\*/g, "").replace(/\(?\bs\d+\.e\d+\b\)?/g, "").replace(/\s+/g, " ").trim();
@@ -65,7 +76,7 @@ export function parseValueAssessment(text: string, input: { goal: string; source
     } : null;
     const contextProposal = proposal && proposal.statement && proposal.why ? proposal : null;
     return { version: 1, goal: input.goal, significant: raw.significant, whatChanged, whyItMatters, nextStep, citations,
-      gap: raw.significant ? gap : null, projectContext, relativeToWork, contextProposal,
+      gap: raw.significant ? gap : null, projectContext, relativeToWork, contextProposal, rules: READING_RULES,
       sources: input.sources, generatedAt: input.now.toISOString(), writtenBy: input.writtenBy };
   } catch { return null; }
 }
@@ -90,7 +101,9 @@ export async function assessPublicMaterial(input: {
       "A recent tutorial can describe an old capability. Do not claim now, new or no longer unless the source establishes a change. Say the source explains a behavior for a tutorial; a tutorial alone is not a new release.",
       "Explain what changed, why it helps the goal, and one actionable next step. If the material is irrelevant, set significant=false.",
       "Significance requires a concrete decision or compatibility issue for the explicit goal. Shared keywords, ecosystem growth, promotions, demos and calls for builders alone are insufficient. Do not invent a use case to make the event relevant.",
-      "projectState is what the owner states is already true about their work. Treat each line as given, judge the event against it, and set relativeToWork to what this changes for work already done. An event that only restates something already finished is not significant.",
+      "projectState is what the owner states is already true about their work. It is a baseline, not a list of everything that matters to them: significance is still judged against the goal. Use it in relativeToWork to say what is new for this owner and what they have already built.",
+      "An event that only restates something projectState already calls finished is not significant. An event that meets the significance bar above does NOT lose it because projectState fails to mention its subject; an unmentioned subject is usually work not yet done, not proof of irrelevance.",
+      "This does not lower that bar. A new asset, a launch, an ecosystem addition or a general discussion that names no concrete decision or compatibility issue for the goal stays insignificant whether or not projectState mentions it.",
       "Never treat a fact about the owner project as established beyond projectState and the goal. If the material implies their state has changed, return contextProposal for the owner to confirm and do not rely on it in this assessment. Set contextProposal=null when the material implies nothing about their work.",
       "Do not invent dates, addresses, network compatibility, releases, links or facts. Support factual claims using the supplied excerpt IDs.",
       "Prefer an answer from the supplied public sources. A gap is NOT permission to spend and does not prove paid data is needed.",

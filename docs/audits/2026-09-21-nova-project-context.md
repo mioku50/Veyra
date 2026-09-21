@@ -133,6 +133,34 @@ row that is several sentences and offers to split it. It does not split
 anything on its own: silently rewriting what somebody typed about their own
 project is the same mistake as confirming an inference for them.
 
+### What the context did to significance, and the edition that fixes it
+
+The first eight readings made against a real project context all came back
+`significant: false` — including an Arc compatibility guide that had been
+significant before the context existed, and whose next step named a concrete
+audit of this codebase. Four confirmed facts about ERC-8183, ERC-8004 and an
+operational wallet had become a checklist: anything they did not name was
+answered with "does not change ERC-8183 or ERC-8004". The context made the
+agent narrower rather than sharper, which is the opposite of the point.
+
+The rules now say that project state is a baseline and not the list of
+everything that matters, that significance is still judged against the goal,
+and that an unmentioned subject is usually work not yet done rather than proof
+of irrelevance — followed immediately by a sentence refusing to lower the
+significance bar, because the first correction sent every ecosystem
+announcement back to significant. Trialled twice per case against the owner's
+stored material: the compatibility guide and sponsored transactions came back
+significant both times, a new-asset launch insignificant both times. Two
+samples per case is evidence about a prompt, not a guarantee about a model.
+
+Changing those rules retires the readings made under the old ones, which
+nothing would otherwise notice: an instruction change rewrites what every
+later reading would say and leaves the stored ones asserting a judgement the
+current rules would not make. Each assessment now records the edition that
+produced it, and a reading stands only while the goal, the project state and
+the edition all still hold. The fourteen assessments written before this are
+reconsidered a budget at a time.
+
 ## Deliberate limits
 
 - A confirmed statement is the owner's claim, not a verified fact. Nothing

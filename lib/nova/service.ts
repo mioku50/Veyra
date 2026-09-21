@@ -10,10 +10,10 @@ import {
   contextForPrompt,
   normalizeStatement,
   normalizeStatements,
-  readAgainst,
+  readingStands,
   type NovaProjectContext,
 } from "./project-context.ts";
-import { assessPublicMaterial } from "./free-research.ts";
+import { READING_RULES, assessPublicMaterial } from "./free-research.ts";
 import { observePublications, publicContext } from "./public-sources.ts";
 import { createHash, randomBytes } from "node:crypto";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
@@ -565,7 +565,7 @@ export async function runRefresh(input: {
        ranking needs so that forty rows of article text are not loaded to
        choose three. */
     const { data: pending, error: pendingError } = await db().from("nova_signals")
-      .select("signal_id,headline,relevance,observed_at,assessedGoal:evidence->valueAssessment->>goal,assessedContext:evidence->valueAssessment->projectContext")
+      .select("signal_id,headline,relevance,observed_at,assessedGoal:evidence->valueAssessment->>goal,assessedContext:evidence->valueAssessment->projectContext,assessedRules:evidence->valueAssessment->>rules")
       .eq("agent_id", agent.agent_id).in("kind", ["repository_release", "official_publication"])
       .neq("relevance", "noise")
       .in("status", ["new", "seen"])
@@ -576,7 +576,11 @@ export async function runRefresh(input: {
     for (const row of (pending ?? []) as Array<Record<string, any>>) {
       const assessedGoal = typeof row.assessedGoal === "string" ? row.assessedGoal : null;
       const assessedContext = Array.isArray(row.assessedContext) ? row.assessedContext as string[] : null;
-      if (assessedGoal === goal && readAgainst(assessedContext, projectContext)) continue;
+      const assessedRules = Number(row.assessedRules);
+      if (readingStands(
+        { goal: assessedGoal, context: assessedContext, rules: Number.isFinite(assessedRules) ? assessedRules : null },
+        { goal, context: projectContext, rules: READING_RULES },
+      )) continue;
       const relevance = (row.relevance ?? "low") as NovaRelevance;
       let evidence: Record<string, any> | null = null;
       candidates.push({
@@ -1460,8 +1464,10 @@ export async function researchPublicSources(input: { publicId: string; ownerSecr
   /* A fresh reading of the same event under the same goal is reused -- unless
      the owner has since said something different about where the work is, in
      which case it is a reading of a project that no longer exists. */
-  if (current?.goal === agent.goal && readAgainst(current.projectContext, projectContext)
-    && Date.now() - Date.parse(current.generatedAt) < 24 * 3_600_000) return current;
+  if (current && readingStands(
+    { goal: current.goal, context: current.projectContext ?? null, rules: current.rules ?? null },
+    { goal: agent.goal, context: projectContext, rules: READING_RULES },
+  ) && Date.now() - Date.parse(current.generatedAt) < 24 * 3_600_000) return current;
   const subject = signal.evidence.subject as Record<string, unknown> | undefined;
   const material = (signal.evidence.publicMaterial ?? subject?.publicMaterial) as PublicMaterial | undefined;
   if (!material?.text || !material.url) throw new NovaError("No readable public material is stored for this event. Open the original source or look again later.", "source_unavailable");

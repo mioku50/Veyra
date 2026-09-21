@@ -9,6 +9,7 @@ import {
   normalizeStatements,
   proposedContext,
   readAgainst,
+  readingStands,
   splitStatements,
   type NovaProjectContext,
 } from "../lib/nova/project-context.ts";
@@ -114,6 +115,17 @@ assert.equal(readAgainst(["a"], ["a", "b"]), false);
 assert.equal(readAgainst(undefined, []), true, "An assessment written before context existed matches an empty context and nothing else");
 assert.equal(readAgainst(undefined, ["a"]), false);
 
+/* Three things retire a stored reading, and the edition of the rules is the
+   one that is easy to forget: changing the instructions rewrites what every
+   later reading would say and nothing about the stored ones. */
+const current = { goal, context: ["a", "b"], rules: 2 };
+assert.equal(readingStands({ goal, context: ["a", "b"], rules: 2 }, current), true);
+assert.equal(readingStands({ goal: "another goal", context: ["a", "b"], rules: 2 }, current), false);
+assert.equal(readingStands({ goal, context: ["a"], rules: 2 }, current), false);
+assert.equal(readingStands({ goal, context: ["a", "b"], rules: 1 }, current), false);
+assert.equal(readingStands({ goal, context: ["a", "b"], rules: null }, current), false, "A reading from before editions were recorded is reconsidered");
+assert.equal(readingStands({ goal: null, context: null, rules: null }, { ...current, context: [] }), false);
+
 /* Real input from the first owner to use the panel: four facts typed into one
    row. It reads the same to the model and cannot be corrected a line at a
    time, which is what keeps the list from going stale. */
@@ -129,4 +141,4 @@ assert.deepEqual(splitStatements("One fact and nothing else."), [], "A single fa
 assert.deepEqual(splitStatements("Version 1.2 shipped."), [], "A decimal point does not end a sentence");
 assert(splitStatements(blob).every(part => part.length <= PROJECT_CONTEXT_LIMITS.statement));
 
-console.log("PASS: project context — one fact per line, owner-confirmed statements only in the prompt, a reading that says what changed against work already done, an inference Nova cannot confirm for itself, a reading reconsidered when the state it was judged against changes, and a pasted blob offered back as the facts it is.");
+console.log("PASS: project context — one fact per line, owner-confirmed statements only in the prompt, a reading that says what changed against work already done, an inference Nova cannot confirm for itself, a reading reconsidered when the state it was judged against changes, a pasted blob offered back as the facts it is, and a reading retired when the rules that produced it change.");

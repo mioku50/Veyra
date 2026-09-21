@@ -148,3 +148,20 @@ export function splitStatements(value: string): string[] {
     .map((part) => part.slice(0, PROJECT_CONTEXT_LIMITS.statement));
   return parts.length > 1 ? parts.slice(0, PROJECT_CONTEXT_LIMITS.confirmed) : [];
 }
+
+/**
+ * Whether a stored reading still stands.
+ *
+ * Three things can retire one: the owner's goal, the project state it was
+ * judged against, and the edition of the rules that produced it. The third is
+ * the one that is easy to forget -- an instruction change rewrites what every
+ * later reading would say and nothing about the stored ones, so they go on
+ * asserting a judgement the current rules would not make. A reading with no
+ * recorded edition predates the first bump and is reconsidered.
+ */
+export function readingStands(
+  stored: { goal: string | null; context: string[] | null; rules: number | null },
+  current: { goal: string; context: string[]; rules: number },
+): boolean {
+  return stored.goal === current.goal && stored.rules === current.rules && readAgainst(stored.context, current.context);
+}

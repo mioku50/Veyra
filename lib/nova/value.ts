@@ -31,6 +31,13 @@ export type ValueAssessment = {
    *  question for the owner; Nova cannot confirm its own inference, because a
    *  confirmed one would be judged as fact by every later reading. */
   contextProposal?: { statement: string; why: string } | null;
+  /** Which edition of the reading rules produced this.
+   *
+   *  A stored judgement is only as good as the instructions behind it, and
+   *  changing those instructions silently leaves every earlier card asserting
+   *  something the current rules would not say. Bumping this makes the next
+   *  passes reconsider them, a budget at a time. */
+  rules?: number;
   sources: PublicMaterial[];
   sourcesUnavailable?: string[];
   generatedAt: string;
