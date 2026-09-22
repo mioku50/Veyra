@@ -1146,6 +1146,14 @@ export function NovaClient({ view = "today" }: { view?: NovaView } = {}) {
   /* Across an absence, the blind spots are the union of every pass's. The last
      pass reading GitHub fine does not undo the four before it that could not. */
   const blind = away?.sourcesUnavailable ?? brief.lastRefresh?.sourcesUnavailable ?? [];
+  /* These carry a provider diagnostic now -- a WAF once answered with an HTML
+     page, newlines and all, and it went straight into this sentence. The whole
+     string stays in the refresh row where it is worth reading; the screen gets
+     one line of it. */
+  const readable = blind.map((note) => {
+    const flat = note.replace(/\s+/g, " ").trim();
+    return flat.length > 110 ? `${flat.slice(0, 109)}…` : flat;
+  });
   /* Everything Nova is holding right now, by the reason it is held. Scoped to
      the signals behind this brief rather than to one pass, which is why it is
      not folded into the refresh counters beside it. */
@@ -1210,10 +1218,15 @@ export function NovaClient({ view = "today" }: { view?: NovaView } = {}) {
           there is a gap in what follows.
         </Notice>
       ) : null}
-      {blind.length > 0 && attention.length > 0 ? (
+      {/* Also when nothing made it to Today. An empty brief caused by every
+          reading failing looks exactly like an empty brief caused by a quiet
+          day, and the difference is the whole message. */}
+      {readable.length > 0 ? (
         <Notice tone="warn">
-          Could not reach {blind.join(" and ")} this time. What is below is real, but it is not
-          everything.
+          Could not reach {readable.join(" and ")} this time.{" "}
+          {attention.length > 0
+            ? "What is below is real, but it is not everything."
+            : "Nothing reached Today, and this is why -- not a quiet day."}
         </Notice>
       ) : null}
 
@@ -1322,7 +1335,7 @@ export function NovaClient({ view = "today" }: { view?: NovaView } = {}) {
             <Row label="In today’s brief" value={String(attention.length)} />
             <Row label="Held back" value={String(withheldTotal)} />
             {blind.length > 0 ? (
-              <Row label="Could not read" value={blind.join(", ")} tone="warn" />
+              <Row label="Could not read" value={readable.join(", ")} tone="warn" />
             ) : null}
           </dl>
           {withheldTotal > 0 ? (

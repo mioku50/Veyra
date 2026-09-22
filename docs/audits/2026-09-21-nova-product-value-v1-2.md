@@ -313,3 +313,57 @@ Not verified: cost. AgentRouter publishes no pricing in its model catalogue and
 this note does not estimate one. Nor is there evidence yet from a scheduled
 tick in production, or from the owner's own judgement of whether the proposed
 work is worth doing. That is still gate V.
+
+## The model change was reverted on 2026-09-22: a firewall, not a model
+
+Every reading from production failed for sixteen hours, across four passes and
+one owner-triggered reassessment. Nothing was written by the new model, ever.
+
+The cause, once the client stopped discarding the evidence:
+
+```
+Nova public-source analysis (invalid_response: body was not JSON (<!doctype html>
+<meta charset="UTF-8">
+<meta name="aliyun_wa…))
+```
+
+AgentRouter sits behind Alibaba Cloud's web application firewall, which answers
+requests from Vercel's egress addresses with an HTML challenge page **and HTTP
+200**. From a laptop the same call, the same key, the same headers and the same
+prompt succeed; from a datacenter address they do not. The key was not
+exhausted — a direct call during the outage returned a valid answer in 2.1s.
+
+`LLM_READING_*` has been removed from production, so the reading call resolves
+to the base configuration again, which is the fallback that exists for exactly
+this and is pinned by a test in `scripts/llm-provider-tests.mts`. Nova reads
+again on ministral-8b, with the empty "what you already have" section the
+comparison documented.
+
+### Three failures of diagnosis, each mine, each fixed after it cost something
+
+1. **Six causes, one sentence.** The first failure said "could not produce a
+   source-supported analysis", which reads as the model having looked and
+   declined. It covered a provider not configured, a timeout, a rate limit, an
+   upstream refusal, an oversized answer and an ungrounded one.
+2. **The evidence was thrown away.** Having named `invalid_response`, the
+   client still discarded the body that would have said what it was. A router
+   refusing at 200 and a model with nothing to say are identical from the
+   client's side; only the body tells them apart.
+3. **The screen said nothing.** The unreachable-sources warning rendered only
+   when Today had cards. A brief empty because every reading failed looked
+   exactly like a brief empty because nothing happened — which is what the
+   owner saw twice, reporting "I see no difference". It now renders either way,
+   and says which of the two it is.
+
+A local reproduction that passes 6 of 6 is not evidence that a deployment
+works. Nothing here was caught by a test, a type or a gate; the only thing that
+found it was a diagnostic written after the fact and a live press.
+
+### What is still open
+
+deepseek-v4-flash is unreachable from this deployment, not unsuitable — the
+comparison stands. Getting it back needs one of: AgentRouter allowing Vercel's
+addresses through its firewall, the same model behind a provider that is not
+behind that firewall, or a request path that does not originate from a Vercel
+function. None of these is a code change in this repository, and none is
+attempted here.
