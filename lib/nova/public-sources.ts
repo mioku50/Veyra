@@ -93,6 +93,7 @@ export async function observePublications(input: { interests: string[]; now: Dat
   const selected = PUBLIC_FEEDS.filter(f => f.interests.some(i => interests.has(i)));
   const results = await Promise.all(selected.map(async feed => {
     const unavailable: string[] = [];
+    let unreadableArticles = 0;
     try {
       const body = await readPublicPage(feed.url, input.fetchImpl);
       let materials: PublicMaterial[];
@@ -102,10 +103,21 @@ export async function observePublications(input: { interests: string[]; now: Dat
         const urls = Array.from(new Set($("a[href]").toArray().map(a => publicationUrl($(a).attr("href") ?? "", feed.url))
           .filter((u): u is string => !!u && new URL(u).pathname.startsWith("/blog/") && !/\/blog\/(tag|category|author)\//.test(u)))).slice(0, 10);
         if (!urls.length) throw new Error("Publication index unavailable");
-        const reads = await Promise.allSettled(urls.map(async url => parsePublication(await readPublicPage(url, input.fetchImpl), url, input.now)));
-        materials = reads.flatMap(r => r.status === "fulfilled" && r.value ? [r.value] : [])
+        /* Three outcomes, not two. The index lists old posts, so a page that
+           parses to null is the ordinary case and counts as nothing at all. */
+        const reads = await Promise.all(urls.map(async url => {
+          let body: string;
+          try { body = await readPublicPage(url, input.fetchImpl); }
+          catch { return { kind: "unreachable" as const }; }
+          try {
+            const material = parsePublication(body, url, input.now);
+            return material ? { kind: "material" as const, material } : { kind: "not-recent" as const };
+          } catch { return { kind: "unreadable" as const }; }
+        }));
+        materials = reads.flatMap(r => r.kind === "material" ? [r.material] : [])
           .sort((a,b) => b.publishedAt!.localeCompare(a.publishedAt!));
-        if (reads.some(r => r.status === "rejected")) unavailable.push(`${feed.label} (some articles unavailable)`);
+        if (reads.some(r => r.kind === "unreachable")) unavailable.push(`${feed.label} (some articles unavailable)`);
+        unreadableArticles = reads.filter(r => r.kind === "unreadable").length;
       }
       const interest = input.interests.find(i => feed.interests.some(f => f === i.toLowerCase()))!;
       const observations: SourceObservation[] = materials.map(material => ({
@@ -113,10 +125,12 @@ export async function observePublications(input: { interests: string[]; now: Dat
         digest: { kind: "official_publication", material }, catalogUpdatedAt: material.publishedAt,
         subjectText: `${material.title} ${material.text}`, context: { url: material.url, publicMaterial: material },
       }));
-      return { observations, unavailable };
-    } catch { return { observations: [], unavailable: [feed.label] }; }
+      return { observations, unavailable, unreadable: unreadableArticles ? { [feed.label]: unreadableArticles } : {} };
+    } catch { return { observations: [], unavailable: [feed.label], unreadable: {} }; }
   }));
-  return { observations: results.flatMap(r => r.observations), unavailable: results.flatMap(r => r.unavailable) };
+  const unreadable: Record<string, number> = {};
+  for (const result of results) for (const [label, count] of Object.entries(result.unreadable)) unreadable[label] = (unreadable[label] ?? 0) + count;
+  return { observations: results.flatMap(r => r.observations), unavailable: results.flatMap(r => r.unavailable), unreadable };
 }
 
 /** A bounded second look at first-party references. Failure stays visible and

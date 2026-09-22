@@ -401,7 +401,7 @@ export async function runScheduledTick(input?: {
     }
   }
 
-  return {
+  const outcome: TickOutcome = {
     wentDormant,
     due: due.length,
     refreshed,
@@ -411,4 +411,46 @@ export async function runScheduledTick(input?: {
     stoppedEarly,
     durationMs: Date.now() - started,
   };
+  await recordTick(outcome, new Date(started));
+  return outcome;
+}
+
+/**
+ * Keep the counts after the tick that produced them.
+ *
+ * These numbers were already computed, returned in the cron response and
+ * written to the scheduler log, and a week later they were gone. Closing the
+ * D0 PREVIEW epoch needed the unpriced reasons across the epoch and there was
+ * no way to reconstruct them, so a required capture item was recorded as
+ * unanswerable. One insert fixes that for the next epoch.
+ *
+ * Never throws. A tick that did its work and could not write its own
+ * bookkeeping has still done its work, and failing here would turn a metrics
+ * outage into a coverage outage.
+ */
+async function recordTick(outcome: TickOutcome, startedAt: Date): Promise<void> {
+  try {
+    await db().from("nova_ticks").insert({
+      started_at: startedAt.toISOString(),
+      finished_at: new Date().toISOString(),
+      duration_ms: outcome.durationMs,
+      due: outcome.due,
+      refreshed: outcome.refreshed,
+      failed: outcome.failed,
+      went_dormant: outcome.wentDormant,
+      signals_kept: outcome.signalsKept,
+      stopped_early: outcome.stoppedEarly,
+      shadow_passes: outcome.shadowPasses,
+      shadow_failed: outcome.shadowFailed,
+      shadow_skipped_for_time: outcome.shadowSkippedForTime,
+      shadow_considered: outcome.shadowConsidered,
+      shadow_skipped: outcome.shadowSkipped,
+      shadow_deadline_hits: outcome.shadowDeadlineHits,
+      shadow_decided: outcome.shadowDecided,
+      shadow_would_allow: outcome.shadowWouldAllow,
+      shadow_would_spend_usdc: outcome.shadowWouldSpendUsdc.toFixed(6),
+      shadow_blocked: outcome.shadowBlocked,
+      shadow_unpriced: outcome.shadowUnpriced,
+    });
+  } catch { /* Bookkeeping is not the work. */ }
 }

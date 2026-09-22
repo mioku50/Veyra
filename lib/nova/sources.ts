@@ -43,6 +43,18 @@ export type SourceResult = {
   observations: SourceObservation[];
   /** Human-readable names of sources that could not be read this time. */
   unavailable: string[];
+  /**
+   * Fetched, and then not understood: {feed label: article count}.
+   *
+   * A separate number from `unavailable` because it calls for a separate
+   * response. A host that does not answer is a coverage failure and the owner
+   * is told so; an article whose date is not where the parser looks is a
+   * parser that has fallen behind one publisher's markup, and telling the
+   * owner their source is unreachable is simply false. LangChain
+   * announcements reported the latter as the former on all twelve passes of
+   * the D0 epoch, from one undated article in ten.
+   */
+  unreadable?: Record<string, number>;
 };
 
 /* ---- Circle's x402 catalog ---- */

@@ -453,6 +453,15 @@ export async function runRefresh(input: {
   ]);
   const observations = [...publications.observations, ...repositories.observations, ...catalog.observations];
   const sourcesUnavailable = [...catalog.unavailable, ...repositories.unavailable, ...publications.unavailable];
+  /* Fetched and not understood. Counted, and deliberately not added to the
+     line above: the owner is told a source could not be reached, and this is
+     not that. */
+  const articlesUnreadable = { ...catalog.unreadable, ...repositories.unreadable, ...publications.unreadable };
+  /* Readings attempted against the model, and what came back when nothing
+     did. A pass that lost three to a rate limit and a pass that lost three to
+     ungrounded answers are different problems; before this they were one
+     sentence each, in prose, in a column nobody could count. */
+  const readingFailures: Record<string, number> = {};
 
   const { data: existingRows, error: existingError } = await db()
     .from("nova_subjects")
@@ -667,7 +676,12 @@ export async function runRefresh(input: {
       /* Which reading failed and why, rather than one line that says a
          reading failed. A pass that lost three to a rate limit and a pass
          that lost three to ungrounded answers are different problems. */
-      const note = `Nova public-source analysis (${readingFailure ?? "upstream_error"}${readingDetail ? `: ${readingDetail}` : ""})`;
+      const cause: string = readingFailure ?? "upstream_error";
+      readingFailures[cause] = (readingFailures[cause] ?? 0) + 1;
+      /* Still shown to the owner. A reading that produced nothing is the one
+         failure they have to see -- sixteen hours of it once looked exactly
+         like a quiet day. */
+      const note = `Nova public-source analysis (${cause}${readingDetail ? `: ${readingDetail}` : ""})`;
       if (!sourcesUnavailable.includes(note)) sourcesUnavailable.push(note);
       continue;
     }
@@ -713,6 +727,9 @@ export async function runRefresh(input: {
       signals_kept: kept,
       signals_as_noise: asNoise,
       sources_unavailable: sourcesUnavailable,
+      articles_unreadable: articlesUnreadable,
+      readings_attempted: assessments,
+      reading_failures: readingFailures,
       duration_ms: Date.now() - started,
       started_at: startedAt,
       finished_at: new Date().toISOString(),
