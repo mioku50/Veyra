@@ -13,14 +13,14 @@ import {
   readingStands,
   type NovaProjectContext,
 } from "./project-context.ts";
-import { READING_FAILURE_DETAIL, READING_RULES, assessPublicMaterial, type ReadingFailure } from "./free-research.ts";
+import { READING_FAILURE_DETAIL, READING_RULES, assessPublicMaterial, readingCoverage, type ReadingFailure } from "./free-research.ts";
 import { PUBLIC_FEEDS, observePublications, publicContext } from "./public-sources.ts";
 import { noteFrom, reasonFor, type NovaLearned } from "./verdict.ts";
 import { coverageOf, missUrl, publicationVariants, type NovaMiss } from "./misses.ts";
 import { createHash, randomBytes } from "node:crypto";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { getServerSupabaseConfig } from "../supabase/server-env.ts";
-import { assembleBrief, greeting, quietSummary } from "./brief.ts";
+import { assembleBrief, endpointOf, greeting, quietSummary, visitBoundary } from "./brief.ts";
 import { MAX_INTERESTS, interestKey, keywordsForInterests, normalizeInterests } from "./interests.ts";
 import { changesForSubject } from "./observation.ts";
 import { categoryPhraseFor, dismissedTopicFrom, scoreFloorFor, scoreRelevance } from "./relevance.ts";
@@ -118,6 +118,8 @@ export type AgentRow = {
   arc_identity_registered_at: string | null;
   last_brief_at: string | null;
   last_opened_at: string | null;
+  /** The end of the owner's previous visit: where "new" starts. */
+  seen_through: string | null;
   dormant_since: string | null;
   created_at: string;
 };
@@ -147,7 +149,7 @@ function toAgent(row: AgentRow): NovaAgent {
 }
 
 const AGENT_COLUMNS =
-  "agent_id, public_id, name, interests, goal, owner_wallet, arc_identity_registry, arc_identity_agent_id, arc_identity_owner, arc_identity_chain_id, arc_identity_tx, arc_identity_registered_at, last_brief_at, last_opened_at, dormant_since, created_at";
+  "agent_id, public_id, name, interests, goal, owner_wallet, arc_identity_registry, arc_identity_agent_id, arc_identity_owner, arc_identity_chain_id, arc_identity_tx, arc_identity_registered_at, last_brief_at, last_opened_at, seen_through, dormant_since, created_at";
 
 /* ---- creating ---- */
 
@@ -478,6 +480,21 @@ export async function runRefresh(input: {
   const preferences = await loadPreferences(agent.agent_id);
   const keywords = keywordsForInterests(agent.interests);
 
+  /* Endpoints already listed on a card this month. A seller that issues a new
+     payee address on every catalogue read comes back as a new subject on every
+     pass, and a new subject's first sighting is an "available" card: the same
+     endpoint twenty-four times in eight days. The subject is still recorded;
+     the card is not written again. */
+  const { data: listedRows } = await db().from("nova_signals")
+    .select("resource:evidence->subject->>resource, method:evidence->subject->>method, network:evidence->subject->>network, funding:evidence->subject->>funding")
+    .eq("agent_id", agent.agent_id)
+    .eq("kind", "capability_available")
+    .gte("observed_at", new Date(now.getTime() - 30 * 86_400_000).toISOString())
+    .limit(500);
+  const listed = new Set(((listedRows ?? []) as Array<Record<string, unknown>>)
+    .map((row) => endpointOf({ evidence: { subject: row } }))
+    .filter((endpoint): endpoint is string => Boolean(endpoint)));
+
   const signalRows: Array<Record<string, unknown>> = [];
   /** One observed change, scored, and waiting to be written. The row is held
    *  rather than written immediately because its reading -- if it earns one --
@@ -516,6 +533,11 @@ export async function runRefresh(input: {
     });
 
     for (const change of changes) {
+      if (change.kind === "capability_available") {
+        const endpoint = endpointOf({ evidence: { subject: observation.context } });
+        if (endpoint && listed.has(endpoint)) continue;
+        if (endpoint) listed.add(endpoint);
+      }
       const material = (observation.context.publicMaterial as PublicMaterial | undefined) ?? null;
       const verdict = scoreRelevance({
         change,
@@ -994,6 +1016,39 @@ async function proposeProjectContext(agentId: string, proposals: Array<{ stateme
 
 /* ---- reading ---- */
 
+/**
+ * A signal as the page receives it: without the article text it was read from.
+ *
+ * The page never shows that text. A card shows the headline, the reading and
+ * links to the sources, and the text was 310 KiB of a 770 KiB brief -- up to
+ * three copies of each article read, on every load, on a phone. How much of
+ * the article a reading saw is worked out here first, while the text is still
+ * present, for readings stored before they recorded it themselves.
+ */
+export function forThePage(signal: NovaSignal): NovaSignal {
+  const evidence = signal.evidence ?? {};
+  const blank = (material: unknown) =>
+    material && typeof material === "object" ? { ...(material as Record<string, unknown>), text: "" } : material;
+  const subject = evidence.subject as Record<string, unknown> | undefined;
+  const assessment = assessmentOf({ evidence });
+  return {
+    ...signal,
+    evidence: {
+      ...evidence,
+      ...(evidence.publicMaterial ? { publicMaterial: blank(evidence.publicMaterial) } : {}),
+      ...(subject?.publicMaterial ? { subject: { ...subject, publicMaterial: blank(subject.publicMaterial) } } : {}),
+      ...(assessment ? {
+        valueAssessment: {
+          ...assessment,
+          coverage: assessment.coverage
+            ?? (assessment.sources[0]?.text ? readingCoverage(assessment.sources[0]) : undefined),
+          sources: assessment.sources.map((source) => ({ ...source, text: "" })),
+        },
+      } : {}),
+    },
+  };
+}
+
 export async function loadBrief(input: {
   publicId: string;
   ownerSecret: string;
@@ -1003,8 +1058,14 @@ export async function loadBrief(input: {
 
   /* Read before the visit is recorded. Stamping last_opened_at first would
      close the window this query measures and "while you were away" would be
-     empty on every visit -- correct-looking, always wrong. */
-  const awaySince = agent.last_opened_at ?? agent.created_at;
+     empty on every visit -- correct-looking, always wrong.
+
+     And measured from the end of the previous visit, not from the last load:
+     the brief reloads after every button, and "while you were away" used to
+     vanish the first time one was pressed. */
+  const openedAt = new Date();
+  const visit = visitBoundary({ lastOpenedAt: agent.last_opened_at, seenThrough: agent.seen_through, now: openedAt });
+  const awaySince = visit.seenThrough ?? agent.last_opened_at ?? agent.created_at;
 
   const [signalResult, refreshResult, awayResult, memoryResult, researchResult, projectContext] = await Promise.all([
     db().from("nova_signals")
@@ -1055,7 +1116,7 @@ export async function loadBrief(input: {
     loadProjectContext(agent.agent_id),
   ]);
 
-  const signals: NovaSignal[] = ((signalResult.data ?? []) as Array<Record<string, any>>).map((row) => ({
+  const signals: NovaSignal[] = ((signalResult.data ?? []) as Array<Record<string, any>>).map((row) => forThePage({
     signalId: row.signal_id,
     subjectId: row.subject_id,
     subjectLabel: row.nova_subjects?.label ?? null,
@@ -1126,12 +1187,17 @@ export async function loadBrief(input: {
      "while you were away", not a lost brief. */
   await db()
     .from("nova_agents")
-    .update({ last_opened_at: new Date().toISOString(), dormant_since: null })
+    .update({
+      last_opened_at: openedAt.toISOString(),
+      dormant_since: null,
+      ...(visit.newVisit ? { seen_through: visit.seenThrough } : {}),
+    })
     .eq("agent_id", agent.agent_id);
 
   return {
     agent: toAgent(agent),
     greeting: greeting(input.hourOfDay),
+    seenThrough: visit.seenThrough,
     worthAttention,
     noise,
     watchlist: overflow,

@@ -340,6 +340,10 @@ export type NovaInvestigation = {
 export type NovaBrief = {
   agent: NovaAgent;
   greeting: string;
+  /** The end of the owner's previous visit. A card found after it is new to
+   *  them, and a reading written after it is one they have not seen. Null
+   *  through an agent's first visit, when nothing is marked. */
+  seenThrough: string | null;
   worthAttention: NovaSignal[];
   noise: NovaSignal[];
   /** Relevant, over the brief's cap, and reachable under My Agent. The brief

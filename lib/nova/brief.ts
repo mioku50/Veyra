@@ -27,6 +27,47 @@ export function isFinding(kind: NovaSignalKind): boolean {
   return FINDING_KINDS.has(kind);
 }
 
+/**
+ * What an x402 listing is, apart from whom it pays.
+ *
+ * A subject is keyed by resource, network and payee together, and at least
+ * one seller issues a new payee address on every catalogue read. Each read
+ * then became a new subject and a fresh "available" card: Parallel search,
+ * twenty-four times in eight days on one owner's agent, identical down to the
+ * price. The endpoint -- what is called, how, on which chain, from which
+ * balance -- is what anybody would recognise as the same thing.
+ */
+export function endpointOf(signal: { evidence?: Record<string, unknown> }): string | null {
+  const subject = signal.evidence?.subject as Record<string, unknown> | undefined;
+  const resource = subject?.resource;
+  if (typeof resource !== "string" || !resource) return null;
+  return [resource, subject?.method, subject?.network, subject?.funding].map(part => String(part ?? "")).join(" ");
+}
+
+/**
+ * Where "new since your last visit" starts.
+ *
+ * A visit is a run of opens with no gap longer than {@link VISIT_GAP_MS}. The
+ * brief is loaded again after a refresh, a reading or a goal change; if "new"
+ * meant "since the last load", every mark would be gone the first time the
+ * owner pressed a button. So the boundary moves only when a visit begins, and
+ * it moves to the last moment of the visit before.
+ *
+ * Null through an agent's first visit. Everything is new then, which is the
+ * same as nothing being marked.
+ */
+export const VISIT_GAP_MS = 30 * 60_000;
+
+export function visitBoundary(input: { lastOpenedAt: string | null; seenThrough: string | null; now: Date }): {
+  seenThrough: string | null;
+  newVisit: boolean;
+} {
+  const last = input.lastOpenedAt ? Date.parse(input.lastOpenedAt) : Number.NaN;
+  return !Number.isFinite(last) || input.now.getTime() - last > VISIT_GAP_MS
+    ? { seenThrough: input.lastOpenedAt, newVisit: true }
+    : { seenThrough: input.seenThrough, newVisit: false };
+}
+
 export type BriefCandidate = {
   kind: NovaSignalKind;
   relevance: NovaRelevance;
@@ -52,11 +93,13 @@ export type AssembledBrief<T extends BriefCandidate> = {
   overflow: T[];
   /** The same rows again, grouped by why they were held.
    *
-   *  `noise` here is the bucket above and every other bucket together is
-   *  `overflow`. They are separated because a single "held back" number hides
-   *  which filter did the work: the goal-significance gate now decides most of
-   *  a brief, and while only relevance was counted, a day that filtered
-   *  twenty-one things could report zero. */
+   *  `noise` here is the bucket above, `duplicate` is listed nowhere else, and
+   *  every other bucket together is `overflow`. They are separated because a
+   *  single "held back" number hides which filter did the work: the
+   *  goal-significance gate now decides most of a brief, and while only
+   *  relevance was counted, a day that filtered twenty-one things could report
+   *  zero. A duplicate is counted once, here, and not listed a second time:
+   *  the same card twice in the watchlist is the defect the bucket names. */
   withheld: Record<NovaWithholdReason, T[]>;
 };
 
@@ -67,12 +110,23 @@ export function assembleBrief<T extends BriefCandidate>(
   const attentionLimit = limits.attention ?? BRIEF_LIMITS.attention;
   const findingLimit = limits.findings ?? BRIEF_LIMITS.findings;
 
-  const ordered = orderByRelevance(signals);
-  const noise = ordered.filter((signal) => signal.relevance === "noise");
-  const eligible = ordered.filter((signal) => signal.relevance !== "noise");
   const withheld = Object.fromEntries(
     NOVA_WITHHOLD_REASONS.map((reason) => [reason, [] as T[]]),
   ) as Record<NovaWithholdReason, T[]>;
+  /* One listing per endpoint, before anything else sorts them: a repeat of a
+     listing is a duplicate whatever its relevance, and ordering keeps the
+     strongest and newest of each. */
+  const listed = new Set<string>();
+  const ordered = orderByRelevance(signals).filter((signal) => {
+    if (signal.kind !== "capability_available") return true;
+    const endpoint = endpointOf(signal);
+    if (!endpoint) return true;
+    if (listed.has(endpoint)) { withheld.duplicate.push(signal); return false; }
+    listed.add(endpoint);
+    return true;
+  });
+  const noise = ordered.filter((signal) => signal.relevance === "noise");
+  const eligible = ordered.filter((signal) => signal.relevance !== "noise");
   withheld.noise = noise;
   const seen = new Set<string>();
   const qualified = eligible.filter(signal => {
@@ -114,7 +168,8 @@ export function assembleBrief<T extends BriefCandidate>(
   }
 
   const shown = new Set(worthAttention);
-  const overflow = eligible.filter((signal) => !shown.has(signal));
+  const duplicates = new Set(withheld.duplicate);
+  const overflow = eligible.filter((signal) => !shown.has(signal) && !duplicates.has(signal));
   withheld.over_cap = qualified.filter((signal) => !shown.has(signal));
 
   return { worthAttention, noise, overflow, withheld };

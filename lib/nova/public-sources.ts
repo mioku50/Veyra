@@ -12,7 +12,7 @@ export const PUBLIC_FEEDS = [
 const ORIGINS = new Set([...PUBLIC_FEEDS.map(f => new URL(f.url).origin), "https://docs.arc.io", "https://developers.circle.com"]);
 const REFERENCE_DOCS = [
   { url: "https://docs.arc.io/arc/references/connect-to-arc.md", title: "Arc network connection reference" },
-  { url: "https://developers.circle.com/gateway/nanopayments/supported-networks.md", title: "Circle Nanopayments supported networks" },
+  { url: "https://developers.circle.com/gateway-nanopayments/supported-networks.md", title: "Circle Nanopayments supported networks" },
 ];
 
 export function publicationUrl(value: string, base: string): string | null {
@@ -25,10 +25,28 @@ export function publicationUrl(value: string, base: string): string | null {
   } catch { return null; }
 }
 
-/** Fixed official hosts only, no auth, no redirects, bounded bytes and time. Never retries a 402 with payment. */
+/**
+ * Fixed official hosts only, no auth, bounded bytes and time. Never retries a
+ * 402 with payment.
+ *
+ * At most one redirect, and only within the same approved origin. Circle
+ * moved its Nanopayments reference from /gateway/nanopayments/ to
+ * /gateway-nanopayments/ and answered the old address with a 307. With every
+ * redirect refused, each reading after that lost the page and printed
+ * "coverage is incomplete" on the card, and nothing else noticed. A redirect
+ * to another origin, or a second one, is still a failure, and the time bound
+ * covers both requests together.
+ */
 export async function readPublicPage(url: string, fetchImpl = fetch): Promise<string> {
   if (!publicationUrl(url, url)) throw new Error("Unapproved public source");
-  const response = await fetchImpl(url, { redirect: "error", signal: AbortSignal.timeout(7000), headers: { Accept: "text/html,application/rss+xml,application/atom+xml,application/xml", "User-Agent": "Veyra-Nova/1.0" } });
+  const init: RequestInit = { redirect: "manual", signal: AbortSignal.timeout(7000), headers: { Accept: "text/html,application/rss+xml,application/atom+xml,application/xml", "User-Agent": "Veyra-Nova/1.0" } };
+  let response = await fetchImpl(url, init);
+  if (response.status >= 300 && response.status < 400) {
+    const moved = publicationUrl(response.headers.get("location") ?? "", url);
+    if (!moved) throw new Error("Public source moved off its approved site");
+    response = await fetchImpl(moved, init);
+    if (response.status >= 300 && response.status < 400) throw new Error("Public source redirected more than once");
+  }
   if (!response.ok || !response.body) throw new Error("Public source unavailable");
   if (Number(response.headers.get("content-length") ?? 0) > 1_500_000) throw new Error("Source too large");
   const reader = response.body.getReader(); const chunks: Uint8Array[] = []; let size = 0;
@@ -43,6 +61,26 @@ export async function readPublicPage(url: string, fetchImpl = fetch): Promise<st
   return Buffer.concat(chunks).toString("utf8");
 }
 const plain = (html: string) => load(html).text().replace(/\s+/g, " ").trim();
+
+/**
+ * How much of an article Nova keeps, in characters.
+ *
+ * It was 6,000, and half the articles on the owner's Today were cut there, so
+ * "how much of this article was read" had no honest denominator. What the
+ * model is given is still its first twenty-four sentences (see
+ * EXCERPT_SENTENCES); keeping more lets the card say how much more there was,
+ * and lets a later edition give it more without fetching everything again.
+ * The brief does not carry this text to the page.
+ */
+export const ARTICLE_TEXT_CAP = 12_000;
+
+/** The body of an article page: the longest article-like block. */
+function articleBody($: ReturnType<typeof load>): string {
+  $("script,style,nav,footer,header,form").remove();
+  return $("article, .w-richtext").toArray()
+    .map(node => $(node).text().replace(/\s+/g, " ").trim())
+    .sort((a, b) => b.length - a.length)[0] ?? "";
+}
 function recentDate(value: string, now: Date): string | null {
   const date = Date.parse(value); const age = now.getTime() - date;
   return Number.isFinite(date) && age >= 0 && age <= 21 * 86400_000 ? new Date(date).toISOString() : null;
@@ -64,10 +102,10 @@ export function parsePublication(html: string, url: string, now: Date): PublicMa
   const publishedAt = recentDate(rawDate, now);
   if (!publishedAt) return null;
   const title = $("h1").first().text().trim().slice(0, 160);
-  $("script,style,nav,footer,header,form").remove();
-  const text = $("article, .w-richtext").toArray().map(node => $(node).text().replace(/\s+/g, " ").trim()).sort((a,b) => b.length - a.length)[0]?.slice(0, 6000) ?? "";
+  const body = articleBody($);
+  const text = body.slice(0, ARTICLE_TEXT_CAP);
   if (!title || text.length < 80) throw new Error("Publication content unavailable");
-  return { id: url, title, url, text, publishedAt, fetchedAt: now.toISOString() };
+  return { id: url, title, url, text, publishedAt, fetchedAt: now.toISOString(), truncated: body.length > text.length };
 }
 
 export function parseFeed(xml: string, base: string, now: Date): PublicMaterial[] {
@@ -80,10 +118,11 @@ export function parseFeed(xml: string, base: string, now: Date): PublicMaterial[
     const url = publicationUrl(link.attr("href") || link.text(), base);
     const publishedAt = recentDate(item.find("pubDate,published,updated").first().text(), now);
     const title = plain(item.find("title").first().text()).slice(0, 160);
-    const text = plain(item.find("description,summary,content,content\\:encoded").first().text()).slice(0, 6000);
+    const body = plain(item.find("description,summary,content,content\\:encoded").first().text());
+    const text = body.slice(0, ARTICLE_TEXT_CAP);
     if (!url || !publishedAt || !title || text.length < 80) continue;
     if (items.some(s => s.url === url)) continue;
-    items.push({ id: url, title, url, text, publishedAt, fetchedAt: now.toISOString() });
+    items.push({ id: url, title, url, text, publishedAt, fetchedAt: now.toISOString(), truncated: body.length > text.length });
   }
   return items.sort((a,b) => b.publishedAt!.localeCompare(a.publishedAt!)).slice(0, 6);
 }

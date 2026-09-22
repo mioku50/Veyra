@@ -71,7 +71,45 @@ export type PublicMaterial = {
   text: string;
   publishedAt: string | null;
   fetchedAt: string;
+  /** The article was longer than what was kept. Absent on material stored
+   *  before this was recorded; see {@link wasCut}. */
+  truncated?: boolean;
 };
+
+/** Where material stored before `truncated` existed was cut: exactly at the
+ *  6,000 characters every article was then kept to. */
+export const LEGACY_TEXT_CAP = 6000;
+
+export function wasCut(material: Pick<PublicMaterial, "text" | "truncated">): boolean {
+  return material.truncated ?? material.text.length === LEGACY_TEXT_CAP;
+}
+
+/**
+ * How much of the event a reading saw.
+ *
+ * "If evidence is incomplete, say so." A reading is written from the
+ * sentences it was given, and a card that does not say how many of how many
+ * presents the opening of an article as the article.
+ */
+export type ReadingCoverage = {
+  /** Sentences of the event put in front of the model. */
+  sentencesRead: number;
+  /** Sentences in what Nova kept of the article. */
+  sentencesKept: number;
+  /** The article was longer than what Nova kept. */
+  cut: boolean;
+};
+
+export function coverageSentence(coverage: ReadingCoverage | null | undefined): string | null {
+  if (!coverage) return null;
+  const partial = coverage.sentencesRead < coverage.sentencesKept;
+  if (!partial && !coverage.cut) return "Read the whole article.";
+  if (!partial) return "Read everything Nova kept, which is the start of a longer article. The rest was not read.";
+  return coverage.cut
+    ? `Read the first ${coverage.sentencesRead} of ${coverage.sentencesKept} sentences Nova kept from a longer article. The rest was not read.`
+    : `Read the first ${coverage.sentencesRead} of ${coverage.sentencesKept} sentences. The rest was not read.`;
+}
+
 /**
  * What this event asks of the owner, written as work rather than as a subject.
  *
@@ -154,6 +192,9 @@ export type ValueAssessment = {
   rules?: number;
   sources: PublicMaterial[];
   sourcesUnavailable?: string[];
+  /** How much of the event this reading saw. Recorded by readings written
+   *  after it existed; the brief derives it for older ones from their text. */
+  coverage?: ReadingCoverage;
   generatedAt: string;
   writtenBy: string;
 };

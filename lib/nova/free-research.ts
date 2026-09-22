@@ -1,7 +1,7 @@
 /** Copyright 2026 Veyra. SPDX-License-Identifier: Apache-2.0 */
 import { generateOpenAiCompatibleText, resolveReadingLlmConfig } from "../llm/openai-compatible.ts";
 import type { LlmFailureReason } from "../llm/types.ts";
-import { READING_RULES, type PublicMaterial, type ValueAssessment, type ValueWorkPlan } from "./value.ts";
+import { READING_RULES, wasCut, type PublicMaterial, type ReadingCoverage, type ValueAssessment, type ValueWorkPlan } from "./value.ts";
 
 /** The edition of the rules written below. It is declared with the field that
  *  records it, because the page has to read it too; re-exported here so the
@@ -24,12 +24,34 @@ function unwrappedQuote(value: unknown): string {
 }
 const normalized = (v: string) => v.replace(/\s+/g, " ").trim();
 
+const sentencesOf = (text: string) => text.split(/(?<=[.!?])\s+(?=[A-ZА-Я0-9])/u)
+  .map(sentence => sentence.trim()).filter(sentence => sentence.length >= 25);
+
+/**
+ * How many sentences of each source the model is given: the first twenty-four.
+ *
+ * On the owner's Today that was 24 of 32 kept sentences of StableFX, 24 of 34
+ * of the Arc compatibility guide and 24 of 31 of sponsored transactions, each
+ * kept from a longer article. Giving the event whole is the obvious change and
+ * is not made here: it changes what every reading says, and it has not been
+ * measured on the model that writes them. What is made is the card saying how
+ * much was read, because until then a reading of an opening looked exactly
+ * like a reading of an article.
+ */
+export const EXCERPT_SENTENCES = 24;
+
 /** Give the model stable references to actual excerpts instead of asking it
  * to reproduce punctuation from memory. Unknown references are rejected. */
 export function sourceExcerpts(sources: PublicMaterial[]) {
-  return sources.flatMap((source, sourceIndex) => source.text.split(/(?<=[.!?])\s+(?=[A-ZА-Я0-9])/u)
-    .map(text => text.trim()).filter(text => text.length >= 25).slice(0, 24)
+  return sources.flatMap((source, sourceIndex) => sentencesOf(source.text)
+    .slice(0, EXCERPT_SENTENCES)
     .map((text, index) => ({ id: `s${sourceIndex + 1}.e${index + 1}`, sourceId: source.id, quote: text.slice(0, 500) })));
+}
+
+/** How much of the event a reading given `limit` sentences of it saw. */
+export function readingCoverage(event: PublicMaterial, limit: number = EXCERPT_SENTENCES): ReadingCoverage {
+  const sentencesKept = sentencesOf(event.text).length;
+  return { sentencesRead: Math.min(sentencesKept, limit), sentencesKept, cut: wasCut(event) };
 }
 
 /**
@@ -113,7 +135,8 @@ export function parseValueAssessment(text: string, input: { goal: string; source
     return { version: 1, goal: input.goal, significant: raw.significant, whatChanged, whyItMatters, citations,
       gap: plan ? gap : null, plan,
       projectContext, relativeToWork, contextProposal, rules: READING_RULES,
-      sources: input.sources, generatedAt: input.now.toISOString(), writtenBy: input.writtenBy };
+      sources: input.sources, coverage: readingCoverage(input.sources[0]),
+      generatedAt: input.now.toISOString(), writtenBy: input.writtenBy };
   } catch { return null; }
 }
 

@@ -5,7 +5,7 @@
 
 "use client";
 
-import { READING_RULES, assessmentOf, paidResearchReadiness, type ValueAssessment } from "@/lib/nova/value";
+import { READING_RULES, assessmentOf, coverageSentence, paidResearchReadiness, type ValueAssessment } from "@/lib/nova/value";
 import { formatUsdc } from "@/lib/execution/presentation";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { useCallback, useEffect, useState } from "react";
@@ -34,7 +34,7 @@ import {
   agentAccessState, arcIdentityState, arcViewBlurb, briefSummary, identityExplanation,
   identityHeadline, plain, purchaseStanding, purchaseSummary, transferWarning,
   autonomyStateClaim, previewOnlyWarning, shadowDeclineClaims, shadowNightClaim,
-  shadowRemainingClaim, shadowSpendClaim, shadowVerdictClaim,
+  shadowRemainingClaim, shadowSpendClaim, shadowVerdictClaim, publishedAtOf, sinceLastVisit,
   type ArcIdentityState, type Claim,
 } from "@/lib/nova/presentation";
 import { IDENTITY_REGISTER_ABI, NOVA_IDENTITY_REGISTRY } from "@/lib/nova/identity";
@@ -219,6 +219,30 @@ function timeAgo(iso: string): string {
   if (hours < 24) return `${hours}h ago`;
   const days = Math.round(hours / 24);
   return days === 1 ? "yesterday" : `${days}d ago`;
+}
+
+/** Both times a card has: when its source says the thing happened, and when
+ *  Nova found it. See publishedAtOf. */
+function dateLine(signal: NovaSignal): string {
+  const found = `found ${timeAgo(signal.observedAt)}`;
+  if (signal.kind !== "official_publication" && signal.kind !== "repository_release") return found;
+  const published = publishedAtOf(signal);
+  return published
+    ? `published ${new Date(published).toLocaleDateString(undefined, { month: "short", day: "numeric" })} · ${found}`
+    : `publication date unknown · ${found}`;
+}
+
+function SinceLastVisit({ signal, seenThrough }: { signal: NovaSignal; seenThrough: string | null }) {
+  const change = sinceLastVisit(signal, seenThrough);
+  if (!change) return null;
+  return (
+    <span
+      title={change === "new" ? "Found since your last visit" : "Its reading was written again since your last visit"}
+      className="rounded-md border border-accent/50 px-2 py-0.5 font-mono text-[11px] text-accent"
+    >
+      {change}
+    </span>
+  );
 }
 
 /** The start of an absence, read the way a person would say it rather than the
@@ -1312,8 +1336,9 @@ export function NovaClient({ view = "today" }: { view?: NovaView } = {}) {
                     pays on {signal.settlesOn}
                   </span>
                 ) : null}
+                <SinceLastVisit signal={signal} seenThrough={brief.seenThrough ?? null} />
                 <span className="ml-auto font-mono text-[11px] text-muted-foreground">
-                  {timeAgo(signal.observedAt)}
+                  {dateLine(signal)}
                 </span>
               </div>
 
@@ -1563,7 +1588,7 @@ export function NovaClient({ view = "today" }: { view?: NovaView } = {}) {
                 ) : (
                   <li key={signal.signalId} className="border-t border-border/40 pt-3 first:border-t-0 first:pt-0">
                     <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-                      <span className="text-sm text-foreground">{signal.headline}</span><time className="text-xs text-muted-foreground" dateTime={signal.observedAt}>{new Date(signal.observedAt).toLocaleString()}</time>
+                      <span className="text-sm text-foreground">{signal.headline}</span><SinceLastVisit signal={signal} seenThrough={brief.seenThrough ?? null} /><time className="text-xs text-muted-foreground" dateTime={signal.observedAt}>{dateLine(signal)}</time>
                       {signal.settlesOn ? (
                         <span className="font-mono text-[11px] text-muted-foreground">
                           pays on {signal.settlesOn}
@@ -2561,6 +2586,13 @@ const PLAN_RELATION: Record<string, string> = {
   supersedes: "Changes something you recorded as done:",
 };
 
+function ReadingCoverageLine({ coverage }: { coverage: ValueAssessment["coverage"] }) {
+  const sentence = coverageSentence(coverage);
+  if (!sentence) return null;
+  const whole = !coverage?.cut && coverage?.sentencesRead === coverage?.sentencesKept;
+  return <p className={`text-xs ${whole ? "text-muted-foreground" : "text-state-warn"}`}>{sentence}</p>;
+}
+
 /**
  * A stored reading, and how far it can still be trusted.
  *
@@ -2585,7 +2617,14 @@ function PublicReading({ signal, goal, context = [], unrefreshed = false }: {
   const againstOlderContext = !readAgainst(analysis.projectContext ?? null, context);
   const againstOlderRules = (analysis.rules ?? 0) !== READING_RULES;
   return <div className="mt-4 space-y-3 border-t pt-4 text-sm">
-    <p className="text-xs text-muted-foreground">Public-source analysis · no wallet charge · {analysis.writtenBy}</p>
+    <p className="text-xs text-muted-foreground">
+      Public-source analysis · no wallet charge · {analysis.writtenBy} · read {new Date(analysis.generatedAt).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
+      {safeUrl ? <> · <a href={safeUrl} target="_blank" rel="noreferrer" className="text-accent underline">Open original ↗</a></> : null}
+    </p>
+    {/* How much of the article the reading stands on. Said on every reading,
+        because a reading of an opening looks exactly like a reading of an
+        article, and it is only the second that the card claims to be. */}
+    <ReadingCoverageLine coverage={analysis.coverage} />
     {unrefreshed ? <p className="text-sm text-state-warn">Not re-read just now. What follows is the earlier reading, written {new Date(analysis.generatedAt).toLocaleString()}.</p> : null}
     {againstOlderContext || againstOlderRules ? <p className="text-xs text-state-warn">
       Written {againstOlderContext ? "before your project facts last changed" : "under an earlier edition of Nova’s reading rules"}. Reassess it for the project as it stands.

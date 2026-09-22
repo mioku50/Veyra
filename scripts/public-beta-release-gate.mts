@@ -223,6 +223,10 @@ runStep("Nova Feedback", () => {
   execSync("npm run nova-feedback:test", { cwd: root, stdio: "inherit" });
 });
 
+runStep("Nova Substance", () => {
+  execSync("npm run nova-substance:test", { cwd: root, stdio: "inherit" });
+});
+
 runStep("Nova Calibration Report", () => {
   execSync("npm run nova-calibration:test", { cwd: root, stdio: "inherit" });
 });

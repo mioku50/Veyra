@@ -91,12 +91,15 @@ const crowd = Array.from({ length: 6 }, (_, index) => ({ ...security, signalId: 
 const capped = assembleBrief(crowd, { goal });
 assert.equal(capped.worthAttention.length, 5);
 assert.equal(capped.withheld.over_cap.length, 1);
-/* Every bucket but noise is the watchlist, and nothing is counted twice: the
-   panel adds these up in front of a person. */
+/* Every bucket but noise and duplicate is the watchlist, and nothing is
+   counted twice: the panel adds these up in front of a person. A duplicate is
+   counted once, as held back, and listed nowhere -- the same card twice in
+   the watchlist is the defect the bucket names. */
 for (const sample of [brief, held, capped]) {
   const grouped = NOVA_WITHHOLD_REASONS.flatMap((reason) => sample.withheld[reason]);
   assert.equal(grouped.length, new Set(grouped).size);
-  assert.deepEqual(new Set(grouped), new Set([...sample.noise, ...sample.overflow]));
+  assert.deepEqual(new Set(grouped), new Set([...sample.noise, ...sample.overflow, ...sample.withheld.duplicate]));
+  assert.ok(sample.withheld.duplicate.every((signal) => !sample.overflow.includes(signal)));
   assert.equal(grouped.length + sample.worthAttention.length, new Set([...grouped, ...sample.worthAttention]).size);
 }
 

@@ -4,7 +4,8 @@
  */
 
 import type { NovaArcIdentity } from "./identity.ts";
-import type { NovaShadowView } from "./types.ts";
+import type { NovaShadowView, NovaSignal } from "./types.ts";
+import { assessmentOf } from "./value.ts";
 import type { ShadowSummary } from "./autonomy.ts";
 import type { NovaDerivedStanding } from "./standing.ts";
 
@@ -473,3 +474,35 @@ export function shadowVerdictClaim(
 /* Named here rather than imported, so this module stays free of anything that
    reaches a network or a database and can be exercised on its own. */
 const BRAND_NAME = "Veyra";
+
+/**
+ * When the thing itself happened, as its source says.
+ *
+ * A card used to carry one time, the moment Nova found it, and a guide
+ * published a week earlier read as that morning's news. On one owner's Today
+ * the Arc compatibility guide was published 14 September and found on the
+ * 21st; the Arc Portal launch was published on the 18th and found on the 21st.
+ */
+export function publishedAtOf(signal: Pick<NovaSignal, "evidence">): string | null {
+  const own = signal.evidence.publicMaterial as { publishedAt?: string | null } | undefined;
+  const subject = signal.evidence.subject as { publicMaterial?: { publishedAt?: string | null } } | undefined;
+  const value = own?.publishedAt ?? subject?.publicMaterial?.publishedAt ?? null;
+  return value && Number.isFinite(Date.parse(value)) ? value : null;
+}
+
+/**
+ * What changed about a card since the owner last looked: it arrived, or its
+ * reading was written again. "What's new relative to the previous brief" is
+ * the question, and before this the only answer was a count of passes.
+ */
+export function sinceLastVisit(
+  signal: Pick<NovaSignal, "evidence" | "observedAt">,
+  seenThrough: string | null,
+): "new" | "re-read" | null {
+  if (!seenThrough) return null;
+  const boundary = Date.parse(seenThrough);
+  if (!Number.isFinite(boundary)) return null;
+  if (Date.parse(signal.observedAt) > boundary) return "new";
+  const reading = assessmentOf(signal);
+  return reading && Date.parse(reading.generatedAt) > boundary ? "re-read" : null;
+}
