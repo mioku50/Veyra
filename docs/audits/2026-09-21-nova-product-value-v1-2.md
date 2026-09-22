@@ -367,3 +367,39 @@ addresses through its firewall, the same model behind a provider that is not
 behind that firewall, or a request path that does not originate from a Vercel
 function. None of these is a code change in this repository, and none is
 attempted here.
+
+## Settled on ministral-14b, 2026-09-22
+
+With AgentRouter unreachable, the question became what is available on the key
+that already works from this deployment. `mistral-small`, `mistral-medium` and
+`magistral-small` all answer 429 `Rate limit exceeded` on it — the account does
+not reach them. `ministral-14b-latest` answers.
+
+Measured against the production source set — the event plus the Arc and Circle
+reference pages, three sources rather than one. That matters: yesterday's
+25-run comparison used a single source and flattered the smaller model.
+
+| Subject, 4 runs each | ministral-14b |
+| --- | --- |
+| Arc Compatibility Guide | significant 4/4, cites 1–2 confirmed facts |
+| Sponsored Transactions on Arc | significant 4/4, cites 1 |
+| Arc Portal | significant 4/4, cites 1 |
+| cirBTC Is Now Live | significant 4/4 — the bar is lower than either other model |
+| Circle discontinuing Noble | ungrounded 4/4, rejected by the citation check |
+
+Confirmed facts cited: **12 of 12 usable runs**, against **0 of 14** for
+ministral-8b under the same conditions, where 8b also called the owner's main
+card significant only once in three.
+
+The trade was taken deliberately. 14b's defect is extra cards on Today —
+visible, capped at five, and correctable by the owner's own "not interesting".
+8b's defect is that it never uses what the owner said about their work, and
+nothing corrects that.
+
+Set as `LLM_READING_MODEL` alone; base URL, key and label fall back to the
+Mistral configuration the rewrite path already uses. No rules bump: every
+stored reading predates edition 5 and is queued for re-reading already.
+
+Still unverified: whether 14b holds up beyond these five subjects, what the
+extra cards do to the brief in practice, and whether the proposed work is worth
+doing. The last one is gate V and no model choice settles it.
