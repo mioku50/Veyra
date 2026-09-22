@@ -41,6 +41,8 @@ import { IDENTITY_REGISTER_ABI, NOVA_IDENTITY_REGISTRY } from "@/lib/nova/identi
 import { PREVIEW_MANDATE, type PreviewMandateTerms } from "@/lib/nova/autonomy-mandate";
 import { NOVA_WITHHOLD_REASONS } from "@/lib/nova/types";
 import type { NovaBrief, NovaFeedback, NovaInvestigation, NovaMemory, NovaProjectContext, NovaSignal, NovaWithholdReason } from "@/lib/nova/types";
+import { NOTE_MAX, NOVA_REASONS, REASON_LABEL, learnedSentence, type NovaLearned, type NovaReason } from "@/lib/nova/verdict";
+import { missUrl, type NovaMiss } from "@/lib/nova/misses";
 import type { NovaResearchProposal } from "@/lib/nova/research";
 import type { TermsChange } from "@/lib/nova/research-terms";
 import { useArcWallet } from "@/components/wallet/use-arc-wallet";
@@ -270,6 +272,9 @@ export function NovaClient({ view = "today" }: { view?: NovaView } = {}) {
      keep the item on screen -- hiding something you just called useful is the
      opposite of what the word means -- so the card has to show that it landed. */
   const [said, setSaid] = useState<Record<string, NovaFeedback>>({});
+  /* What each verdict taught and why it was given, from the server's answer:
+     the page says what was learned only once it has been. */
+  const [verdicts, setVerdicts] = useState<Record<string, VerdictState>>({});
   /* One entry per item somebody asked Veyra to price. Keyed by signal rather
      than held as a single "current proposal" because pricing takes seconds
      against live endpoints, and a person who asks about two things should get
@@ -867,41 +872,68 @@ export function NovaClient({ view = "today" }: { view?: NovaView } = {}) {
   /**
    * Says one thing about one item.
    *
-   * The two families behave differently on purpose. Rejecting something removes
-   * it, because leaving it there after you said you did not want it is the
-   * product arguing. Approving something keeps it and marks the card, because
-   * hiding what you just called useful is the opposite of what the word means.
+   * The two families behave differently on purpose. Rejecting something folds
+   * the card down to its headline, because leaving it standing after you said
+   * you did not want it is the product arguing. Approving something keeps it
+   * and marks it, because hiding what you just called useful is the opposite of
+   * what the word means.
+   *
+   * A rejected card used to vanish, and a card that vanished could say neither
+   * what the press taught nor ask why. The fold does both, in every list the
+   * card is in, and is gone on the next load.
    */
   const say = async (signalId: string, feedback: NovaFeedback) => {
     if (!identity || !brief) return;
-    const removes = feedback === "not_interesting" || feedback === "ignore_kind";
 
     // Applied locally first: feedback that waits for a round trip feels like it
     // did not register, and the server is the record either way.
-    if (removes) {
-      /* From every list the card can be in. It used to leave Today only, so a
-         "Not useful" pressed in the watchlist changed nothing on the screen
-         and was pressed again -- and every press was another vote. */
-      setBrief({
-        ...brief,
-        worthAttention: brief.worthAttention.filter((signal) => signal.signalId !== signalId),
-        watchlist: brief.watchlist.filter((signal) => signal.signalId !== signalId),
-      });
-    } else {
-      setSaid((current) => ({ ...current, [signalId]: feedback }));
-    }
+    setSaid((current) => ({ ...current, [signalId]: feedback }));
 
+    try {
+      const answer = await call(`/api/nova/v1/agents/${identity.publicId}/signals/${signalId}`, {
+        method: "PATCH",
+        ownerSecret: identity.ownerSecret,
+        body: JSON.stringify({ feedback }),
+      }) as { learned?: NovaLearned | null; rated?: boolean };
+      setVerdicts((current) => ({
+        ...current,
+        [signalId]: { learned: answer.learned ?? null, rated: answer.rated === true, reason: null, note: null },
+      }));
+    } catch {
+      setSaid(current => { const next = { ...current }; delete next[signalId]; return next; });
+      setError("Could not save your feedback. Please try again.");
+    }
+  };
+
+  /* A reason or a note, sent with the verdict it belongs to -- the server
+     refuses one without the other. Each send states the whole rating, so a
+     reason cleared here is cleared there. */
+  const explain = async (signalId: string, change: { reason?: NovaReason | null; note?: string | null }) => {
+    const feedback = said[signalId];
+    const prior = verdicts[signalId];
+    if (!identity || !feedback || !prior) return;
+    const next = { ...prior, ...change };
+    setVerdicts((current) => ({ ...current, [signalId]: next }));
     try {
       await call(`/api/nova/v1/agents/${identity.publicId}/signals/${signalId}`, {
         method: "PATCH",
         ownerSecret: identity.ownerSecret,
-        body: JSON.stringify({ feedback }),
+        body: JSON.stringify({ feedback, reason: next.reason, note: next.note }),
       });
     } catch {
-      if (removes) setBrief(brief);
-      else setSaid(current => { const next = { ...current }; delete next[signalId]; return next; });
-      setError("Could not save your feedback. Please try again.");
+      setVerdicts((current) => ({ ...current, [signalId]: prior }));
+      setError("Could not save your reason. Please try again.");
     }
+  };
+
+  const reportMiss = async (url: string, note: string): Promise<NovaMiss> => {
+    if (!identity) throw new Error("No agent is open.");
+    const payload = await call(`/api/nova/v1/agents/${identity.publicId}/misses`, {
+      method: "POST",
+      ownerSecret: identity.ownerSecret,
+      body: JSON.stringify({ url, note }),
+    }) as { miss: NovaMiss };
+    return payload.miss;
   };
 
   if (stage === "loading") {
@@ -1254,6 +1286,15 @@ export function NovaClient({ view = "today" }: { view?: NovaView } = {}) {
       <div className="space-y-4">
         {attention.map((signal) => {
           const chip = RELEVANCE_CHIP[signal.relevance];
+          const verdict = said[signal.signalId];
+          if (verdict === "not_interesting" || verdict === "ignore_kind") {
+            return (
+              <Panel key={signal.signalId}>
+                <p className="text-sm text-muted-foreground">{signal.headline}</p>
+                <Verdict verdict={verdict} state={verdicts[signal.signalId]} onExplain={(change) => void explain(signal.signalId, change)} />
+              </Panel>
+            );
+          }
           return (
             <Panel key={signal.signalId}>
               <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
@@ -1293,11 +1334,14 @@ export function NovaClient({ view = "today" }: { view?: NovaView } = {}) {
                     acknowledgement, and a chip above it saying so would be the
                     screen telling a person something the screen is already
                     showing them. */}
-                {said[signal.signalId] === "useful" || said[signal.signalId] === "follow" ? (
-                  <span className="font-mono text-[11px] uppercase tracking-wider text-state-good">
-                    {said[signal.signalId] === "follow" ? "following" : "marked useful"}
-                  </span>
-                ) : said[signal.signalId] === "investigating" ? null : (
+                {verdict === "useful" || verdict === "follow" ? (
+                  <div className="w-full">
+                    <span className="font-mono text-[11px] uppercase tracking-wider text-state-good">
+                      {verdict === "follow" ? "following" : "marked useful"}
+                    </span>
+                    <Verdict verdict={verdict} state={verdicts[signal.signalId]} onExplain={(change) => void explain(signal.signalId, change)} />
+                  </div>
+                ) : verdict === "investigating" ? null : (
                   <>
                     <Verb onClick={() => say(signal.signalId, "useful")}>Useful</Verb>
                     <DropdownMenu><DropdownMenuTrigger asChild><button className="rounded-lg border px-3 py-2 text-sm" aria-label={`More actions for ${signal.headline}`}>More</button></DropdownMenuTrigger><DropdownMenuContent>
@@ -1396,6 +1440,7 @@ export function NovaClient({ view = "today" }: { view?: NovaView } = {}) {
               ) : null}
             </>
           ) : null}
+          <MissForm agentName={agentName} onReport={reportMiss} />
         </Panel>
       ) : null}
 
@@ -1510,7 +1555,12 @@ export function NovaClient({ view = "today" }: { view?: NovaView } = {}) {
                 of it.
               </p>
               <ul className="mt-4 space-y-3">
-                {groupWatchlist(brief.watchlist).map(([source, signals]) => <li key={source}><details className="rounded-lg border p-3"><summary className="cursor-pointer text-sm">{source} · {signals.length} {signals.length === 1 ? "update" : "updates"}</summary><ul className="mt-3 space-y-3">{signals.map((signal) => (
+                {groupWatchlist(brief.watchlist).map(([source, signals]) => <li key={source}><details className="rounded-lg border p-3"><summary className="cursor-pointer text-sm">{source} · {signals.length} {signals.length === 1 ? "update" : "updates"}</summary><ul className="mt-3 space-y-3">{signals.map((signal) => said[signal.signalId] === "not_interesting" ? (
+                  <li key={signal.signalId} className="border-t border-border/40 pt-3 first:border-t-0 first:pt-0">
+                    <span className="text-sm text-muted-foreground">{signal.headline}</span>
+                    <Verdict verdict="not_interesting" state={verdicts[signal.signalId]} onExplain={(change) => void explain(signal.signalId, change)} />
+                  </li>
+                ) : (
                   <li key={signal.signalId} className="border-t border-border/40 pt-3 first:border-t-0 first:pt-0">
                     <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
                       <span className="text-sm text-foreground">{signal.headline}</span><time className="text-xs text-muted-foreground" dateTime={signal.observedAt}>{new Date(signal.observedAt).toLocaleString()}</time>
@@ -1549,7 +1599,7 @@ export function NovaClient({ view = "today" }: { view?: NovaView } = {}) {
                             indistinguishable from broken, and the owner who
                             found it so pressed it fourteen times. */}
                         {said[signal.signalId] === "useful"
-                          ? <p role="status" className="mt-3 font-mono text-[11px] uppercase tracking-wider text-state-good">marked useful</p>
+                          ? <div className="mt-3"><p className="font-mono text-[11px] uppercase tracking-wider text-state-good">marked useful</p><Verdict verdict="useful" state={verdicts[signal.signalId]} onExplain={(change) => void explain(signal.signalId, change)} /></div>
                           : <div className="mt-3 flex gap-3"><Verb onClick={() => void say(signal.signalId, "useful")}>Useful result</Verb><Verb onClick={() => void say(signal.signalId, "not_interesting")}>Not useful</Verb></div>}
                       </div>
                     )}
@@ -3194,6 +3244,179 @@ function Outcome({
         </details>
       ) : null}
     </div>
+  );
+}
+
+type VerdictState = { learned: NovaLearned | null; rated: boolean; reason: NovaReason | null; note: string | null };
+
+/**
+ * What a verdict did, and -- for a rated reading -- why it was given.
+ *
+ * The reasons are offered only where the server kept the rating, which is a
+ * reading judged against the goal as it stands. Elsewhere there is no reading
+ * for a reason to be about, and the chips would record nothing.
+ */
+function Verdict({ verdict, state, onExplain }: {
+  verdict: NovaFeedback;
+  state: VerdictState | undefined;
+  onExplain: (change: { reason?: NovaReason | null; note?: string | null }) => void;
+}) {
+  if (!state) return <p role="status" className="mt-2 text-xs text-muted-foreground">Saving…</p>;
+  const reasons: readonly NovaReason[] = state.rated && (verdict === "useful" || verdict === "not_interesting")
+    ? NOVA_REASONS[verdict]
+    : [];
+  return (
+    <div className="mt-2">
+      <p role="status" className="text-xs text-muted-foreground">{learnedSentence(state.learned, verdict)}</p>
+      {reasons.length > 0 ? (
+        <div className="mt-3">
+          <p className="text-xs text-muted-foreground">
+            Why? Optional. Kept for reviewing Nova&apos;s work; it does not change what you are shown.
+          </p>
+          <div className="mt-2 flex flex-wrap gap-2">
+            {reasons.map((reason) => (
+              <button
+                key={reason}
+                type="button"
+                aria-pressed={state.reason === reason}
+                onClick={() => onExplain({ reason: state.reason === reason ? null : reason })}
+                className={`rounded-md border px-2 py-1 text-xs ${state.reason === reason ? "border-foreground text-foreground" : "text-muted-foreground"}`}
+              >
+                {REASON_LABEL[reason]}
+              </button>
+            ))}
+          </div>
+          <NoteField saved={state.note} onSave={(note) => onExplain({ note: note.trim() || null })} />
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function NoteField({ saved, onSave }: { saved: string | null; onSave: (note: string) => void }) {
+  const [editing, setEditing] = useState(false);
+  const [text, setText] = useState("");
+  if (!editing) {
+    return (
+      <div className="mt-2 text-xs">
+        {saved ? <p className="text-muted-foreground">&ldquo;{saved}&rdquo;</p> : null}
+        <button
+          type="button"
+          onClick={() => { setText(saved ?? ""); setEditing(true); }}
+          className="mt-1 text-link underline underline-offset-4"
+        >
+          {saved ? "Edit your note" : "Add a note in your own words"}
+        </button>
+      </div>
+    );
+  }
+  return (
+    <form
+      className="mt-2 flex flex-col gap-2 sm:flex-row"
+      onSubmit={(event) => { event.preventDefault(); onSave(text); setEditing(false); }}
+    >
+      <input
+        value={text}
+        onChange={(event) => setText(event.target.value)}
+        maxLength={NOTE_MAX}
+        aria-label="Your note"
+        placeholder="What was right or wrong about it"
+        className="min-w-0 flex-1 rounded-lg border bg-background px-3 py-2 text-sm"
+      />
+      <button type="submit" className="rounded-lg border px-3 py-2 text-sm">Save note</button>
+    </form>
+  );
+}
+
+/** Three findings, three different defects, said as such. */
+function missSentence(miss: NovaMiss, agentName: string): string {
+  const detail = miss.detail;
+  if (miss.finding === "observed") {
+    const why = detail.status === "dismissed"
+      ? "You hid it."
+      : !detail.read
+        ? "It was never read against your goal, so it could not reach Today."
+        : detail.significant
+          ? "Its reading called it significant, and the brief still did not show it."
+          : "Its reading judged it not significant for your goal.";
+    return `${agentName} had this: “${detail.headline}”, found ${detail.observedAt ? timeAgo(detail.observedAt) : "earlier"}. ${why} Recorded as a miss in what ${agentName} showed, not in what it reads.`;
+  }
+  if (miss.finding === "covered") {
+    return detail.repository
+      ? `${agentName} watches ${detail.repository} but has no card for this. Recorded as a reading miss.`
+      : `${agentName} reads ${detail.feed} but never picked this article up. Recorded as a reading miss.`;
+  }
+  return `${agentName} does not read ${detail.host}. Recorded as a coverage gap. Reported gaps decide which sources get added.`;
+}
+
+/**
+ * "You missed this." The only way a missed event is measured at all: nothing
+ * records an event that was never observed, so the owner naming one is the
+ * whole of the evidence. The link is checked here and on the server, and
+ * opened by neither.
+ */
+function MissForm({ agentName, onReport }: { agentName: string; onReport: (url: string, note: string) => Promise<NovaMiss> }) {
+  const [open, setOpen] = useState(false);
+  const [url, setUrl] = useState("");
+  const [note, setNote] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [answer, setAnswer] = useState<string | null>(null);
+  const [problem, setProblem] = useState<string | null>(null);
+
+  if (!open) {
+    return (
+      <button type="button" onClick={() => setOpen(true)} className="mt-4 block text-sm text-link underline underline-offset-4">
+        Did {agentName} miss something?
+      </button>
+    );
+  }
+
+  const submit = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!missUrl(url)) { setProblem("Paste the full link, starting with https://."); return; }
+    setBusy(true);
+    setProblem(null);
+    setAnswer(null);
+    try {
+      setAnswer(missSentence(await onReport(url.trim(), note), agentName));
+      setUrl("");
+      setNote("");
+    } catch {
+      setProblem("Could not record that. Please try again.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <form onSubmit={(event) => void submit(event)} className="mt-4 space-y-3 border-t border-border/60 pt-4">
+      <p className="text-xs leading-relaxed text-muted-foreground">
+        A link to something {agentName} should have put in front of you. The link is not opened:{" "}
+        {agentName} says what it had, and the miss is kept, because reported gaps are what decide which
+        sources get added.
+      </p>
+      <input
+        type="url"
+        value={url}
+        onChange={(event) => setUrl(event.target.value)}
+        placeholder="https://"
+        aria-label="Link to what was missed"
+        className="w-full rounded-lg border bg-background px-3 py-2 text-sm"
+      />
+      <input
+        value={note}
+        onChange={(event) => setNote(event.target.value)}
+        maxLength={NOTE_MAX}
+        placeholder="Why it mattered (optional)"
+        aria-label="Why it mattered"
+        className="w-full rounded-lg border bg-background px-3 py-2 text-sm"
+      />
+      <button type="submit" disabled={busy} className="rounded-lg border px-4 py-2 text-sm disabled:opacity-50">
+        {busy ? "Checking…" : `Tell ${agentName}`}
+      </button>
+      {answer ? <p role="status" className="text-sm leading-relaxed">{answer}</p> : null}
+      {problem ? <p role="alert" className="text-sm text-state-warn">{problem}</p> : null}
+    </form>
   );
 }
 

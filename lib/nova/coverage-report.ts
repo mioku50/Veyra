@@ -5,8 +5,9 @@ import { READING_RULES } from "./value.ts";
 /**
  * What the pipeline did over a window, from what it wrote down.
  *
- * Roadmap item 3 asks for eight measurements. Six are here. The two that are
- * not are named rather than approximated, because a coverage report that
+ * Roadmap item 3 asks for eight measurements. Six are here, and a seventh --
+ * missed events -- only as far as the owner reported them. What is not
+ * measured is named rather than approximated, because a coverage report that
  * quietly drops the awkward half of its own brief is the thing it exists to
  * prevent.
  *
@@ -48,6 +49,14 @@ export type CoverageReport = {
     shadowUnpriced: Record<string, number>;
   };
   cards: { stored: number; underCurrentRules: number; stale: number; neverRead: number };
+  /** Events the owner said Nova should have shown, by what Nova had. */
+  misses: {
+    reported: number;
+    /** observed: a ranking miss. covered: a reading miss. not_covered: a coverage gap. */
+    byFinding: Record<string, number>;
+    /** Where the coverage gaps are. The input to extending sources. */
+    notCoveredHosts: Record<string, number>;
+  };
   limitations: string[];
 };
 
@@ -92,6 +101,12 @@ export async function coverageReport(db: SupabaseClient, input: { from: string; 
   if (signalError) throw new Error(`Could not read signals: ${signalError.message}`);
   const signals = (signalRows ?? []) as Array<{ rules: string | null }>;
 
+  const { data: missRows, error: missError } = await db
+    .from("nova_misses").select("finding,host")
+    .gte("created_at", input.from).lte("created_at", input.to);
+  if (missError) throw new Error(`Could not read misses: ${missError.message}`);
+  const misses = (missRows ?? []) as Array<{ finding: string; host: string }>;
+
   const byTrigger: Record<string, number> = {};
   const unavailable: Record<string, number> = {};
   const unreadable: Record<string, number> = {};
@@ -122,6 +137,13 @@ export async function coverageReport(db: SupabaseClient, input: { from: string; 
     for (const [reason, count] of Object.entries(tick.shadow_unpriced ?? {})) bump(shadowUnpriced, reason, count);
   }
 
+  const byFinding: Record<string, number> = {};
+  const notCoveredHosts: Record<string, number> = {};
+  for (const miss of misses) {
+    bump(byFinding, miss.finding);
+    if (miss.finding === "not_covered") bump(notCoveredHosts, miss.host);
+  }
+
   const failed = Object.values(byCause).reduce((a, b) => a + b, 0);
   const underCurrentRules = signals.filter(s => Number(s.rules) === READING_RULES).length;
   const read = signals.filter(s => s.rules !== null && s.rules !== undefined).length;
@@ -150,8 +172,9 @@ export async function coverageReport(db: SupabaseClient, input: { from: string; 
       stale: read - underCurrentRules,
       neverRead: signals.length - read,
     },
+    misses: { reported: misses.length, byFinding, notCoveredHosts },
     limitations: [
-      "Missed important events are not measurable here. Nothing records an event that was never observed; only the owner naming one establishes it.",
+      "Missed events are only those the owner reported. A miss nobody reported is still not measurable, so a small number here is not evidence of good coverage.",
       "App-side model and RPC costs are not recorded. They live in provider billing, which this report does not read.",
       "Ticks are counted only from the first tick written after nova_ticks existed. An empty ticks section over an older window means the rows predate the table, not that no tick ran.",
       "Cards are counted across the whole store, not the window: a stale card is stale now, whenever it was written.",

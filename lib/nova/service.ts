@@ -14,7 +14,9 @@ import {
   type NovaProjectContext,
 } from "./project-context.ts";
 import { READING_FAILURE_DETAIL, READING_RULES, assessPublicMaterial, type ReadingFailure } from "./free-research.ts";
-import { observePublications, publicContext } from "./public-sources.ts";
+import { PUBLIC_FEEDS, observePublications, publicContext } from "./public-sources.ts";
+import { noteFrom, reasonFor, type NovaLearned } from "./verdict.ts";
+import { coverageOf, missUrl, publicationVariants, type NovaMiss } from "./misses.ts";
 import { createHash, randomBytes } from "node:crypto";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { getServerSupabaseConfig } from "../supabase/server-env.ts";
@@ -1389,7 +1391,10 @@ export async function markSignal(input: {
   ownerSecret: string;
   signalId: string;
   feedback: NovaFeedback;
-}): Promise<void> {
+  /** Why, from the review's categories. Kept only with a rating of a reading. */
+  reason?: unknown;
+  note?: unknown;
+}): Promise<{ learned: NovaLearned | null; rated: boolean }> {
   const agent = await loadOwned(input.publicId, input.ownerSecret);
   const status = FEEDBACK_STATUS[input.feedback];
 
@@ -1405,31 +1410,45 @@ export async function markSignal(input: {
   if (!data) throw new NovaError("No such item.", "not_found", 404);
   const row = data as { evidence: Record<string, unknown>; kind: string; headline?: string | null; nova_subjects?: { label?: string } | null };
   const assessment = assessmentOf({ evidence: row.evidence });
-  if (assessment?.goal === agent.goal && (input.feedback === "useful" || input.feedback === "not_interesting")) {
+  const rated = assessment?.goal === agent.goal && (input.feedback === "useful" || input.feedback === "not_interesting");
+  if (rated) {
+    /* The whole rating, every time: a reason given with one verdict must not
+       survive a change to the other, so an absent reason is written as none. */
     const { error } = await db().from("nova_value_feedback").upsert({
       signal_id: input.signalId, agent_id: agent.agent_id, assessment_at: assessment.generatedAt,
-      goal: assessment.goal, feedback: input.feedback, updated_at: new Date().toISOString(),
+      goal: assessment.goal, feedback: input.feedback,
+      reason: reasonFor(input.feedback, input.reason), note: noteFrom(input.note),
+      updated_at: new Date().toISOString(),
     }, { onConflict: "signal_id,assessment_at" });
     if (error) throw new NovaError("Could not save your result rating.", "database_unavailable", 503);
   }
   const category = preferencePhraseFor(row.kind);
   const label = row.nova_subjects?.label?.trim() ?? "";
 
+  /* What the press taught, returned so the page can say it. A button that
+     saved and said nothing was pressed fourteen times. */
+  let learned: NovaLearned | null = null;
   switch (input.feedback) {
     case "useful":
       /* Only a category can be marked useful, and only one Nova is willing to
          learn about. The unlearnable kinds are unlearnable in both directions:
          if a payee change cannot be turned off, it must not be possible to
          claim credit for turning it up either. */
-      if (category) await rememberPreference(agent.agent_id, "cares_about", category, { learnedFrom: row.kind }, 1, input.signalId);
-      return;
+      if (category) {
+        await rememberPreference(agent.agent_id, "cares_about", category, { learnedFrom: row.kind }, 1, input.signalId);
+        learned = { facet: "cares_about", summary: category };
+      }
+      break;
 
     case "follow":
       /* A subject, not a category. This is the answer to "I do not care about
          releases in general, I care about this one repository" -- which stated
          interests alone have no way to express. */
-      if (label) await rememberPreference(agent.agent_id, "follows", label, { learnedFrom: "follow", kind: row.kind }, 1, input.signalId);
-      return;
+      if (label) {
+        await rememberPreference(agent.agent_id, "follows", label, { learnedFrom: "follow", kind: row.kind }, 1, input.signalId);
+        learned = { facet: "follows", summary: label };
+      }
+      break;
 
     case "not_interesting":
       /* The topic, not the category. Dismissing one noisy repository should not
@@ -1438,7 +1457,8 @@ export async function markSignal(input: {
       // One unhelpful article is not a request to suppress its entire publisher.
       if (label && row.kind !== "official_publication") {
         await rememberPreference(agent.agent_id, "usually_ignores", label, { learnedFrom: "not_interesting" }, 1, input.signalId);
-        return;
+        learned = { facet: "usually_ignores", summary: label };
+        break;
       }
       /* For an announcement the subject IS the publisher, so the press used to
          do nothing at all -- and an owner whose every card is an announcement
@@ -1447,9 +1467,12 @@ export async function markSignal(input: {
          watching for. */
       if (row.kind === "official_publication") {
         const topic = dismissedTopicFrom(row.headline ?? "", keywordsForInterests(agent.interests ?? []), label);
-        if (topic) await rememberPreference(agent.agent_id, "usually_ignores", topic, { learnedFrom: "not_interesting", kind: row.kind, headline: (row.headline ?? "").slice(0, 160) }, 1, input.signalId);
+        if (topic) {
+          await rememberPreference(agent.agent_id, "usually_ignores", topic, { learnedFrom: "not_interesting", kind: row.kind, headline: (row.headline ?? "").slice(0, 160) }, 1, input.signalId);
+          learned = { facet: "usually_ignores", summary: topic };
+        }
       }
-      return;
+      break;
 
     case "ignore_kind":
       /* The category, stated outright, so it enters at full weight rather than
@@ -1463,12 +1486,14 @@ export async function markSignal(input: {
           EXPLICIT_IGNORE_SUPPORT,
           input.signalId,
         );
+        learned = { facet: "usually_ignores", summary: category };
       }
-      return;
+      break;
 
     default:
-      return;
+      break;
   }
+  return { learned, rated };
 }
 
 /**
@@ -1505,6 +1530,67 @@ export async function forgetPreference(input: { publicId: string; ownerSecret: s
     .select("memory_id");
   if (error) throw new NovaError("Could not forget that right now.", "database_unavailable", 503);
   return { forgotten: (data?.length ?? 0) > 0 };
+}
+
+/**
+ * Records an event the owner says Nova should have shown them, and answers
+ * with what Nova had. See misses.ts for why the link is never fetched.
+ *
+ * The answer is the useful part. "Nova had this and held it back" and "Nova
+ * does not read that site" are different defects with different fixes, and an
+ * owner told only "thanks, noted" learns nothing about which one they hit.
+ */
+export async function reportMiss(input: { publicId: string; ownerSecret: string; url: unknown; note?: unknown }): Promise<NovaMiss> {
+  const agent = await loadOwned(input.publicId, input.ownerSecret);
+  const url = missUrl(input.url);
+  if (!url) throw new NovaError("Paste the full link, starting with https://.", "invalid_url");
+  const host = url.hostname.replace(/^www\./, "");
+
+  const { data: seen, error: seenError } = await db().from("nova_signals")
+    .select("signal_id, headline, status, observed_at, evidence")
+    .eq("agent_id", agent.agent_id)
+    .eq("kind", "official_publication")
+    .in("evidence->subject->>url", publicationVariants(url))
+    .order("observed_at", { ascending: false })
+    .limit(1);
+  if (seenError) throw new NovaError("Could not check that right now.", "database_unavailable", 503);
+
+  let miss: NovaMiss;
+  const hit = (seen ?? [])[0] as { signal_id: string; headline: string; status: string; observed_at: string; evidence: Record<string, unknown> } | undefined;
+  if (hit) {
+    /* Read against the goal as it stands. A reading under an earlier goal is
+       not a judgement about this one, and saying "judged not significant" on
+       the strength of it would blame the wrong step. */
+    const assessment = assessmentOf({ evidence: hit.evidence });
+    const current = assessment?.goal === agent.goal ? assessment : null;
+    miss = {
+      url: url.toString(), finding: "observed",
+      detail: {
+        headline: hit.headline, observedAt: hit.observed_at, status: hit.status,
+        read: Boolean(current), significant: current ? current.significant : null,
+      },
+    };
+  } else {
+    let repositories: string[] = [];
+    if (host === "github.com") {
+      const { data } = await db().from("nova_subjects").select("ref")
+        .eq("agent_id", agent.agent_id).eq("kind", "github_repository");
+      repositories = (data ?? []).map(row => String((row as { ref: string }).ref));
+    }
+    const covered = coverageOf(url, PUBLIC_FEEDS, repositories);
+    miss = covered
+      ? { url: url.toString(), finding: "covered", detail: covered }
+      : { url: url.toString(), finding: "not_covered", detail: { host } };
+  }
+
+  const { error } = await db().from("nova_misses").upsert({
+    agent_id: agent.agent_id, url: miss.url, host,
+    note: noteFrom(input.note), finding: miss.finding,
+    signal_id: hit?.signal_id ?? null, detail: miss.detail,
+    updated_at: new Date().toISOString(),
+  }, { onConflict: "agent_id,url" });
+  if (error) throw new NovaError("Could not record that right now.", "database_unavailable", 503);
+  return miss;
 }
 
 /**

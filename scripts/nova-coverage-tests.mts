@@ -83,6 +83,13 @@ const ticks = [
   { stopped_early: true, shadow_decided: 1, shadow_would_allow: 0, shadow_blocked: {}, shadow_unpriced: { no_quote: 1, no_service: 2 } },
 ];
 const signals = [{ rules: String(READING_RULES) }, { rules: String(READING_RULES) }, { rules: "5" }, { rules: null }, { rules: null }];
+const misses = [
+  { finding: "not_covered", host: "x.com" },
+  { finding: "not_covered", host: "x.com" },
+  { finding: "not_covered", host: "arc.network" },
+  { finding: "covered", host: "circle.com" },
+  { finding: "observed", host: "arc.io" },
+];
 
 /* A thenable that is also its own query builder: every chained call returns
    the same object, and awaiting it anywhere in the chain yields the rows. */
@@ -91,7 +98,8 @@ const table = (rows: unknown[]) => {
   for (const method of ["select", "gte", "lte", "order", "limit", "eq"]) result[method] = () => result;
   return result;
 };
-const db = { from: (name: string) => table(name === "nova_refreshes" ? refreshes : name === "nova_ticks" ? ticks : signals) };
+const rowsOf: Record<string, unknown[]> = { nova_refreshes: refreshes, nova_ticks: ticks, nova_signals: signals, nova_misses: misses };
+const db = { from: (name: string) => table(rowsOf[name] ?? []) };
 
 const report = await coverageReport(db as never, { from: "2026-09-15T00:00:00Z", to: "2026-09-22T00:00:00Z" });
 
@@ -119,8 +127,14 @@ assert.deepEqual(report.ticks.shadowBlocked, { no_mandate: 1 });
 
 assert.deepEqual(report.cards, { stored: 5, underCurrentRules: 2, stale: 1, neverRead: 2 });
 
+/* A miss is sorted by which step failed, because only one of the three is
+   fixed by adding a source -- and the hosts of that one are the list to add. */
+assert.equal(report.misses.reported, 5);
+assert.deepEqual(report.misses.byFinding, { not_covered: 3, covered: 1, observed: 1 });
+assert.deepEqual(report.misses.notCoveredHosts, { "x.com": 2, "arc.network": 1 }, "Only coverage gaps name a host to add");
+
 /* Nothing measurable is claimed for what is not measured. */
-assert(report.limitations.some(l => l.includes("Missed important events")));
+assert(report.limitations.some(l => l.includes("only those the owner reported")), "A reported miss is not all the misses");
 assert(report.limitations.some(l => l.includes("costs")));
 
 /* An empty window is an empty report, not a crash or a divide by zero. */
@@ -128,5 +142,6 @@ const empty = await coverageReport({ from: () => table([]) } as never, { from: "
 assert.equal(empty.passes.total, 0);
 assert.equal(empty.reading.failureRate, "n/a");
 assert.deepEqual(empty.durationMs, { median: 0, p90: 0, max: 0 });
+assert.deepEqual(empty.misses, { reported: 0, byFinding: {}, notCoveredHosts: {} });
 
-console.log("PASS: coverage — a host that did not answer told apart from an article that did not parse and from an old post that is neither, a reading failure counted once rather than twice, the model invalid-output rate by named cause, the unpriced reasons the D0 capture could not answer, and the two measurements nobody can take named instead of approximated.");
+console.log("PASS: coverage — a host that did not answer told apart from an article that did not parse and from an old post that is neither, a reading failure counted once rather than twice, the model invalid-output rate by named cause, the unpriced reasons the D0 capture could not answer, reported misses sorted into ranking, reading and coverage with only the last naming hosts, and what nobody can measure named instead of approximated.");
