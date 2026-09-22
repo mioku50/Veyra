@@ -403,3 +403,70 @@ stored reading predates edition 5 and is queued for re-reading already.
 Still unverified: whether 14b holds up beyond these five subjects, what the
 extra cards do to the brief in practice, and whether the proposed work is worth
 doing. The last one is gate V and no model choice settles it.
+
+---
+
+## Reading rules edition 6, 2026-09-22 — absence is not a finding
+
+The owner read four of 14b's cards and reported the same defect in all of
+them: work proposed out of what they had never said.
+
+| Card | What edition 5 proposed |
+| --- | --- |
+| StableFX is live on Arc | Check Arc docs for a StableFX SDK and test transactions |
+| Arc Compatibility Guide | "Not established how Veyra handles ERC-20 interactions", so establish it |
+| Arc Portal | Test whether an ERC-8004 agent can delegate cirBTC transactions |
+| cirBTC live on Arc | (significant under edition 2; would have proposed under 5) |
+
+One mechanism produced all four. Nova had two outcomes — work, or held back —
+and edition 4 had ruled that an event nobody can act on is not significant. A
+model that judged an event real therefore had exactly one way to surface it,
+and the cheapest connection available is always the same: the owner's four
+statements do not mention the subject, so the subject is unestablished, so go
+and establish it. That sentence is true of everything nobody has been told,
+and on the card it reads as something Nova found.
+
+### What changed
+
+A third outcome, and two structural gates rather than more prompt text.
+
+- **Significance and work are separate questions.** Significance is judged
+  against the goal, work against `projectState`. An event can be real and ask
+  for nothing, and the card now says so in fixed page text.
+- **`plan.relation`**, one of `decides` / `requires` / `supersedes`, resolved
+  against a closed set server-side. "I was not told about this" — true of
+  everything — cannot be written as a relation.
+- **`plan.establishedFrom` may no longer be empty.** Work standing on nothing
+  the owner said is work invented out of what they did not say. An index that
+  resolves to nothing still fails the whole reading, as an invented citation
+  does; an empty basis merely drops the plan.
+- **`gap` requires a plan.** A question that changes no proposed work changes
+  no decision, so the one reading that can end in spending cannot come from an
+  event that asks for nothing. This only ever tightens `paidResearchReadiness`.
+- **`nextStep` is gone.** It was rendered whenever a plan was absent, and it
+  was where every "look into the new technology" landed — the abstraction
+  edition 3 replaced, kept alive by the fallback.
+
+### Measured before shipping, on the fifteen stored cards
+
+All four reported cards come back with no plan, stably across repeat runs, and
+with honest text: "нет прямой связи с текущим состоянием проекта". The
+invented ERC-20 gap, the cirBTC/ERC-8004 bridge and the FX integration task
+are gone.
+
+The cost is on the other side and it is not small. **Sponsored Transactions on
+Arc** and **Supporting Arc in Wallets** both bear on "Operational wallet не
+выбран" — the `decides` case this repository's own fixture encodes as correct
+work — and 14b now reports both with no plan, reasoning that the owner never
+wrote down "gas" or "wallet integration". That is the same match-on-words
+mistake as before, pointing the other way.
+
+Three attempts to open it far enough to catch those two each brought
+fabrication back, once as an action naming `toErc20Units` and `balanceOf` in
+the owner's repository, which nobody here has read. Tuning stopped there.
+Across fifteen cards edition 6 proposes work on none of them.
+
+Silence is the better of the two failures and it is the one the owner asked
+for. It is still a failure. Closing it needs a reading model that will make
+the hop, or a prompt that walks the statements as an explicit step — neither
+is this edition, and both are the owner's call.

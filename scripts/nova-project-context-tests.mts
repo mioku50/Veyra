@@ -67,11 +67,11 @@ const reply = {
   significant: true,
   whatChanged: "Arc documents three ways to sponsor transaction fees in USDC.",
   whyItMatters: "It decides who pays gas once the agent has its own wallet.",
-  nextStep: "Compare the relayer and paymaster models against the planned wallet.",
   relativeToWork: "You have identity on Arc Testnet but no operational wallet, so this decides the next step rather than repeating one.",
   citations: [{ sourceId: source.id, quote: "Arc supports sponsored transactions with USDC as the gas token." }],
   gap: null,
   plan: {
+    relation: "decides",
     establishedFrom: [2],
     unverified: "Which of the three models Veyra will use is not settled by the material or by your confirmed state.",
     action: "Compare the relayer and the paymaster against the wallet you have not chosen yet, and write down which one the choice depends on.",
@@ -87,6 +87,7 @@ assert.deepEqual(withContext.contextProposal, reply.contextProposal);
 /* The work Nova proposes, with the owner's own words where the owner's words
    belong. The model chose an index; the server copied the statement. */
 assert.deepEqual(withContext.plan, {
+  relation: "decides",
   established: ["Operational wallet is not chosen yet."],
   unverified: reply.plan.unverified,
   action: reply.plan.action,
@@ -100,12 +101,34 @@ assert.equal(parseValueAssessment(JSON.stringify({ ...reply, plan: { ...reply.pl
 assert.equal(parseValueAssessment(JSON.stringify({ ...reply, plan: { ...reply.plan, establishedFrom: ["Operational wallet is not chosen yet."] } }), { goal, sources: [source], now, writtenBy: "fixture", projectContext: contextForPrompt(mixed) }), null,
   "The statement is resolved from the index, never taken as written prose");
 
-/* Work with nothing confirmed behind it is still work; work with no action in
-   it is not, and the one-line next step stands in for it. */
+/* The rule this edition exists for: work standing on nothing the owner said
+   is work invented out of what they did not say. An event whose subject they
+   never mentioned is still reported -- it just arrives without a plan, which
+   is the card saying there is nothing here to do. */
 const fromSourceAlone = parseValueAssessment(JSON.stringify({ ...reply, plan: { ...reply.plan, establishedFrom: [] } }), { goal, sources: [source], now, writtenBy: "fixture", projectContext: contextForPrompt(mixed) });
-assert.deepEqual(fromSourceAlone?.plan?.established, []);
-const halfPlan = parseValueAssessment(JSON.stringify({ ...reply, plan: { establishedFrom: [1], action: "Do the thing." } }), { goal, sources: [source], now, writtenBy: "fixture", projectContext: contextForPrompt(mixed) });
+assert(fromSourceAlone, "The reading still stands; only its proposed work does not");
+assert.equal(fromSourceAlone.significant, true);
+assert.equal(fromSourceAlone.plan, null);
+
+/* And a basis is not a connection. The relation is picked from three words,
+   so "I was not told about this" -- true of everything -- cannot be written
+   as one. */
+for (const relation of ["investigates", "relates", "", undefined]) {
+  const stretched = parseValueAssessment(JSON.stringify({ ...reply, plan: { ...reply.plan, relation } }), { goal, sources: [source], now, writtenBy: "fixture", projectContext: contextForPrompt(mixed) });
+  assert.equal(stretched?.plan, null, `A plan may not claim the relation ${JSON.stringify(relation)}`);
+}
+for (const relation of ["decides", "requires", "supersedes"]) {
+  assert.equal(parseValueAssessment(JSON.stringify({ ...reply, plan: { ...reply.plan, relation } }), { goal, sources: [source], now, writtenBy: "fixture", projectContext: contextForPrompt(mixed) })?.plan?.relation, relation);
+}
+
+/* Half a plan is not work anybody can start. */
+const halfPlan = parseValueAssessment(JSON.stringify({ ...reply, plan: { relation: "decides", establishedFrom: [1], action: "Do the thing." } }), { goal, sources: [source], now, writtenBy: "fixture", projectContext: contextForPrompt(mixed) });
 assert.equal(halfPlan?.plan, null);
+
+/* A gap is a question whose answer changes a decision. With no proposed work
+   there is no decision of theirs to change, so the one reading that can end
+   in spending cannot be produced by an event that asks for nothing. */
+assert.equal(fromSourceAlone.gap, null, "No work, no research need, and no path to a purchase");
 
 /* Nothing worth doing about material that changes nothing. A plan under an
    insignificant reading is a suggestion the card has already withheld. */
@@ -180,4 +203,4 @@ assert.deepEqual(splitStatements("One fact and nothing else."), [], "A single fa
 assert.deepEqual(splitStatements("Version 1.2 shipped."), [], "A decimal point does not end a sentence");
 assert(splitStatements(blob).every(part => part.length <= PROJECT_CONTEXT_LIMITS.statement));
 
-console.log("PASS: project context — work proposed with the owner's own words and never a verdict on their code, one fact per line, owner-confirmed statements only in the prompt, a reading that says what changed against work already done, an inference Nova cannot confirm for itself, a reading reconsidered when the state it was judged against changes, a pasted blob offered back as the facts it is, and a reading retired when the rules that produced it change.");
+console.log("PASS: project context — work proposed with the owner's own words and never a verdict on their code, no work proposed out of what the owner never mentioned, one fact per line, owner-confirmed statements only in the prompt, a reading that says what changed against work already done, an inference Nova cannot confirm for itself, a reading reconsidered when the state it was judged against changes, a pasted blob offered back as the facts it is, and a reading retired when the rules that produced it change.");

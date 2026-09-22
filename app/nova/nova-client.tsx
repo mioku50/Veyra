@@ -2459,6 +2459,20 @@ function Receipts({ brief }: { brief: NovaBrief }) {
 }
 
 /**
+ * How the event bears on the owner's own words, in theirs.
+ *
+ * The three are the whole set a plan may claim. A reading that could name
+ * none of them carries no plan at all, which is the card saying the event is
+ * real and asks the owner for nothing -- the answer that used to come out as
+ * a suggestion to go and look at something.
+ */
+const PLAN_RELATION: Record<string, string> = {
+  decides: "Bears on a choice you left open:",
+  requires: "Applies to something you told Nova you use:",
+  supersedes: "Changes something you recorded as done:",
+};
+
+/**
  * A stored reading, and how far it can still be trusted.
  *
  * `context` is what a reading started right now would be given, and `rules`
@@ -2495,15 +2509,18 @@ function PublicReading({ signal, goal, context = [], unrefreshed = false }: {
         replaces the line rather than joining it. */}
     {analysis.plan ? <div className="rounded-lg border p-3">
       <p className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">Proposed work</p>
+      {/* Empty only on a reading stored before a plan had to stand on
+          something; the staleness banner above already says so. */}
       {analysis.plan.established.length
-        ? <><p className="mt-2"><strong>Building on what you confirmed:</strong></p>
+        ? <><p className="mt-2"><strong>{PLAN_RELATION[analysis.plan.relation] ?? "Building on what you confirmed:"}</strong></p>
             <ul className="mt-1 space-y-1 text-muted-foreground">{analysis.plan.established.map((statement, index) => <li key={index}>— {statement}</li>)}</ul></>
-        : <p className="mt-2 text-muted-foreground">Nothing you have confirmed covers this yet, so it starts from the source alone.</p>}
+        : null}
       <p className="mt-2"><strong>Not established:</strong> {analysis.plan.unverified}</p>
       <p className="mt-2"><strong>Do this:</strong> {analysis.plan.action}</p>
       <p className="mt-2 text-xs text-muted-foreground">Proposed work, not a completed check. Nova reads public sources; it has not seen your code.</p>
-    </div> : <p><strong>Suggested next step:</strong> {analysis.nextStep}</p>}
-    {!analysis.significant ? <p className="text-muted-foreground">Held back: this material does not establish a significant change for your goal.</p> : null}
+    </div> : <p className="text-muted-foreground">{analysis.significant
+      ? "Nothing here for you to do. It is a real change in what you track, and it does not bear on anything you have confirmed about your project — so Nova is reporting it, not proposing work."
+      : "Held back: this material does not establish a significant change for your goal."}</p>}
     {analysis.contextProposal ? <p className="text-muted-foreground">Nova thinks this changes your project context: “{analysis.contextProposal.statement}”. Confirm or reject it under My Agent; it is not treated as true until you do.</p> : null}
     {analysis.projectContext?.length ? <details><summary className="cursor-pointer text-xs text-muted-foreground">Read against {analysis.projectContext.length} project {analysis.projectContext.length === 1 ? "fact" : "facts"} you confirmed</summary><ul className="mt-2 space-y-1 text-xs text-muted-foreground">{analysis.projectContext.map((statement, index) => <li key={index}>{statement}</li>)}</ul></details> : null}
     {analysis.gap ? <div className="rounded-lg border p-3"><p><strong>Still unknown:</strong> {analysis.gap.missing}</p><p className="mt-2"><strong>Useful result to seek:</strong> {analysis.gap.expectedResult}</p><p className="mt-2 text-xs text-muted-foreground">An open question is not proof that a paid service is needed. Review the sources first.</p></div> : <p className="text-muted-foreground">No additional paid research need identified.</p>}

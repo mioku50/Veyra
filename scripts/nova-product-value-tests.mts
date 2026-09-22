@@ -14,8 +14,8 @@ const now = new Date("2026-09-20T12:00:00Z");
 const goal = "Track Arc changes that matter to building Veyra.";
 const source: PublicMaterial = { id: "source-a", url: "https://www.arc.io/blog/example", title: "Network release", text: "The network release adds a new public endpoint for developers. Compatibility must be checked separately.", publishedAt: "2026-09-19T12:00:00Z", fetchedAt: now.toISOString() };
 const second: PublicMaterial = { ...source, id: "source-b", url: "https://docs.arc.io/reference" };
-const raw = { significant: true, whatChanged: "The source announces a public endpoint.", whyItMatters: "Your integration needs a compatibility check.", nextStep: "Compare the documented interfaces to your app.", citations: [{ sourceId: source.id, quote: "The network release adds a new public endpoint for developers." }], gap: { question: "Does the Arc endpoint support the response shape required by this integration?", missing: "The supplied material does not describe the response shape.", expectedResult: "A documented response schema to compare with the integration." } };
-const input = { goal, sources: [source, second], now, writtenBy: "fixture" };
+const raw = { significant: true, whatChanged: "The source announces a public endpoint.", whyItMatters: "Your integration needs a compatibility check.", plan: { relation: "requires", establishedFrom: [1], unverified: "Whether the documented shape matches the one the integration sends is not settled by the release note.", action: "Compare the documented interface against the call your integration already makes." }, citations: [{ sourceId: source.id, quote: "The network release adds a new public endpoint for developers." }], gap: { question: "Does the Arc endpoint support the response shape required by this integration?", missing: "The supplied material does not describe the response shape.", expectedResult: "A documented response schema to compare with the integration." } };
+const input = { goal, sources: [source, second], now, writtenBy: "fixture", projectContext: ["The integration calls the Arc public endpoint."] };
 const value = parseValueAssessment(JSON.stringify(raw), input)!;
 assert(value);
 assert(parseValueAssessment(JSON.stringify({ ...raw, citations: undefined, citationIds: ["s1.e1"] }), input));
@@ -25,6 +25,10 @@ assert.equal(parseValueAssessment(JSON.stringify({ ...raw, citations: [{ sourceI
 assert.equal(parseValueAssessment(JSON.stringify({ ...raw, citations: [{ sourceId: "invented", quote: source.text }] }), input), null);
 assert.equal(parseValueAssessment(JSON.stringify({ ...raw, citations: [{ sourceId: source.id, quote: "The application is definitely ready to spend on mainnet." }] }), input), null);
 assert.equal(parseValueAssessment('{"significant":true}', input), null);
+/* Spending needs a decision to change, and a decision needs proposed work. An
+   event that asks for nothing cannot carry a research need past this point. */
+assert.equal(parseValueAssessment(JSON.stringify({ ...raw, plan: null }), input)?.gap, null);
+assert(value.gap, "and a reading that does propose work keeps it");
 
 /* Six causes used to arrive as one sentence. A provider that is not
    configured, a clock that ran out and an answer that did not match its

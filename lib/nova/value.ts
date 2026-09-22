@@ -27,13 +27,42 @@ import type { NovaSignal } from "./types.ts";
  * existed and was followed about half the time by the model this edition ships
  * with; restated per field, it held in nine runs out of nine.
  *
+ * 6: not being told something is not a finding about it. Under 5 the model
+ * reached the owner's project through the one opening left to it -- a subject
+ * absent from projectState came back as an unestablished part of their
+ * implementation, and the proposed work was to go and establish it. Three
+ * cards in a row did it: a currency-exchange launch became work because the
+ * owner had not said they handled currency exchange, a compatibility guide
+ * because they had not said how they handled ERC-20, a tokenised asset
+ * because they had not said it was unrelated to their identity standard.
+ * Every one of those sentences is true of everything nobody has been told,
+ * and each reads on the card as something Nova found. A plan now names which
+ * confirmed statement it stands on and how the event bears on it, chosen from
+ * three relations and nothing else; an event that fits none of them is still
+ * reported, with no work attached, which is the answer that was missing.
+ *
+ * Measured on the fifteen stored cards before shipping: every invented plan
+ * is gone and stays gone across repeat runs. The cost is on the other side
+ * and is not small. Sponsored gas on Arc and USDC fees in wallets both bear
+ * on "Operational wallet не выбран" -- the case this file's own fixture
+ * encodes as correct work -- and the model now reports both with no plan,
+ * reasoning that the owner never wrote down the words "gas" or "wallet
+ * integration". That is the same match-on-words mistake as before, pointing
+ * the other way, and three attempts to open it up far enough to catch those
+ * two brought fabrication back with them, once as an action naming functions
+ * in the owner's repository that nobody here has read. Silence was the
+ * better of the two, and it is the one the owner asked for. Closing the gap
+ * properly needs either a reading model that will make the hop or a prompt
+ * that walks the statements as an explicit step, neither of which is this
+ * edition.
+ *
  * This bump also does a second job the mechanism does not model. A stored
  * reading records which rules produced it but not which model did, and the
  * model changed with this edition -- so every judgement made by the previous
  * one is retired here as a side effect of the edition, rather than by a rule
  * that would have caught it on its own.
  */
-export const READING_RULES = 5;
+export const READING_RULES = 6;
 
 export type PublicMaterial = {
   id: string;
@@ -64,7 +93,18 @@ export type PublicMaterial = {
  * can fill in.
  */
 export type ValueWorkPlan = {
-  /** The owner's confirmed statements this work builds on, in their words. */
+  /**
+   * How the event bears on the statements below. A closed set, because the
+   * failure it replaces was open prose: given an asset launch and four facts
+   * that mentioned no assets, the model wrote that it was not established how
+   * the project handled the asset, and proposed establishing it. Absence of a
+   * subject from what the owner typed is not a relation to it, and the three
+   * named here are the only ones that are.
+   */
+  relation: "decides" | "requires" | "supersedes";
+  /** The owner's confirmed statements this work builds on, in their words.
+   *  Never empty. Work with nothing of theirs behind it is work invented for
+   *  them out of what they did not say. */
   established: string[];
   /** What the sources and that state do not settle, and what would settle it. */
   unverified: string;
@@ -78,12 +118,20 @@ export type ValueAssessment = {
   significant: boolean;
   whatChanged: string;
   whyItMatters: string;
-  nextStep: string;
   citations: Array<{ sourceId: string; quote: string }>;
   /** A hypothesis about further work, never a financial permission. */
   gap: { question: string; missing: string; expectedResult: string } | null;
-  /** Proposed work, on a significant reading. Null when the event names none,
-   *  and never a claim that the work was done -- see ValueWorkPlan. */
+  /**
+   * Proposed work, on a significant reading, and never a claim that the work
+   * was done -- see ValueWorkPlan.
+   *
+   * Null is an ordinary answer and the common one: a real development that
+   * bears on nothing this owner has confirmed asks them for nothing. There
+   * used to be a one-line `nextStep` beside this, shown whenever a plan was
+   * absent, and it was where every "look into the new technology" landed --
+   * the abstraction edition 3 replaced, kept alive by the fallback. A card
+   * with no plan now says so instead of suggesting something.
+   */
   plan?: ValueWorkPlan | null;
   /** The owner-confirmed project statements this reading was given, copied in
    *  as they stood. A finding read against a project state is only as good as
