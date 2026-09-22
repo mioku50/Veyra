@@ -1421,14 +1421,14 @@ export async function markSignal(input: {
          learn about. The unlearnable kinds are unlearnable in both directions:
          if a payee change cannot be turned off, it must not be possible to
          claim credit for turning it up either. */
-      if (category) await rememberPreference(agent.agent_id, "cares_about", category, { learnedFrom: row.kind });
+      if (category) await rememberPreference(agent.agent_id, "cares_about", category, { learnedFrom: row.kind }, 1, input.signalId);
       return;
 
     case "follow":
       /* A subject, not a category. This is the answer to "I do not care about
          releases in general, I care about this one repository" -- which stated
          interests alone have no way to express. */
-      if (label) await rememberPreference(agent.agent_id, "follows", label, { learnedFrom: "follow", kind: row.kind });
+      if (label) await rememberPreference(agent.agent_id, "follows", label, { learnedFrom: "follow", kind: row.kind }, 1, input.signalId);
       return;
 
     case "not_interesting":
@@ -1437,7 +1437,7 @@ export async function markSignal(input: {
          accumulates: the weight climbs only if they keep saying it. */
       // One unhelpful article is not a request to suppress its entire publisher.
       if (label && row.kind !== "official_publication") {
-        await rememberPreference(agent.agent_id, "usually_ignores", label, { learnedFrom: "not_interesting" });
+        await rememberPreference(agent.agent_id, "usually_ignores", label, { learnedFrom: "not_interesting" }, 1, input.signalId);
         return;
       }
       /* For an announcement the subject IS the publisher, so the press used to
@@ -1447,7 +1447,7 @@ export async function markSignal(input: {
          watching for. */
       if (row.kind === "official_publication") {
         const topic = dismissedTopicFrom(row.headline ?? "", keywordsForInterests(agent.interests ?? []), label);
-        if (topic) await rememberPreference(agent.agent_id, "usually_ignores", topic, { learnedFrom: "not_interesting", kind: row.kind, headline: (row.headline ?? "").slice(0, 160) });
+        if (topic) await rememberPreference(agent.agent_id, "usually_ignores", topic, { learnedFrom: "not_interesting", kind: row.kind, headline: (row.headline ?? "").slice(0, 160) }, 1, input.signalId);
       }
       return;
 
@@ -1461,6 +1461,7 @@ export async function markSignal(input: {
           category,
           { learnedFrom: "ignore_kind" },
           EXPLICIT_IGNORE_SUPPORT,
+          input.signalId,
         );
       }
       return;
@@ -1506,17 +1507,47 @@ export async function forgetPreference(input: { publicId: string; ownerSecret: s
   return { forgotten: (data?.length ?? 0) > 0 };
 }
 
+/**
+ * One card, one vote.
+ *
+ * support_count is how many times the owner has said this, and for an ignore
+ * it sets how hard the topic is pushed down. It used to rise on every press,
+ * and a button that gave no sign it had worked was pressed again: one owner's
+ * "announcements" reached fifteen from four cards. For a favoured category the
+ * count changes nothing; for an ignore, three impatient clicks on one article
+ * would weigh as three separate dismissals. A card that already taught a
+ * preference teaches it nothing further -- only an explicit floor (a category
+ * ignored outright) may still raise it.
+ */
+export function castVote(
+  prior: { supportCount: number; taughtBy: string[] } | null,
+  signalId: string | undefined,
+  atLeast = 1,
+): { supportCount: number; taughtBy: string[]; changed: boolean } {
+  if (!prior) return { supportCount: atLeast, taughtBy: signalId ? [signalId] : [], changed: true };
+  if (signalId && prior.taughtBy.includes(signalId)) {
+    const supportCount = Math.max(prior.supportCount, atLeast);
+    return { supportCount, taughtBy: prior.taughtBy, changed: supportCount !== prior.supportCount };
+  }
+  return {
+    supportCount: Math.max(prior.supportCount + 1, atLeast),
+    taughtBy: signalId ? [...prior.taughtBy, signalId].slice(-50) : prior.taughtBy,
+    changed: true,
+  };
+}
+
 async function rememberPreference(
   agentId: string,
   facet: "cares_about" | "usually_ignores" | "follows",
   summary: string,
   evidence: Record<string, unknown>,
   atLeast = 1,
+  signalId?: string,
 ): Promise<void> {
   const trimmed = summary.slice(0, 600);
   const { data: current } = await db()
     .from("nova_memory")
-    .select("memory_id, support_count")
+    .select("memory_id, support_count, evidence")
     .eq("agent_id", agentId)
     .eq("kind", "preference")
     .eq("facet", facet)
@@ -1524,23 +1555,28 @@ async function rememberPreference(
     .maybeSingle();
 
   if (current) {
-    const row = current as { memory_id: string; support_count: number };
+    const row = current as { memory_id: string; support_count: number; evidence: Record<string, unknown> | null };
+    const taughtBy = Array.isArray(row.evidence?.signals) ? (row.evidence.signals as unknown[]).filter((id): id is string => typeof id === "string") : [];
+    const vote = castVote({ supportCount: row.support_count, taughtBy }, signalId, atLeast);
+    if (!vote.changed) return;
     await db().from("nova_memory")
       .update({
-        support_count: Math.max(row.support_count + 1, atLeast),
+        support_count: vote.supportCount,
+        evidence: { ...(row.evidence ?? {}), signals: vote.taughtBy },
         updated_at: new Date().toISOString(),
       })
       .eq("memory_id", row.memory_id);
     return;
   }
 
+  const vote = castVote(null, signalId, atLeast);
   await db().from("nova_memory").insert({
     agent_id: agentId,
     kind: "preference",
     facet,
     summary: trimmed,
-    evidence,
-    support_count: atLeast,
+    evidence: { ...evidence, signals: vote.taughtBy },
+    support_count: vote.supportCount,
   });
 }
 

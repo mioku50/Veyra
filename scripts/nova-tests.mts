@@ -21,7 +21,7 @@ import {
 import { dismissedTopicFrom, orderByRelevance, scoreRelevance } from "../lib/nova/relevance.ts";
 import { assembleBrief, greeting, quietSummary } from "../lib/nova/brief.ts";
 import { observeRepositories } from "../lib/nova/sources.ts";
-import { EXPLICIT_IGNORE_SUPPORT, ignoreWeight, summariseAway } from "../lib/nova/service.ts";
+import { EXPLICIT_IGNORE_SUPPORT, castVote, ignoreWeight, summariseAway } from "../lib/nova/service.ts";
 import { networkName, settlementNetworkOf } from "../lib/nova/network.ts";
 import { buildRequestBody } from "../lib/x402/request-body.ts";
 import { actionFor } from "../lib/nova/action.ts";
@@ -1309,4 +1309,28 @@ const otherArc = scoreRelevance({ change: announcement("Sponsored Transactions o
 const otherArcUntaught = scoreRelevance({ change: announcement("Sponsored Transactions on Arc with USDC as Gas"), keywords: watchedFor, subjectText: "Arc announcements Sponsored Transactions on Arc with USDC as Gas", subjectLabel: "Arc announcements", preferences: NOTHING_SAID });
 assert.equal(otherArc.score, otherArcUntaught.score, "and the rest of that publisher is untouched");
 
-console.log("[nova-test] passed: interests kept even when unknown, a first sighting reported as a finding rather than as news, the same commits not re-reported across refreshes, a payee change outranking everything and un-learnable away, a rail change surfaced a day before it could refuse a payment, a 3% price move kept out of the headline, a brief that caps findings so a change can never be crowded out, a tick that reads each URL once and shares its failures, and an absence measured by adding up every unattended pass rather than reporting the last one, and feedback that can raise as well as bury without ever silencing a payee change, and terms that stop a payment when the price or the payee moved between reading the card and pressing the button, and a card that names the chain its money moves on rather than letting the interest stand in for one, and a body that says it asks nothing rather than satisfying a schema with silence, and a budget every interest gets a share of before any interest gets seconds, and an action type that decides whether routing may substitute at all, and a watchlist that grows with the interests and cannot be filled by one seller, and a reading of what was bought that never speaks for the verification and never costs the receipt, and a question written for the event that is thrown away the moment it drifts off the subject, matched as whole words so a short name is never found inside a longer one, and a verdict that says out loud it covers the exchange and not the truth of what was sold, and an interaction that refuses rather than spend on the stock question, which for an endpoint is only a search for its own name, and a capability read from the endpoint rather than from the word that found it, and a subject refusal split into stale, refused and unaskable, and a dismissed announcement that teaches a product name and never a publisher, a watched word or a deprecation notice");
+/* ---- one card, one vote ---- */
+
+/* The watchlist's buttons gave no sign they had worked, and one owner pressed
+   "useful" until "announcements" read fifteen from four cards. Harmless for a
+   favoured category; not for an ignore, whose weight is the count. */
+const first = castVote(null, "card-a");
+assert.deepEqual(first, { supportCount: 1, taughtBy: ["card-a"], changed: true });
+const again = castVote({ supportCount: first.supportCount, taughtBy: first.taughtBy }, "card-a");
+assert.equal(again.changed, false, "The same card pressed twice is one statement");
+assert.equal(again.supportCount, 1);
+let pressed = { supportCount: first.supportCount, taughtBy: first.taughtBy };
+for (let i = 0; i < 3; i++) pressed = castVote(pressed, "card-a");
+assert.equal(ignoreWeight(pressed.supportCount), ignoreWeight(1), "three impatient clicks on one article weigh as one dismissal");
+const another = castVote({ supportCount: 1, taughtBy: ["card-a"] }, "card-b");
+assert.deepEqual(another, { supportCount: 2, taughtBy: ["card-a", "card-b"], changed: true }, "a second card is a second vote");
+/* "Ignore this kind" is not an inference, and still enters at full weight --
+   even from a card that already taught the softer version of it. */
+const outright = castVote({ supportCount: 1, taughtBy: ["card-a"] }, "card-a", EXPLICIT_IGNORE_SUPPORT);
+assert.equal(outright.supportCount, EXPLICIT_IGNORE_SUPPORT);
+assert.equal(outright.changed, true);
+assert.equal(castVote({ supportCount: EXPLICIT_IGNORE_SUPPORT, taughtBy: ["card-a"] }, "card-a", EXPLICIT_IGNORE_SUPPORT).changed, false);
+/* A caller that names no card keeps the old behaviour. */
+assert.equal(castVote({ supportCount: 2, taughtBy: [] }, undefined).supportCount, 3);
+
+console.log("[nova-test] passed: interests kept even when unknown, a first sighting reported as a finding rather than as news, the same commits not re-reported across refreshes, a payee change outranking everything and un-learnable away, a rail change surfaced a day before it could refuse a payment, a 3% price move kept out of the headline, a brief that caps findings so a change can never be crowded out, a tick that reads each URL once and shares its failures, and an absence measured by adding up every unattended pass rather than reporting the last one, and feedback that can raise as well as bury without ever silencing a payee change, and terms that stop a payment when the price or the payee moved between reading the card and pressing the button, and a card that names the chain its money moves on rather than letting the interest stand in for one, and a body that says it asks nothing rather than satisfying a schema with silence, and a budget every interest gets a share of before any interest gets seconds, and an action type that decides whether routing may substitute at all, and a watchlist that grows with the interests and cannot be filled by one seller, and a reading of what was bought that never speaks for the verification and never costs the receipt, and a question written for the event that is thrown away the moment it drifts off the subject, matched as whole words so a short name is never found inside a longer one, and a verdict that says out loud it covers the exchange and not the truth of what was sold, and an interaction that refuses rather than spend on the stock question, which for an endpoint is only a search for its own name, and a capability read from the endpoint rather than from the word that found it, and a subject refusal split into stale, refused and unaskable, and a dismissed announcement that teaches a product name and never a publisher, a watched word or a deprecation notice, and one vote per card however many times its button is pressed");

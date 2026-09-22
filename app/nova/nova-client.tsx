@@ -879,9 +879,13 @@ export function NovaClient({ view = "today" }: { view?: NovaView } = {}) {
     // Applied locally first: feedback that waits for a round trip feels like it
     // did not register, and the server is the record either way.
     if (removes) {
+      /* From every list the card can be in. It used to leave Today only, so a
+         "Not useful" pressed in the watchlist changed nothing on the screen
+         and was pressed again -- and every press was another vote. */
       setBrief({
         ...brief,
         worthAttention: brief.worthAttention.filter((signal) => signal.signalId !== signalId),
+        watchlist: brief.watchlist.filter((signal) => signal.signalId !== signalId),
       });
     } else {
       setSaid((current) => ({ ...current, [signalId]: feedback }));
@@ -1541,7 +1545,12 @@ export function NovaClient({ view = "today" }: { view?: NovaView } = {}) {
                         {(signal.kind === "repository_release" || signal.kind === "official_publication") ? <button type="button" onClick={() => void readSources(signal)} disabled={reading[signal.signalId]} className="mt-3 rounded-lg border px-3 py-2 text-sm">{reading[signal.signalId] ? "Reading…" : assessmentOf(signal) ? "Reassess for my project" : "Read the public sources"}</button> : null}
                         {paidResearchReadiness(signal, brief.agent.goal).ready ? <button type="button" onClick={() => void price(signal)} className="ml-2 mt-3 rounded-lg border px-3 py-2 text-sm">Find a tool for this open question</button> : null}
                         {readNotes[signal.signalId] ? <p role="status" className="mt-2 text-sm text-state-warn">{readNotes[signal.signalId]}</p> : null}
-                        <div className="mt-3 flex gap-3"><Verb onClick={() => void say(signal.signalId, "useful")}>Useful result</Verb><Verb onClick={() => void say(signal.signalId, "not_interesting")}>Not useful</Verb></div>
+                        {/* Acknowledged where it was pressed. Saved and silent is
+                            indistinguishable from broken, and the owner who
+                            found it so pressed it fourteen times. */}
+                        {said[signal.signalId] === "useful"
+                          ? <p role="status" className="mt-3 font-mono text-[11px] uppercase tracking-wider text-state-good">marked useful</p>
+                          : <div className="mt-3 flex gap-3"><Verb onClick={() => void say(signal.signalId, "useful")}>Useful result</Verb><Verb onClick={() => void say(signal.signalId, "not_interesting")}>Not useful</Verb></div>}
                       </div>
                     )}
                   </li>
