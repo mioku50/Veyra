@@ -21,7 +21,7 @@ import { getServerSupabaseConfig } from "../supabase/server-env.ts";
 import { assembleBrief, greeting, quietSummary } from "./brief.ts";
 import { MAX_INTERESTS, interestKey, keywordsForInterests, normalizeInterests } from "./interests.ts";
 import { changesForSubject } from "./observation.ts";
-import { categoryPhraseFor, scoreFloorFor, scoreRelevance } from "./relevance.ts";
+import { categoryPhraseFor, dismissedTopicFrom, scoreFloorFor, scoreRelevance } from "./relevance.ts";
 import { observeRepositories, observeX402Catalog, type SourceObservation } from "./sources.ts";
 import { settlementNetworkOf } from "./network.ts";
 import { standingFrom } from "./standing.ts";
@@ -1398,12 +1398,12 @@ export async function markSignal(input: {
     .update({ status, updated_at: new Date().toISOString() })
     .eq("agent_id", agent.agent_id)
     .eq("signal_id", input.signalId)
-    .select("kind, evidence, nova_subjects(label)")
+    .select("kind, headline, evidence, nova_subjects(label)")
     .maybeSingle();
 
   if (markError) throw new NovaError("Could not save your feedback.", "database_unavailable", 503);
   if (!data) throw new NovaError("No such item.", "not_found", 404);
-  const row = data as { evidence: Record<string, unknown>; kind: string; nova_subjects?: { label?: string } | null };
+  const row = data as { evidence: Record<string, unknown>; kind: string; headline?: string | null; nova_subjects?: { label?: string } | null };
   const assessment = assessmentOf({ evidence: row.evidence });
   if (assessment?.goal === agent.goal && (input.feedback === "useful" || input.feedback === "not_interesting")) {
     const { error } = await db().from("nova_value_feedback").upsert({
@@ -1436,7 +1436,19 @@ export async function markSignal(input: {
          cost the person every release notice they have. Soft, and it
          accumulates: the weight climbs only if they keep saying it. */
       // One unhelpful article is not a request to suppress its entire publisher.
-      if (label && row.kind !== "official_publication") await rememberPreference(agent.agent_id, "usually_ignores", label, { learnedFrom: "not_interesting" });
+      if (label && row.kind !== "official_publication") {
+        await rememberPreference(agent.agent_id, "usually_ignores", label, { learnedFrom: "not_interesting" });
+        return;
+      }
+      /* For an announcement the subject IS the publisher, so the press used to
+         do nothing at all -- and an owner whose every card is an announcement
+         had no way to say "less of this" about any of them. The topic comes
+         from the publisher's own headline, and never from a word the owner is
+         watching for. */
+      if (row.kind === "official_publication") {
+        const topic = dismissedTopicFrom(row.headline ?? "", keywordsForInterests(agent.interests ?? []), label);
+        if (topic) await rememberPreference(agent.agent_id, "usually_ignores", topic, { learnedFrom: "not_interesting", kind: row.kind, headline: (row.headline ?? "").slice(0, 160) });
+      }
       return;
 
     case "ignore_kind":
@@ -1465,6 +1477,35 @@ export async function markSignal(input: {
  * would otherwise take days to reach, without ever weakening something the
  * person has said more often than that.
  */
+/**
+ * Take back something Nova learned about the owner.
+ *
+ * Every preference used to be permanent. That was tolerable while "not
+ * interesting" learned only a subject the owner could see and name; it stopped
+ * being tolerable when a dismissed announcement began teaching a topic picked
+ * from its headline, because the pick is a heuristic and a wrong one would
+ * demote every later article on that topic with no way back.
+ *
+ * Preferences only. A `learning` row is the record of something bought and
+ * verified, and it is not the owner's opinion to retract -- it is evidence.
+ */
+export async function forgetPreference(input: { publicId: string; ownerSecret: string; memoryId: string }): Promise<{ forgotten: boolean }> {
+  const agent = await loadOwned(input.publicId, input.ownerSecret);
+  /* Idempotent. The state the owner asked for -- this is not remembered --
+     holds whether it was removed now or a moment ago by a second click, and
+     a 404 here would reach the page as "this agent was not found". */
+  if (!/^[0-9a-f-]{36}$/i.test(input.memoryId)) return { forgotten: false };
+  const { data, error } = await db()
+    .from("nova_memory")
+    .delete()
+    .eq("agent_id", agent.agent_id)
+    .eq("memory_id", input.memoryId)
+    .eq("kind", "preference")
+    .select("memory_id");
+  if (error) throw new NovaError("Could not forget that right now.", "database_unavailable", 503);
+  return { forgotten: (data?.length ?? 0) > 0 };
+}
+
 async function rememberPreference(
   agentId: string,
   facet: "cares_about" | "usually_ignores" | "follows",

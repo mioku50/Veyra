@@ -117,6 +117,48 @@ function preferenceApplies(phrase: string, category: string | null, shown: strin
   return matchedKeywords(shown, [phrase]).length > 0;
 }
 
+/**
+ * The topic to stop showing, taken from a publication the owner dismissed.
+ *
+ * "Not interesting" on an announcement used to learn nothing at all. The
+ * subject of an announcement is its feed, so learning the subject would have
+ * silenced the publisher, and one shrug at one article is not a request to
+ * stop reading Arc -- so the branch was skipped and the press did nothing. An
+ * owner whose every card is an announcement had no way to say "this one, not
+ * that one".
+ *
+ * Only a product name is learned. The first version took the longest word of
+ * the headline, and run against the owner's thirteen real headlines it was
+ * right once: it learned "discontinuing" from a Circle deprecation notice --
+ * which would have demoted every later deprecation notice, the one kind of
+ * announcement nobody should be able to shrug away -- and "transactions" and
+ * "balances", the owner's own subject matter. A word with a capital inside it
+ * (cirBTC, StableFX, OpenWiki) is a name somebody gave a thing, and "less of
+ * that thing" is what a dismissal of it means.
+ *
+ * Never a word the owner watches for, never a word of the publisher's own
+ * name, and when no name survives, nothing is learned -- which is what
+ * happened before. The words are the publisher's headline, not Nova's prose.
+ * The weight starts at one dismissal, only demotes, never touches a payee
+ * change, and the owner can forget it from what Nova knows about them.
+ */
+const NAMED = /[a-z][A-Z]/;
+
+export function dismissedTopicFrom(headline: string, watchedFor: string[], publisher = ""): string | null {
+  const excluded = new Set([
+    ...watchedFor.map(word => word.trim().toLowerCase()),
+    ...tokenize(publisher),
+  ].filter(Boolean));
+  for (const word of headline.split(/[\s:;,.!?()\[\]"“”]+/)) {
+    const bare = word.replace(/['’]s$/i, "");
+    if (!NAMED.test(bare)) continue;
+    const token = [...tokenize(bare)][0];
+    if (!token || token.length < 4 || excluded.has(token)) continue;
+    return token;
+  }
+  return null;
+}
+
 function subjectTextOf(input: RelevanceInput): string {
   return (input.subjectText ?? "").toLowerCase();
 }

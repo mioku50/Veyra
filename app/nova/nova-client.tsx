@@ -40,7 +40,7 @@ import {
 import { IDENTITY_REGISTER_ABI, NOVA_IDENTITY_REGISTRY } from "@/lib/nova/identity";
 import { PREVIEW_MANDATE, type PreviewMandateTerms } from "@/lib/nova/autonomy-mandate";
 import { NOVA_WITHHOLD_REASONS } from "@/lib/nova/types";
-import type { NovaBrief, NovaFeedback, NovaInvestigation, NovaProjectContext, NovaSignal, NovaWithholdReason } from "@/lib/nova/types";
+import type { NovaBrief, NovaFeedback, NovaInvestigation, NovaMemory, NovaProjectContext, NovaSignal, NovaWithholdReason } from "@/lib/nova/types";
 import type { NovaResearchProposal } from "@/lib/nova/research";
 import type { TermsChange } from "@/lib/nova/research-terms";
 import { useArcWallet } from "@/components/wallet/use-arc-wallet";
@@ -519,6 +519,22 @@ export function NovaClient({ view = "today" }: { view?: NovaView } = {}) {
         : "Rejected, and not suggested again.");
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Could not save that answer.");
+    }
+  };
+
+  /** Take back one learned preference. Removed from the page on success
+   *  only: a preference that is still applied must not look forgotten. */
+  const forgetLearned = async (memoryId: string) => {
+    if (!identity) return;
+    setError(null);
+    try {
+      await call(`/api/nova/v1/agents/${identity.publicId}/memory/${memoryId}`, {
+        method: "DELETE",
+        ownerSecret: identity.ownerSecret,
+      });
+      setBrief((current) => (current ? { ...current, memory: current.memory.filter((entry) => entry.memoryId !== memoryId) } : current));
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not forget that.");
     }
   };
 
@@ -1689,22 +1705,17 @@ export function NovaClient({ view = "today" }: { view?: NovaView } = {}) {
         <Label>What {brief.agent.name} knows about you</Label>
         <dl className="mt-4 space-y-0">
           {follows.length > 0 ? (
-            <Row label="You follow" value={follows.map((entry) => entry.summary).join(" · ")} tone="good" />
+            <Row label="You follow" value={<Learned entries={follows} onForget={forgetLearned} />} tone="good" />
           ) : null}
           {favours.length > 0 ? (
-            <Row label="You find useful" value={favours.map((entry) => entry.summary).join(" · ")} />
+            <Row label="You find useful" value={<Learned entries={favours} onForget={forgetLearned} />} />
           ) : null}
           {ignores.length > 0 ? (
             /* Said more than once is shown as said more than once. A preference
                asserted from a single click is a guess, and presenting it with
                the same confidence as one a person has repeated five times is
                how "what Nova knows about you" stops being true. */
-            <Row
-              label="You usually ignore"
-              value={ignores
-                .map((entry) => entry.supportCount > 1 ? `${entry.summary} ×${entry.supportCount}` : entry.summary)
-                .join(" · ")}
-            />
+            <Row label="You usually ignore" value={<Learned entries={ignores} onForget={forgetLearned} counted />} />
           ) : null}
         </dl>
         {/* What was bought is no longer counted here. It has a panel below that
@@ -2456,6 +2467,25 @@ function Receipts({ brief }: { brief: NovaBrief }) {
       </ul>
     </Panel>
   );
+}
+
+/**
+ * What Nova learned, each piece of it retractable.
+ *
+ * A dismissed announcement now teaches a topic picked from its headline, and
+ * the pick is a guess. A guess nobody can take back is a permanent demotion of
+ * everything on that topic, so every entry carries its own way out.
+ */
+function Learned({ entries, onForget, counted = false }: {
+  entries: NovaMemory[]; onForget: (memoryId: string) => void; counted?: boolean;
+}) {
+  return <span className="flex flex-wrap justify-end gap-1.5">{entries.map((entry) => (
+    <span key={entry.memoryId} className="inline-flex items-center gap-1 rounded-md border px-2 py-0.5">
+      {counted && entry.supportCount > 1 ? `${entry.summary} ×${entry.supportCount}` : entry.summary}
+      <button type="button" onClick={() => onForget(entry.memoryId)} aria-label={`Forget “${entry.summary}”`} title="Forget this"
+        className="-mr-1 px-1 text-muted-foreground hover:text-foreground">×</button>
+    </span>
+  ))}</span>;
 }
 
 /**

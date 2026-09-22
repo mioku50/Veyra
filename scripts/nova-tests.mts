@@ -18,7 +18,7 @@ import {
   repositoryDigest,
   x402Digest,
 } from "../lib/nova/observation.ts";
-import { orderByRelevance, scoreRelevance } from "../lib/nova/relevance.ts";
+import { dismissedTopicFrom, orderByRelevance, scoreRelevance } from "../lib/nova/relevance.ts";
 import { assembleBrief, greeting, quietSummary } from "../lib/nova/brief.ts";
 import { observeRepositories } from "../lib/nova/sources.ts";
 import { EXPLICIT_IGNORE_SUPPORT, ignoreWeight, summariseAway } from "../lib/nova/service.ts";
@@ -1273,4 +1273,40 @@ const forStranger = await sharpenIntent({
 assert.equal(forStranger.written, true);
 assert.match(forStranger.intent, /Ethereum/);
 
-console.log("[nova-test] passed: interests kept even when unknown, a first sighting reported as a finding rather than as news, the same commits not re-reported across refreshes, a payee change outranking everything and un-learnable away, a rail change surfaced a day before it could refuse a payment, a 3% price move kept out of the headline, a brief that caps findings so a change can never be crowded out, a tick that reads each URL once and shares its failures, and an absence measured by adding up every unattended pass rather than reporting the last one, and feedback that can raise as well as bury without ever silencing a payee change, and terms that stop a payment when the price or the payee moved between reading the card and pressing the button, and a card that names the chain its money moves on rather than letting the interest stand in for one, and a body that says it asks nothing rather than satisfying a schema with silence, and a budget every interest gets a share of before any interest gets seconds, and an action type that decides whether routing may substitute at all, and a watchlist that grows with the interests and cannot be filled by one seller, and a reading of what was bought that never speaks for the verification and never costs the receipt, and a question written for the event that is thrown away the moment it drifts off the subject, matched as whole words so a short name is never found inside a longer one, and a verdict that says out loud it covers the exchange and not the truth of what was sold, and an interaction that refuses rather than spend on the stock question, which for an endpoint is only a search for its own name, and a capability read from the endpoint rather than from the word that found it, and a subject refusal split into stale, refused and unaskable");
+/* ---- "not interesting" on an announcement ---- */
+
+/* It used to learn nothing, because the subject of an announcement is its
+   feed and learning the feed would silence the publisher. Now it learns a
+   product name from the headline -- and only a product name. The first
+   heuristic took the longest word; on the owner's real headlines it learned
+   "discontinuing" from a deprecation notice, and "transactions" and
+   "balances", their own subject matter. These are those headlines. */
+const watchedFor = ["x402", "payment", "usdc", "settle", "invoice", "escrow", "gateway", "agent payments", "arc", "circle", "cctp", "stablecoin"];
+assert.equal(dismissedTopicFrom("cirBTC Is Now Live on Arc", watchedFor, "Arc announcements"), "cirbtc");
+assert.equal(dismissedTopicFrom("StableFX Is Live on Arc: Always-On FX Is Here", watchedFor, "Arc announcements"), "stablefx");
+assert.equal(dismissedTopicFrom("Circle is Discontinuing Support for USDC and CCTP V1 on Noble", watchedFor, "Circle announcements"), null,
+  "A deprecation notice teaches nothing: the next one must not arrive already dismissed");
+assert.equal(dismissedTopicFrom("Sponsored Transactions on Arc with USDC as Gas", watchedFor, "Arc announcements"), null,
+  "A common word is the owner's subject matter, not a topic they dismissed");
+assert.equal(dismissedTopicFrom("Fund Gateway Balances up to 40x Faster With Fast Deposit", watchedFor, "Circle announcements"), null);
+
+/* The publisher's own name is never the topic, or this is the ban it replaces. */
+assert.equal(dismissedTopicFrom("How we built LangChain's Paid Media Agent", [], "LangChain announcements"), null);
+assert.equal(dismissedTopicFrom("How we built LangChain's Paid Media Agent", [], ""), "langchain", "-- and that guard is the only thing stopping it");
+/* Nor a name the owner is watching for. */
+assert.equal(dismissedTopicFrom("OpenWiki ships search", ["openwiki"], "LangChain announcements"), null);
+
+/* Learned, it demotes the next article on that product and nothing else from
+   the same publisher. */
+const announcement = (headline: string): ObservedChangeForTest => ({ kind: "official_publication", headline, detail: headline, evidence: {}, observedAt: new Date().toISOString() });
+type ObservedChangeForTest = Parameters<typeof scoreRelevance>[0]["change"];
+const dismissedCirBtc = { ...NOTHING_SAID, ignored: [{ phrase: "cirbtc", weight: ignoreWeight(1) }] };
+const nextCirBtc = scoreRelevance({ change: announcement("cirBTC lending opens on Arc"), keywords: watchedFor, subjectText: "Arc announcements cirBTC lending opens on Arc", subjectLabel: "Arc announcements", preferences: dismissedCirBtc });
+const sameCirBtcUntaught = scoreRelevance({ change: announcement("cirBTC lending opens on Arc"), keywords: watchedFor, subjectText: "Arc announcements cirBTC lending opens on Arc", subjectLabel: "Arc announcements", preferences: NOTHING_SAID });
+assert(nextCirBtc.score < sameCirBtcUntaught.score, "the dismissed product is demoted");
+assert.match(nextCirBtc.reason, /usually dismiss cirbtc/);
+const otherArc = scoreRelevance({ change: announcement("Sponsored Transactions on Arc with USDC as Gas"), keywords: watchedFor, subjectText: "Arc announcements Sponsored Transactions on Arc with USDC as Gas", subjectLabel: "Arc announcements", preferences: dismissedCirBtc });
+const otherArcUntaught = scoreRelevance({ change: announcement("Sponsored Transactions on Arc with USDC as Gas"), keywords: watchedFor, subjectText: "Arc announcements Sponsored Transactions on Arc with USDC as Gas", subjectLabel: "Arc announcements", preferences: NOTHING_SAID });
+assert.equal(otherArc.score, otherArcUntaught.score, "and the rest of that publisher is untouched");
+
+console.log("[nova-test] passed: interests kept even when unknown, a first sighting reported as a finding rather than as news, the same commits not re-reported across refreshes, a payee change outranking everything and un-learnable away, a rail change surfaced a day before it could refuse a payment, a 3% price move kept out of the headline, a brief that caps findings so a change can never be crowded out, a tick that reads each URL once and shares its failures, and an absence measured by adding up every unattended pass rather than reporting the last one, and feedback that can raise as well as bury without ever silencing a payee change, and terms that stop a payment when the price or the payee moved between reading the card and pressing the button, and a card that names the chain its money moves on rather than letting the interest stand in for one, and a body that says it asks nothing rather than satisfying a schema with silence, and a budget every interest gets a share of before any interest gets seconds, and an action type that decides whether routing may substitute at all, and a watchlist that grows with the interests and cannot be filled by one seller, and a reading of what was bought that never speaks for the verification and never costs the receipt, and a question written for the event that is thrown away the moment it drifts off the subject, matched as whole words so a short name is never found inside a longer one, and a verdict that says out loud it covers the exchange and not the truth of what was sold, and an interaction that refuses rather than spend on the stock question, which for an endpoint is only a search for its own name, and a capability read from the endpoint rather than from the word that found it, and a subject refusal split into stale, refused and unaskable, and a dismissed announcement that teaches a product name and never a publisher, a watched word or a deprecation notice");
