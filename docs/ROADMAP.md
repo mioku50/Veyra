@@ -1,6 +1,6 @@
 # Veyra product roadmap
 
-**Updated:** 2026-09-21  
+**Updated:** 2026-09-22  
 **Product:** Nova, a personal agent that works toward an owner's goals; Veyra, its deterministic trust and economic governor.  
 **North star:** The owner regularly receives useful, source-grounded work. Payments and onchain history support that work; neither is the product's purpose.
 
@@ -100,7 +100,7 @@ item 1 below is still the only thing that can move it.
 
 ### Remaining work, in order
 
-1. **Owner goal and real-use review.** Have the owner set a concrete goal in My Agent, use Nova for several days and assess findings in Today, including `useful` / `not interesting` and the reason. Do not substitute test-agent ratings or historical D0 approvals for user feedback. *(Started: three real "useful" ratings exist as of 2026-09-22, on Sponsored Transactions and the Arc Compatibility Guide. None is a "not interesting", and none carries a reason.)*
+1. **Owner goal and real-use review.** Have the owner set a concrete goal in My Agent, use Nova for several days and assess findings in Today, including `useful` / `not interesting` and the reason. Do not substitute test-agent ratings or historical D0 approvals for user feedback. *(Started. By 2026-09-22 the owner had rated five readings, four useful and one not, and none carried a reason, because the page had nowhere to put one. It does now: a rating of a reading takes an optional reason from the review's own categories and a note, and "Did Nova miss something?" takes a link. See [why, with the rating; and what Nova missed](audits/2026-09-22-nova-reasons-and-misses.md). Reasons are recorded for this review and change no ranking.)*
 2. **Improve the substance of findings.** *(partly addressed: a finding can now be stated against work already done, and a significant one carries proposed work rather than a topic. Whether the proposed work is worth doing is unmeasured — that is item 1.)* Explain changes to a release, policy, integration, product or API rather than presenting a raw commit count as a headline. Show evidence links, observation/publication dates, what's new relative to the previous brief, relevance to the goal and a concrete next step. If evidence is incomplete, say so.
 3. **Source coverage and reliability.** *(measurement in place 2026-09-22; the extending is not done.)* Measure inaccessible publications, missed important events, duplicates, stale cards, content-read failures, model invalid-output rates, processing time and app-side model/RPC costs. Extend source coverage based on missed owner-relevant events, not raw item volume. Preserve bounded SSRF-safe reads and untrusted-source isolation.
 
@@ -108,7 +108,9 @@ item 1 below is still the only thing that can move it.
 
    The other two are named rather than approximated, in the report itself. **Missed important events** cannot be measured from this side: nothing records an event that was never observed, so only the owner naming one establishes it — which makes this part of item 1, not of item 3. **App-side model and RPC costs** live in provider billing, which the report does not read.
 
-   Not done: extending coverage. That needs missed owner-relevant events, and there are none recorded yet.
+   The owner can now name a miss. A reported link is never fetched. It is sorted into `observed` (Nova had the article: a ranking miss), `covered` (Nova reads that publisher or repository but has no card for it: a reading miss) or `not_covered` (a coverage gap), and the report counts them under `misses`, listing hosts only for the coverage gaps, since only those are fixed by adding a source. A miss nobody reports is still unmeasured, and the report says so.
+
+   Not done: extending coverage. That needs missed owner-relevant events, and none has been reported yet.
 4. **Free-first tool selection.** The task must come before discovery. Use available public sources before offering a paid API. Show the unresolved question, expected incremental result, reason public information is insufficient, exact quoted price and provider limitations. If no suitable askable service exists, stop honestly.
 5. **Feedback-to-brief loop.** *(verified and partly fixed 2026-09-22.)* Verify that explicit owner feedback changes future prioritization without silently suppressing safety alerts or whole publishers. Keep feedback failures visible and avoid claiming personalization without demonstrated effect.
 
