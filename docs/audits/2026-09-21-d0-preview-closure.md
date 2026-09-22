@@ -98,3 +98,63 @@ findings the owner marks useful, including runs with zero paid calls. Until
 then the operational-wallet acceptance matrix in
 [D0/D1 readiness](2026-09-20-nova-d0-d1-readiness.md) stays a test design, not
 a work item.
+
+---
+
+## Capture at expiry, 2026-09-22
+
+The mandate expired at 12:49:49 UTC and was not renewed, extended or revoked.
+Four items were required above; three are answered and one cannot be.
+
+### 1. Final report — `window: "ended"`
+
+Re-run at `asOf` 2026-09-22 15:40:46 UTC. **Every figure is unchanged from the
+snapshot taken seven hours before expiry**, and `excludedAfterSnapshot` is 0:
+no decision was recorded in the last seven hours of the epoch.
+
+| | final |
+| --- | --- |
+| Window | `ended`, `revoked: false` |
+| Decisions under this hash | 13 (4 WOULD_ALLOW, 9 WOULD_DENY) |
+| Hypothetical allowed spend | 0.030000 USDC |
+| Owner feedback | 0 useful, 0 not worth it, **13 unanswered** |
+| Duplicate rows / integrity violations | 0 / 0 |
+| `liveAutonomyApproval` | `NOT_GRANTED` |
+
+### 2. Owner usefulness verdict: none was given
+
+Recorded explicitly, as the checklist requires. Thirteen of thirteen decisions
+carry no owner feedback. No test-agent rating is substituted. The usefulness
+column of this calibration is empty by measurement.
+
+### 3. Coverage for the epoch, and the metric that cannot be recovered
+
+From `nova_refreshes`, over the mandate's exact window, 47 passes (38
+scheduled, 9 manual): 1111 subjects checked, 112 signals found, 101 kept, 11
+filtered as noise. Median pass 1.7s, slowest 24.7s.
+
+Twelve passes recorded an unreachable source, and the distribution is the
+finding: **LangChain announcements failed all twelve times** — a source that is
+configured and has never once been read, which is a coverage gap rather than a
+quiet day. Three further entries are reading failures, two of them
+`invalid_response: body was not JSON (<!do…` — the Alibaba Cloud challenge page
+that made agentrouter.org unusable from Vercel, caught in the persisted record
+by the diagnostics added the same day.
+
+**The unpriced reasons cannot be reported for the epoch.** They are aggregated
+per tick in `ShadowMetrics.shadowUnpriced` and emitted to the scheduler log;
+nothing persists them, and runtime logs do not reach back to 2026-09-15. This
+is a real gap against roadmap item 3, not an omission of this capture: a
+per-epoch answer is unavailable after the fact by construction. Persisting the
+tick outcome is the fix, and it is not done here.
+
+### 4. Budget recommendation: none is supported
+
+The evidence does not support raising, lowering or confirming a limit. Five
+quotes sat above the 0.010 USDC per-action ceiling and nobody ever said whether
+the work behind them was worth buying; moving a ceiling to change the allowed
+count would answer a question nobody asked. The per-action and daily limits
+bound correctly in both directions, which is the only thing this epoch
+established.
+
+**D0 closes as insufficient for funding.** D1 remains behind gate V.

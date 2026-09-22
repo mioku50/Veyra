@@ -65,6 +65,39 @@ See [a reading somebody asked for, and work instead of a topic](audits/2026-09-2
 
 None of this is evidence of product value. It changes what Nova is told, what it proposes and what the owner can audit; gate V is unchanged.
 
+### Reading rules edition 6 and the reading model, 2026-09-22
+
+See [the V1.2 audit](audits/2026-09-21-nova-product-value-v1-2.md), sections
+"absence is not a finding" and "OpenRouter".
+
+- **Absence of confirmation is not a need for work.** The owner read four cards
+  and found the same defect in all of them: a subject their project context did
+  not mention came back as an unestablished part of their implementation, and
+  the proposed work was to go and establish it. Nova had two outcomes, work or
+  held back, so a real event had no way to surface except by finding itself
+  something to do. A third outcome now exists, and the other two are gated
+  structurally: `plan.relation` is one of `decides`/`requires`/`supersedes`
+  checked against a closed set, `plan.establishedFrom` may not be empty, and a
+  `gap` requires a plan — so an event that asks for nothing cannot reach a
+  purchase. `nextStep` is gone; it was the fallback where every "look into the
+  new technology" landed.
+- **The reading model is a deepseek on OpenRouter.** Edition 6 shipped with a
+  measured cost: ministral-14b would not connect sponsored gas on Arc to the
+  owner's own "operational wallet не выбран", six times out of six. Seven
+  candidates were measured on the six hardest stored cards;
+  `deepseek-v4.1-flash` makes that connection, invents no work, and writes the
+  best proposed work of any of them. Verified from the deployment, not only
+  from a laptop: three production readings under edition 6.
+- Two client defects surfaced doing it. The completion-token budget was one
+  constant for two workloads, so a reasoning model ran out mid-trace and
+  returned an empty message reported as `invalid_response`; it is now per call.
+  And OpenRouter serves one model id from a dozen upstreams, several of which
+  ignore `response_format`, which threw out about a third of readings at
+  random — `LLM_EXTRA_BODY` now carries `require_parameters`.
+
+None of this is evidence of product value either. Gate V is unchanged, and
+item 1 below is still the only thing that can move it.
+
 ### Remaining work, in order
 
 1. **Owner goal and real-use review.** Have the owner set a concrete goal in My Agent, use Nova for several days and assess findings in Today, including `useful` / `not interesting` and the reason. Do not substitute test-agent ratings or historical D0 approvals for user feedback.
@@ -77,7 +110,7 @@ None of this is evidence of product value. It changes what Nova is told, what it
 
 ## D0 — Close shadow calibration honestly
 
-**Closed as insufficient for funding on 2026-09-21: [D0 PREVIEW closure](audits/2026-09-21-d0-preview-closure.md).** The mandate runs to its expiry and is not renewed; the capture required at expiry is listed there.
+**Closed as insufficient for funding. The mandate expired 2026-09-22 12:49:49 UTC and the capture required at expiry is complete: [D0 PREVIEW closure](audits/2026-09-21-d0-preview-closure.md).** Final figures are unchanged from the pre-expiry snapshot — 13 decisions, 4 WOULD_ALLOW, 0.030000 USDC hypothetical, **0 of 13 carrying owner feedback**, no duplicates, no integrity violations, `liveAutonomyApproval: NOT_GRANTED`. No budget recommendation is supported, and none is made. One required item could not be answered: the per-tick `unpriced` reasons are emitted to the scheduler log and never persisted, so an epoch-wide figure is unavailable after the fact. Persisting the tick outcome is the fix and belongs to item 3 below.
 
 The active PREVIEW epoch predates this product-value change. Its original snapshot contained 11 priced decisions (2 WOULD_ALLOW, 9 WOULD_DENY); the 2026-09-20 postrelease record contained 13 (4 WOULD_ALLOW, 9 WOULD_DENY), **$0.030000 hypothetical allowed spend**, and no recorded owner feedback. These are observations from the configured database, correlated with scheduled-run evidence; they do not prove delivery, usefulness, settlement or wallet enforcement. See [D0/D1 readiness](audits/2026-09-20-nova-d0-d1-readiness.md).
 
