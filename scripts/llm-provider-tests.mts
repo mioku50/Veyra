@@ -402,6 +402,58 @@ if (process.argv.includes("--live")) {
   assert.equal(withoutUa.config.provider, "AgentRouter");
 }
 
+/* A router's own knob, for a router that needs one. OpenRouter serves a model
+   id from a dozen upstreams and picks per request; those that do not implement
+   response_format return prose, which the reading path throws out as
+   ungrounded -- measured at a third of calls on one candidate. The knob is
+   configuration rather than code because the next router will need a different
+   one, and it may never reach the fields this client controls. */
+{
+  const environment = {
+    LLM_PROVIDER: "openai-compatible",
+    LLM_BASE_URL: "https://openrouter.ai/api/v1",
+    LLM_API_KEY: "test-key",
+    LLM_MODEL: "deepseek/deepseek-v4.1-flash",
+    LLM_EXTRA_BODY: '{"provider":{"require_parameters":true}}',
+  } as NodeJS.ProcessEnv;
+
+  const resolution = resolveLlmConfig(environment);
+  assert(resolution.configured);
+  assert.deepEqual(resolution.config.extraBody, { provider: { require_parameters: true } });
+
+  let sent: Record<string, unknown> = {};
+  const result = await generateOpenAiCompatibleText({
+    environment, systemPrompt: "s", userPrompt: "u",
+    fetchImpl: (async (_url: string, init: RequestInit) => {
+      sent = JSON.parse(init.body as string);
+      return new Response(JSON.stringify({ choices: [{ message: { content: '{"summary":"s","keyFindings":["a","b"]}' } }] }), { status: 200, headers: { "content-type": "application/json" } });
+    }) as unknown as typeof fetch,
+  });
+  assert(result.ok);
+  assert.deepEqual(sent.provider, { require_parameters: true });
+
+  /* It may not displace what this client is responsible for. */
+  const hostile = resolveLlmConfig({ ...environment, LLM_EXTRA_BODY: '{"model":"someone-elses-model","messages":[{"role":"user","content":"x"}]}' });
+  assert(hostile.configured);
+  await generateOpenAiCompatibleText({
+    environment: { ...environment, LLM_EXTRA_BODY: '{"model":"someone-elses-model","messages":[{"role":"user","content":"x"}]}' },
+    systemPrompt: "s", userPrompt: "u",
+    fetchImpl: (async (_url: string, init: RequestInit) => {
+      sent = JSON.parse(init.body as string);
+      return new Response(JSON.stringify({ choices: [{ message: { content: '{"summary":"s","keyFindings":["a","b"]}' } }] }), { status: 200, headers: { "content-type": "application/json" } });
+    }) as unknown as typeof fetch,
+  });
+  assert.equal(sent.model, "deepseek/deepseek-v4.1-flash");
+  assert.equal((sent.messages as unknown[]).length, 2);
+
+  /* A knob typed in wrong is ignored, not an outage. */
+  for (const bad of ['{"provider":', '["provider"]', "null", "true", ""]) {
+    const broken = resolveLlmConfig({ ...environment, LLM_EXTRA_BODY: bad });
+    assert(broken.configured, `LLM_EXTRA_BODY=${bad} must not stop the provider answering`);
+    assert.equal(broken.config.extraBody, null);
+  }
+}
+
 /* ---- a diagnostic that says which setting is missing ---- */
 
 /* "configured: false" on its own cost an afternoon. A deployment answered every
@@ -479,4 +531,4 @@ assert.equal(getLlmSynthesisDiagnostic({
   LLM_MODEL: "example-model-1",
 } as NodeJS.ProcessEnv).configured, false, "and a different value is still refused");
 
-console.log("[llm-provider-test] passed: OpenAI-compatible request boundary, routed provider label and User-Agent header, and a diagnostic that names the settings it needs without carrying one of their values, model config, timeout, 429 retry, response bounds, malformed output, a reading model configurable apart from the rewrite model without changing it, a 200 that carries a refusal rather than an answer telling the caller which it was, legacy-key rejection, secret-safe prompt, input-leak fallback, AI metadata, deterministic fallback, and partial failure");
+console.log("[llm-provider-test] passed: OpenAI-compatible request boundary, routed provider label, User-Agent header and a router knob that cannot displace the request this client owns, and a diagnostic that names the settings it needs without carrying one of their values, model config, timeout, 429 retry, response bounds, malformed output, a reading model configurable apart from the rewrite model without changing it, a 200 that carries a refusal rather than an answer telling the caller which it was, legacy-key rejection, secret-safe prompt, input-leak fallback, AI metadata, deterministic fallback, and partial failure");

@@ -38,6 +38,18 @@ export type OpenAiCompatibleConfig = {
      AgentRouter answers 401 `unauthorized_client_error` without it — so the
      header has to be configurable rather than whatever the runtime sends. */
   userAgent: string | null;
+  /* Extra top-level fields merged into the request body, as JSON in
+     LLM_EXTRA_BODY. The same class of accommodation as userAgent above: a
+     router's own knob, which only that router understands.
+
+     The case it was added for. OpenRouter serves one model id from a dozen
+     upstream providers and picks per request; several of them do not
+     implement response_format, so the JSON instruction is dropped, prose
+     comes back, and the reading is thrown out as ungrounded -- a third of
+     calls on one candidate, at random. {"provider":{"require_parameters":
+     true}} routes only to providers that implement what the request asks
+     for. Nothing here is merged over a field this client sets itself. */
+  extraBody: Record<string, unknown> | null;
 };
 
 export type LlmConfigResolution =
@@ -101,6 +113,7 @@ export function resolveLlmConfig(
   const model = normalizedEnvironmentValue(environment.LLM_MODEL);
   const label = normalizedEnvironmentValue(environment.LLM_PROVIDER_LABEL) ?? DEFAULT_LLM_PROVIDER_LABEL;
   const userAgent = normalizedEnvironmentValue(environment.LLM_USER_AGENT);
+  const extraBody = parseExtraBody(normalizedEnvironmentValue(environment.LLM_EXTRA_BODY));
 
   /* Case-insensitively, because this names a protocol rather than data and
      there is exactly one value it may hold. Matching it exactly bought nothing
@@ -125,6 +138,7 @@ export function resolveLlmConfig(
         apiKey,
         model,
         userAgent: userAgent && !/[\r\n\0]/.test(userAgent) ? userAgent : null,
+        extraBody,
       },
     };
   } catch {
@@ -135,7 +149,17 @@ export function resolveLlmConfig(
 /** The settings a reading may override, each falling back to its plain
  *  counterpart. LLM_PROVIDER is absent on purpose: it names the protocol, and
  *  there is one. */
-const READING_OVERRIDES = ["BASE_URL", "API_KEY", "MODEL", "PROVIDER_LABEL", "USER_AGENT"] as const;
+/** Null unless it parses to a plain object: a misconfigured knob is ignored,
+ *  not a reason for the provider to stop answering. */
+function parseExtraBody(value: string | null): Record<string, unknown> | null {
+  if (!value) return null;
+  try {
+    const parsed: unknown = JSON.parse(value);
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed as Record<string, unknown> : null;
+  } catch { return null; }
+}
+
+const READING_OVERRIDES = ["BASE_URL", "API_KEY", "MODEL", "PROVIDER_LABEL", "USER_AGENT", "EXTRA_BODY"] as const;
 
 /**
  * The configuration for the one call that is not a rewrite.
@@ -309,6 +333,12 @@ export async function generateOpenAiCompatibleText(input: {
   timeoutMs?: number;
   maxAttempts?: number;
   maxResponseBytes?: number;
+  /** Raise the completion budget for a workload that reasons before it writes.
+   *  The default is sized for the one-sentence rewrite; a judgement prompt on
+   *  a reasoning model spends multiples of it on its trace before emitting any
+   *  content, and a budget that runs out mid-trace returns an empty message
+   *  the caller can only report as `invalid_response`. */
+  maxCompletionTokens?: number;
   /** Opt-in for callers that require JSON; no fallback to unstructured output. */
   responseFormat?: "json_object";
 }): Promise<LlmGenerationResult> {
@@ -335,6 +365,7 @@ export async function generateOpenAiCompatibleText(input: {
   const timeoutMs = input.timeoutMs ?? LLM_REQUEST_TIMEOUT_MS;
   const maxAttempts = Math.max(1, Math.min(input.maxAttempts ?? LLM_MAX_ATTEMPTS, 3));
   const maxResponseBytes = input.maxResponseBytes ?? LLM_MAX_RESPONSE_BYTES;
+  const maxCompletionTokens = input.maxCompletionTokens ?? LLM_MAX_COMPLETION_TOKENS;
   let lastReason: LlmFailureReason = "upstream_error";
 
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
@@ -351,12 +382,13 @@ export async function generateOpenAiCompatibleText(input: {
           ...(config.userAgent ? { "User-Agent": config.userAgent } : {}),
         },
         body: JSON.stringify({
+          ...(config.extraBody ?? {}),
           model: config.model,
           messages: [
             { role: "system", content: input.systemPrompt },
             { role: "user", content: input.userPrompt },
           ],
-          max_completion_tokens: LLM_MAX_COMPLETION_TOKENS,
+          max_completion_tokens: maxCompletionTokens,
           ...(input.responseFormat ? { response_format: { type: input.responseFormat } } : {}),
         }),
         signal: controller.signal,
