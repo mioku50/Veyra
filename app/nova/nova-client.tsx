@@ -2885,6 +2885,20 @@ function DeeperResearch({
         <p><strong>Requested result:</strong> {proposal.researchNeed.expectedResult}</p>
         <p className="text-xs text-muted-foreground">This tool accepts the question; its answer may still be incomplete. Veyra checks whether the spend is permitted, not whether it is worth buying.</p>
       </div> : null}
+      {/* Free first, shown rather than asserted: the public sources the
+          reading read, for nothing, before any tool was looked for. */}
+      {proposal.checkedFirst?.length ? (
+        <div className="mt-3 text-xs text-muted-foreground">
+          <p>Read first, at no charge{proposal.checkedAt ? ` (${timeAgo(proposal.checkedAt)})` : ""}:</p>
+          <ul className="mt-1 space-y-0.5">
+            {proposal.checkedFirst.map((source) => (
+              <li key={source.url}>
+                <a href={source.url} target="_blank" rel="noreferrer" className="underline underline-offset-2">{source.title}</a>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
       <dl className="mt-4 space-y-0">
         {proposal.performedVia ? (
           /* Whose work this is. The subject of the question and the party being
@@ -2894,6 +2908,12 @@ function DeeperResearch({
         ) : null}
         <Row label={proposal.performedVia ? "Paid to" : "Provider"} value={proposal.provider} />
         <Row label="Cost" value={cost} />
+        {/* What the money buys, in the tool's own published terms: where the
+            question goes, and the shape of what comes back. */}
+        {proposal.sentAs ? <Row label="Question sent as" value={<span className="font-mono">{proposal.sentAs}</span>} /> : null}
+        {proposal.returns !== undefined ? (
+          <Row label="Returns" value={proposal.returns ?? "No published shape"} tone={proposal.returns ? "plain" : "warn"} />
+        ) : null}
         <Row label="Trust" value={`${proposal.trustScore}/100`} />
         <Row
           label="Payment"
@@ -2934,10 +2954,14 @@ function DeeperResearch({
         </p>
       ) : null}
 
+      {/* Said as narrowly as it is true. With no published shape the check is
+          that an answer arrived and is not an error, and nothing about its
+          content; the older sentence promised a comparison nobody could run. */}
       {proposal.verifiedAfterPaying ? (
         <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
-          {BRAND.name} will check the answer against what this endpoint says it returns, after
-          the payment and before {"it"} counts as a result.
+          {proposal.returns === null
+            ? `${BRAND.name} will check that an answer arrived and is not an error, after the payment and before it counts as a result.`
+            : `${BRAND.name} will check the answer against what this endpoint says it returns, after the payment and before it counts as a result.`}
         </p>
       ) : null}
 
@@ -2949,6 +2973,21 @@ function DeeperResearch({
             </li>
           ))}
         </ul>
+      ) : null}
+
+      {/* What speaks against it, on its own list: not ticked, and not left
+          for the reader to infer from what is missing above. */}
+      {proposal.limitations?.length ? (
+        <div className="mt-3">
+          <p className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">Limits</p>
+          <ul className="mt-1 space-y-1">
+            {proposal.limitations.map((limitation) => (
+              <li key={limitation} className="text-xs leading-relaxed text-muted-foreground">
+                <span className="mr-2 font-mono text-state-warn">!</span>{limitation}
+              </li>
+            ))}
+          </ul>
+        </div>
       ) : null}
 
       {state.stage === "changed" ? (

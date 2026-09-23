@@ -43,6 +43,7 @@ import type { NovaSignal } from "./types.ts";
 import { networkName } from "./network.ts";
 import { actionFor, type NovaAction, type NovaActionType } from "./action.ts";
 import { paidResearchReadiness, assessmentOf } from "./value.ts";
+import { checkedFirst, describeReturns, toolLimitations, unpricedNote } from "./tool-card.ts";
 import type { sharpenIntent } from "./intent.ts";
 
 /**
@@ -105,6 +106,18 @@ export type NovaResearchProposal = {
   reasons: string[];
   /** How many were looked at to get here. */
   probed: number;
+  /** The public sources the reading read, for nothing, before any tool was
+   *  looked for, and when. Absent on proposals made before it was recorded. */
+  checkedFirst?: Array<{ title: string; url: string }>;
+  checkedAt?: string;
+  /** The tool's published input field the question is sent in. */
+  sentAs?: string | null;
+  /** What comes back, from its published output shape; null when it
+   *  publishes none. */
+  returns?: string | null;
+  /** What this tool cannot do or cannot be checked for, kept apart from the
+   *  reasons it was chosen. */
+  limitations?: string[];
   /** Set when evidence's first choice was passed over, and why. */
   routingNote: string | null;
   /** Whether the subject is the thing being learned about or the thing being
@@ -458,7 +471,7 @@ async function firstPayable(input: {
     });
 
     if (quoted.kind === "free") {
-      note("it answers without charging, so there is nothing here to authorise or verify.");
+      note(unpricedNote(quoted.status));
       continue;
     }
     if (quoted.kind === "refused") {
@@ -712,6 +725,16 @@ export async function proposeResearch(input: {
       verifiedAfterPaying: decision !== "ALLOW",
       reasons: reasonsFor(winner),
       probed: selection.probed,
+      checkedFirst: checkedFirst(assessment.sources),
+      checkedAt: assessment.generatedAt,
+      sentAs: request.intentField,
+      returns: describeReturns(winner.marketplace.outputSchema ?? quote.outputSchema ?? null),
+      limitations: toolLimitations({
+        sentAs: request.intentField,
+        outputSchema: winner.marketplace.outputSchema ?? quote.outputSchema ?? null,
+        catalogDrift: winner.probe?.catalogDrift ?? [],
+        respondedWith402: winner.probe ? winner.probe.respondedWith402 : null,
+      }),
       /* Only research has routing to explain. An interaction was never routed:
          the winner is the subject, chosen because the card is named after it,
          and printing the engine's note about which candidate it would otherwise
@@ -985,19 +1008,17 @@ export async function revalidateResearch(input: {
  *
  * Every line is something Veyra measured in the last few seconds, not a
  * property of the listing. A catalogue can claim a price; only a probe can say
- * the endpoint asked for it.
+ * the endpoint asked for it. Only what speaks for it: the card prints each of
+ * these with a tick, and what speaks against it is a limitation.
  */
-function reasonsFor(winner: MarketplaceSelection["candidates"][number]): string[] {
+export function reasonsFor(winner: Pick<MarketplaceSelection["candidates"][number], "probe" | "marketplace">): string[] {
   const reasons: string[] = [];
   const probe = winner.probe;
 
   if (probe?.respondedWith402) reasons.push("Answered a valid payment challenge just now");
-  else if (probe?.reachable) reasons.push("Endpoint answered, but not with a payment challenge");
 
   if (probe && (probe.catalogDrift?.length ?? 0) === 0) {
     reasons.push("Live price and payee match the listing");
-  } else if (probe?.catalogDrift?.length) {
-    reasons.push(`Differs from its listing: ${probe.catalogDrift.join(", ")}`);
   }
 
   if (typeof probe?.latencyMs === "number") {

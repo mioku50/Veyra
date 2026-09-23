@@ -179,7 +179,8 @@
     "nova:coverage:report": "node --experimental-transform-types --no-warnings --env-file-if-exists=.env.local scripts/nova-coverage-report.mts",
     "nova-coverage:test": "node --experimental-transform-types --no-warnings scripts/nova-coverage-tests.mts",
     "nova-feedback:test": "node --experimental-transform-types --no-warnings scripts/nova-feedback-tests.mts",
-    "nova-substance:test": "node --experimental-transform-types --no-warnings scripts/nova-substance-tests.mts"
+    "nova-substance:test": "node --experimental-transform-types --no-warnings scripts/nova-substance-tests.mts",
+    "nova-tools:test": "node --experimental-transform-types --no-warnings scripts/nova-tools-tests.mts"
   },
   "dependencies": {
     "@circle-fin/adapter-viem-v2": "^1.14.0",
