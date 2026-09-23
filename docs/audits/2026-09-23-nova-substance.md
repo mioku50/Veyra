@@ -173,11 +173,18 @@ not claimed either way here.
   back to the stored copy. The product-value bucket invariant
   now states that a duplicate is held and not listed. The full gate passes,
   including the production build.
+- Edition 7 in production. The owner's own refresh, at 15:44 UTC on
+  23 September, wrote three readings under it with OpenRouter's
+  `deepseek-v4.1-flash`, and none failed. Each covered the whole article:
+  37 of 37 sentences for the Arc Compatibility Guide, 49 of 49 for StableFX
+  and 66 of 66 for a LangChain post. All three had been stored cut at the old
+  6,000 characters and were fetched again in full: 7,338, 10,627 and 11,991
+  characters.
 
 ## Not verified
 
 - What the owner saw of the new and re-read marks. The boundary moved as
   designed, and nobody here has looked at their screen.
-- Edition 7 in production until a reading is written there under it. Five
-  cards and three runs per arm are a small sample. The compatibility guide
-  shows that a longer input can still lose a run.
+- Whether edition 7 reads better in production, not only more. Five cards
+  and three runs per arm are a small sample. The compatibility guide shows
+  that a longer input can still lose a run.
