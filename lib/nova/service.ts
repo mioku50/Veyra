@@ -13,7 +13,7 @@ import {
   readingStands,
   type NovaProjectContext,
 } from "./project-context.ts";
-import { READING_FAILURE_DETAIL, READING_RULES, assessPublicMaterial, readingCoverage, type ReadingFailure } from "./free-research.ts";
+import { EVENT_SENTENCES_BEFORE_EDITION_7, READING_FAILURE_DETAIL, READING_RULES, assessPublicMaterial, readingCoverage, type ReadingFailure } from "./free-research.ts";
 import { PUBLIC_FEEDS, observePublications, publicContext } from "./public-sources.ts";
 import { noteFrom, reasonFor, type NovaLearned } from "./verdict.ts";
 import { coverageOf, missUrl, publicationVariants, type NovaMiss } from "./misses.ts";
@@ -1041,7 +1041,7 @@ export function forThePage(signal: NovaSignal): NovaSignal {
         valueAssessment: {
           ...assessment,
           coverage: assessment.coverage
-            ?? (assessment.sources[0]?.text ? readingCoverage(assessment.sources[0]) : undefined),
+            ?? (assessment.sources[0]?.text ? readingCoverage(assessment.sources[0], EVENT_SENTENCES_BEFORE_EDITION_7) : undefined),
           sources: assessment.sources.map((source) => ({ ...source, text: "" })),
         },
       } : {}),

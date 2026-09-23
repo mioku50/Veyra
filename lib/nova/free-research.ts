@@ -28,28 +28,35 @@ const sentencesOf = (text: string) => text.split(/(?<=[.!?])\s+(?=[A-ZА-Я0-9])
   .map(sentence => sentence.trim()).filter(sentence => sentence.length >= 25);
 
 /**
- * How many sentences of each source the model is given: the first twenty-four.
+ * How many sentences of each source the model is given.
  *
- * On the owner's Today that was 24 of 32 kept sentences of StableFX, 24 of 34
- * of the Arc compatibility guide and 24 of 31 of sponsored transactions, each
- * kept from a longer article. Giving the event whole is the obvious change and
- * is not made here: it changes what every reading says, and it has not been
- * measured on the model that writes them. What is made is the card saying how
- * much was read, because until then a reading of an opening looked exactly
- * like a reading of an article.
+ * The event is the thing being judged, and it is given whole: everything Nova
+ * kept of it, which is bounded by the characters kept (ARTICLE_TEXT_CAP), not
+ * by a count of sentences. Until edition 7 every source stopped at the first
+ * twenty-four, so on the owner's Today StableFX was read from 24 of 32 kept
+ * sentences and the Arc compatibility guide from 24 of 34, each already cut
+ * from a longer article. Reference pages are context for the event, and stay
+ * at twenty-four.
  */
-export const EXCERPT_SENTENCES = 24;
+export const REFERENCE_SENTENCES = 24;
+
+/** What the event was given before edition 7, and so what every reading
+ *  stored without its own coverage saw. */
+export const EVENT_SENTENCES_BEFORE_EDITION_7 = 24;
 
 /** Give the model stable references to actual excerpts instead of asking it
  * to reproduce punctuation from memory. Unknown references are rejected. */
 export function sourceExcerpts(sources: PublicMaterial[]) {
-  return sources.flatMap((source, sourceIndex) => sentencesOf(source.text)
-    .slice(0, EXCERPT_SENTENCES)
-    .map((text, index) => ({ id: `s${sourceIndex + 1}.e${index + 1}`, sourceId: source.id, quote: text.slice(0, 500) })));
+  return sources.flatMap((source, sourceIndex) => {
+    const sentences = sentencesOf(source.text);
+    return (sourceIndex === 0 ? sentences : sentences.slice(0, REFERENCE_SENTENCES))
+      .map((text, index) => ({ id: `s${sourceIndex + 1}.e${index + 1}`, sourceId: source.id, quote: text.slice(0, 500) }));
+  });
 }
 
-/** How much of the event a reading given `limit` sentences of it saw. */
-export function readingCoverage(event: PublicMaterial, limit: number = EXCERPT_SENTENCES): ReadingCoverage {
+/** How much of the event a reading saw: all of what was kept, or its first
+ *  `limit` sentences for a reading written before edition 7. */
+export function readingCoverage(event: PublicMaterial, limit = Number.POSITIVE_INFINITY): ReadingCoverage {
   const sentencesKept = sentencesOf(event.text).length;
   return { sentencesRead: Math.min(sentencesKept, limit), sentencesKept, cut: wasCut(event) };
 }

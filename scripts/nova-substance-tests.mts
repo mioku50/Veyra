@@ -1,8 +1,8 @@
 /** Copyright 2026 Veyra. SPDX-License-Identifier: Apache-2.0 */
 import assert from "node:assert/strict";
-import { LEGACY_TEXT_CAP, coverageSentence, wasCut, type PublicMaterial } from "../lib/nova/value.ts";
-import { EXCERPT_SENTENCES, readingCoverage, sourceExcerpts } from "../lib/nova/free-research.ts";
-import { ARTICLE_TEXT_CAP, parsePublication, readPublicPage } from "../lib/nova/public-sources.ts";
+import { LEGACY_TEXT_CAP, READING_RULES, coverageSentence, wasCut, type PublicMaterial } from "../lib/nova/value.ts";
+import { EVENT_SENTENCES_BEFORE_EDITION_7, REFERENCE_SENTENCES, parseValueAssessment, readingCoverage, sourceExcerpts } from "../lib/nova/free-research.ts";
+import { ARTICLE_TEXT_CAP, fullerPublication, parsePublication, publicContext, readPublicPage } from "../lib/nova/public-sources.ts";
 import { VISIT_GAP_MS, assembleBrief, endpointOf, visitBoundary } from "../lib/nova/brief.ts";
 import { publishedAtOf, sinceLastVisit } from "../lib/nova/presentation.ts";
 import { forThePage } from "../lib/nova/service.ts";
@@ -15,10 +15,27 @@ const material = (text: string, extra: Partial<PublicMaterial> = {}): PublicMate
 
 /* ---- a reading says how much of the article it stands on ---- */
 
-assert.equal(EXCERPT_SENTENCES, 24, "What the model is given is unchanged until a new edition is measured");
-assert.equal(sourceExcerpts([material(sentences(40))]).length, 24);
-assert.deepEqual(readingCoverage(material(sentences(32))), { sentencesRead: 24, sentencesKept: 32, cut: false });
+/* Edition 7: the event whole, the reference pages at twenty-four. */
+const reference = material(sentences(40), { id: "ref", url: "https://docs.arc.io/r.md" });
+const excerpts = sourceExcerpts([material(sentences(40)), reference]);
+assert.equal(excerpts.filter(e => e.sourceId === "https://www.arc.io/blog/x").length, 40, "The event is given whole");
+assert.equal(excerpts.filter(e => e.sourceId === "ref").length, REFERENCE_SENTENCES);
+assert.equal(REFERENCE_SENTENCES, 24);
+assert.deepEqual(readingCoverage(material(sentences(32))), { sentencesRead: 32, sentencesKept: 32, cut: false });
+assert.deepEqual(readingCoverage(material(sentences(32)), EVENT_SENTENCES_BEFORE_EDITION_7), { sentencesRead: 24, sentencesKept: 32, cut: false },
+  "What a reading written before edition 7 saw");
 assert.deepEqual(readingCoverage(material(sentences(7))), { sentencesRead: 7, sentencesKept: 7, cut: false });
+
+/* A reading may stand on the part of the event edition 6 never gave the
+   model, and records that it read all of it. */
+const deep = parseValueAssessment(JSON.stringify({
+  significant: true, whatChanged: "Arc documents the change.", whyItMatters: "It bears on the wallet decision.",
+  plan: { relation: "decides", establishedFrom: [1], unverified: "Which wallet fits is not settled by the article.", action: "Compare the candidate wallets against the documented behaviour." },
+  citationIds: ["s1.e30"], gap: null,
+}), { goal: "Track Arc changes.", sources: [material(sentences(40)), reference], now, writtenBy: "fixture", projectContext: ["Operational wallet не выбран."] });
+assert.ok(deep, "The thirtieth sentence of the event is evidence a reading may cite");
+assert.deepEqual(deep.coverage, { sentencesRead: 40, sentencesKept: 40, cut: false });
+assert.equal(deep.rules, READING_RULES);
 
 /* Stored before the flag existed: cut exactly at the old cap, and only then. */
 assert.equal(wasCut({ text: "x".repeat(LEGACY_TEXT_CAP) }), true);
@@ -73,6 +90,40 @@ const twice = pages({
   "https://docs.arc.io/b.md": () => new Response(null, { status: 301, headers: { location: "/c.md" } }),
 });
 await assert.rejects(readPublicPage("https://docs.arc.io/a.md", twice.fetchImpl), /more than once/);
+
+/* ---- the article again, where the stored copy stopped at the old cap ---- */
+
+const legacy = material(sentences(200).slice(0, LEGACY_TEXT_CAP));
+assert.equal(wasCut(legacy), true);
+const article = pages({ "https://www.arc.io/blog/x": () => new Response(page(sentences(400))) });
+const whole = await fullerPublication(legacy, article.fetchImpl, now);
+assert.equal(whole.text.length, ARTICLE_TEXT_CAP, "Up to the new cap");
+assert.equal(whole.truncated, true, "Still longer than what is kept, and it says so");
+assert.ok(whole.text.startsWith(legacy.text.slice(0, 200)), "The same article");
+assert.deepEqual([whole.url, whole.title, whole.publishedAt, whole.fetchedAt], [legacy.url, legacy.title, legacy.publishedAt, now.toISOString()]);
+
+const untouched = pages({});
+const fits = material(sentences(20));
+assert.equal(await fullerPublication(fits, untouched.fetchImpl, now), fits);
+const keptToNewCap = material("x".repeat(ARTICLE_TEXT_CAP), { truncated: true });
+assert.equal(await fullerPublication(keptToNewCap, untouched.fetchImpl, now), keptToNewCap);
+assert.equal(untouched.asked.length, 0, "An article kept whole, or kept to the new cap, is not fetched again");
+
+assert.equal(await fullerPublication(legacy, pages({}).fetchImpl, now), legacy, "A failed refetch costs the improvement, never the reading");
+assert.equal(await fullerPublication(legacy, pages({ "https://www.arc.io/blog/x": () => new Response(page(sentences(20))) }).fetchImpl, now), legacy,
+  "A page that now yields less than was kept changes nothing");
+const elsewhere = pages({ "https://www.arc.io/blog/x": () => new Response(null, { status: 302, headers: { location: "https://evil.example/x" } }) });
+assert.equal(await fullerPublication(legacy, elsewhere.fetchImpl, now), legacy, "The same approved-site rules as the first read");
+
+/* The reading is given the article, fetched alongside the reference pages. */
+const references = {
+  "https://docs.arc.io/arc/references/connect-to-arc.md": () => new Response("# Connect to Arc. The chain id and the RPC endpoints are listed here."),
+  "https://developers.circle.com/gateway-nanopayments/supported-networks.md": () => new Response("# Supported networks. Arc is supported by Gateway."),
+};
+const context = await publicContext(legacy, pages({ "https://www.arc.io/blog/x": () => new Response(page(sentences(400))), ...references }).fetchImpl);
+assert.equal(context.sources[0].text.length, ARTICLE_TEXT_CAP, "Not the stored opening");
+assert.deepEqual([context.sources.length, context.unavailable], [3, []]);
+assert.equal((await publicContext(legacy, pages(references).fetchImpl)).sources[0], legacy, "and the stored copy when the article cannot be fetched");
 
 /* ---- where "new since your last visit" starts ---- */
 
@@ -146,4 +197,4 @@ assert.equal((sent.evidence.subject as { url: string }).url, "https://www.arc.io
 assert.equal((sent.evidence.valueAssessment as { sources: Array<{ url: string }> }).sources[1].url, "https://docs.arc.io/r.md");
 assert.ok(JSON.stringify(sent).length < JSON.stringify(read).length / 3);
 
-console.log("PASS: substance — a reading that says how much of the article it read and whether the article was longer, the model's input unchanged until a new edition is measured, one redirect followed only within the same approved site, a visit boundary that a reload inside the visit does not move, the date a thing happened alongside the date Nova found it, one listing per endpoint whatever payee it names, and a brief that carries no article text to the page.");
+console.log("PASS: substance — a reading that says how much of the article it read and whether the article was longer, the event given whole and the reference pages at twenty-four, a reading free to cite the part of an article edition 6 never saw, an article stored at the old cap fetched again alongside the references and kept as stored when that fails, one redirect followed only within the same approved site, a visit boundary that a reload inside the visit does not move, the date a thing happened alongside the date Nova found it, one listing per endpoint whatever payee it names, and a brief that carries no article text to the page.");

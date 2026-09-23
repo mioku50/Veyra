@@ -61,8 +61,27 @@ import type { NovaSignal } from "./types.ts";
  * model changed with this edition -- so every judgement made by the previous
  * one is retired here as a side effect of the edition, rather than by a rule
  * that would have caught it on its own.
+ *
+ * 7: the model reads the article, not its opening. Every source used to stop
+ * at its first twenty-four sentences, from an article already cut at 6,000
+ * characters: StableFX was read from 24 of 32 kept sentences, the Arc
+ * compatibility guide from 24 of 34, each the start of a longer article, and
+ * the card did not say so. The event is now given whole, up to 12,000 kept
+ * characters, and fetched again where the stored copy stopped at the old cap.
+ * Reference pages stay at twenty-four sentences.
+ *
+ * Measured on production's reading model before shipping -- a first dry run
+ * had used the local environment's ministral-8b, measured that model rather
+ * than the input, and was withdrawn. Five of the owner's cards, three runs per
+ * arm, identical but for the event. On the three whose input changes, a plan
+ * built on "Operational wallet не выбран" came back in 5 answers against 2 and
+ * an answer outside the goal's language in 1 against 4, with 8 of 9 answered
+ * either way; on the two whose input does not change, the arms matched. The
+ * readings use what the opening never had -- that StableFX participation is
+ * permissioned is its 48th sentence. The price is time: a median of 26 seconds
+ * against 19, under the same 45-second limit.
  */
-export const READING_RULES = 6;
+export const READING_RULES = 7;
 
 export type PublicMaterial = {
   id: string;

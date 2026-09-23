@@ -1,6 +1,6 @@
 /** Copyright 2026 Veyra. SPDX-License-Identifier: Apache-2.0 */
 import { load } from "cheerio";
-import type { PublicMaterial } from "./value.ts";
+import { wasCut, type PublicMaterial } from "./value.ts";
 import type { SourceObservation, SourceResult } from "./sources.ts";
 
 export const PUBLIC_FEEDS = [
@@ -63,14 +63,12 @@ export async function readPublicPage(url: string, fetchImpl = fetch): Promise<st
 const plain = (html: string) => load(html).text().replace(/\s+/g, " ").trim();
 
 /**
- * How much of an article Nova keeps, in characters.
+ * How much of an article Nova keeps, in characters -- and so, since edition 7,
+ * how much of it the model reads.
  *
  * It was 6,000, and half the articles on the owner's Today were cut there, so
- * "how much of this article was read" had no honest denominator. What the
- * model is given is still its first twenty-four sentences (see
- * EXCERPT_SENTENCES); keeping more lets the card say how much more there was,
- * and lets a later edition give it more without fetching everything again.
- * The brief does not carry this text to the page.
+ * "how much of this article was read" had no honest denominator. The brief
+ * does not carry this text to the page.
  */
 export const ARTICLE_TEXT_CAP = 12_000;
 
@@ -172,16 +170,44 @@ export async function observePublications(input: { interests: string[]; now: Dat
   return { observations: results.flatMap(r => r.observations), unavailable: results.flatMap(r => r.unavailable), unreadable };
 }
 
-/** A bounded second look at first-party references. Failure stays visible and
- * cannot be reinterpreted as evidence that a paid tool is necessary. */
+/**
+ * The article again, when what was kept of it stopped at the old cap.
+ *
+ * A re-reading reads what was stored, and everything stored before the cap was
+ * raised stopped at 6,000 characters -- so without this, giving the model the
+ * whole event would reach new articles only, and every card already on the
+ * page would be read again from the same opening. Fetched from the same fixed
+ * official hosts, with the same bounds, as the first read. Any failure, or a
+ * page that yields no more text than was kept, returns the stored material
+ * unchanged: a failed refetch costs the improvement, never the reading.
+ */
+export async function fullerPublication(material: PublicMaterial, fetchImpl = fetch, now = new Date()): Promise<PublicMaterial> {
+  if (!wasCut(material) || material.text.length >= ARTICLE_TEXT_CAP) return material;
+  try {
+    const body = articleBody(load(await readPublicPage(material.url, fetchImpl)));
+    const text = body.slice(0, ARTICLE_TEXT_CAP);
+    if (text.length <= material.text.length) return material;
+    return { ...material, text, truncated: body.length > text.length, fetchedAt: now.toISOString() };
+  } catch {
+    return material;
+  }
+}
+
+/** A bounded second look: at the event itself, whole, where what was kept of
+ * it stopped at the old cap, and at first-party references. The two are
+ * fetched together, so the slowest reading is no slower than before -- the
+ * per-card button has sixty seconds and the model alone may take forty-five.
+ * Failure stays visible and cannot be reinterpreted as evidence that a paid
+ * tool is necessary. */
 export async function publicContext(material: PublicMaterial, fetchImpl = fetch): Promise<{ sources: PublicMaterial[]; unavailable: string[] }> {
   const host = new URL(material.url).hostname;
-  if (!["www.arc.io", "www.circle.com"].includes(host)) return { sources: [material], unavailable: [] };
-  const results = await Promise.allSettled(REFERENCE_DOCS.map(async doc => {
+  const event = fullerPublication(material, fetchImpl);
+  if (!["www.arc.io", "www.circle.com"].includes(host)) return { sources: [await event], unavailable: [] };
+  const [whole, results] = await Promise.all([event, Promise.allSettled(REFERENCE_DOCS.map(async doc => {
     const text = await readPublicPage(doc.url, fetchImpl);
     if (!text.trim() || text.trimStart().startsWith("<!")) throw new Error("Reference unavailable");
     return { id: doc.url, url: doc.url, title: doc.title, text: text.slice(0, 6000), publishedAt: null, fetchedAt: new Date().toISOString() } satisfies PublicMaterial;
-  }));
-  return { sources: [material, ...results.flatMap(r => r.status === "fulfilled" ? [r.value] : [])],
+  }))]);
+  return { sources: [whole, ...results.flatMap(r => r.status === "fulfilled" ? [r.value] : [])],
     unavailable: results.flatMap((r,i) => r.status === "rejected" ? [REFERENCE_DOCS[i].title] : []) };
 }
