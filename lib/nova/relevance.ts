@@ -102,19 +102,53 @@ export function categoryPhraseFor(kind: string): string | null {
   return CATEGORY_PHRASE[kind as NovaSignalKind] ?? null;
 }
 
+const CATEGORIES: ReadonlySet<string> = new Set(Object.values(CATEGORY_PHRASE));
+
+/**
+ * The kinds a reading places on Today: the brief shows one only when a reading
+ * against the owner's goal found it significant.
+ *
+ * "Useful" on one of these is a verdict on the reading, and it is kept as one
+ * for the review. It used to raise the whole category as well, and on the
+ * owner's own agent that did the opposite of what they meant. They marked
+ * readings of Arc and Circle announcements useful, and "announcements" then
+ * added ten to every announcement. That boost is uniform, so it could not
+ * tell one announcement from another. All it did was push an article over the
+ * "high relevance" line when its text held two or more watched words. The two
+ * it pushed over were StableFX, which the owner had objected to, and a
+ * LangChain post about healthcare AI. In the owner's own refresh both were
+ * read first, and the LangChain post took a reading that would otherwise have
+ * gone to a card on their Today.
+ */
+const RANKED_BY_READING: ReadonlySet<NovaSignalKind> = new Set(["official_publication", "repository_release"]);
+
+export function rankedByReading(kind: string): boolean {
+  return RANKED_BY_READING.has(kind as NovaSignalKind);
+}
+
+/** A category that a rating once raised and no longer does: announcements
+ *  and releases. A stored preference for one is inert, and the page says so
+ *  rather than listing it as something Nova acts on. */
+export function isReadingCategory(phrase: string): boolean {
+  const said = phrase.trim().toLowerCase();
+  return [...RANKED_BY_READING].some((kind) => CATEGORY_PHRASE[kind] === said);
+}
+
 /**
  * Does a learned preference apply to this change?
  *
  * Two ways, because preferences come from two different statements. "Ignore
- * commits" is about the category, and is matched on the category exactly --
- * matching it through the prose was the first version and it silently did
- * nothing for four of the five categories, because a capability signal never
- * contains the words "new capabilities". "Not interesting" is about the topic,
- * and that only exists in the subject's own words.
+ * commits" is about the category, and is matched on the category and nothing
+ * else. Matching it through the prose was the first version: it did nothing
+ * for four of the five categories, because a capability signal never contains
+ * the words "new capabilities". It also reached anything whose text happened
+ * to say "commits". "Not interesting" is about the topic, and that only exists
+ * in what the card is about.
  */
-function preferenceApplies(phrase: string, category: string | null, shown: string): boolean {
-  if (category && phrase.trim().toLowerCase() === category) return true;
-  return matchedKeywords(shown, [phrase]).length > 0;
+function preferenceApplies(phrase: string, category: string | null, about: string): boolean {
+  const said = phrase.trim().toLowerCase();
+  if (CATEGORIES.has(said)) return said === category;
+  return matchedKeywords(about, [said]).length > 0;
 }
 
 /**
@@ -267,16 +301,25 @@ export function scoreRelevance(input: RelevanceInput): RelevanceVerdict {
   if (activity.note) reasons.push(activity.note);
 
   const preferences = input.preferences;
-  const shown = `${text} ${input.change.headline}`.toLowerCase();
+  /* What the card is about, for matching what the owner has said. A
+     publication's subject text is the whole article. That suits the interest
+     keywords above, which estimate whether it is worth reading, and it is
+     wrong here. "Less cirBTC" demoted "Introducing Interop on Arc" because the
+     article mentions cirBTC once. What a publication is about is its feed and
+     its headline. */
+  const about = (input.change.kind === "official_publication"
+    ? `${input.subjectLabel ?? ""} ${input.change.headline}`
+    : `${text} ${input.change.headline}`).toLowerCase();
 
   /* Told, not inferred. "Useful" is the person naming a category they want more
-     of, so unlike the keyword pass this is allowed to match Nova's own headline:
-     the phrase came from the signal's kind, which is machine-derived, not from
-     the sentence Nova wrote. Capped, so no amount of approval can outrank a
-     payee change. */
+     of, and the category comes from the signal's kind, which is machine-derived.
+     Capped, so no amount of approval can outrank a payee change. Never for a
+     kind a reading places on Today: there the reading decides, and a category
+     boost only amplified how many watched words an article happened to hold
+     (see RANKED_BY_READING). */
   const category = categoryPhraseFor(input.change.kind);
-  const favoured = (preferences?.favoured ?? []).filter((phrase) =>
-    preferenceApplies(phrase, category, shown));
+  const favoured = rankedByReading(input.change.kind) ? [] : (preferences?.favoured ?? []).filter((phrase) =>
+    preferenceApplies(phrase, category, about));
   if (favoured.length > 0) {
     score += Math.min(20, 10 * favoured.length);
     reasons.push(`you find ${favoured[0]} useful`);
@@ -293,10 +336,11 @@ export function scoreRelevance(input: RelevanceInput): RelevanceVerdict {
   }
 
   /* What this person has dismissed, or banned outright.
-     Matched against the subject AND the headline, because a preference is
-     learned from items as they were shown. Unlike interest keywords this can
-     only ever demote, so matching Nova's own wording here cannot inflate
-     anything -- and it still never overrides a payee change.
+     Matched against what the card is about, the subject and the headline,
+     because a preference is learned from items as they were shown. Unlike
+     interest keywords this can only ever demote, so matching Nova's own
+     wording here cannot inflate anything -- and it still never overrides a
+     payee change.
 
      Weighted, because one shrug and "never show me this again" are different
      statements. Flattening them would let a single impatient click bury a topic
@@ -304,7 +348,7 @@ export function scoreRelevance(input: RelevanceInput): RelevanceVerdict {
   if (input.change.kind !== "payee_changed") {
     let worst: { phrase: string; weight: number } | null = null;
     for (const entry of preferences?.ignored ?? []) {
-      if (!preferenceApplies(entry.phrase, category, shown)) continue;
+      if (!preferenceApplies(entry.phrase, category, about)) continue;
       if (!worst || entry.weight > worst.weight) worst = entry;
     }
     if (worst) {

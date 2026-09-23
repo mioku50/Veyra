@@ -23,7 +23,7 @@ import { getServerSupabaseConfig } from "../supabase/server-env.ts";
 import { assembleBrief, endpointOf, greeting, quietSummary, visitBoundary } from "./brief.ts";
 import { MAX_INTERESTS, interestKey, keywordsForInterests, normalizeInterests } from "./interests.ts";
 import { changesForSubject } from "./observation.ts";
-import { categoryPhraseFor, dismissedTopicFrom, scoreFloorFor, scoreRelevance } from "./relevance.ts";
+import { categoryPhraseFor, dismissedTopicFrom, rankedByReading, scoreFloorFor, scoreRelevance } from "./relevance.ts";
 import { observeRepositories, observeX402Catalog, type SourceObservation } from "./sources.ts";
 import { settlementNetworkOf } from "./network.ts";
 import { standingFrom } from "./standing.ts";
@@ -1499,8 +1499,13 @@ export async function markSignal(input: {
       /* Only a category can be marked useful, and only one Nova is willing to
          learn about. The unlearnable kinds are unlearnable in both directions:
          if a payee change cannot be turned off, it must not be possible to
-         claim credit for turning it up either. */
-      if (category) {
+         claim credit for turning it up either.
+
+         Nor a kind a reading places on Today. There the press is a rating of
+         the reading, kept above for the review, and raising the whole
+         category for it lifted StableFX and a LangChain post about healthcare
+         AI over the line on the owner's own agent. */
+      if (category && !rankedByReading(row.kind)) {
         await rememberPreference(agent.agent_id, "cares_about", category, { learnedFrom: row.kind }, 1, input.signalId);
         learned = { facet: "cares_about", summary: category };
       }

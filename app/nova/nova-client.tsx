@@ -26,7 +26,7 @@ import {
    that are not matters of taste -- a payee change, a rail change, an endpoint
    going dark -- so the button is absent rather than disabled: an offer a
    person cannot take reads as a promise the product is refusing to keep. */
-import { categoryPhraseFor } from "@/lib/nova/relevance";
+import { categoryPhraseFor, isReadingCategory, rankedByReading } from "@/lib/nova/relevance";
 import { priorWith } from "@/lib/nova/standing";
 /* The sentences that assert a state live next to the state they assert, so a
    heading cannot go stale against the panel under it. See the module header. */
@@ -1119,7 +1119,11 @@ export function NovaClient({ view = "today" }: { view?: NovaView } = {}) {
   const preference = (facet: string) =>
     brief.memory.filter((entry) => entry.kind === "preference" && entry.facet === facet);
   const ignores = preference("usually_ignores");
-  const favours = preference("cares_about");
+  /* "Announcements" and "releases" were learned from ratings of readings, and
+     no longer raise anything. Listed apart, with the way to forget them, so
+     that what Nova knows about the owner does not claim an effect it lost. */
+  const favours = preference("cares_about").filter((entry) => !isReadingCategory(entry.summary));
+  const unused = preference("cares_about").filter((entry) => isReadingCategory(entry.summary));
   /* What this agent already paid to learn about whoever this card would pay.
      Read from the proposal in front of the person rather than from the signal,
      because the counterparty is only decided once a proposal exists. */
@@ -1315,7 +1319,7 @@ export function NovaClient({ view = "today" }: { view?: NovaView } = {}) {
             return (
               <Panel key={signal.signalId}>
                 <p className="text-sm text-muted-foreground">{signal.headline}</p>
-                <Verdict verdict={verdict} state={verdicts[signal.signalId]} onExplain={(change) => void explain(signal.signalId, change)} />
+                <Verdict verdict={verdict} kind={signal.kind} state={verdicts[signal.signalId]} onExplain={(change) => void explain(signal.signalId, change)} />
               </Panel>
             );
           }
@@ -1364,7 +1368,7 @@ export function NovaClient({ view = "today" }: { view?: NovaView } = {}) {
                     <span className="font-mono text-[11px] uppercase tracking-wider text-state-good">
                       {verdict === "follow" ? "following" : "marked useful"}
                     </span>
-                    <Verdict verdict={verdict} state={verdicts[signal.signalId]} onExplain={(change) => void explain(signal.signalId, change)} />
+                    <Verdict verdict={verdict} kind={signal.kind} state={verdicts[signal.signalId]} onExplain={(change) => void explain(signal.signalId, change)} />
                   </div>
                 ) : verdict === "investigating" ? null : (
                   <>
@@ -1583,7 +1587,7 @@ export function NovaClient({ view = "today" }: { view?: NovaView } = {}) {
                 {groupWatchlist(brief.watchlist).map(([source, signals]) => <li key={source}><details className="rounded-lg border p-3"><summary className="cursor-pointer text-sm">{source} · {signals.length} {signals.length === 1 ? "update" : "updates"}</summary><ul className="mt-3 space-y-3">{signals.map((signal) => said[signal.signalId] === "not_interesting" ? (
                   <li key={signal.signalId} className="border-t border-border/40 pt-3 first:border-t-0 first:pt-0">
                     <span className="text-sm text-muted-foreground">{signal.headline}</span>
-                    <Verdict verdict="not_interesting" state={verdicts[signal.signalId]} onExplain={(change) => void explain(signal.signalId, change)} />
+                    <Verdict verdict="not_interesting" kind={signal.kind} state={verdicts[signal.signalId]} onExplain={(change) => void explain(signal.signalId, change)} />
                   </li>
                 ) : (
                   <li key={signal.signalId} className="border-t border-border/40 pt-3 first:border-t-0 first:pt-0">
@@ -1624,7 +1628,7 @@ export function NovaClient({ view = "today" }: { view?: NovaView } = {}) {
                             indistinguishable from broken, and the owner who
                             found it so pressed it fourteen times. */}
                         {said[signal.signalId] === "useful"
-                          ? <div className="mt-3"><p className="font-mono text-[11px] uppercase tracking-wider text-state-good">marked useful</p><Verdict verdict="useful" state={verdicts[signal.signalId]} onExplain={(change) => void explain(signal.signalId, change)} /></div>
+                          ? <div className="mt-3"><p className="font-mono text-[11px] uppercase tracking-wider text-state-good">marked useful</p><Verdict verdict="useful" kind={signal.kind} state={verdicts[signal.signalId]} onExplain={(change) => void explain(signal.signalId, change)} /></div>
                           : <div className="mt-3 flex gap-3"><Verb onClick={() => void say(signal.signalId, "useful")}>Useful result</Verb><Verb onClick={() => void say(signal.signalId, "not_interesting")}>Not useful</Verb></div>}
                       </div>
                     )}
@@ -1794,6 +1798,9 @@ export function NovaClient({ view = "today" }: { view?: NovaView } = {}) {
           {favours.length > 0 ? (
             <Row label="You find useful" value={<Learned entries={favours} onForget={forgetLearned} />} />
           ) : null}
+          {unused.length > 0 ? (
+            <Row label="No longer used" value={<Learned entries={unused} onForget={forgetLearned} />} />
+          ) : null}
           {ignores.length > 0 ? (
             /* Said more than once is shown as said more than once. A preference
                asserted from a single click is a guess, and presenting it with
@@ -1802,12 +1809,19 @@ export function NovaClient({ view = "today" }: { view?: NovaView } = {}) {
             <Row label="You usually ignore" value={<Learned entries={ignores} onForget={forgetLearned} counted />} />
           ) : null}
         </dl>
+        {unused.length > 0 ? (
+          <p className="mt-3 text-xs leading-relaxed text-muted-foreground">
+            &ldquo;No longer used&rdquo; was learned when you marked readings useful. An announcement or a
+            release is placed by its own reading against your goal, so a rating does not raise every one
+            of them. Forget it, or follow a publisher to have it read first.
+          </p>
+        ) : null}
         {/* What was bought is no longer counted here. It has a panel below that
             shows the purchases themselves, and a number standing in for them
             was the whole problem: the row behind "Verified by Veyra — 1" held
             the provider, the endpoint, the amount, the verdict and the
             transaction, and this page rendered its length. */}
-        {ignores.length === 0 && favours.length === 0 && follows.length === 0 ? (
+        {ignores.length === 0 && favours.length === 0 && follows.length === 0 && unused.length === 0 ? (
           <p className="mt-4 text-xs leading-relaxed text-muted-foreground">
             Nothing learned yet. Saying what is useful, what to follow and what to hold back is
             what makes this brief yours rather than everyone&apos;s.
@@ -3334,8 +3348,9 @@ type VerdictState = { learned: NovaLearned | null; rated: boolean; reason: NovaR
  * reading judged against the goal as it stands. Elsewhere there is no reading
  * for a reason to be about, and the chips would record nothing.
  */
-function Verdict({ verdict, state, onExplain }: {
+function Verdict({ verdict, kind, state, onExplain }: {
   verdict: NovaFeedback;
+  kind: NovaSignal["kind"];
   state: VerdictState | undefined;
   onExplain: (change: { reason?: NovaReason | null; note?: string | null }) => void;
 }) {
@@ -3345,7 +3360,9 @@ function Verdict({ verdict, state, onExplain }: {
     : [];
   return (
     <div className="mt-2">
-      <p role="status" className="text-xs text-muted-foreground">{learnedSentence(state.learned, verdict)}</p>
+      <p role="status" className="text-xs text-muted-foreground">
+        {learnedSentence(state.learned, verdict, { rankedByReading: rankedByReading(kind), rated: state.rated, category: categoryPhraseFor(kind) })}
+      </p>
       {reasons.length > 0 ? (
         <div className="mt-3">
           <p className="text-xs text-muted-foreground">

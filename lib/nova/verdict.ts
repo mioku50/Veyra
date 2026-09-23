@@ -54,11 +54,25 @@ export type NovaLearned = {
   summary: string;
 };
 
-export function learnedSentence(learned: NovaLearned | null, verdict: string): string {
+export function learnedSentence(
+  learned: NovaLearned | null,
+  verdict: string,
+  /** The card pressed: whether a reading places it on Today, whether the
+   *  server kept the press as a rating of that reading, and its category. */
+  card: { rankedByReading?: boolean; rated?: boolean; category?: string | null } = {},
+): string {
   const hidden = verdict === "not_interesting" || verdict === "ignore_kind" ? "Hidden. " : "";
   if (learned?.facet === "cares_about") return `${hidden}Nova will rank ${learned.summary} higher.`;
   if (learned?.facet === "usually_ignores") return `${hidden}Nova will rank cards about ${learned.summary} lower.`;
   if (learned?.facet === "follows") return `Following ${learned.summary}.`;
+  /* "Useful" on a reading raises nothing. Saying so matters, because this
+     press used to answer "Nova will rank announcements higher" and the owner
+     has no other way to learn that it stopped. */
+  if (verdict === "useful" && card.rankedByReading) {
+    return card.rated
+      ? `Kept as your rating of this reading. It does not rank all ${card.category ?? "cards like it"} higher; each one is placed by its own reading against your goal.`
+      : "Nothing kept: there is no reading of this for your current goal to rate yet.";
+  }
   /* Said, because silence here reads as "it worked". A dismissed announcement
      whose headline names no product teaches nothing, and an owner who does not
      know that will go on dismissing them and expecting fewer. */
