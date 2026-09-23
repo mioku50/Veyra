@@ -1,6 +1,6 @@
 # Veyra product roadmap
 
-**Updated:** 2026-09-22  
+**Updated:** 2026-09-23  
 **Product:** Nova, a personal agent that works toward an owner's goals; Veyra, its deterministic trust and economic governor.  
 **North star:** The owner regularly receives useful, source-grounded work. Payments and onchain history support that work; neither is the product's purpose.
 
@@ -115,7 +115,11 @@ item 1 below is still the only thing that can move it.
    The owner can now name a miss. A reported link is never fetched. It is sorted into `observed` (Nova had the article: a ranking miss), `covered` (Nova reads that publisher or repository but has no card for it: a reading miss) or `not_covered` (a coverage gap), and the report counts them under `misses`, listing hosts only for the coverage gaps, since only those are fixed by adding a source. A miss nobody reports is still unmeasured, and the report says so.
 
    Not done: extending coverage. That needs missed owner-relevant events, and none has been reported yet.
-4. **Free-first tool selection.** *(To check first, found under item 2: a seller that issues a new payee address per catalogue read cannot have its payee watched, and pricing finds an endpoint again by a reference that includes the payee.)* The task must come before discovery. Use available public sources before offering a paid API. Show the unresolved question, expected incremental result, reason public information is insufficient, exact quoted price and provider limitations. If no suitable askable service exists, stop honestly.
+4. **Free-first tool selection.** *(largely addressed 2026-09-23; see [free-first tool selection](audits/2026-09-23-nova-free-first-tools.md).)* The task must come before discovery. Use available public sources before offering a paid API. Show the unresolved question, expected incremental result, reason public information is insufficient, exact quoted price and provider limitations. If no suitable askable service exists, stop honestly.
+
+   Most of this was already structural: a paid proposal needs a fresh reading against the current goal with an open question, and listings never reach one. The card now shows the provider's limitations. It lists the sources read first at no charge, the field the question is sent in, what comes back and what the tool will not do. On the live market every askable tool was a search, so the owner would have paid for pages that match the question while the card promised a result. An error from a tool is no longer called a free answer.
+
+   The lead from item 2 is answered. A seller that issues a new payee per request (Parallel) is refused by Veyra's probe as a changed payee, so it cannot be priced or paid at all. That is safe, but the label is wrong. Supporting such sellers would relax payee pinning and is left to the owner. Not done: discovery by what the question needs (Nova always looks for a web search), and a free documentation lookup for the question itself.
 5. **Feedback-to-brief loop.** *(verified and partly fixed 2026-09-22.)* Verify that explicit owner feedback changes future prioritization without silently suppressing safety alerts or whole publishers. Keep feedback failures visible and avoid claiming personalization without demonstrated effect.
 
    Verified against the owner's own record. There are three real ratings, all "useful", all on announcements: Sponsored Transactions on Arc, and the Arc Compatibility Guide twice. They taught `cares_about: announcements`, which adds 10 to every announcement — cirBTC and StableFX included, the two the owner had objected to. Feedback does change prioritization; publishers are not silenced (a dismissed announcement never teaches its feed), and payee changes cannot be learned away in either direction.
