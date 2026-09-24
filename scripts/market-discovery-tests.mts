@@ -51,9 +51,11 @@ const exa = {
   const wallet = normalizeOfferAccept(exa.accepts[1]);
   assert.equal(wallet?.rail, "wallet");
   assert.equal(wallet?.network, ARC);
-  /* Arc mainnet USDC is not in Veyra's payment tables yet, so nothing on Arc
-     can be quoted, and the record says so rather than implying a purchase. */
-  assert.equal(wallet?.quotableByVeyra, false);
+  /* Arc mainnet USDC and its Gateway domain are in Veyra's payment tables, so
+     an Arc accept is quotable on both rails. The flag reads the same tables the
+     quote step reads; it is never set from the listing. */
+  assert.equal(wallet?.quotableByVeyra, true);
+  assert.equal(normalizeOfferAccept(exa.accepts[0])?.quotableByVeyra, true);
   assert.equal(normalizeOfferAccept(exa.accepts[2])?.quotableByVeyra, true);
   assert.equal(normalizeOfferAccept(exa.accepts[0])?.rail, "gateway_deposit");
   assert.equal(normalizeOfferAccept(exa.accepts[3]), null, "non-EVM accepts are out of scope");
@@ -109,7 +111,7 @@ const exa = {
   assert.equal(isTemplatedResource("https://api.exa.ai/search"), false);
 
   const summary = summarizeMarket(merged);
-  assert.deepEqual(summary.byNetwork[ARC], { offers: 1, wallet: 1, gateway: 1, quotableByVeyra: 0 });
+  assert.deepEqual(summary.byNetwork[ARC], { offers: 1, wallet: 1, gateway: 1, quotableByVeyra: 1 });
   assert.deepEqual(summary.byNetwork[BASE], { offers: 1, wallet: 1, gateway: 0, quotableByVeyra: 1 });
 }
 

@@ -65,9 +65,9 @@ export type OfferAccept = {
   rail: OfferRail;
   amountAtomic: string;
   payTo: `0x${string}`;
-  /** Whether Veyra can quote this accept today. False on Arc until Arc mainnet
-   *  USDC is in Veyra's payment tables: said here, so a card never implies a
-   *  purchase the quote step would refuse. */
+  /** Whether Veyra's quote step accepts this asset and rail, read from the same
+   *  tables it reads. Said here, so a card never implies a purchase the quote
+   *  step would refuse. Not a promise: the live challenge still decides. */
   quotableByVeyra: boolean;
 };
 
@@ -155,7 +155,7 @@ export function normalizeOfferAccept(
     amountAtomic: amount,
     payTo,
     /* The same two tables the quote step reads: without them the quote refuses
-       as asset_not_usdc or no_payable_accept, which is Arc's state today. */
+       as asset_not_usdc or no_payable_accept. */
     quotableByVeyra: isUsdcAsset(facts.chainId, facts.usdc)
       && (!gateway || gatewayContextForChain(facts.chainId) !== null),
   };

@@ -14,6 +14,7 @@ import {
   type PublicClient,
 } from "viem";
 import { arcTestnet, base, mainnet } from "viem/chains";
+import { arcMainnetChain } from "../wallet/arc.ts";
 import type { ExecutionAttempt } from "./types.ts";
 
 export const ARC_USDC_CONTRACT: Address = "0x3600000000000000000000000000000000000000";
@@ -121,6 +122,10 @@ export function chainForNetwork(network?: string | null) {
     case "arc-testnet":
     case "eip155:5042002":
       return arcTestnet;
+    /* Arc mainnet is named by its CAIP-2 id only. "arc" alone stays the testnet
+       above: that is what every older attempt meant by it. */
+    case "eip155:5042":
+      return arcMainnetChain;
     case "base":
     case "eip155:8453":
       return base;

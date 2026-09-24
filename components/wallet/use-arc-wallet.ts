@@ -33,6 +33,7 @@ import {
   type Hex,
 } from "viem";
 import {
+  ADDABLE_CHAINS,
   ARC_TESTNET_CHAIN_ID,
   ARC_TESTNET_RPC_URL,
   ARC_TESTNET_USDC_ADDRESS,
@@ -301,11 +302,25 @@ function useWalletState() {
       return false;
     }
     setSwitching(true);
+    const hexId = `0x${targetChainId.toString(16)}`;
     try {
-      await provider.request({
-        method: "wallet_switchEthereumChain",
-        params: [{ chainId: `0x${targetChainId.toString(16)}` }],
-      });
+      try {
+        await provider.request({
+          method: "wallet_switchEthereumChain",
+          params: [{ chainId: hexId }],
+        });
+      } catch (switchError) {
+        /* 4902: the wallet has never seen this chain. Arc mainnet is new
+           enough that most wallets have not, so offer to add it -- from
+           Veyra's own parameters, never ones taken from a seller. */
+        const addable = ADDABLE_CHAINS[targetChainId];
+        if (Number((switchError as { code?: unknown })?.code) !== 4902 || !addable) throw switchError;
+        await provider.request({ method: "wallet_addEthereumChain", params: [addable] });
+        await provider.request({
+          method: "wallet_switchEthereumChain",
+          params: [{ chainId: hexId }],
+        });
+      }
       setChainId(targetChainId);
       setError(null);
       return true;

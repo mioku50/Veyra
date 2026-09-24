@@ -150,6 +150,8 @@ assert.equal(
 assert.equal(chainForNetwork("eip155:8453")?.id, 8453);
 assert.equal(chainForNetwork("eip155:1")?.id, 1);
 assert.equal(chainForNetwork("eip155:5042002")?.id, 5042002);
+assert.equal(chainForNetwork("eip155:5042")?.id, 5042, "Arc mainnet is looked for on Arc mainnet");
+assert.equal(chainForNetwork("arc")?.id, 5042002, "bare \"arc\" is what older testnet attempts wrote");
 assert.equal(chainForNetwork(null)?.id, 5042002, "an attempt older than the field is an Arc one");
 assert.equal(chainForNetwork("eip155:999999"), null, "guessing the chain is how you prove the wrong thing");
 

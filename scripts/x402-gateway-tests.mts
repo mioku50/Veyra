@@ -32,6 +32,16 @@ assert.equal(arc.testnet, true);
 assert.equal(arc.usdc, "0x3600000000000000000000000000000000000000");
 assert.equal(arc.balancesUrl, "https://gateway-api-testnet.circle.com/v1/balances");
 
+const arcMainnet = gatewayContextForChain(5042);
+assert(arcMainnet, "Arc mainnet is a Gateway chain (Circle /v1/info: domain 26)");
+assert.equal(arcMainnet.domain, 26);
+assert.equal(arcMainnet.gatewayWallet, GATEWAY_WALLET_MAINNET);
+assert.equal(arcMainnet.testnet, false);
+assert.equal(arcMainnet.usdc, "0x3600000000000000000000000000000000000000");
+assert.equal(arcMainnet.balancesUrl, "https://gateway-api.circle.com/v1/balances");
+// Same domain number and USDC address as the testnet; the deployments differ.
+assert.notEqual(arcMainnet.gatewayWallet, arc.gatewayWallet);
+
 // A testnet must never be handed the mainnet contract, or a deposit goes to an
 // address that does not exist on that chain.
 assert.notEqual(arc.gatewayWallet, base.gatewayWallet);

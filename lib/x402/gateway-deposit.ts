@@ -8,6 +8,7 @@ import {
   arbitrum, arcTestnet, avalanche, avalancheFuji, base, baseSepolia, mainnet,
   optimism, polygon, sei, sepolia, sonic, unichain, worldchain,
 } from "viem/chains";
+import { arcMainnetChain } from "../wallet/arc.ts";
 import { usdcAddressForChain } from "./usdc-assets.ts";
 
 /**
@@ -45,6 +46,7 @@ const MAINNET_DOMAINS: Record<number, number> = {
   480: 14,     // World Chain
   1329: 16,    // Sei
   999: 19,     // HyperEVM
+  5042: 26,    // Arc
 };
 
 const TESTNET_DOMAINS: Record<number, number> = {
@@ -87,7 +89,7 @@ export function gatewayContextForChain(chainId: number): GatewayContext | null {
    unsupported rather than resolve to something that merely shares an id. */
 const GATEWAY_CHAINS: Chain[] = [
   mainnet, avalanche, optimism, arbitrum, base, polygon, unichain, sonic,
-  worldchain, sei, sepolia, avalancheFuji, baseSepolia, arcTestnet,
+  worldchain, sei, arcMainnetChain, sepolia, avalancheFuji, baseSepolia, arcTestnet,
 ];
 
 function chainFor(chainId: number): Chain | null {

@@ -357,4 +357,43 @@ assert.throws(
   );
 }
 
+/* ---- Arc mainnet: both rails, from Veyra's tables ---- */
+{
+  const ARC_USDC = "0x3600000000000000000000000000000000000000" as const;
+  const payTo = "0x0000000000000000000000000000000000000abc" as const;
+  assert.equal(isUsdcAsset(5042, ARC_USDC), true, "Arc mainnet USDC is quotable");
+  assert.equal(isUsdcAsset(5042, "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"), false, "Base USDC is not Arc USDC");
+
+  // Domain read from the chain: name() = "USDC", version() = "2".
+  const wallet = selectPayableAccept({
+    x402Version: 2,
+    accepts: [{
+      scheme: "exact", network: "eip155:5042", asset: ARC_USDC, payTo, amount: "7000",
+      maxTimeoutSeconds: 60, extra: { name: "USDC", version: "2" },
+    }],
+  }, { maxAtomic: BigInt(10_000) });
+  assert.equal(wallet.chainId, 5042);
+  assert.equal(wallet.gatewayBatched, false);
+  const arcSigned = buildPaymentTypedData({ accept: wallet, from: account.address, nonce, now });
+  assert.deepEqual(arcSigned.typedData.domain, { name: "USDC", version: "2", chainId: 5042, verifyingContract: ARC_USDC });
+  const arcSignature = await account.signTypedData(arcSigned.typedData as any);
+  assert.equal(await recoverTypedDataAddress({ ...(arcSigned.typedData as any), signature: arcSignature }), account.address);
+
+  // Gateway on Arc mainnet binds to Circle's mainnet GatewayWallet, nothing else.
+  const gatewayAccept = (verifyingContract: string) => ({
+    x402Version: 2,
+    accepts: [{
+      scheme: "exact", network: "eip155:5042", asset: ARC_USDC, payTo, amount: "7000", maxTimeoutSeconds: 604_900,
+      extra: { name: CIRCLE_BATCHING_DOMAIN_NAME, version: "1", verifyingContract },
+    }],
+  });
+  const gateway = selectPayableAccept(gatewayAccept("0x77777777Dcc4d5A8B6E418Fd04D8997ef11000eE"), { maxAtomic: BigInt(10_000) });
+  assert.equal(gateway.gatewayBatched, true);
+  assert.throws(
+    () => selectPayableAccept(gatewayAccept("0x0077777d7EBA4688BDeF3E311b846F25870A19B9"), { maxAtomic: BigInt(10_000) }),
+    /no payment option/i,
+    "the testnet GatewayWallet is not Arc mainnet's",
+  );
+}
+
 console.log("[x402-browser-payment-test] passed: EIP712Domain declared so a wallet hashes the token's own domain, live challenge shape, rail selection, ceiling refusal, EIP-3009 domain recovery, header encoding, settlement decoding, Circle Gateway batched domain + USDC asset identity");

@@ -30,6 +30,9 @@ export const USDC_BY_CHAIN_ID: Readonly<Record<number, `0x${string}`>> = {
   480: "0x79a02482a880bce3f13e09da970dc34db4cd24d1",
   999: "0xb88339cb7199b77e23db6e890353e22632ba630f",
   1329: "0xe15fc38f6d8c56af07bbcbe3baf5708a2bf42392",
+  // Arc mainnet: the same address as Arc Testnet, a different chain. Listed by
+  // Circle's Gateway facilitator for eip155:5042 since Arc's mainnet launch.
+  5042: "0x3600000000000000000000000000000000000000",
   8453: "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
   42161: "0xaf88d065e77c8cc2239327c5edb3a432268e5831",
   43114: "0xb97ef9ef8734c71904d8002f8b6bc66dd9c48a6e",

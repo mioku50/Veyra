@@ -25,9 +25,10 @@ export const MARKETPLACE_DISCOVERY_URL = "https://api.circle.com/v2/x402/discove
  *  into an unbounded number of upstream requests. */
 export const MARKETPLACE_QUERY_TERM_LIMIT = 3;
 
-/** Networks enabled by Veyra's current settlement adapters. Arc mainnet sellers
- * exist; enabling them requires the corresponding payment configuration. */
+/** Networks enabled by Veyra's current settlement adapters. Arc mainnet is one
+ * since its USDC and Gateway domain are in Veyra's payment tables. */
 export const MARKETPLACE_NETWORKS = {
+  "eip155:5042": "Arc",
   "eip155:8453": "Base",
   "eip155:137": "Polygon",
   "eip155:1": "Ethereum",
@@ -174,6 +175,9 @@ export function normalizeMarketplaceNetwork(value: unknown): MarketplaceNetwork 
   const raw = String(value || MARKETPLACE_DEFAULT_NETWORK).trim().toLowerCase();
   const aliases: Record<string, MarketplaceNetwork> = {
     base: "eip155:8453",
+    /* "arc" means mainnet here: the catalogue lists real sellers, and Arc
+       Testnet is not a marketplace network at all. */
+    arc: "eip155:5042",
     polygon: "eip155:137",
     matic: "eip155:137",
     ethereum: "eip155:1",
