@@ -1,0 +1,131 @@
+{
+  "measured": "2026-09-24, around 17:00 UTC, read-only",
+  "network": {
+    "chainId": 5042,
+    "rpc": "https://rpc.mainnet.arc.io",
+    "headBlock": 22551139,
+    "secondsPerBlockAvgOver10000": 0.507,
+    "eth_config": "method not supported",
+    "eth_simulateV1": "method not supported"
+  },
+  "contractsOnArcMainnet": {
+    "USDC 0x3600000000000000000000000000000000000000": "present",
+    "Gateway Wallet 0x77777777Dcc4d5A8B6E418Fd04D8997ef11000eE": "present (proxy; implementation 0xd15002e19d75F6abe69e46b2A94CC7c0cc5857DE)",
+    "Gateway Minter 0x2222222d7164433c4C09B0b0D809a9b52C04C205": "present",
+    "EntryPoint v0.6 0x5FF137D4b0FDCD49DcA30c7CF57E578a026d2789": "present",
+    "EntryPoint v0.7 0x0000000071727De22E5E9d8BAf0edAc6f37da032": "present",
+    "EntryPoint v0.8 0x4337084D9E255Ff0702461CF8895CE9E3b5Ff108": "present",
+    "EntryPoint v0.9 0x433709009B8330FDa32311DF1C2AFA402eD8D009": "present",
+    "Circle SCA factory (circle_6900_singleowner_v3) 0xf61023061ed45fa9eAC4D2670649cE1FD37ce536": "present",
+    "Circle SCA implementation 0xD206aC7fEf53d83ED4563E770b28Dba90D0D9eC8": "present",
+    "Circle MSCA factory (circle_6900_v1) 0x0000000DF7E6c9Dc387cAFc5eCBfa6c3a6179AdD": "present, byte-identical to Base",
+    "Circle MSCA implementation 0xA70F1296869DA9D7CB69578123F21888E6dB2B62": "present, byte-identical to Base",
+    "Circle MSCA Address Book module 0x0000000d81083B16EA76dfab46B0315B0eDBF3d0": "present",
+    "Circle Paymaster v0.7 / v0.8 (mainnet and testnet addresses)": "absent",
+    "MetaMask DelegationManager v1.3 0xdb9B1e94B5b69Df7e401DDbedE43491141047dB3": "present; same length as Base, 64 hex characters differ; owner 0xB0403B32f54d0Bd752113f4009e8B534C6669f44 (same as Base); not paused",
+    "MetaMask EIP7702StatelessDeleGator 0x63c0c19a282a1B52b07dD5a65b58948A07DAE32B": "present; same length as Base, 65 hex characters differ",
+    "MetaMask HybridDeleGator 0x48dBe696A4D990079e039489bA2053B36E8FFEC4": "present; same length as Base, 63 hex characters differ",
+    "MetaMask SimpleFactory 0x69Aa2f9fe1572F1B640E1bbc512f5c3a734fc77c": "present",
+    "MetaMask ERC20PeriodTransferEnforcer 0x474e3Ae7E169e940607cC624Da8A15Eb120139aB": "present, byte-identical to Base",
+    "MetaMask ERC20TransferAmountEnforcer 0xf100b0819427117EcF76Ed94B358B1A5b5C6D2Fc": "present, byte-identical to Base",
+    "MetaMask AllowedTargetsEnforcer 0x7F20f61b1f09b08D970938F6fa563634d65c4EeB": "present, byte-identical to Base",
+    "MetaMask RedeemerEnforcer 0xE144b0b2618071B4E56f746313528a669c7E65c5": "present, byte-identical to Base",
+    "MetaMask delegation-deployments 2.0.0 lists chain 5042": false,
+    "MetaMask delegation-deployments 2.0.0 lists chain 5042002": true,
+    "Coinbase Smart Wallet factory v1 0x0BA5ED0c6AA8c49038F819E587E2633c4A9F428a": "present",
+    "Coinbase SpendPermissionManager 0xf85210B21cC50302F477BA56686d2019dC9b67Ad": "absent",
+    "Safe v1.4.1 singleton / L2 singleton / ProxyFactory": "present",
+    "Safe 4337 module v0.3 0x75cf11467937ce3F2f357CE24ffc3DBF8fD5c226": "present, byte-identical to Base",
+    "Safe AllowanceModule 0xAA46724893dedD72658219405185Fb0Fc91e091C": "present, byte-identical to Base; NAME() \"Allowance Module\", VERSION() \"0.1.1\"",
+    "Safe AllowanceModule 0xCFbFaC74C26F8647cBDb8c5caf80BB5b32E43134": "absent",
+    "Rhinestone Smart Sessions / Module Registry / Safe7579": "absent",
+    "Permit2 0x000000000022D473030F116dDEE9F6B43aC78BA3": "present",
+    "x402 exact Permit2 proxy 0x402085c248EeA27D92E8b30b2C58ed07f9E20001": "absent",
+    "x402 upto Permit2 proxy 0x402039b3d6E6BEC5A02c2C9fd937ac17A6940002": "absent",
+    "CREATE2 deployers (Arachnid, CreateX, Safe singleton factory, ERC-2470)": "present",
+    "Multicall3 0xcA11bde05977b3631167028862bE2a173976CA11": "present",
+    "Daimo P256Verifier 0xc2b78104907F722DABAc4C69f826a522B2754De4": "present"
+  },
+  "eip7702": {
+    "arcDocs": "Arc targets the Osaka hard fork, including EIP-7702",
+    "eth_estimateGas type-4 with an authorization from an unfunded key": "ok, 46382 gas",
+    "eth_call to an EOA whose overridden code is 0xef0100||Multicall3": "answered getBlockNumber()",
+    "recentBlocks": {
+      "blocksReturned": 1600,
+      "ofLast": 3000,
+      "transactions": 17705,
+      "type4": 34,
+      "inspected": [
+        "0x8824d0b0d68a2755d81389328f1b4ffddda6e5e441fa3f9eb854e8d2828692ed",
+        "0xf515eb9efdd30e8e1e1aaed41e7d6c24e1f33515a5b48d405f1c50d7ff6aad23",
+        "0xbe9475899124c4c7901f0070b3f605b82265e555796a5c60a266ee89529a7dca"
+      ],
+      "inspectedTo": "EntryPoint v0.8",
+      "inspectedAuthorizationTarget": "0xe6cae83bde06e4c305530e199d7217f42808555b"
+    }
+  },
+  "p256Precompile0x100": {
+    "validSignature": "0x…01",
+    "invalidSignature": "empty return"
+  },
+  "usdcEip3009FromContractPayer": {
+    "method": "eth_call with the payer's code overridden to return a fixed isValidSignature answer; 0.001 USDC; native balance overridden",
+    "bytesForm_accepting": "ok",
+    "bytesForm_rejecting": "revert: FiatTokenV2: invalid signature",
+    "vrsForm_accepting": "ok",
+    "vrsForm_rejecting": "revert: FiatTokenV2: invalid signature"
+  },
+  "optionC_simulation": {
+    "setup": "throwaway user EOA with code 0xef0100||EIP7702StatelessDeleGator and 5 USDC; delegation to a throwaway Nova key with ERC20PeriodTransferEnforcer (USDC, 1.00 per 86400 s) and AllowedCalldataEnforcer (recipient = a throwaway hot wallet); signed with @metamask/smart-accounts-kit 2.0.0 for chain 5042",
+    "C1 redeem 0.50 to hot wallet": "ok",
+    "C2 redeem 1.50 to hot wallet": "revert ERC20PeriodTransferEnforcer:transfer-amount-exceeded",
+    "C3 redeem 0.60 + 0.60 in one transaction": "revert ERC20PeriodTransferEnforcer:transfer-amount-exceeded",
+    "C4 redeem 0.50 to another address": "revert AllowedCalldataEnforcer:invalid-calldata",
+    "C5 redeemed by a stranger": "revert InvalidDelegate() 0xb5863604",
+    "R1 redeem before revocation": "ok",
+    "R2 redeem with disabledDelegations[hash] set (storage slot 4 of DelegationManager)": "revert CannotUseADisabledDelegation() 0x05baa052",
+    "R3 user calls disableDelegation": "ok",
+    "C8 EIP-3009 from the upgraded account, signed by the user": "ok",
+    "C9 EIP-3009 from the upgraded account, signed by Nova's key": "revert FiatTokenV2: invalid signature"
+  },
+  "optionD": {
+    "gatewayApiInfo": "Arc Mainnet, domain 26, wallet 0x77777777Dcc4d5A8B6E418Fd04D8997ef11000eE, minter 0x2222222d7164433c4C09B0b0D809a9b52C04C205",
+    "batchedFacilitatorSupported": "eip155:5042 listed; GatewayWalletBatched v1; USDC 0x3600…0000; minValiditySeconds 604800",
+    "implSelectors": {
+      "addDelegate(address,address)": true,
+      "removeDelegate(address,address)": true,
+      "isAuthorizedForBalance(address,address,address)": true,
+      "depositFor(address,address,uint256)": true,
+      "initiateWithdrawal(address,uint256)": true,
+      "withdraw(address)": true
+    },
+    "isAuthorizedForBalance(USDC, owner, owner)": true,
+    "isAuthorizedForBalance(USDC, owner, stranger)": false,
+    "isTokenSupported(USDC)": true,
+    "withdrawalDelayBlocks": 1209600,
+    "withdrawalDelayApprox": "170.5 hours at 0.507 s per block",
+    "ownerAvailableBalanceOnArc": "0",
+    "verifyProbe": {
+      "endpoint": "https://gateway-api.circle.com/v1/x402/verify, eip155:5042, throwaway keys, never settled",
+      "T1 from=A signed by A, no deposit": "isValid true",
+      "T2 from=B signed by A": "isValid false, invalid_signature"
+    },
+    "addDelegateFromOwner": "eth_call ok with zero Gateway balance; 62191 gas, about $0.0013 at 20.1 gwei",
+    "removeDelegateFromOwner": "eth_call ok; 36446 gas, about $0.0007 at 20.1 gwei",
+    "circleClients": {
+      "@circle-fin/x402-batching 2.0.4 and 3.5.0": "authorization.from = signer.address; no delegate or depositor option for payments",
+      "@circle-fin/x402-batching 3.5.0 validity": "7 days + 100 s",
+      "@circle-fin/cli 1.1.4": "Gateway deposit is depositFor(USDC, backingEOA, amount) from the SCA; batched payments are signed by the backing EOA"
+    }
+  },
+  "absentOnArcButPresentOnBase": [
+    "Coinbase SpendPermissionManager",
+    "Rhinestone Smart Sessions",
+    "Rhinestone Module Registry",
+    "Rhinestone Safe7579",
+    "x402 exact Permit2 proxy",
+    "Circle Paymaster v0.7",
+    "Circle Paymaster v0.8",
+    "Safe AllowanceModule 0xCFbF…3134"
+  ]
+}

@@ -126,6 +126,14 @@ Not from a Vercel function.
 | Unproven | Permit and approve; seller acceptance | — | Everything: custom module, then an audit | — |
 | Guarantee if all goes right | A wallet-level cap the runtime cannot raise | Risk bounded by the funded balance | Onchain cap, revocable by the owner | Risk bounded by the funded balance |
 
+*(2026-09-24, corrected for Arc mainnet by
+[options C and D, checked without money](2026-09-24-arc-autonomous-wallets-c-d.md).*
+- *C needs no custom module there: MetaMask's delegation framework, with a
+  cap per period, is already deployed, and a simulation on mainnet state
+  enforced it.*
+- *The Agent Wallet CLI does not use a Gateway delegate. It deposits for its
+  backing EOA with `depositFor`, and that EOA signs the payments.)*
+
 ## Recommendation
 
 **Circle Agent Wallet on mainnet, used as a signer and not as a payer.**
