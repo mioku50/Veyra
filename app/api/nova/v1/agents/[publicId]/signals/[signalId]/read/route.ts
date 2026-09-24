@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { NOVA_HEADERS, novaErrorResponse, ownerSecretFrom } from "@/lib/nova/http";
 import { researchPublicSources } from "@/lib/nova/service";
+import { readingForThePage } from "@/lib/nova/value";
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 export async function POST(request: NextRequest, { params }: { params: Promise<{ publicId: string; signalId: string }> }) {
@@ -12,6 +13,6 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     const assessment = await researchPublicSources({
       ...await params, ownerSecret: ownerSecretFrom(request), reassess: body.reassess === true,
     });
-    return NextResponse.json({ assessment }, { headers: NOVA_HEADERS });
+    return NextResponse.json({ assessment: readingForThePage(assessment) }, { headers: NOVA_HEADERS });
   } catch (error) { return novaErrorResponse(error); }
 }

@@ -726,7 +726,9 @@ export function NovaClient({ view = "today" }: { view?: NovaView } = {}) {
     finally { setReading(v => ({ ...v, [signal.signalId]: false })); }
   };
 
-  const price = async (signal: NovaSignal) => {
+  /* `question` is the owner's own, on a listed tool. Without one this is
+     Nova's proposal from a reading, as it always was. */
+  const price = async (signal: NovaSignal, question?: string) => {
     if (!identity) return;
     setResearch((current) => ({ ...current, [signal.signalId]: { stage: "looking" } }));
     try {
@@ -737,7 +739,7 @@ export function NovaClient({ view = "today" }: { view?: NovaView } = {}) {
           ownerSecret: identity.ownerSecret,
           /* Sent when there is one, so the rail note can be a fact about this
              wallet's Gateway balance rather than an assumption about it. */
-          body: JSON.stringify({ wallet: wallet.address ?? undefined }),
+          body: JSON.stringify({ wallet: wallet.address ?? undefined, question }),
         },
       ) as { ok: boolean; researchId?: string; proposal?: NovaResearchProposal; detail?: string };
 
@@ -1615,7 +1617,12 @@ export function NovaClient({ view = "today" }: { view?: NovaView } = {}) {
                         walletReady={wallet.providerAvailable || !wallet.providerSettled}
                         onPay={(acknowledge) => void pay(signal, acknowledge)}
                         refusedAt={signal.refusal?.at ?? null}
-                        onLookAgain={() => void price(signal)}
+                        /* A listed tool is asked the owner's question, so
+                           looking again means asking again, not a proposal of
+                           Nova's that a listing never qualifies for. */
+                        onLookAgain={() => signal.subjectKind === "x402_resource"
+                          ? setResearch(({ [signal.signalId]: _dropped, ...rest }) => rest)
+                          : void price(signal)}
                         prior={priorFor(signal.signalId)}
                       />
                     ) : (
@@ -1623,6 +1630,9 @@ export function NovaClient({ view = "today" }: { view?: NovaView } = {}) {
                         <PublicReading signal={signal} goal={brief.agent.goal} context={promptContext} unrefreshed={Boolean(readNotes[signal.signalId])} />
                         {(signal.kind === "repository_release" || signal.kind === "official_publication") ? <button type="button" onClick={() => void readSources(signal)} disabled={reading[signal.signalId]} className="mt-3 rounded-lg border px-3 py-2 text-sm">{reading[signal.signalId] ? "Reading…" : assessmentOf(signal) ? "Reassess for my project" : "Read the public sources"}</button> : null}
                         {paidResearchReadiness(signal, brief.agent.goal).ready ? <button type="button" onClick={() => void price(signal)} className="ml-2 mt-3 rounded-lg border px-3 py-2 text-sm">Find a tool for this open question</button> : null}
+                        {signal.subjectKind === "x402_resource" && signal.subjectRef
+                          ? <AskTool label={signal.subjectLabel ?? signal.headline} onAsk={(question) => void price(signal, question)} />
+                          : null}
                         {readNotes[signal.signalId] ? <p role="status" className="mt-2 text-sm text-state-warn">{readNotes[signal.signalId]}</p> : null}
                         {/* Acknowledged where it was pressed. Saved and silent is
                             indistinguishable from broken, and the owner who
@@ -2632,7 +2642,7 @@ function PublicReading({ signal, goal, context = [], unrefreshed = false }: {
   const againstOlderRules = (analysis.rules ?? 0) !== READING_RULES;
   return <div className="mt-4 space-y-3 border-t pt-4 text-sm">
     <p className="text-xs text-muted-foreground">
-      Public-source analysis · no wallet charge · {analysis.writtenBy} · read {new Date(analysis.generatedAt).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
+      Public-source analysis · no wallet charge · read {new Date(analysis.generatedAt).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
       {safeUrl ? <> · <a href={safeUrl} target="_blank" rel="noreferrer" className="text-accent underline">Open original ↗</a></> : null}
     </p>
     {/* How much of the article the reading stands on. Said on every reading,
@@ -2775,6 +2785,45 @@ const DECISION_LABEL: Record<string, string> = {
 };
 
 /**
+ * The owner's own question to a listed tool.
+ *
+ * A listing is something Nova watches, not something it proposes buying: it
+ * cannot know what the owner wants from Exa, and when it guessed, it paid Exa
+ * to search for Exa. The owner can. Pricing sends the seller the question and
+ * nothing else, and signs nothing; the exact terms come back for approval, and
+ * only the owner's own wallet can pay them.
+ */
+function AskTool({ label, onAsk }: { label: string; onAsk: (question: string) => void }) {
+  const [open, setOpen] = useState(false);
+  const [question, setQuestion] = useState("");
+  const trimmed = question.trim();
+  if (!open) {
+    return <button type="button" onClick={() => setOpen(true)} className="mt-3 rounded-lg border px-3 py-2 text-sm">Ask {label} a question</button>;
+  }
+  return (
+    <form className="mt-3 space-y-2" onSubmit={(event) => { event.preventDefault(); if (trimmed.length >= 8) onAsk(trimmed); }}>
+      <textarea
+        value={question}
+        onChange={(event) => setQuestion(event.target.value)}
+        maxLength={400}
+        rows={2}
+        aria-label={`Your question for ${label}`}
+        placeholder={`What do you want ${label} to answer?`}
+        className="w-full rounded-lg border bg-transparent px-3 py-2 text-sm"
+      />
+      <p className="text-xs text-muted-foreground">
+        {label} sees this question when {BRAND.name} asks it for the exact price. Nothing is paid
+        until you approve that price and sign it in your own wallet.
+      </p>
+      <div className="flex gap-3">
+        <button type="submit" disabled={trimmed.length < 8} className="rounded-lg border px-3 py-2 text-sm disabled:opacity-50">Get the exact price</button>
+        <Verb onClick={() => { setOpen(false); setQuestion(""); }}>Cancel</Verb>
+      </div>
+    </form>
+  );
+}
+
+/**
  * What Veyra found, and what it would cost.
  *
  * Everything above this is free: Nova reads public catalogues and public
@@ -2881,7 +2930,7 @@ function DeeperResearch({
       {proposal.actionType === "interact_with_subject" ? (
         <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
           This is {proposal.subjectLabel ?? proposal.provider} itself, not a report about it.
-          {" "}{agentName} would ask it:{" "}
+          {" "}{proposal.askedBy === "owner" ? "Your question to it:" : `${agentName} would ask it:`}{" "}
           <span className="text-foreground">{proposal.question}</span>
         </p>
       ) : (
@@ -3308,12 +3357,10 @@ function Outcome({
             <p className="mt-1.5 text-xs leading-relaxed text-muted-foreground">
               {investigation.reading.provenance}
             </p>
-            {investigation.reading.writtenBy ? (
-              <p className="mt-1 font-mono text-[11px] text-muted-foreground/70">
-                Read back by {investigation.reading.writtenBy}. The words above are its reading of
-                what the seller sent; the line before them is {BRAND.name}&apos;s own check.
-              </p>
-            ) : null}
+            <p className="mt-1 text-[11px] text-muted-foreground/70">
+              The words above are a language model&apos;s reading of what the seller sent; the
+              line before them is {BRAND.name}&apos;s own check.
+            </p>
           </div>
         </div>
       ) : verified ? (

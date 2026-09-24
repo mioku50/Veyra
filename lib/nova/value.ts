@@ -215,8 +215,23 @@ export type ValueAssessment = {
    *  after it existed; the brief derives it for older ones from their text. */
   coverage?: ReadingCoverage;
   generatedAt: string;
-  writtenBy: string;
+  /** Which provider and model wrote it. Stored for Veyra's own measurement and
+   *  left out of what the page receives: see `readingForThePage`. */
+  writtenBy?: string;
 };
+
+/**
+ * A reading as the page receives it.
+ *
+ * The card named the route and model that wrote it ("OpenRouter ·
+ * deepseek/..."), which is an operator's detail, not something a person
+ * reading about their project needs. The owner asked for it off the public
+ * page on 2026-09-24. It stays in storage, where Veyra measures readings by
+ * model.
+ */
+export function readingForThePage<T extends { writtenBy?: string | null }>(reading: T): T {
+  return { ...reading, writtenBy: undefined };
+}
 
 export function normalizeGoal(value: unknown): string | null {
   if (value === null || value === undefined || value === "") return null;

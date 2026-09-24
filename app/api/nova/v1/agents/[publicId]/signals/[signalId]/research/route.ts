@@ -16,6 +16,8 @@ export const maxDuration = 60;
 
 type RouteContext = { params: Promise<{ publicId: string; signalId: string }> };
 
+const OWNER_QUESTION_REFUSALS = new Set(["owner_question_invalid", "owner_question_unsupported", "sensitive_input_rejected"]);
+
 /**
  * What it would cost to look deeper, and who would be paid.
  *
@@ -37,7 +39,7 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
   try {
     const { publicId, signalId } = await params;
     const ownerSecret = ownerSecretFrom(request);
-    const body = await request.json().catch(() => ({})) as { wallet?: unknown };
+    const body = await request.json().catch(() => ({})) as { wallet?: unknown; question?: unknown };
     const wallet = typeof body.wallet === "string" ? body.wallet : null;
 
     const [agent, signal] = await Promise.all([
@@ -51,6 +53,9 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
     const outcome = await proposeResearch({
       signal,
       wallet,
+      /* The owner's own question for a listed tool, when they wrote one.
+         Absent, this is Nova's proposal from a reading, as before. */
+      ownerQuestion: body.question,
       goal: agent.goal,
       agentName: agent.name,
       interests: agent.interests ?? [],
@@ -71,7 +76,11 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
         detail: outcome.detail,
         at: new Date().toISOString(),
       };
-      await recordSignalRefusal({ agentId: agent.agent_id, signalId, refusal });
+      /* A question that could not be sent is not an answer about the market,
+         and kept on the card it would read as one on every later visit. */
+      if (!OWNER_QUESTION_REFUSALS.has(outcome.reason)) {
+        await recordSignalRefusal({ agentId: agent.agent_id, signalId, refusal });
+      }
       return NextResponse.json(
         { ok: false, ...refusal },
         { headers: NOVA_HEADERS },

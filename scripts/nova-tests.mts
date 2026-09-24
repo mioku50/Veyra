@@ -30,7 +30,7 @@ import {
 } from "../lib/nova/capability.ts";
 import { readResult } from "../lib/nova/synthesis.ts";
 import { sharpenIntent } from "../lib/nova/intent.ts";
-import { proposeResearch } from "../lib/nova/research.ts";
+import { ownerQuestionFor, proposeResearch } from "../lib/nova/research.ts";
 import {
   compareTerms,
   hashTerms,
@@ -1258,6 +1258,30 @@ const refusedForSilence = await proposeResearch({
 assert.equal(refusedForSilence.ok, false);
 assert.equal(refusedForSilence.ok === false && refusedForSilence.reason, "background_activity");
 assert.match(refusedForSilence.ok === false ? refusedForSilence.detail : "", /background observations/);
+
+/* The owner's own question to a listed tool. Nova does not propose buying from
+   a listing; the owner may ask one, and every check on the money still runs. */
+{
+  const listing = signalFor("x402_resource", "Exa contents", { resource: "https://api.exa.ai/contents", capability: "search" });
+  const good = ownerQuestionFor(listing, "  What does  Circle's StableFX\n launch post say about settlement times? ");
+  assert.equal(good?.ok, true);
+  assert.equal(good?.ok && good.question, "What does Circle's StableFX launch post say about settlement times?", "whitespace is not part of the question");
+  assert.equal(ownerQuestionFor(listing, undefined), null, "no question is Nova's proposal, as before");
+  assert.equal(ownerQuestionFor(listing, "why?")?.ok, false, "too short to be anybody's question");
+  assert.equal(ownerQuestionFor(listing, "x".repeat(401))?.ok, false);
+  assert.equal(ownerQuestionFor(listing, 42)?.ok, false);
+  const secret = ownerQuestionFor(listing, `Check this key sk-proj-${"a".repeat(24)} for me please`);
+  assert.equal(secret?.ok === false && secret.reason, "sensitive_input_rejected", "a secret is never sent to a seller");
+  const repo = ownerQuestionFor(signalFor("github_repository", "Ethereum EIPs"), "What changed in the EIP process this week?");
+  assert.equal(repo?.ok === false && repo.reason, "owner_question_unsupported", "only a listed tool is asked directly");
+
+  // Refused before any endpoint is touched.
+  const neverProbe = (async () => { throw new Error("no endpoint should ever be probed"); }) as never;
+  const short = await proposeResearch({ signal: listing, ownerQuestion: "why?", wallet: null, fetchImpl: neverProbe });
+  assert.equal(short.ok === false && short.reason, "owner_question_invalid");
+  const onRepo = await proposeResearch({ signal: signalFor("github_repository", "Ethereum EIPs"), ownerQuestion: "What changed in the EIP process this week?", wallet: null, fetchImpl: neverProbe });
+  assert.equal(onRepo.ok === false && onRepo.reason, "owner_question_unsupported");
+}
 
 /* A repository has no capability of its own, so the question is written for a
    stranger and has to carry the subject's name into it. */

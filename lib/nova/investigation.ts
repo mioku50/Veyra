@@ -11,6 +11,7 @@ import {
   type X402Quote,
 } from "../x402/execution.ts";
 import {
+  ownerQuestionFor,
   researchRequestFor,
   revalidateResearch,
   type NovaResearchPlan,
@@ -110,7 +111,7 @@ function toInvestigation(row: ResearchRow): NovaInvestigation {
     transaction: row.transaction_hash,
     verification: row.verification,
     arcProof: (row as Record<string, any>).arc_proof ?? null,
-    reading: row.reading ?? null,
+    reading: row.reading ? { ...row.reading, writtenBy: null } : null,
     result: row.result,
     failure: row.failure,
     settledAt: row.settled_at,
@@ -248,11 +249,19 @@ export async function approveResearch(input: {
     ownerSecret: input.ownerSecret,
     signalId: input.signalId,
   });
-  const readiness = paidResearchReadiness(signal, agent.goal, input.now);
-  if (!readiness.ready) return { ok: false, reason: readiness.reason, detail: readiness.detail };
-  const assessment = assessmentOf(signal)!;
-  if (row.proposal.researchNeed?.goal !== agent.goal || row.question !== assessment.gap?.question) {
-    return { ok: false, reason: "research_need_changed", detail: "Your goal or research question changed. Review a new proposal before paying." };
+  if (row.proposal.askedBy === "owner") {
+    /* The owner's question, put to a listed tool. Its reason is the question
+       itself, which is on the row; what is re-checked is that it is still a
+       listed tool and still a question the owner could have asked of it. */
+    const asked = ownerQuestionFor(signal, row.question);
+    if (!asked?.ok) return { ok: false, reason: asked?.reason ?? "owner_question_invalid", detail: asked?.detail ?? "That question can no longer be asked here." };
+  } else {
+    const readiness = paidResearchReadiness(signal, agent.goal, input.now);
+    if (!readiness.ready) return { ok: false, reason: readiness.reason, detail: readiness.detail };
+    const assessment = assessmentOf(signal)!;
+    if (row.proposal.researchNeed?.goal !== agent.goal || row.question !== assessment.gap?.question) {
+      return { ok: false, reason: "research_need_changed", detail: "Your goal or research question changed. Review a new proposal before paying." };
+    }
   }
   const { query } = researchRequestFor(signal);
 

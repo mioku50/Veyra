@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { normalizeGoal, assessmentOf, type PublicMaterial, type ValueAssessment } from "./value.ts";
+import { normalizeGoal, assessmentOf, readingForThePage, type PublicMaterial, type ValueAssessment } from "./value.ts";
 import {
   PROJECT_CONTEXT_LIMITS,
   ProjectContextError,
@@ -1039,7 +1039,7 @@ export function forThePage(signal: NovaSignal): NovaSignal {
       ...(subject?.publicMaterial ? { subject: { ...subject, publicMaterial: blank(subject.publicMaterial) } } : {}),
       ...(assessment ? {
         valueAssessment: {
-          ...assessment,
+          ...readingForThePage(assessment),
           coverage: assessment.coverage
             ?? (assessment.sources[0]?.text ? readingCoverage(assessment.sources[0], EVENT_SENTENCES_BEFORE_EDITION_7) : undefined),
           sources: assessment.sources.map((source) => ({ ...source, text: "" })),
@@ -1161,7 +1161,7 @@ export async function loadBrief(input: {
       paidUsdc: row.paid_usdc === null ? null : Number(row.paid_usdc),
       transaction: row.transaction_hash,
       verification: row.verification ?? null,
-      reading: row.reading ?? null,
+      reading: row.reading ? { ...row.reading, writtenBy: null } : null,
       arcProof: row.arc_proof ?? null,
       result: row.result ?? null,
       failure: row.failure,

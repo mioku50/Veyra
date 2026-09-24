@@ -43,7 +43,8 @@ export type NovaReading = {
   watchNext: string;
   /** Veyra's verdict and the execution behind it. Not the model's opinion. */
   provenance: string;
-  /** The model and route that produced this, so a reader knows who is talking. */
+  /** The model and route that produced this. Stored for Veyra's measurement;
+   *  the page receives it as null (see `readingForThePage`). */
   writtenBy: string | null;
   generatedAt: string;
 };

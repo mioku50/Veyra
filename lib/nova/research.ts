@@ -30,7 +30,8 @@ import { isExecutableTrustDecision } from "../trust-gate/types.ts";
 import type { TrustDecision, TrustDecisionLevel } from "../trust-gate/types.ts";
 import { priceX402Call, quoteX402Call, type X402PricedTerms, type X402Quote } from "../x402/execution.ts";
 import { buildRequestBody } from "../x402/request-body.ts";
-import { marketplaceCandidateId } from "../counterparty-selection/marketplace-source.ts";
+import { MARKETPLACE_NETWORKS, marketplaceCandidateId, type MarketplaceNetwork } from "../counterparty-selection/marketplace-source.ts";
+import { rejectHostedWorkflowSecrets } from "../agent/hosted-workflows.ts";
 import type { JsonSchema } from "../seller/json-schema.ts";
 import {
   compareTerms,
@@ -82,6 +83,9 @@ const NO_WALLET = "0x0000000000000000000000000000000000000000" as const;
 
 export type NovaResearchProposal = {
   researchNeed?: { goal: string; missing: string; expectedResult: string };
+  /** "owner" when the person wrote the question themselves, on a listed tool.
+   *  Absent on proposals Nova made from a reading, and on older ones. */
+  askedBy?: "owner";
   signalId: string;
   /** What Nova would ask, in the words it would ask it. */
   question: string;
@@ -468,6 +472,14 @@ async function firstPayable(input: {
       requestBody: request.body,
       maxAmountUsdc: RESEARCH_BUDGET_USDC,
       inputSchema: candidate.marketplace.inputSchema,
+      /* The listing's own terms, which are what the decision on it will bind.
+         Priced on whichever equal offer the seller lists first, a card on Arc
+         showed Base terms and the approval then refused them. */
+      match: {
+        network: candidate.marketplace.network,
+        payTo: candidate.marketplace.payTo,
+        asset: candidate.marketplace.asset,
+      },
     });
 
     if (quoted.kind === "free") {
@@ -475,7 +487,9 @@ async function firstPayable(input: {
       continue;
     }
     if (quoted.kind === "refused") {
-      note("it will not accept a plain question -- it wants parameters only its own callers would know.");
+      note(quoted.code === "decided_terms_not_offered"
+        ? "its live payment terms no longer match its listing -- another network or another payee."
+        : "it will not accept a plain question -- it wants parameters only its own callers would know.");
       continue;
     }
     /* A challenge that asks for nothing. No amount for a wallet to cap, and
@@ -524,12 +538,74 @@ async function firstPayable(input: {
   return { kind: "none" };
 }
 
+/** How long a question the owner may put to a tool: a card's worth. */
+export const OWNER_QUESTION_LIMITS = { min: 8, max: 400 } as const;
+
+/**
+ * The owner's own question for a listed tool, or why it cannot be asked.
+ *
+ * A listing is a background observation, and Nova does not propose buying from
+ * one: when it wrote the question itself, it asked Exa's search API to search
+ * for Exa, and paid $0.0070 for ten links about Exa. A person asking a named
+ * tool their own question is a different act. The need is theirs and so is the
+ * choice of seller, so no reading has to establish either; every check that
+ * protects the money still runs -- Veyra's decision, the live quote, the
+ * owner's signature and the check on what comes back.
+ *
+ * Only a listing can be asked. A publication or a repository sells nothing, and
+ * who answers a question about one is a routing decision Nova makes from a
+ * reading, not one a free-text box should make for it.
+ */
+export function ownerQuestionFor(
+  signal: NovaSignal,
+  text: unknown,
+): { ok: true; question: string } | { ok: false; reason: string; detail: string } | null {
+  if (text === undefined || text === null) return null;
+  const question = typeof text === "string" ? text.replace(/\s+/g, " ").trim() : "";
+  if (question.length < OWNER_QUESTION_LIMITS.min || question.length > OWNER_QUESTION_LIMITS.max) {
+    return {
+      ok: false,
+      reason: "owner_question_invalid",
+      detail: `Write the question you want answered, in ${OWNER_QUESTION_LIMITS.min} to ${OWNER_QUESTION_LIMITS.max} characters. Nothing was priced.`,
+    };
+  }
+  const action = actionFor(signal);
+  if (action.actionType !== "interact_with_subject" || action.subject?.kind !== "x402_resource" || !action.subject.ref) {
+    return {
+      ok: false,
+      reason: "owner_question_unsupported",
+      detail: "Only a listed tool can be asked directly. Nothing was priced.",
+    };
+  }
+  try {
+    rejectHostedWorkflowSecrets(question);
+  } catch {
+    return {
+      ok: false,
+      reason: "sensitive_input_rejected",
+      detail: "That question looks like it contains a private key, a token or another credential. It would be sent to the seller, so it was not. Nothing was priced.",
+    };
+  }
+  return { ok: true, question };
+}
+
+/** The network a listing card pays on, when it names one Veyra can discover. */
+function subjectNetworkOf(signal: NovaSignal): MarketplaceNetwork | undefined {
+  const network = (signal.evidence?.subject as Record<string, unknown> | undefined)?.network;
+  return typeof network === "string" && network in MARKETPLACE_NETWORKS
+    ? network as MarketplaceNetwork
+    : undefined;
+}
+
 export async function proposeResearch(input: {
   signal: NovaSignal;
   goal?: string | null;
   /** The owner's wallet when one is connected, which makes the Gateway balance
    *  a real read rather than an assumption. */
   wallet?: string | null;
+  /** The owner's own question, for a listed tool, as the request carried it.
+   *  See `ownerQuestionFor`, which decides whether it is one. */
+  ownerQuestion?: unknown;
   /** Context the question is written from. One model serves every agent; what
    *  makes a question this agent's is these interests and this memory. */
   agentName?: string;
@@ -540,11 +616,18 @@ export async function proposeResearch(input: {
   /** The writing model, injectable the way the relay and the reader are. */
   generateImpl?: Parameters<typeof sharpenIntent>[0]["generate"];
 }): Promise<NovaResearchOutcome> {
-  const readiness = paidResearchReadiness(input.signal, input.goal, input.now);
-  if (!readiness.ready) return { ok: false, reason: readiness.reason, detail: readiness.detail };
-  const assessment = assessmentOf(input.signal)!;
+  const asked = ownerQuestionFor(input.signal, input.ownerQuestion);
+  if (asked && !asked.ok) return asked;
+  /* Nova's own proposals need a reading that found a gap; the owner's question
+     is its own reason. */
+  let assessment: ReturnType<typeof assessmentOf> = null;
+  if (!asked) {
+    const readiness = paidResearchReadiness(input.signal, input.goal, input.now);
+    if (!readiness.ready) return { ok: false, reason: readiness.reason, detail: readiness.detail };
+    assessment = assessmentOf(input.signal)!;
+  }
   const base = actionFor(input.signal);
-  const action: NovaAction = { ...base, intent: assessment.gap!.question };
+  const action: NovaAction = { ...base, intent: asked ? asked.question : assessment!.gap!.question };
   const { requiredCapability: capability, discoveryTerm, query, intent: question } = action;
   const subjectRefWanted = action.subject?.ref ?? null;
   const requesterWallet = input.wallet && isAddress(input.wallet)
@@ -573,6 +656,12 @@ export async function proposeResearch(input: {
            passes null: a repository sells nothing, so who does the work is
            genuinely a routing question. */
         mustInclude: base.actionType === "interact_with_subject" ? subjectRefWanted : null,
+        /* The listing's own network. Discovery defaulted to Base, so a card
+           that pays on Arc looked for itself on Base, did not find itself,
+           and refused as "could not reach the terms of this endpoint". Research
+           keeps the default: who answers it is a routing decision, and moving
+           it to another chain is a decision this change does not make. */
+        network: base.actionType === "interact_with_subject" ? subjectNetworkOf(input.signal) : undefined,
         budgetUsdc: RESEARCH_BUDGET_USDC,
         limit: RESEARCH_CANDIDATE_LIMIT,
       },
@@ -663,7 +752,15 @@ export async function proposeResearch(input: {
      to trust it with, which is their willingness to sign. Only an explicit
      false refuses; null means no wallet was given, and "connect a wallet
      first" is a different sentence from "you cannot pay this". */
-  if (winner.marketplace.payableNow === false) {
+  /* Read for the rail the live quote chose, not the one the listing named.
+     Exa's listing on Arc names Gateway; its challenge also takes a plain wallet
+     payment to the same payee at the same price, and the quote prefers that.
+     A Gateway deposit that does not exist says nothing about a wallet payment
+     that needs none. */
+  const payableNow = !quote.accept.gatewayBatched
+    ? true
+    : winner.marketplace.funding === "gateway_deposit" ? winner.marketplace.payableNow : null;
+  if (payableNow === false) {
     return {
       ok: false,
       reason: "not_payable",
@@ -695,7 +792,10 @@ export async function proposeResearch(input: {
   return {
     ok: true,
     proposal: {
-      researchNeed: { goal: assessment.goal, missing: assessment.gap!.missing, expectedResult: assessment.gap!.expectedResult },
+      researchNeed: assessment
+        ? { goal: assessment.goal, missing: assessment.gap!.missing, expectedResult: assessment.gap!.expectedResult }
+        : undefined,
+      ...(asked ? { askedBy: "owner" as const } : {}),
       signalId: input.signal.signalId,
       question,
       capability,
@@ -714,7 +814,7 @@ export async function proposeResearch(input: {
       trustScore: Math.round(winner.trustScore ?? 0),
       funding: terms.funding,
       paymentLabel: paymentLabelFor(terms.funding, terms.network),
-      payableNow: winner.marketplace.payableNow,
+      payableNow,
       decision,
       /* Quoted at the exact amount, because that is what the clearance will
          authorise. Naming the tier's ceiling here told a reader that up to five
@@ -725,8 +825,8 @@ export async function proposeResearch(input: {
       verifiedAfterPaying: decision !== "ALLOW",
       reasons: reasonsFor(winner),
       probed: selection.probed,
-      checkedFirst: checkedFirst(assessment.sources),
-      checkedAt: assessment.generatedAt,
+      checkedFirst: assessment ? checkedFirst(assessment.sources) : undefined,
+      checkedAt: assessment?.generatedAt,
       sentAs: request.intentField,
       returns: describeReturns(winner.marketplace.outputSchema ?? quote.outputSchema ?? null),
       limitations: toolLimitations({
@@ -840,8 +940,11 @@ export async function revalidateResearch(input: {
       now: input.now,
       fetchImpl: input.fetchImpl,
       preferCandidate: pinnedTo(shown.resource),
-      // Read-only until the comparison below has passed.
+      // No clearance until the comparison below has passed.
       issueClearance: false,
+      /* But the decision itself is written, because the quote below reads it
+         back; unwritten, it was refused as a decision that does not exist. */
+      recordDecision: true,
       onWinnerDecision: ({ decision, selectionHash: hash, expiresAt }) => {
         winnerDecision = decision;
         selectionHash = hash;

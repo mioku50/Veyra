@@ -191,6 +191,53 @@ chain-definition row are fixed. Autonomy and Veyra's own paid API are not.
   (`network_matches_mandate`). Only the owner's own signed purchase pays on
   Arc.
 
+*2026-09-24, later: what stood between the owner and a purchase on Arc.* The
+tables were not enough. The owner found Exa on Arc in My Agent and could not
+buy it, and three causes were found. They are fixed in this order:
+
+1. **No way to ask a listing.** Listings are background observations, and Nova
+   proposes nothing from them (`paidResearchReadiness`). That was right when
+   Nova wrote the question: it paid Exa's search API $0.0070 to search for
+   Exa. Now the owner can ask a listed tool their own question from My Agent.
+   Veyra's decision, the live quote, the owner's signature and the check on
+   the answer all still run. Only the "a reading must find a gap" rule is
+   skipped, because the question is the owner's. Secrets are refused before
+   anything is sent. Only an `x402_resource` listing can be asked.
+2. **The quote took the seller's first offer.** Exa's live 402 offers one price
+   seven ways:
+   - a wallet payment on Base to a legacy payee (`0x6d6E…`);
+   - Solana;
+   - Gateway on Base, World Chain and Arc;
+   - a wallet payment on Arc (`0xB98e…`);
+   - a wallet payment on Base (`0xB98e…`).
+
+   The quote took the cheapest, and a tie went to whichever came first. A
+   decision made on Arc was therefore quoted on Base, to a payee nobody decided
+   on, and the quote store refused it. The quote now considers only accepts on
+   the decision's network, payee and asset (`decided_terms_not_offered`
+   otherwise). At one price it takes a wallet payment before a Gateway one. Nova
+   prices a listing on its own terms the same way, and the discovery for an
+   interaction uses the listing's network.
+3. **Nova's approval could not be quoted at all.** Since the relay began
+   reading decisions back (`2c913e3`, 2026-09-16), a decision is stored only
+   with a clearance. Nova's approval deliberately clears after quoting, for the
+   exact amount, so its decision was never stored. The quote then answered "No
+   Veyra decision with that id". The approval now asks for the decision to be
+   recorded without a clearance (`recordDecision`). A proposal that only prices
+   still leaves nothing quotable.
+
+Checked live without paying (2026-09-24):
+- The owner's question to Exa search on Arc priced at $0.007, "Direct USDC on
+  Arc", payee `0xB98e…`, `REQUIRE_EVALUATOR`, with the question sent as
+  `query`.
+- The approval re-selected, recorded the decision and quoted the same terms.
+  It stopped at the clearance signature, which needs production keys.
+
+Exa contents is still refused on both networks, and that is Veyra's policy
+working. Its free probe raises a different price from its listing
+(`catalog_drift:price_changed`), and Veyra does not pay a seller whose terms
+disagree with themselves.
+
 ## One discovery for Arc and Base
 
 **The principle.** Discovery says who might sell something and what they

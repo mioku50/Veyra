@@ -212,7 +212,12 @@ Steps marked *owner* need the owner's action. *Money* means real USDC.
    reconciliation chain, the marketplace network, Veyra's own chain
    definition and the wallet's add-chain step, each tested. The EIP-712 domain
    was read from the chain. No real payment on Arc mainnet has been made; the
-   first one is the owner's to make.)*
+   first one is the owner's to make.)* *(Later the same day three more blockers
+   were fixed. The owner can ask a listed tool their own question from My
+   Agent. The quote takes the decision's network, payee and asset rather than
+   the seller's first offer. Nova's approval stores its decision, so the quote
+   can read it: that had been broken since 2026-09-16. Exa search on Arc
+   priced and quoted live without paying; see the Arc-first note.)*
 4. **D1 set-up and free checks** (matrix groups A–F). The owner creates the
    agent wallet, deploys it on Arc, sets limits before funding, and confirms
    Arc Portal shows it. Circle's limits act when it is asked to sign, so the
