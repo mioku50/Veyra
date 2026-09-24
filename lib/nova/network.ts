@@ -11,11 +11,12 @@ import type { SubjectDigest } from "./types.ts";
  *
  * An interest is not a network, and the brief was letting one stand in for the
  * other. "Arc" is a thing to care about; its capability terms are `arc`, `usdc`
- * and `stablecoin`, matched against what a seller says it does. Circle's
- * catalogue publishes zero resources on Arc -- measured, not assumed -- so
- * choosing Arc as an interest can only ever return endpoints that settle
- * somewhere else, usually Base, and the card put the word ARC directly above
- * "$0.01". Nobody reads that as "this matched your interest in Arc".
+ * and `stablecoin`, matched against what a seller says it does. Nova's
+ * catalogue read asks for Base only, so choosing Arc as an interest returns
+ * endpoints that settle somewhere else, and the card put the word ARC directly
+ * above "$0.01". Nobody reads that as "this matched your interest in Arc".
+ * (This comment once said Circle publishes nothing on Arc. Asked for Arc
+ * mainnet it lists hundreds of offers; see lib/discovery.)
  */
 export function networkName(network: string | null | undefined): string | null {
   if (!network) return null;

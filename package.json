@@ -180,7 +180,9 @@
     "nova-coverage:test": "node --experimental-transform-types --no-warnings scripts/nova-coverage-tests.mts",
     "nova-feedback:test": "node --experimental-transform-types --no-warnings scripts/nova-feedback-tests.mts",
     "nova-substance:test": "node --experimental-transform-types --no-warnings scripts/nova-substance-tests.mts",
-    "nova-tools:test": "node --experimental-transform-types --no-warnings scripts/nova-tools-tests.mts"
+    "nova-tools:test": "node --experimental-transform-types --no-warnings scripts/nova-tools-tests.mts",
+    "market-discovery:test": "node --experimental-transform-types --no-warnings scripts/market-discovery-tests.mts",
+    "arc:market": "node --experimental-transform-types --no-warnings scripts/arc-market-report.mts"
   },
   "dependencies": {
     "@circle-fin/adapter-viem-v2": "^1.14.0",

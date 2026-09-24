@@ -196,6 +196,12 @@ Steps marked *owner* need the owner's action. *Money* means real USDC.
 2. **Read-only Arc discovery.** Circle's catalogue per network (Arc first), a
    bounded daily Bazaar snapshot and an ERC-8004 Arc reader with two-way
    binding checks. The network shown on every card. No payment change.
+   *(Started 2026-09-24: the three readers and the one-record-per-offer merge
+   are in `lib/discovery/`, tested by `market-discovery:test` in the release
+   gate, and readable with `npm run --silent arc:market`. First live read: 519
+   offers on Arc, 50 of them listed with a wallet payment, none quotable by Veyra;
+   22 offers bound to their ERC-8004 identity both ways. Not yet wired into
+   Nova's brief or proposals.)*
 3. **Arc mainnet in the payment tables:** USDC on chain 5042, Gateway domain
    26, the chain definition and reconciliation, each with tests. The owner's
    own signed purchases then work on Arc through the existing flow. *Owner

@@ -244,6 +244,10 @@ runStep("Nova Discovery and Request Preparation", () => {
   execSync("npm run x402-request-body:test", { cwd: root, stdio: "inherit" });
 });
 
+runStep("Market Discovery (Arc and Base)", () => {
+  execSync("npm run market-discovery:test", { cwd: root, stdio: "inherit" });
+});
+
 runStep("Nova Arc Proof Tests", () => {
   execSync("npm run nova-arc-proof:test", { cwd: root, stdio: "inherit" });
 });

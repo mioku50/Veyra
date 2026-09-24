@@ -327,6 +327,9 @@ reviewer finds a working mainnet service.
 
 ## Not done
 
-- No code changed. The discovery design, the Arc payment tables and a new
-  mandate are the next steps, in that order.
+- No code changed in this note. The discovery design, the Arc payment tables
+  and a new mandate are the next steps, in that order. *(2026-09-24: the
+  discovery readers now exist in `lib/discovery/`; `npm run --silent
+  arc:market` reproduces this census without probing. They are not wired
+  into Nova yet.)*
 - No listing request, registration or contact was made.
