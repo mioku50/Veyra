@@ -547,4 +547,31 @@ assert.equal(empty.candidates.length, 0);
 assert.equal(empty.recommendation.granted, false);
 assert.equal(empty.recommendation.reason, "no_candidates_discovered");
 
+// ---------------------------------------------------------------------------
+// A decision a caller will quote before clearing is written; one that only
+// priced is not. Nova's approval quotes first, and an unwritten decision was
+// refused by the quote route as one that does not exist.
+// ---------------------------------------------------------------------------
+{
+  Object.assign(process.env, { NODE_ENV: "test", EXECUTION_ALLOW_MEMORY_STORE: "true" });
+  const { fetchX402Selection } = await import("../lib/x402/decision-store.ts");
+  const decide = (recordDecision?: boolean) => selectMarketplaceCounterparty({
+    request: { capability: "market_research", budgetUsdc: 0.05, maxPriceUsdc: 0.02, limit: 5 },
+    tenant,
+    issueClearance: false,
+    recordDecision,
+    fetchImpl: stubCatalog([catalogItem()]),
+    probeFetchImpl: stubChallenge(matchingChallenge) as unknown as (url: string, init: RequestInit) => Promise<Response>,
+  });
+  const priced = await decide();
+  assert.equal(await fetchX402Selection(priced.selectionId).catch(() => null), null,
+    "a proposal that only prices leaves no quotable decision behind");
+  const toQuote = await decide(true);
+  const stored = await fetchX402Selection(toQuote.selectionId);
+  assert(stored, "a decision about to be quoted is written");
+  assert.equal(stored.clearanceDigest ?? null, null, "and says it carries no clearance");
+  assert.equal(stored.settlementNetwork, NETWORK);
+  assert.equal(stored.payTo.toLowerCase(), toQuote.recommendation.payTo?.toLowerCase());
+}
+
 console.log("Marketplace selection tests passed.");

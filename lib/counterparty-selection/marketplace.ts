@@ -553,6 +553,20 @@ export async function selectMarketplaceCounterparty(input: {
     selectionHash: Hex;
     expiresAt: string;
   }) => void;
+  /**
+   * Record the decision even though no clearance was issued with it.
+   *
+   * For the caller described above: Nova quotes before it clears, because
+   * only the quote knows the exact price, and the quote route reads the
+   * decision back from the store. With `issueClearance: false` nothing was
+   * stored, so every Nova approval since the relay began reading decisions
+   * (2026-09-16) was refused as "No Veyra decision with that id". The row is
+   * the same decision -- payee, asset, chain, ceiling, expiry -- with no
+   * clearance digest, and the caller signs its clearance for the quoted amount
+   * or not at all. Off unless asked for: a proposal that only prices must not
+   * leave a quotable decision behind.
+   */
+  recordDecision?: boolean;
 }): Promise<MarketplaceSelection> {
   const request = validateMarketplaceSelectionRequest(input.request);
   const now = input.now ?? new Date();
@@ -907,7 +921,8 @@ export async function selectMarketplaceCounterparty(input: {
    * a selection it cannot read back. The advisory surface keeps working and the
    * paying one stops, which is the correct way round. */
   if (
-    winner && winnerDecision && winnerPayTo && winnerContext && clearance
+    winner && winnerDecision && winnerPayTo && winnerContext
+    && (clearance || input.recordDecision === true)
     /* REVIEW_REQUIRED and DENY are verdicts too, and neither authorizes a
        spend. The project already has one definition of which levels may
        execute; using it rather than a second list here is what keeps the two
@@ -945,7 +960,7 @@ export async function selectMarketplaceCounterparty(input: {
       /* The digest and not the signature. The digest is what a reader checks
          the decision against; the signature is what acts on it, and nothing on
          this rail ever calls consumeClearance. */
-      clearanceDigest: clearance.clearanceDigest,
+      clearanceDigest: clearance?.clearanceDigest ?? null,
       createdAt,
       expiresAt,
     });

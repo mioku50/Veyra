@@ -123,7 +123,15 @@ function isHexAddress(value: unknown): value is `0x${string}` {
  */
 export function selectPayableAccept(
   challenge: unknown,
-  options: { maxAtomic: bigint; allowedChainIds?: number[] },
+  options: {
+    maxAtomic: bigint;
+    allowedChainIds?: number[];
+    /** The terms a Veyra decision was made on. Only an accept on this network,
+     *  to this payee, in this asset is considered: a challenge offering the
+     *  same price on several chains and to several payees is otherwise decided
+     *  by the order the seller lists them in. */
+    match?: { network?: string | null; payTo?: string | null; asset?: string | null };
+  },
 ): X402Accept {
   const envelope = asRecord(challenge);
   const rawAccepts = envelope && Array.isArray(envelope.accepts) ? envelope.accepts : [];
@@ -212,8 +220,33 @@ export function selectPayableAccept(
     );
   }
 
-  payable.sort((left, right) => (BigInt(left.amountAtomic) < BigInt(right.amountAtomic) ? -1 : 1));
-  const cheapest = payable[0];
+  /* Exa's live challenge offers one price seven ways: a wallet payment on
+     Base to one payee, Gateway on Base, World Chain and Arc, a wallet payment
+     on Arc, and a wallet payment on Base to a second payee. The first of them
+     won every tie, so a decision made on Arc was quoted on Base, to a payee
+     nobody had decided on, and refused. */
+  const same = (left: string | null | undefined, right: string) =>
+    !left || left.trim().toLowerCase() === right.trim().toLowerCase();
+  const matching = payable.filter((accept) =>
+    same(options.match?.network, accept.network)
+    && same(options.match?.payTo, accept.payTo)
+    && same(options.match?.asset, accept.asset));
+  if (matching.length === 0) {
+    throw new X402PaymentError(
+      "decided_terms_not_offered",
+      "This endpoint no longer offers payment on the network, to the payee and in the asset Veyra decided on.",
+    );
+  }
+
+  /* Cheapest first. At one price, a wallet payment before a Gateway one: the
+     decision binds the payee, the asset and the chain, not the rail, and the
+     wallet rail needs no deposit and is valid for an hour rather than a week. */
+  matching.sort((left, right) => {
+    const byPrice = BigInt(left.amountAtomic) - BigInt(right.amountAtomic);
+    if (byPrice !== BigInt(0)) return byPrice < BigInt(0) ? -1 : 1;
+    return Number(left.gatewayBatched) - Number(right.gatewayBatched);
+  });
+  const cheapest = matching[0];
   if (BigInt(cheapest.amountAtomic) > options.maxAtomic) {
     throw new X402PaymentError(
       "price_above_authorization",

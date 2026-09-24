@@ -180,6 +180,9 @@ export async function priceX402Call(input: {
   requestBody: unknown;
   maxAmountUsdc: number;
   inputSchema?: Record<string, unknown> | null;
+  /** The listing's own network, payee and asset. Priced on anything else, a
+   *  card would show terms the decision taken on that listing cannot quote. */
+  match?: X402AcceptMatch;
 }): Promise<X402PriceOutcome> {
   const resource = input.resource.trim();
   if (!resource) return { kind: "refused", status: 400, code: "resource_required", message: "resource is required." };
@@ -196,6 +199,7 @@ export async function priceX402Call(input: {
     requestBody,
     maxAtomic: BigInt(Math.floor(maxAmountUsdc * 1e6)),
     catalogSchema: input.inputSchema ?? null,
+    match: input.match,
   });
   if (observed.kind !== "challenged") return observed;
   return {
@@ -233,12 +237,15 @@ type ObservedChallenge =
   | { kind: "free"; status: number; body: string }
   | { kind: "refused"; status: number; code: string; message: string; inputSchema?: JsonSchema | null };
 
+export type X402AcceptMatch = { network?: string | null; payTo?: string | null; asset?: string | null };
+
 async function observeX402Challenge(input: {
   resource: string;
   method: "GET" | "POST";
   requestBody: unknown;
   maxAtomic: bigint;
   catalogSchema?: Record<string, unknown> | null;
+  match?: X402AcceptMatch;
 }): Promise<ObservedChallenge> {
   if (input.method === "GET" && input.requestBody != null
     && !(typeof input.requestBody === "object" && !Array.isArray(input.requestBody)
@@ -292,7 +299,7 @@ async function observeX402Challenge(input: {
 
   let accept: X402Accept;
   try {
-    accept = selectPayableAccept(challenge, { maxAtomic: input.maxAtomic });
+    accept = selectPayableAccept(challenge, { maxAtomic: input.maxAtomic, match: input.match });
   } catch (error) {
     if (error instanceof X402PaymentError) {
       return { kind: "refused", status: 422, code: error.code, message: error.message };
@@ -404,7 +411,14 @@ export async function quoteX402Call(input: X402QuoteRequest): Promise<X402QuoteO
     );
   }
 
-  const observed = await observeX402Challenge({ resource, method, requestBody, maxAtomic });
+  /* The accept is chosen from the decision's own terms. The decision already
+     binds network, payee and asset, and the quote store refuses anything
+     else; choosing by price alone picked whichever of several equal offers
+     the seller listed first, and refused the purchase over it. */
+  const observed = await observeX402Challenge({
+    resource, method, requestBody, maxAtomic,
+    match: { network: selection.settlementNetwork, payTo: selection.payTo, asset: selection.asset },
+  });
   if (observed.kind === "free") return observed;
   if (observed.kind === "refused") {
     return observed.inputSchema

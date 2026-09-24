@@ -396,4 +396,52 @@ assert.throws(
   );
 }
 
+/* ---- one price, seven ways: the decision picks, not the seller's order ---- */
+{
+  // Exa's live challenge for /contents, 2026-09-24, as read by a free probe.
+  const BASE_USDC = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913";
+  const ARC_USDC = "0x3600000000000000000000000000000000000000";
+  const LEGACY = "0x6d6E695b09861467c7d462f5AAF31cF3540B9192";
+  const CIRCLE = "0xB98eF29eb2be19Ae646A8FC0248255B90A332dbC";
+  const GW = "0x77777777dcc4d5a8b6e418fd04d8997ef11000ee";
+  const wallet = (network: string, asset: string, payTo: string, name: string) =>
+    ({ scheme: "exact", network, amount: "1000", asset, payTo, maxTimeoutSeconds: 60, extra: { name, version: "2" } });
+  const gateway = (network: string, asset: string) =>
+    ({ scheme: "exact", network, amount: "1000", asset, payTo: CIRCLE, maxTimeoutSeconds: 604_900, extra: { name: CIRCLE_BATCHING_DOMAIN_NAME, version: "1", verifyingContract: GW } });
+  const exaChallenge = {
+    x402Version: 2,
+    accepts: [
+      wallet("eip155:8453", BASE_USDC, LEGACY, "USD Coin"),
+      { scheme: "exact", network: "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp", amount: "1000", asset: "EPjF", payTo: "12Ec" },
+      gateway("eip155:8453", BASE_USDC),
+      gateway("eip155:480", "0x79A02482A880bCE3F13e09Da970dC34db4CD24d1"),
+      gateway("eip155:5042", ARC_USDC),
+      wallet("eip155:5042", ARC_USDC, CIRCLE, "USDC"),
+      wallet("eip155:8453", BASE_USDC, CIRCLE, "USD Coin"),
+    ],
+  };
+  const max = { maxAtomic: BigInt(10_000) };
+
+  // A decision on Arc is quoted on Arc, by wallet, though Gateway is listed first.
+  const onArc = selectPayableAccept(exaChallenge, { ...max, match: { network: "eip155:5042", payTo: CIRCLE.toLowerCase(), asset: ARC_USDC } });
+  assert.equal(onArc.network, "eip155:5042", "a decision on Arc is never quoted on Base");
+  assert.equal(onArc.gatewayBatched, false, "at one price, a wallet payment before a Gateway deposit");
+
+  // A decision on Base to Circle's payee is not quoted to the legacy payee listed first.
+  const onBase = selectPayableAccept(exaChallenge, { ...max, match: { network: "eip155:8453", payTo: CIRCLE, asset: BASE_USDC } });
+  assert.equal(onBase.payTo, CIRCLE);
+  assert.equal(onBase.gatewayBatched, false);
+
+  // Terms the seller no longer offers are refused, never substituted.
+  assert.throws(
+    () => selectPayableAccept(exaChallenge, { ...max, match: { network: "eip155:5042", payTo: LEGACY } }),
+    (error: unknown) => error instanceof X402PaymentError && error.code === "decided_terms_not_offered",
+  );
+
+  // Unpinned, price still decides first, and a wallet wins a tie.
+  const cheaperGateway = { x402Version: 2, accepts: [wallet("eip155:5042", ARC_USDC, CIRCLE, "USDC"), { ...gateway("eip155:5042", ARC_USDC), amount: "900" }] };
+  assert.equal(selectPayableAccept(cheaperGateway, max).gatewayBatched, true, "a cheaper Gateway price still wins");
+  assert.equal(selectPayableAccept(exaChallenge, max).payTo, LEGACY, "unpinned, a tie keeps the seller's order among wallet payments");
+}
+
 console.log("[x402-browser-payment-test] passed: EIP712Domain declared so a wallet hashes the token's own domain, live challenge shape, rail selection, ceiling refusal, EIP-3009 domain recovery, header encoding, settlement decoding, Circle Gateway batched domain + USDC asset identity");
