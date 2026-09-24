@@ -506,3 +506,23 @@ export function sinceLastVisit(
   const reading = assessmentOf(signal);
   return reading && Date.parse(reading.generatedAt) > boundary ? "re-read" : null;
 }
+
+/**
+ * A model's prose as the page prints it: the words, without markdown.
+ *
+ * Both readers are told to write plain sentences, and one of them answered
+ * the owner's first purchase on Arc with "**Jumper**" and "**LI.FI**". The
+ * page prints text, so the asterisks were printed too. Asterisk bold, code and
+ * heading marks are removed. Underscores are left alone: "__init__" is a name
+ * more often than it is emphasis.
+ */
+export function plainProse(text: string | null | undefined): string {
+  if (!text) return "";
+  return text
+    .replace(/\*\*([^*\n]+?)\*\*/g, "$1")
+    /* A pair the model left open is never meant to be read. */
+    .replace(/\*\*/g, "")
+    .replace(/`([^`\n]+)`/g, "$1")
+    .replace(/^[ \t]*#{1,6}[ \t]+/gm, "")
+    .trim();
+}

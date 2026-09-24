@@ -29,6 +29,7 @@ import {
   policyCapabilityFor, POLICY_CAPABILITIES, UNCLASSIFIED_CAPABILITY,
 } from "../lib/nova/capability.ts";
 import { readResult } from "../lib/nova/synthesis.ts";
+import { plainProse } from "../lib/nova/presentation.ts";
 import { sharpenIntent } from "../lib/nova/intent.ts";
 import { ownerQuestionFor, proposeResearch } from "../lib/nova/research.ts";
 import {
@@ -1155,6 +1156,23 @@ for (const [why, generate] of [
 
 /* Nothing to read is not something to read. */
 assert.equal(await readResult({ ...READING_INPUT, result: "", generate: stub("CHANGED: x") as never }), null);
+
+/* Told "no markdown", the reader still bolded names on the owner's first
+   purchase on Arc, and the page printed the asterisks. Stored as words. */
+const bolded = await readResult({
+  ...READING_INPUT,
+  generate: stub([
+    "**CHANGED:** The material confirms that **Jumper**, previously associated with **LI.FI**, is launching `JUMP`.",
+    "MATTERS: It touches **onchain data** you follow.",
+    "NEXT: Ask when the sale opens.",
+  ].join("\n")),
+});
+assert.ok(bolded);
+assert.equal(bolded.whatChanged, "The material confirms that Jumper, previously associated with LI.FI, is launching JUMP.");
+assert.equal(bolded.whyItMatters, "It touches onchain data you follow.");
+assert.equal(plainProse("snake_case_name and __init__ stay as written"), "snake_case_name and __init__ stay as written");
+assert.equal(plainProse("## Heading\nline"), "Heading\nline");
+assert.equal(plainProse(null), "");
 
 /* ---- asking something worth the money ---- */
 

@@ -34,7 +34,7 @@ import {
   agentAccessState, arcIdentityState, arcViewBlurb, briefSummary, identityExplanation,
   identityHeadline, plain, purchaseStanding, purchaseSummary, transferWarning,
   autonomyStateClaim, previewOnlyWarning, shadowDeclineClaims, shadowNightClaim,
-  shadowRemainingClaim, shadowSpendClaim, shadowVerdictClaim, publishedAtOf, sinceLastVisit,
+  shadowRemainingClaim, shadowSpendClaim, shadowVerdictClaim, publishedAtOf, sinceLastVisit, plainProse,
   type ArcIdentityState, type Claim,
 } from "@/lib/nova/presentation";
 import { IDENTITY_REGISTER_ABI, NOVA_IDENTITY_REGISTRY } from "@/lib/nova/identity";
@@ -2653,9 +2653,9 @@ function PublicReading({ signal, goal, context = [], unrefreshed = false }: {
     {againstOlderContext || againstOlderRules ? <p className="text-xs text-state-warn">
       Written {againstOlderContext ? "before your project facts last changed" : "under an earlier edition of Nova’s reading rules"}. Reassess it for the project as it stands.
     </p> : null}
-    <p><strong>What changed:</strong> {analysis.whatChanged}</p>
-    <p><strong>Why it matters to your goal:</strong> {analysis.whyItMatters}</p>
-    {analysis.relativeToWork ? <p><strong>Against what you already have:</strong> {analysis.relativeToWork}</p> : null}
+    <p><strong>What changed:</strong> {plainProse(analysis.whatChanged)}</p>
+    <p><strong>Why it matters to your goal:</strong> {plainProse(analysis.whyItMatters)}</p>
+    {analysis.relativeToWork ? <p><strong>Against what you already have:</strong> {plainProse(analysis.relativeToWork)}</p> : null}
     {/* The work, where there is work. A one-line step and a four-part plan of
         the same step on one card is the card saying it twice, so the plan
         replaces the line rather than joining it. */}
@@ -3331,16 +3331,19 @@ function Outcome({
       {verified && investigation.reading ? (
         <div className="mt-4 space-y-3 border-t border-border/60 pt-4">
           <div>
-            <Label>What changed</Label>
+            {/* An owner's own question is answered, not reported as a change:
+                "What changed" over the answer to "jumper tokensale info" said
+                something about the material that the question never asked. */}
+            <Label>{proposal.askedBy === "owner" ? "What it found" : "What changed"}</Label>
             <p className="mt-1.5 text-sm leading-relaxed text-foreground">
-              {investigation.reading.whatChanged}
+              {plainProse(investigation.reading.whatChanged)}
             </p>
           </div>
           {investigation.reading.whyItMatters ? (
             <div>
               <Label>Why it matters</Label>
               <p className="mt-1.5 text-sm leading-relaxed text-muted-foreground">
-                {investigation.reading.whyItMatters}
+                {plainProse(investigation.reading.whyItMatters)}
               </p>
             </div>
           ) : null}
@@ -3348,7 +3351,7 @@ function Outcome({
             <div>
               <Label>What {agentName} suggests watching next</Label>
               <p className="mt-1.5 text-sm leading-relaxed text-muted-foreground">
-                {investigation.reading.watchNext}
+                {plainProse(investigation.reading.watchNext)}
               </p>
             </div>
           ) : null}

@@ -250,7 +250,7 @@ About $0.01 each, from the one or two dollars funded after groups B to F.
 
 | # | Payment | Passes when |
 | --- | --- | --- |
-| G1 | Exa search on Arc, from the wallet, $0.007 | A result, and `authorizationState(wallet, nonce)` true on Arc |
+| G1 | Exa search on Arc, from the wallet, $0.007 | A result, and `authorizationState(wallet, nonce)` true on Arc. *(The seller side passed on 2026-09-24 with the owner's browser wallet: block 22517476, PASS. The agent wallet's own run is still open.)* |
 | G2 | CRA direct on Arc, $0.003 (its own facilitator) | The same |
 | G3 | Exa on Base, from the same wallet | The same, on Base, from the same shared budget |
 | G4 | A Gateway payment on Arc, after a 0.5 USDC deposit | Accepted, and counted against the limit. Only after D6 and D7 pass. |

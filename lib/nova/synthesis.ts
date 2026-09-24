@@ -4,6 +4,7 @@
  */
 
 import { generateOpenAiCompatibleText } from "../llm/openai-compatible.ts";
+import { plainProse } from "./presentation.ts";
 
 /**
  * Turning something that was bought into something a person can read.
@@ -76,7 +77,9 @@ const SYSTEM_PROMPT = [
  */
 function block(text: string, label: string): string {
   const pattern = new RegExp(
-    `^[ \\t]*\\**${label}\\**[ \\t]*:[ \\t]*([\\s\\S]*?)(?=^[ \\t]*\\**(?:CHANGED|MATTERS|NEXT)\\**[ \\t]*:|\\s*$)`,
+    /* "**CHANGED:**" closes its bold after the colon; the closing marks are
+       part of the label, not the first word of the answer. */
+    `^[ \\t]*\\**${label}\\**[ \\t]*:\\**[ \\t]*([\\s\\S]*?)(?=^[ \\t]*\\**(?:CHANGED|MATTERS|NEXT)\\**[ \\t]*:|\\s*$)`,
     "im",
   );
   return (text.match(pattern)?.[1] ?? "").trim();
@@ -136,9 +139,11 @@ export async function readResult(input: {
   }
   if (!answer.ok || !answer.text?.trim()) return null;
 
-  const whatChanged = block(answer.text, "CHANGED");
-  const whyItMatters = block(answer.text, "MATTERS");
-  const watchNext = block(answer.text, "NEXT");
+  /* Told "no markdown", a model still bolds names; stored clean, so every
+     surface that prints a reading prints words. */
+  const whatChanged = plainProse(block(answer.text, "CHANGED"));
+  const whyItMatters = plainProse(block(answer.text, "MATTERS"));
+  const watchNext = plainProse(block(answer.text, "NEXT"));
   /* A model that ignored the shape produced prose nobody asked for, and
      rendering it under three headings it does not have would be the screen
      making a claim about its own content. */

@@ -233,6 +233,24 @@ Checked live without paying (2026-09-24):
 - The approval re-selected, recorded the decision and quoted the same terms.
   It stopped at the clearance signature, which needs production keys.
 
+**The first payment through Veyra on Arc mainnet, 2026-09-24.** The owner asked
+Exa search a question from My Agent ("jumper tokensale info"), approved
+$0.007, and signed in their own browser wallet. On chain:
+
+| Fact | Value |
+| --- | --- |
+| Transaction | `0x08b3ff1ceb76d9d47ca6ae8d914eec0e9061f16a58d355940a786d63ef9d0dac`, block 22517476, status success |
+| Call | `transferWithAuthorization` on USDC `0x3600…` (the `bytes` signature form, selector `0xcf092995`) |
+| Sent by | `0xa483…ad30`, the seller's side; it paid the gas, the buyer only signed |
+| Authorizer | `0x8e52…8909`, the owner's wallet (`AuthorizationUsed`, nonce `0x3077…88bc`) |
+| Transfer | 7000 in the 6-decimal ERC-20 view to Exa's payee `0xB98e…2dbC`; the same move appears as 7×10¹⁵ in Arc's 18-decimal native view |
+| Veyra | execution `vexec_8e412d01ae4a47a3`, delivery check PASS |
+
+This is group G1 of the D1 matrix with a browser wallet (an EOA) in place of
+the agent wallet. It shows the seller side works on Arc: Exa accepts the
+authorization and its facilitator settles it. What it cannot show is how
+Circle's agent wallet signs, which G1 exists for.
+
 Exa contents is still refused on both networks, and that is Veyra's policy
 working. Its free probe raises a different price from its listing
 (`catalog_drift:price_changed`), and Veyra does not pay a seller whose terms

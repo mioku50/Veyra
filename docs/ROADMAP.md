@@ -20,7 +20,7 @@ This roadmap supersedes the original sequencing of Daily Product → Paid Invest
 | Execution security convergence | Internally hardened | Audit findings F1–F9 were addressed in the application; this is not an independent third-party audit or proof of every production configuration. |
 | D0 — Shadow Autonomy | Running; calibration not accepted | PREVIEW v2 evaluates live proposals and signed limits without creating payment authorizations. No automatic mandate renewal or promotion to AUTOPILOT. |
 | **V — Nova Product Value V1** | **Technical first slice implemented; owner-value acceptance open (CURRENT PRIORITY)** | Goal-driven public-source research has shipped. Whether it produces useful work consistently remains to be shown with real owner feedback. |
-| Arc first | Direction set 2026-09-23; Arc mainnet in the payment tables 2026-09-24 | Arc mainnet has a live x402 market: 482 offers in Circle's own catalogue, and more found through the Bazaar and ERC-8004. The owner's own signed purchases can now be quoted on Arc, and Nova's brief reads Arc first. No payment on Arc mainnet has run yet. Nova's mandate still names Base. Base stays as an additional network. |
+| Arc first | Direction set 2026-09-23; Arc mainnet in the payment tables 2026-09-24 | Arc mainnet has a live x402 market: 482 offers in Circle's own catalogue, and more found through the Bazaar and ERC-8004. The owner's own signed purchases work on Arc, and Nova's brief reads Arc first. The first one settled on 2026-09-24: Exa search, $0.007, from the owner's browser wallet. Nova's mandate still names Base. Base stays as an additional network. |
 | D1 — Operational wallet | Research/test design only | The signer's place in the existing payment flow and the check matrix are written down. No production wallet signer, funded Nova wallet, or wallet-enforced autonomy has passed acceptance. |
 | D2 — Bounded live autonomy | Not enabled | Requires fresh AUTOPILOT consent and all D1 gates; PREVIEW cannot be upgraded by an environment flag. |
 | D3 — Nova hires agents | Infrastructure proof only | An ERC-8183 escrow job was demonstrated on Arc Testnet; the owner-facing Nova → agent-hiring workflow is not complete. |
@@ -217,7 +217,9 @@ Steps marked *owner* need the owner's action. *Money* means real USDC.
    Agent. The quote takes the decision's network, payee and asset rather than
    the seller's first offer. Nova's approval stores its decision, so the quote
    can read it: that had been broken since 2026-09-16. Exa search on Arc
-   priced and quoted live without paying; see the Arc-first note.)*
+   priced and quoted live without paying; see the Arc-first note. The owner
+   then bought it: the first payment through Veyra on Arc mainnet, $0.007 in
+   block 22517476, answer checked PASS.)*
 4. **D1 set-up and free checks** (matrix groups A–F). The owner creates the
    agent wallet, deploys it on Arc, sets limits before funding, and confirms
    Arc Portal shows it. Circle's limits act when it is asked to sign, so the
