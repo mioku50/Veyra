@@ -13,6 +13,7 @@ import {
   capabilityQueriesForInterests,
   planRepositorySubjects,
 } from "./interests.ts";
+import { ARC_FIRST } from "../discovery/offers.ts";
 import { repositoryDigest, x402Digest } from "./observation.ts";
 import type { SubjectDigest } from "./types.ts";
 import { buildRequestBody } from "../x402/request-body.ts";
@@ -112,13 +113,22 @@ export async function observeX402Catalog(input: {
   let anySucceeded = false;
   let anyAttempted = false;
 
-  for (const query of queries) {
+  /* Arc first, Base additional (the owner's order of 2026-09-23). The read
+     asked for Base alone, so Arc sellers never reached a brief however many
+     Circle listed there. One endpoint sold on both is one card, on the network
+     read first; which network is paid is still decided at purchase time from
+     the live challenge, and a mandate naming Base does not stretch to Arc. */
+  const passes = queries.flatMap((query) => ARC_FIRST.map((network) => ({ ...query, network })));
+  const seenResources = new Set<string>();
+
+  for (const query of passes) {
     if (observations.length >= budget) break;
     anyAttempted = true;
     let result;
     try {
       result = await discoverMarketplaceCandidates({
         capability: query.term,
+        network: query.network,
         /* Ask for more than will be kept. Three were requested and three were
            kept, so any filter applied afterwards -- a templated path, a schema
            with nowhere to put a question, a seller already holding its share --
@@ -143,6 +153,8 @@ export async function observeX402Catalog(input: {
       if (observations.length >= budget) break;
       if (seen.has(candidate.candidateId)) continue;
       seen.add(candidate.candidateId);
+      const resourceKey = `${candidate.method} ${candidate.resource}`;
+      if (seenResources.has(resourceKey)) continue;
       /* Watch only what could be bought from a brief.
          Three per interest were taken by catalogue rank, and rank says nothing
          about whether a person could ever press the button: of 148 listings
@@ -162,6 +174,7 @@ export async function observeX402Catalog(input: {
       const held = takenPerProvider.get(provider) ?? 0;
       if (held >= SUBJECT_LIMITS.perProvider) continue;
       takenPerProvider.set(provider, held + 1);
+      seenResources.add(resourceKey);
       takenForInterest += 1;
       takenPerInterest.set(query.interest, takenForInterest);
       observations.push({

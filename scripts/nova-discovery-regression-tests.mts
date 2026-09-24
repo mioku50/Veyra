@@ -56,4 +56,32 @@ const getBody = await priceX402Call({
 assert.equal(getBody.kind, "refused");
 assert.equal(getBody.kind === "refused" && getBody.code, "get_request_body_unsupported",
   "refuse before any network call rather than price a discarded GET body");
+/* Arc first, Base additional: the brief reads Arc before Base, and one
+   endpoint sold on both networks is one card, on Arc. */
+{
+  const { observeX402Catalog } = await import("../lib/nova/sources.ts");
+  const ARC_USDC = "0x3600000000000000000000000000000000000000";
+  const listed = (id: string, net: string, asset: string) => ({
+    resource: `https://${id}.example.com/search`,
+    accepts: [{ scheme: "exact", network: net, amount: "1000", asset, payTo: "0x0000000000000000000000000000000000000001", extra: { name: "USDC", version: "2" } }],
+    metadata: { method: "POST", provider: { name: id, tags: ["research", "search"] } },
+  });
+  const asked: string[] = [];
+  const byNetwork = (async (url: string | URL | Request) => {
+    const net = new URL(String(url)).searchParams.get("network")!;
+    asked.push(net);
+    const items = net === "eip155:5042"
+      ? [listed("both", net, ARC_USDC), listed("arconly", net, ARC_USDC)]
+      : [listed("both", net, accept.asset), listed("baseonly", net, accept.asset)];
+    return Response.json({ items, pagination: { total: items.length } });
+  }) as typeof fetch;
+  const result = await observeX402Catalog({ interests: ["Research & search"], fetchImpl: byNetwork });
+  assert.equal(asked[0], "eip155:5042", "Arc is asked first");
+  assert(asked.includes("eip155:8453"), "Base is still asked");
+  const cards = result.observations.map((o) => `${o.context?.provider} ${o.context?.network}`);
+  assert.equal(cards.filter((c) => c.startsWith("both ")).length, 1, "one endpoint on two networks is one card");
+  assert(cards.includes("both eip155:5042"), "and that card is the Arc one");
+  assert(cards.includes("arconly eip155:5042"), `Arc-only sellers reach the brief: ${cards.join(", ")}`);
+}
+
 console.log("PASS: research service discovery, pinned subject beyond shortlist, price/payee guards, text input semantics and discarded GET-body prevention");

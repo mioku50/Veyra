@@ -162,6 +162,35 @@ they reached.
 
 Each fix is small, and most are in payment code. None was made here.
 
+*2026-09-24, with the owner's approval:* the first four rows and the
+chain-definition row are fixed. Autonomy and Veyra's own paid API are not.
+
+- Arc mainnet USDC (`0x3600…`) is now in the asset table under chain 5042.
+- Gateway domain 26 is in the domain table. It was checked against Circle's
+  `/v1/info` and `/v1/x402/supported`, which lists `eip155:5042` with the
+  mainnet GatewayWallet.
+- `chainForNetwork("eip155:5042")` resolves to Arc mainnet, read over Arc
+  mainnet's own RPC and never the testnet URL. A bare `arc` still means the
+  testnet.
+- `eip155:5042` is a marketplace network. The alias `arc` in discovery now
+  means mainnet.
+- `lib/wallet/arc.ts` holds Veyra's own chain definition for Arc mainnet. It
+  replaces viem's missing one.
+- A wallet that has never seen Arc is asked to add it from Veyra's parameters
+  before switching.
+- The EIP-712 domain was read from the chain: `name()` is `USDC`, `version()`
+  is `2`. The tests sign an Arc wallet payment under that domain and recover
+  the signer. They accept a Gateway payment only against the mainnet
+  GatewayWallet.
+- Nova's brief reads Circle's catalogue for Arc first and Base second. An
+  endpoint sold on both networks becomes one card, on Arc.
+- Which network is paid is still decided by the live challenge. For an
+  endpoint that offers both networks at the same price, that is the order the
+  seller lists them in, not a preference for Arc.
+- Nova's own mandate still names Base, so Nova refuses Arc offers on its own
+  (`network_matches_mandate`). Only the owner's own signed purchase pays on
+  Arc.
+
 ## One discovery for Arc and Base
 
 **The principle.** Discovery says who might sell something and what they
@@ -331,5 +360,7 @@ reviewer finds a working mainnet service.
   and a new mandate are the next steps, in that order. *(2026-09-24: the
   discovery readers now exist in `lib/discovery/`; `npm run --silent
   arc:market` reproduces this census without probing. They are not wired
-  into Nova yet.)*
+  into Nova yet.)* *(Later on 2026-09-24: Arc mainnet is in the payment
+  tables and Nova's brief reads Arc first; see "What Veyra can pay on Arc
+  today" above.)*
 - No listing request, registration or contact was made.

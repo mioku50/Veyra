@@ -20,7 +20,7 @@ This roadmap supersedes the original sequencing of Daily Product → Paid Invest
 | Execution security convergence | Internally hardened | Audit findings F1–F9 were addressed in the application; this is not an independent third-party audit or proof of every production configuration. |
 | D0 — Shadow Autonomy | Running; calibration not accepted | PREVIEW v2 evaluates live proposals and signed limits without creating payment authorizations. No automatic mandate renewal or promotion to AUTOPILOT. |
 | **V — Nova Product Value V1** | **Technical first slice implemented; owner-value acceptance open (CURRENT PRIORITY)** | Goal-driven public-source research has shipped. Whether it produces useful work consistently remains to be shown with real owner feedback. |
-| Arc first | Direction set 2026-09-23; market measured, discovery designed | Arc mainnet has a live x402 market: 482 offers in Circle's own catalogue, and more found through the Bazaar and ERC-8004. Veyra can pay none of it yet. Base stays as an additional network. |
+| Arc first | Direction set 2026-09-23; Arc mainnet in the payment tables 2026-09-24 | Arc mainnet has a live x402 market: 482 offers in Circle's own catalogue, and more found through the Bazaar and ERC-8004. The owner's own signed purchases can now be quoted on Arc, and Nova's brief reads Arc first. No payment on Arc mainnet has run yet. Nova's mandate still names Base. Base stays as an additional network. |
 | D1 — Operational wallet | Research/test design only | The signer's place in the existing payment flow and the check matrix are written down. No production wallet signer, funded Nova wallet, or wallet-enforced autonomy has passed acceptance. |
 | D2 — Bounded live autonomy | Not enabled | Requires fresh AUTOPILOT consent and all D1 gates; PREVIEW cannot be upgraded by an environment flag. |
 | D3 — Nova hires agents | Infrastructure proof only | An ERC-8183 escrow job was demonstrated on Arc Testnet; the owner-facing Nova → agent-hiring workflow is not complete. |
@@ -200,12 +200,19 @@ Steps marked *owner* need the owner's action. *Money* means real USDC.
    are in `lib/discovery/`, tested by `market-discovery:test` in the release
    gate, and readable with `npm run --silent arc:market`. First live read: 519
    offers on Arc, 50 of them listed with a wallet payment, none quotable by Veyra;
-   22 offers bound to their ERC-8004 identity both ways. Not yet wired into
-   Nova's brief or proposals.)*
+   22 offers bound to their ERC-8004 identity both ways. Later the same day
+   Nova's brief began reading Circle's catalogue for Arc first and Base second,
+   with one card per endpoint naming the network it pays on. Not yet done: the
+   daily Bazaar snapshot, and ERC-8004 offers on cards.)*
 3. **Arc mainnet in the payment tables:** USDC on chain 5042, Gateway domain
    26, the chain definition and reconciliation, each with tests. The owner's
    own signed purchases then work on Arc through the existing flow. *Owner
-   approves, since it touches payment code.*
+   approves, since it touches payment code.* *(Done 2026-09-24 with the
+   owner's approval. It covers the asset, the Gateway domain, the
+   reconciliation chain, the marketplace network, Veyra's own chain
+   definition and the wallet's add-chain step, each tested. The EIP-712 domain
+   was read from the chain. No real payment on Arc mainnet has been made; the
+   first one is the owner's to make.)*
 4. **D1 set-up and free checks** (matrix groups A–F). The owner creates the
    agent wallet, deploys it on Arc, sets limits before funding, and confirms
    Arc Portal shows it. Circle's limits act when it is asked to sign, so the
