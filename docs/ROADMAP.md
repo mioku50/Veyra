@@ -20,10 +20,11 @@ This roadmap supersedes the original sequencing of Daily Product → Paid Invest
 | Execution security convergence | Internally hardened | Audit findings F1–F9 were addressed in the application; this is not an independent third-party audit or proof of every production configuration. |
 | D0 — Shadow Autonomy | Running; calibration not accepted | PREVIEW v2 evaluates live proposals and signed limits without creating payment authorizations. No automatic mandate renewal or promotion to AUTOPILOT. |
 | **V — Nova Product Value V1** | **Technical first slice implemented; owner-value acceptance open (CURRENT PRIORITY)** | Goal-driven public-source research has shipped. Whether it produces useful work consistently remains to be shown with real owner feedback. |
-| D1 — Operational wallet | Research/test design only | No production wallet signer, funded Nova wallet, or wallet-enforced autonomy has passed acceptance. |
+| Arc first | Direction set 2026-09-23; market measured, discovery designed | Arc mainnet has a live x402 market: 482 offers in Circle's own catalogue, and more found through the Bazaar and ERC-8004. Veyra can pay none of it yet. Base stays as an additional network. |
+| D1 — Operational wallet | Research/test design only | The signer's place in the existing payment flow and the check matrix are written down. No production wallet signer, funded Nova wallet, or wallet-enforced autonomy has passed acceptance. |
 | D2 — Bounded live autonomy | Not enabled | Requires fresh AUTOPILOT consent and all D1 gates; PREVIEW cannot be upgraded by an environment flag. |
 | D3 — Nova hires agents | Infrastructure proof only | An ERC-8183 escrow job was demonstrated on Arc Testnet; the owner-facing Nova → agent-hiring workflow is not complete. |
-| Mainnet / broader launch | Preparation only | Existing Nova identity, proofs and contracts are on Arc Testnet; do not describe them as Arc mainnet identity or mainnet revenue. |
+| Mainnet / broader launch | Preparation only | Existing Nova identity, proofs and contracts are on Arc Testnet; do not describe them as Arc mainnet identity or mainnet revenue. Veyra has no mainnet identity, contracts or paid API: its Trust API sells only on testnets. |
 
 ## V — Nova Product Value (the next product gate)
 
@@ -137,6 +138,90 @@ item 1 below is still the only thing that can move it.
 
 **Exit gate V:** Over several real scheduled cycles, the owner can point to recurring, source-backed, goal-relevant findings or completed work they actually found useful, including runs with **zero paid calls**. Review accepted and rejected findings, important misses, noise/duplicates, evidence gaps and per-agent operating cost. Do not use an arbitrary count of positive cards as a substitute for the owner's assessment. If this gate fails, iterate on goals/sources/analysis before D1.
 
+## Arc first — Arc primary, Base additional
+
+**Decided by the owner on 2026-09-23.** Arc becomes Veyra's primary ecosystem.
+Base stays as an additional network for buying services. D1 is prepared
+without creating any new way to spend.
+
+See [Arc first: the market, discovery and Arc Portal](audits/2026-09-23-arc-first-market-and-discovery.md)
+and [D1: where an operational signer plugs in](audits/2026-09-23-d1-operational-signer.md).
+
+### What was found
+
+- **Arc mainnet has an x402 market.** Measured read-only on 2026-09-23:
+  - Circle's own catalogue lists 482 offers on Arc, from 5 providers. All are
+    payable through a Circle Gateway deposit. Exa's 2, search among them,
+    also take a payment straight from a wallet, at the same $0.007 as on Base.
+  - The Coinbase Bazaar adds 12 listings, from 8 hosts.
+  - The ERC-8004 registries on Arc mainnet hold 192 identities. Two of them
+    sell standard x402 on Arc, and neither is in any catalogue.
+  - 56 of 62 unpaid probes asked to be paid on Arc.
+- **The D1 comparison's "no endpoints on Arc" described Veyra, not the
+  market.** Veyra's discovery never asked for Arc. The comparison is corrected
+  in place.
+- **Veyra can pay nothing on Arc today.** Arc mainnet is missing from:
+  - discovery's networks;
+  - the USDC and Gateway-domain tables;
+  - reconciliation;
+  - the installed viem;
+  - the only mandate.
+
+  Each gap is small, and each is in payment code.
+- **Arc Portal.** No self-serve way to get listed is documented. Circle
+  curates what Portal shows, and says a listing is not an endorsement. ERC-8004
+  registration is not a listing. The route in is the Arc team. The Circle Agent
+  Marketplace has a documented intake: a payable endpoint, an OpenAPI spec, a
+  payout wallet and a review.
+
+### Rules
+
+- A decision is bound to one network. If Veyra refuses an offer on Arc, Nova
+  does not retry the same seller on Base. Buying there is a new decision,
+  under a mandate that allows Base.
+- Base support is kept.
+- Discovery listings are never terms. Every payment needs a fresh quote of the
+  exact request under a decision ceiling. One Arc listing asked $50 live
+  against $0.05 listed.
+- SSRF-safe reads and counterparty checks apply to every new source. That
+  covers registration files, manifests, catalogues and probes. A 402 that is
+  not `exact` x402 is not an offer.
+
+### Order of work
+
+Steps marked *owner* need the owner's action. *Money* means real USDC.
+
+1. **Done:** Arc market measured, discovery designed, the D1 signer's
+   connection point and check matrix written.
+2. **Read-only Arc discovery.** Circle's catalogue per network (Arc first), a
+   bounded daily Bazaar snapshot and an ERC-8004 Arc reader with two-way
+   binding checks. The network shown on every card. No payment change.
+3. **Arc mainnet in the payment tables:** USDC on chain 5042, Gateway domain
+   26, the chain definition and reconciliation, each with tests. The owner's
+   own signed purchases then work on Arc through the existing flow. *Owner
+   approves, since it touches payment code.*
+4. **D1 set-up and free checks** (matrix groups A–F). The owner creates the
+   agent wallet, deploys it on Arc, sets limits before funding, and confirms
+   Arc Portal shows it. Circle's limits act when it is asked to sign, so the
+   limit, bypass, revocation and repeat checks run while the wallet is still
+   empty. Group D decides whether Circle's cap binds a compromised runtime.
+   *Owner, with the owner's email code; no money.*
+5. **D1 seller checks** (group G): Exa and CRA on Arc, then Exa on Base, for
+   one or two dollars funded only after every test signature has expired.
+   *Owner, money.*
+6. **Signer host, and the six Veyra changes** the signer note lists: the
+   payer bound from the mandate, smart-account signatures, the mandate budget
+   reserved at the claim, the mandate on the attempt, the Arc tables and a
+   signature queue. Behind flags, tested without funds.
+7. **Veyra on Arc mainnet.** A paid Trust API on Arc through mainnet Gateway,
+   and an ERC-8004 identity for Veyra from its own registrant wallet. Then the
+   Circle Marketplace intake and the Arc team for Portal. Contracts only after
+   an external audit. *Owner, small gas.*
+8. **Gate V**, unchanged and still the product priority.
+9. **D2 on Arc.** A new AUTOPILOT mandate naming the agent wallet and
+   `eip155:5042`. Base only under a mandate that names it. Wallet payments
+   only (Exa, CRA) until the Gateway checks D6 and D7 pass.
+
 ## D0 — Close shadow calibration honestly
 
 **Closed as insufficient for funding. The mandate expired 2026-09-22 12:49:49 UTC and the capture required at expiry is complete: [D0 PREVIEW closure](audits/2026-09-21-d0-preview-closure.md).** Final figures are unchanged from the pre-expiry snapshot — 13 decisions, 4 WOULD_ALLOW, 0.030000 USDC hypothetical, **0 of 13 carrying owner feedback**, no duplicates, no integrity violations, `liveAutonomyApproval: NOT_GRANTED`. No budget recommendation is supported, and none is made. One required item could not be answered: the per-tick `unpriced` reasons are emitted to the scheduler log and never persisted, so an epoch-wide figure is unavailable after the fact. Persisting the tick outcome is the fix and belongs to item 3 below.
@@ -150,7 +235,7 @@ The active PREVIEW epoch predates this product-value change. Its original snapsh
 
 ## D1 — Wallet boundary, **only after V's exit gate**
 
-Before writing a production signer adapter, compare Circle Agent Wallet, Developer-Controlled Wallets and enforceable smart-account/session permissions for a **single isolated test wallet**. *(Compared on 2026-09-23 without money, from Circle's documentation and the Circle CLI's own source: see [which wallet Nova would pay from](audits/2026-09-23-d1-wallet-comparison.md). Recommendation: a Circle Agent Wallet on mainnet, used only to sign the exact authorization Veyra approved, from a small host the owner controls. It is accepted only after three small mainnet tests, of which the decisive one is whether a permit or an approve can get round the cap.)* Circle's documented controls do not prove that every arbitrary typed-data/contract-call path Veyra needs is actually constrained. A Veyra server-side policy alone limits Veyra's code, not a raw wallet key.
+Before writing a production signer adapter, compare Circle Agent Wallet, Developer-Controlled Wallets and enforceable smart-account/session permissions for a **single isolated test wallet**. *(Compared on 2026-09-23 without money, from Circle's documentation and the Circle CLI's own source: see [which wallet Nova would pay from](audits/2026-09-23-d1-wallet-comparison.md). Recommendation: a Circle Agent Wallet on mainnet, used only to sign the exact authorization Veyra approved, from a small host the owner controls. It is accepted only after three small mainnet tests, of which the decisive one is whether a permit or an approve can get round the cap.)* *(2026-09-23, later:* [where the signer plugs in](audits/2026-09-23-d1-operational-signer.md)*. The signer takes the owner's browser wallet's place between `quoteX402Call` and `settleX402Call`. It does not go through the legacy Arc Testnet executor or `circle services pay`. Six Veyra changes are listed, starting with the payer bound from the mandate. The full check matrix is written: set-up, signature compatibility, limits, bypasses, revocation, repeated execution, real sellers and separation. None of it has run. The chain is Arc first, and the seller test is Exa search on Arc, which takes a wallet payment there.)* Circle's documented controls do not prove that every arbitrary typed-data/contract-call path Veyra needs is actually constrained. A Veyra server-side policy alone limits Veyra's code, not a raw wallet key.
 
 **Acceptance:** pin the exact approved endpoint/method/body hash/payee/asset/network/amount/expiry across wallet integration; prove per-action and concurrent budget ceilings, Gateway deposit-vs-per-purchase accounting, cross-chain scope, owner-calendar-day vs rolling-window differences, signer/process isolation, recovery from lost responses, and independent owner revocation of **new** authorizations. Test direct EIP-3009, approvals, permit and arbitrary contract calls as potential bypasses. Preserve already-issued authorizations until settled/expired/provably cancelled. Record actual observed outcomes, not just wallet error messages.
 
@@ -168,7 +253,7 @@ Expose an owner-understandable proposal to hire a specific ERC-8004 agent for a 
 
 - **Portable receipt / independent verifier:** export authorized terms, policy version, payment and delivery evidence, hashes and optional Arc attestation without exposing raw private requests, responses or reusable authorizations. A verified hash is not a claim of factual truth.
 - **External SDK pilot:** try one actual outside research/data-agent client against the same execution boundary. Business pricing and paid-team demand remain hypotheses; Nova is not demoted to a mere demo by default.
-- **Arc mainnet foundation:** obtain and verify official network/contract manifests, deploy and verify separate mainnet contracts/signers/roles, and distinguish testnet identity/history from mainnet. No automatic migration assumption or renaming of old proof URLs.
+- **Arc mainnet foundation:** obtain and verify official network/contract manifests, deploy and verify separate mainnet contracts/signers/roles, and distinguish testnet identity/history from mainnet. No automatic migration assumption or renaming of old proof URLs. *(2026-09-23: the network facts are now read from Arc's documentation and the chain itself. That covers chain 5042, USDC, the Gateway, and the ERC-8004 v2.0.0 registries at their canonical mainnet addresses. What Veyra still lacks for mainnet and for Arc Portal is listed in [Arc first](audits/2026-09-23-arc-first-market-and-discovery.md), in order, under step 7 of "Arc first" above.)*
 - **Operational readiness:** review recovery-key rotation for any exposed owner credential, public security warnings, observability and externally reviewed contracts before inviting users to move meaningful funds. Internal F1–F9 closure does not replace an independent audit.
 
 ## Permanent product and safety invariants

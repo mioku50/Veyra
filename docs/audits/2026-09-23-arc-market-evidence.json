@@ -1,0 +1,1636 @@
+{
+ "generatedAt": "2026-09-23",
+ "readOnly": true,
+ "paymentsMade": 0,
+ "signaturesMade": 0,
+ "circle": {
+  "endpoint": "https://api.circle.com/v2/x402/discovery/resources",
+  "queriedAt": "2026-09-23T21:35:52Z",
+  "arcMainnet": {
+   "network": "eip155:5042",
+   "listings": 482,
+   "distinctResources": 463,
+   "byProvider": {
+    "Orthogonal": 293,
+    "AIsa API": 135,
+    "BlockRun.AI": 41,
+    "Goldsky": 11,
+    "Exa": 2
+   },
+   "listingsWithGatewayOnArc": 482,
+   "listingsWithWalletRailOnArc": 2,
+   "arcOnlyListings": 0
+  },
+  "base": {
+   "network": "eip155:8453",
+   "listings": 1009,
+   "distinctResources": 974,
+   "providers": 31
+  },
+  "arcTestnet": {
+   "network": "eip155:5042002",
+   "listings": 0
+  }
+ },
+ "bazaar": {
+  "endpoint": "https://api.cdp.coinbase.com/platform/v2/x402/discovery/resources",
+  "queriedAt": "2026-09-23T21:40Z",
+  "totalListings": 16604,
+  "arcListings": [
+   {
+    "resource": "https://api.exa.ai/search",
+    "arcRails": [
+     "gateway",
+     "wallet"
+    ],
+    "arcAmountsAtomic": [
+     "7000"
+    ]
+   },
+   {
+    "resource": "https://api.exa.ai/contents",
+    "arcRails": [
+     "gateway",
+     "wallet"
+    ],
+    "arcAmountsAtomic": [
+     "1000"
+    ]
+   },
+   {
+    "resource": "https://api.insumermodel.com/v1/attest",
+    "arcRails": [
+     "wallet"
+    ],
+    "arcAmountsAtomic": [
+     "50000"
+    ]
+   },
+   {
+    "resource": "https://api.insumermodel.com/v1/trust",
+    "arcRails": [
+     "wallet"
+    ],
+    "arcAmountsAtomic": [
+     "150000"
+    ]
+   },
+   {
+    "resource": "https://api.insumermodel.com/v1/trust/batch",
+    "arcRails": [
+     "wallet"
+    ],
+    "arcAmountsAtomic": [
+     "150000"
+    ]
+   },
+   {
+    "resource": "https://x402.spendthebits.com/@stbclaudeprod/proof/",
+    "arcRails": [
+     "wallet"
+    ],
+    "arcAmountsAtomic": [
+     "10000"
+    ]
+   },
+   {
+    "resource": "https://clawg.network/v1/token/:id",
+    "arcRails": [
+     "gateway"
+    ],
+    "arcAmountsAtomic": [
+     "20000"
+    ]
+   },
+   {
+    "resource": "https://clawg.fixr-the-buildr.workers.dev/v1/token/:id",
+    "arcRails": [
+     "gateway"
+    ],
+    "arcAmountsAtomic": [
+     "20000"
+    ]
+   },
+   {
+    "resource": "https://www.retcg.xyz/api/appraise/:id",
+    "arcRails": [
+     "gateway"
+    ],
+    "arcAmountsAtomic": [
+     "20000"
+    ]
+   },
+   {
+    "resource": "https://ip402.xyz/v1/geo",
+    "arcRails": [
+     "gateway"
+    ],
+    "arcAmountsAtomic": [
+     "10000"
+    ]
+   },
+   {
+    "resource": "https://www.watchevelive.com/stamp",
+    "arcRails": [
+     "gateway"
+    ],
+    "arcAmountsAtomic": [
+     "50000"
+    ]
+   },
+   {
+    "resource": "https://www.watchevelive.com/print",
+    "arcRails": [
+     "gateway",
+     "wallet"
+    ],
+    "arcAmountsAtomic": [
+     "50000"
+    ]
+   }
+  ]
+ },
+ "probes": {
+  "transport": "lib/seller/ssrf.ts fetchWithSsrfProtection; no payment header",
+  "circleSample": {
+   "probedAt": "2026-09-23T21:37:43.057Z",
+   "results": [
+    {
+     "provider": "AIsa API",
+     "method": "GET",
+     "resource": "https://api.aisa.one/apis/v2/agentmail/inboxes/{inbox_id}/messages/{message_id}/attachments/{attachment_id}",
+     "status": 402,
+     "arcOffered": true,
+     "matchesCatalog": true,
+     "veyraSelector": "refused:no_payable_accept",
+     "veyraUsdcCheck": null,
+     "arcAccepts": [
+      {
+       "rail": "gateway",
+       "amount": "12000",
+       "payTo": "0xbd7b9f3e0cd3e1f6e698d0eebb99f96e093bdee3",
+       "domain": "GatewayWalletBatched/1"
+      }
+     ]
+    },
+    {
+     "provider": "AIsa API",
+     "method": "GET",
+     "resource": "https://api.aisa.one/apis/v2/agentmail/inboxes/{inbox_id}/drafts",
+     "status": 402,
+     "arcOffered": true,
+     "matchesCatalog": true,
+     "veyraSelector": "refused:no_payable_accept",
+     "veyraUsdcCheck": null,
+     "arcAccepts": [
+      {
+       "rail": "gateway",
+       "amount": "12000",
+       "payTo": "0xbd7b9f3e0cd3e1f6e698d0eebb99f96e093bdee3",
+       "domain": "GatewayWalletBatched/1"
+      }
+     ]
+    },
+    {
+     "provider": "AIsa API",
+     "method": "GET",
+     "resource": "https://api.aisa.one/apis/v2/agentmail/api-keys",
+     "status": 402,
+     "arcOffered": true,
+     "matchesCatalog": true,
+     "veyraSelector": "refused:no_payable_accept",
+     "veyraUsdcCheck": null,
+     "arcAccepts": [
+      {
+       "rail": "gateway",
+       "amount": "12000",
+       "payTo": "0xbd7b9f3e0cd3e1f6e698d0eebb99f96e093bdee3",
+       "domain": "GatewayWalletBatched/1"
+      }
+     ]
+    },
+    {
+     "provider": "AIsa API",
+     "method": "GET",
+     "resource": "https://api.aisa.one/apis/v2/agentmail/inboxes/{inbox_id}/threads/{thread_id}/attachments/{attachment_id}",
+     "status": 402,
+     "arcOffered": true,
+     "matchesCatalog": true,
+     "veyraSelector": "refused:no_payable_accept",
+     "veyraUsdcCheck": null,
+     "arcAccepts": [
+      {
+       "rail": "gateway",
+       "amount": "12000",
+       "payTo": "0xbd7b9f3e0cd3e1f6e698d0eebb99f96e093bdee3",
+       "domain": "GatewayWalletBatched/1"
+      }
+     ]
+    },
+    {
+     "provider": "AIsa API",
+     "method": "GET",
+     "resource": "https://api.aisa.one/apis/v2/apollo/contacts/{contact_id}",
+     "status": 402,
+     "arcOffered": true,
+     "matchesCatalog": true,
+     "veyraSelector": "refused:no_payable_accept",
+     "veyraUsdcCheck": null,
+     "arcAccepts": [
+      {
+       "rail": "gateway",
+       "amount": "12000",
+       "payTo": "0xbd7b9f3e0cd3e1f6e698d0eebb99f96e093bdee3",
+       "domain": "GatewayWalletBatched/1"
+      }
+     ]
+    },
+    {
+     "provider": "AIsa API",
+     "method": "POST",
+     "resource": "https://api.aisa.one/apis/v2/anthropic-websearch/search",
+     "status": 402,
+     "arcOffered": true,
+     "matchesCatalog": true,
+     "veyraSelector": "refused:no_payable_accept",
+     "veyraUsdcCheck": null,
+     "arcAccepts": [
+      {
+       "rail": "gateway",
+       "amount": "300000",
+       "payTo": "0xbd7b9f3e0cd3e1f6e698d0eebb99f96e093bdee3",
+       "domain": "GatewayWalletBatched/1"
+      }
+     ]
+    },
+    {
+     "provider": "AIsa API",
+     "method": "POST",
+     "resource": "https://api.aisa.one/apis/v2/apollo/emailer_campaigns/{sequence_id}/archive",
+     "status": 402,
+     "arcOffered": true,
+     "matchesCatalog": true,
+     "veyraSelector": "refused:no_payable_accept",
+     "veyraUsdcCheck": null,
+     "arcAccepts": [
+      {
+       "rail": "gateway",
+       "amount": "12000",
+       "payTo": "0xbd7b9f3e0cd3e1f6e698d0eebb99f96e093bdee3",
+       "domain": "GatewayWalletBatched/1"
+      }
+     ]
+    },
+    {
+     "provider": "AIsa API",
+     "method": "POST",
+     "resource": "https://api.aisa.one/apis/v2/apollo/opportunities",
+     "status": 402,
+     "arcOffered": true,
+     "matchesCatalog": true,
+     "veyraSelector": "refused:no_payable_accept",
+     "veyraUsdcCheck": null,
+     "arcAccepts": [
+      {
+       "rail": "gateway",
+       "amount": "12000",
+       "payTo": "0xbd7b9f3e0cd3e1f6e698d0eebb99f96e093bdee3",
+       "domain": "GatewayWalletBatched/1"
+      }
+     ]
+    },
+    {
+     "provider": "AIsa API",
+     "method": "GET",
+     "resource": "https://api.aisa.one/apis/v2/apollo/typed_custom_fields",
+     "status": 402,
+     "arcOffered": true,
+     "matchesCatalog": true,
+     "veyraSelector": "refused:no_payable_accept",
+     "veyraUsdcCheck": null,
+     "arcAccepts": [
+      {
+       "rail": "gateway",
+       "amount": "12000",
+       "payTo": "0xbd7b9f3e0cd3e1f6e698d0eebb99f96e093bdee3",
+       "domain": "GatewayWalletBatched/1"
+      }
+     ]
+    },
+    {
+     "provider": "AIsa API",
+     "method": "GET",
+     "resource": "https://api.aisa.one/apis/v2/coingecko/coins/{id}/tickers",
+     "status": 402,
+     "arcOffered": true,
+     "matchesCatalog": true,
+     "veyraSelector": "refused:no_payable_accept",
+     "veyraUsdcCheck": null,
+     "arcAccepts": [
+      {
+       "rail": "gateway",
+       "amount": "8000",
+       "payTo": "0xbd7b9f3e0cd3e1f6e698d0eebb99f96e093bdee3",
+       "domain": "GatewayWalletBatched/1"
+      }
+     ]
+    },
+    {
+     "provider": "AIsa API",
+     "method": "GET",
+     "resource": "https://api.aisa.one/apis/v2/openmeteo/ensemble",
+     "status": 402,
+     "arcOffered": true,
+     "matchesCatalog": true,
+     "veyraSelector": "refused:no_payable_accept",
+     "veyraUsdcCheck": null,
+     "arcAccepts": [
+      {
+       "rail": "gateway",
+       "amount": "100",
+       "payTo": "0xbd7b9f3e0cd3e1f6e698d0eebb99f96e093bdee3",
+       "domain": "GatewayWalletBatched/1"
+      }
+     ]
+    },
+    {
+     "provider": "AIsa API",
+     "method": "GET",
+     "resource": "https://api.aisa.one/apis/v2/coingecko/simple/price",
+     "status": 402,
+     "arcOffered": true,
+     "matchesCatalog": true,
+     "veyraSelector": "refused:no_payable_accept",
+     "veyraUsdcCheck": null,
+     "arcAccepts": [
+      {
+       "rail": "gateway",
+       "amount": "8000",
+       "payTo": "0xbd7b9f3e0cd3e1f6e698d0eebb99f96e093bdee3",
+       "domain": "GatewayWalletBatched/1"
+      }
+     ]
+    },
+    {
+     "provider": "Exa",
+     "method": "POST",
+     "resource": "https://api.exa.ai/search",
+     "status": 402,
+     "arcOffered": true,
+     "matchesCatalog": true,
+     "veyraSelector": "accepted:vanilla",
+     "veyraUsdcCheck": "asset_not_usdc",
+     "arcAccepts": [
+      {
+       "rail": "gateway",
+       "amount": "7000",
+       "payTo": "0xb98ef29eb2be19ae646a8fc0248255b90a332dbc",
+       "domain": "GatewayWalletBatched/1"
+      },
+      {
+       "rail": "vanilla",
+       "amount": "7000",
+       "payTo": "0xb98ef29eb2be19ae646a8fc0248255b90a332dbc",
+       "domain": "USDC/2"
+      }
+     ]
+    },
+    {
+     "provider": "Exa",
+     "method": "POST",
+     "resource": "https://api.exa.ai/contents",
+     "status": 402,
+     "arcOffered": true,
+     "matchesCatalog": false,
+     "veyraSelector": "accepted:vanilla",
+     "veyraUsdcCheck": "asset_not_usdc",
+     "arcAccepts": [
+      {
+       "rail": "gateway",
+       "amount": "0",
+       "payTo": "0xb98ef29eb2be19ae646a8fc0248255b90a332dbc",
+       "domain": "GatewayWalletBatched/1"
+      },
+      {
+       "rail": "vanilla",
+       "amount": "0",
+       "payTo": "0xb98ef29eb2be19ae646a8fc0248255b90a332dbc",
+       "domain": "USDC/2"
+      }
+     ]
+    },
+    {
+     "provider": "Goldsky",
+     "method": "POST",
+     "resource": "https://edge.goldsky.com/standard/evm/1",
+     "status": 402,
+     "arcOffered": true,
+     "matchesCatalog": true,
+     "veyraSelector": "refused:no_payable_accept",
+     "veyraUsdcCheck": null,
+     "arcAccepts": [
+      {
+       "rail": "gateway",
+       "amount": "5000",
+       "payTo": "0x87ab362fef2106d24762289410a18e7c42304c68",
+       "domain": "GatewayWalletBatched/1"
+      }
+     ]
+    },
+    {
+     "provider": "Goldsky",
+     "method": "POST",
+     "resource": "https://edge.goldsky.com/standard/evm/10",
+     "status": 402,
+     "arcOffered": true,
+     "matchesCatalog": true,
+     "veyraSelector": "refused:no_payable_accept",
+     "veyraUsdcCheck": null,
+     "arcAccepts": [
+      {
+       "rail": "gateway",
+       "amount": "5000",
+       "payTo": "0x87ab362fef2106d24762289410a18e7c42304c68",
+       "domain": "GatewayWalletBatched/1"
+      }
+     ]
+    },
+    {
+     "provider": "Goldsky",
+     "method": "POST",
+     "resource": "https://edge.goldsky.com/standard/evm/1301",
+     "status": 402,
+     "arcOffered": true,
+     "matchesCatalog": true,
+     "veyraSelector": "refused:no_payable_accept",
+     "veyraUsdcCheck": null,
+     "arcAccepts": [
+      {
+       "rail": "gateway",
+       "amount": "5000",
+       "payTo": "0x87ab362fef2106d24762289410a18e7c42304c68",
+       "domain": "GatewayWalletBatched/1"
+      }
+     ]
+    },
+    {
+     "provider": "Goldsky",
+     "method": "POST",
+     "resource": "https://edge.goldsky.com/standard/evm/1329",
+     "status": 402,
+     "arcOffered": true,
+     "matchesCatalog": true,
+     "veyraSelector": "refused:no_payable_accept",
+     "veyraUsdcCheck": null,
+     "arcAccepts": [
+      {
+       "rail": "gateway",
+       "amount": "5000",
+       "payTo": "0x87ab362fef2106d24762289410a18e7c42304c68",
+       "domain": "GatewayWalletBatched/1"
+      }
+     ]
+    },
+    {
+     "provider": "Goldsky",
+     "method": "POST",
+     "resource": "https://edge.goldsky.com/standard/evm/42161",
+     "status": 402,
+     "arcOffered": true,
+     "matchesCatalog": true,
+     "veyraSelector": "refused:no_payable_accept",
+     "veyraUsdcCheck": null,
+     "arcAccepts": [
+      {
+       "rail": "gateway",
+       "amount": "5000",
+       "payTo": "0x87ab362fef2106d24762289410a18e7c42304c68",
+       "domain": "GatewayWalletBatched/1"
+      }
+     ]
+    },
+    {
+     "provider": "Goldsky",
+     "method": "POST",
+     "resource": "https://edge.goldsky.com/standard/evm/43114",
+     "status": 402,
+     "arcOffered": true,
+     "matchesCatalog": true,
+     "veyraSelector": "refused:no_payable_accept",
+     "veyraUsdcCheck": null,
+     "arcAccepts": [
+      {
+       "rail": "gateway",
+       "amount": "5000",
+       "payTo": "0x87ab362fef2106d24762289410a18e7c42304c68",
+       "domain": "GatewayWalletBatched/1"
+      }
+     ]
+    },
+    {
+     "provider": "Goldsky",
+     "method": "POST",
+     "resource": "https://edge.goldsky.com/standard/evm/146",
+     "status": 402,
+     "arcOffered": true,
+     "matchesCatalog": true,
+     "veyraSelector": "refused:no_payable_accept",
+     "veyraUsdcCheck": null,
+     "arcAccepts": [
+      {
+       "rail": "gateway",
+       "amount": "5000",
+       "payTo": "0x87ab362fef2106d24762289410a18e7c42304c68",
+       "domain": "GatewayWalletBatched/1"
+      }
+     ]
+    },
+    {
+     "provider": "Goldsky",
+     "method": "POST",
+     "resource": "https://edge.goldsky.com/standard/evm/137",
+     "status": 402,
+     "arcOffered": true,
+     "matchesCatalog": true,
+     "veyraSelector": "refused:no_payable_accept",
+     "veyraUsdcCheck": null,
+     "arcAccepts": [
+      {
+       "rail": "gateway",
+       "amount": "5000",
+       "payTo": "0x87ab362fef2106d24762289410a18e7c42304c68",
+       "domain": "GatewayWalletBatched/1"
+      }
+     ]
+    },
+    {
+     "provider": "Goldsky",
+     "method": "POST",
+     "resource": "https://edge.goldsky.com/standard/evm/480",
+     "status": 402,
+     "arcOffered": true,
+     "matchesCatalog": true,
+     "veyraSelector": "refused:no_payable_accept",
+     "veyraUsdcCheck": null,
+     "arcAccepts": [
+      {
+       "rail": "gateway",
+       "amount": "5000",
+       "payTo": "0x87ab362fef2106d24762289410a18e7c42304c68",
+       "domain": "GatewayWalletBatched/1"
+      }
+     ]
+    },
+    {
+     "provider": "Goldsky",
+     "method": "POST",
+     "resource": "https://edge.goldsky.com/standard/evm/8453",
+     "status": 402,
+     "arcOffered": true,
+     "matchesCatalog": true,
+     "veyraSelector": "refused:no_payable_accept",
+     "veyraUsdcCheck": null,
+     "arcAccepts": [
+      {
+       "rail": "gateway",
+       "amount": "5000",
+       "payTo": "0x87ab362fef2106d24762289410a18e7c42304c68",
+       "domain": "GatewayWalletBatched/1"
+      }
+     ]
+    },
+    {
+     "provider": "Goldsky",
+     "method": "POST",
+     "resource": "https://edge.goldsky.com/standard/evm/998",
+     "status": 402,
+     "arcOffered": true,
+     "matchesCatalog": true,
+     "veyraSelector": "refused:no_payable_accept",
+     "veyraUsdcCheck": null,
+     "arcAccepts": [
+      {
+       "rail": "gateway",
+       "amount": "5000",
+       "payTo": "0x87ab362fef2106d24762289410a18e7c42304c68",
+       "domain": "GatewayWalletBatched/1"
+      }
+     ]
+    },
+    {
+     "provider": "BlockRun.AI",
+     "method": "POST",
+     "resource": "https://nano.blockrun.ai/api/v1/audio/generations",
+     "status": 400,
+     "arcOffered": false,
+     "matchesCatalog": null,
+     "veyraSelector": null,
+     "veyraUsdcCheck": null,
+     "arcAccepts": []
+    },
+    {
+     "provider": "BlockRun.AI",
+     "method": "POST",
+     "resource": "https://nano.blockrun.ai/api/v1/images/image2image",
+     "status": 400,
+     "arcOffered": false,
+     "matchesCatalog": null,
+     "veyraSelector": null,
+     "veyraUsdcCheck": null,
+     "arcAccepts": []
+    },
+    {
+     "provider": "BlockRun.AI",
+     "method": "POST",
+     "resource": "https://nano.blockrun.ai/api/v1/modal/sandbox/exec",
+     "status": 400,
+     "arcOffered": false,
+     "matchesCatalog": null,
+     "veyraSelector": null,
+     "veyraUsdcCheck": null,
+     "arcAccepts": []
+    },
+    {
+     "provider": "BlockRun.AI",
+     "method": "POST",
+     "resource": "https://nano.blockrun.ai/api/v1/phone/numbers/buy",
+     "status": 402,
+     "arcOffered": true,
+     "matchesCatalog": true,
+     "veyraSelector": "refused:no_payable_accept",
+     "veyraUsdcCheck": null,
+     "arcAccepts": [
+      {
+       "rail": "gateway",
+       "amount": "5000000",
+       "payTo": "0xe9030014f5dae217d0a152f02a043567b16c1abf",
+       "domain": "GatewayWalletBatched/1"
+      }
+     ]
+    },
+    {
+     "provider": "BlockRun.AI",
+     "method": "POST",
+     "resource": "https://nano.blockrun.ai/api/v1/phone/numbers/renew",
+     "status": 400,
+     "arcOffered": false,
+     "matchesCatalog": null,
+     "veyraSelector": null,
+     "veyraUsdcCheck": null,
+     "arcAccepts": []
+    },
+    {
+     "provider": "BlockRun.AI",
+     "method": "GET",
+     "resource": "https://nano.blockrun.ai/api/v1/pm/kalshi/orderbooks",
+     "status": 402,
+     "arcOffered": true,
+     "matchesCatalog": true,
+     "veyraSelector": "refused:no_payable_accept",
+     "veyraUsdcCheck": null,
+     "arcAccepts": [
+      {
+       "rail": "gateway",
+       "amount": "1000",
+       "payTo": "0x6e007731870ede419cfb31889cd5c4493cecb04c",
+       "domain": "GatewayWalletBatched/1"
+      }
+     ]
+    },
+    {
+     "provider": "BlockRun.AI",
+     "method": "GET",
+     "resource": "https://nano.blockrun.ai/api/v1/pm/polymarket/candlesticks/{hash}",
+     "status": 402,
+     "arcOffered": true,
+     "matchesCatalog": true,
+     "veyraSelector": "refused:no_payable_accept",
+     "veyraUsdcCheck": null,
+     "arcAccepts": [
+      {
+       "rail": "gateway",
+       "amount": "1000",
+       "payTo": "0x6e007731870ede419cfb31889cd5c4493cecb04c",
+       "domain": "GatewayWalletBatched/1"
+      }
+     ]
+    },
+    {
+     "provider": "BlockRun.AI",
+     "method": "GET",
+     "resource": "https://nano.blockrun.ai/api/v1/pm/polymarket/events",
+     "status": 402,
+     "arcOffered": true,
+     "matchesCatalog": true,
+     "veyraSelector": "refused:no_payable_accept",
+     "veyraUsdcCheck": null,
+     "arcAccepts": [
+      {
+       "rail": "gateway",
+       "amount": "1000",
+       "payTo": "0x6e007731870ede419cfb31889cd5c4493cecb04c",
+       "domain": "GatewayWalletBatched/1"
+      }
+     ]
+    },
+    {
+     "provider": "BlockRun.AI",
+     "method": "GET",
+     "resource": "https://nano.blockrun.ai/api/v1/pm/polymarket/markets",
+     "status": 402,
+     "arcOffered": true,
+     "matchesCatalog": true,
+     "veyraSelector": "refused:no_payable_accept",
+     "veyraUsdcCheck": null,
+     "arcAccepts": [
+      {
+       "rail": "gateway",
+       "amount": "1000",
+       "payTo": "0x6e007731870ede419cfb31889cd5c4493cecb04c",
+       "domain": "GatewayWalletBatched/1"
+      }
+     ]
+    },
+    {
+     "provider": "BlockRun.AI",
+     "method": "GET",
+     "resource": "https://nano.blockrun.ai/api/v1/pm/polymarket/positions",
+     "status": 402,
+     "arcOffered": true,
+     "matchesCatalog": true,
+     "veyraSelector": "refused:no_payable_accept",
+     "veyraUsdcCheck": null,
+     "arcAccepts": [
+      {
+       "rail": "gateway",
+       "amount": "1000",
+       "payTo": "0x6e007731870ede419cfb31889cd5c4493cecb04c",
+       "domain": "GatewayWalletBatched/1"
+      }
+     ]
+    },
+    {
+     "provider": "BlockRun.AI",
+     "method": "POST",
+     "resource": "https://nano.blockrun.ai/api/v1/search",
+     "status": 400,
+     "arcOffered": false,
+     "matchesCatalog": null,
+     "veyraSelector": null,
+     "veyraUsdcCheck": null,
+     "arcAccepts": []
+    },
+    {
+     "provider": "BlockRun.AI",
+     "method": "GET",
+     "resource": "https://nano.blockrun.ai/api/v1/usstock/price/{symbol}",
+     "status": 404,
+     "arcOffered": false,
+     "matchesCatalog": null,
+     "veyraSelector": null,
+     "veyraUsdcCheck": null,
+     "arcAccepts": []
+    },
+    {
+     "provider": "Orthogonal",
+     "method": "POST",
+     "resource": "https://np.orthogonal.com/agentmail/v0/inboxes",
+     "status": 402,
+     "arcOffered": true,
+     "matchesCatalog": true,
+     "veyraSelector": "refused:no_payable_accept",
+     "veyraUsdcCheck": null,
+     "arcAccepts": [
+      {
+       "rail": "gateway",
+       "amount": "2000000",
+       "payTo": "0xaa4a75114b5bda671844ae10256d2b048df8fdc3",
+       "domain": "GatewayWalletBatched/1"
+      }
+     ]
+    },
+    {
+     "provider": "Orthogonal",
+     "method": "GET",
+     "resource": "https://np.orthogonal.com/captaindata/companies/find",
+     "status": 402,
+     "arcOffered": true,
+     "matchesCatalog": true,
+     "veyraSelector": "refused:no_payable_accept",
+     "veyraUsdcCheck": null,
+     "arcAccepts": [
+      {
+       "rail": "gateway",
+       "amount": "180000",
+       "payTo": "0x99028bfd259985a90f529bca081504ab737240c6",
+       "domain": "GatewayWalletBatched/1"
+      }
+     ]
+    },
+    {
+     "provider": "Orthogonal",
+     "method": "GET",
+     "resource": "https://np.orthogonal.com/brand-dev/v1/brand/retrieve-by-ticker",
+     "status": 402,
+     "arcOffered": true,
+     "matchesCatalog": true,
+     "veyraSelector": "refused:no_payable_accept",
+     "veyraUsdcCheck": null,
+     "arcAccepts": [
+      {
+       "rail": "gateway",
+       "amount": "30000",
+       "payTo": "0x9f7556c65392e5cbcb342010618c2b407e64a8ea",
+       "domain": "GatewayWalletBatched/1"
+      }
+     ]
+    },
+    {
+     "provider": "Orthogonal",
+     "method": "GET",
+     "resource": "https://np.orthogonal.com/aviato/company/investments",
+     "status": 402,
+     "arcOffered": true,
+     "matchesCatalog": true,
+     "veyraSelector": "refused:no_payable_accept",
+     "veyraUsdcCheck": null,
+     "arcAccepts": [
+      {
+       "rail": "gateway",
+       "amount": "40000",
+       "payTo": "0x3078368e0740fa5f8d9b900ea428c946a1006cb7",
+       "domain": "GatewayWalletBatched/1"
+      }
+     ]
+    },
+    {
+     "provider": "Orthogonal",
+     "method": "POST",
+     "resource": "https://np.orthogonal.com/findymail/api/lookalike/search",
+     "status": 402,
+     "arcOffered": true,
+     "matchesCatalog": true,
+     "veyraSelector": "refused:no_payable_accept",
+     "veyraUsdcCheck": null,
+     "arcAccepts": [
+      {
+       "rail": "gateway",
+       "amount": "70000",
+       "payTo": "0x24a5ec14de5dbf0ed1e27784d63d22dc9451998f",
+       "domain": "GatewayWalletBatched/1"
+      }
+     ]
+    },
+    {
+     "provider": "Orthogonal",
+     "method": "GET",
+     "resource": "https://np.orthogonal.com/context-dev/brand/retrieve-by-ticker",
+     "status": 402,
+     "arcOffered": true,
+     "matchesCatalog": true,
+     "veyraSelector": "refused:no_payable_accept",
+     "veyraUsdcCheck": null,
+     "arcAccepts": [
+      {
+       "rail": "gateway",
+       "amount": "30000",
+       "payTo": "0x9f7556c65392e5cbcb342010618c2b407e64a8ea",
+       "domain": "GatewayWalletBatched/1"
+      }
+     ]
+    },
+    {
+     "provider": "Orthogonal",
+     "method": "POST",
+     "resource": "https://np.orthogonal.com/influencers-club/public/v1/creators/audience/overlap/",
+     "status": 402,
+     "arcOffered": true,
+     "matchesCatalog": true,
+     "veyraSelector": "refused:no_payable_accept",
+     "veyraUsdcCheck": null,
+     "arcAccepts": [
+      {
+       "rail": "gateway",
+       "amount": "660000",
+       "payTo": "0x28fcd44ad4757e868c9cc9af9f48f38b6a9e4272",
+       "domain": "GatewayWalletBatched/1"
+      }
+     ]
+    },
+    {
+     "provider": "Orthogonal",
+     "method": "POST",
+     "resource": "https://np.orthogonal.com/openmart/api/v1/search",
+     "status": 402,
+     "arcOffered": true,
+     "matchesCatalog": true,
+     "veyraSelector": "refused:no_payable_accept",
+     "veyraUsdcCheck": null,
+     "arcAccepts": [
+      {
+       "rail": "gateway",
+       "amount": "10000",
+       "payTo": "0x1b1ccaab3d71b8ba017103ae8d511fa9ad3d3a5e",
+       "domain": "GatewayWalletBatched/1"
+      }
+     ]
+    },
+    {
+     "provider": "Orthogonal",
+     "method": "GET",
+     "resource": "https://np.orthogonal.com/predictleads/v3/companies/{company_id_or_domain}/financing_events",
+     "status": 402,
+     "arcOffered": true,
+     "matchesCatalog": true,
+     "veyraSelector": "refused:no_payable_accept",
+     "veyraUsdcCheck": null,
+     "arcAccepts": [
+      {
+       "rail": "gateway",
+       "amount": "40000",
+       "payTo": "0xca37de138574432b96f92b0cd9826dadfd1cf443",
+       "domain": "GatewayWalletBatched/1"
+      }
+     ]
+    },
+    {
+     "provider": "Orthogonal",
+     "method": "POST",
+     "resource": "https://np.orthogonal.com/scrapegraphai/api/extract",
+     "status": 402,
+     "arcOffered": true,
+     "matchesCatalog": true,
+     "veyraSelector": "refused:no_payable_accept",
+     "veyraUsdcCheck": null,
+     "arcAccepts": [
+      {
+       "rail": "gateway",
+       "amount": "25000",
+       "payTo": "0x8ee7c76fcb175dd0f9e7fc240f6828ecb226e90c",
+       "domain": "GatewayWalletBatched/1"
+      }
+     ]
+    },
+    {
+     "provider": "Orthogonal",
+     "method": "GET",
+     "resource": "https://np.orthogonal.com/coresignal/v2/employee_base/collect/{profile_url}",
+     "status": 402,
+     "arcOffered": true,
+     "matchesCatalog": true,
+     "veyraSelector": "refused:no_payable_accept",
+     "veyraUsdcCheck": null,
+     "arcAccepts": [
+      {
+       "rail": "gateway",
+       "amount": "42000",
+       "payTo": "0x12e8de0712aebe6579a9e16dee2ae9ffcc4e7dc2",
+       "domain": "GatewayWalletBatched/1"
+      }
+     ]
+    },
+    {
+     "provider": "Orthogonal",
+     "method": "POST",
+     "resource": "https://np.orthogonal.com/tavily/extract",
+     "status": 402,
+     "arcOffered": true,
+     "matchesCatalog": true,
+     "veyraSelector": "refused:no_payable_accept",
+     "veyraUsdcCheck": null,
+     "arcAccepts": [
+      {
+       "rail": "gateway",
+       "amount": "10000",
+       "payTo": "0x7f1e8ada9f03b292865ddf4d9737319af6963a86",
+       "domain": "GatewayWalletBatched/1"
+      }
+     ]
+    }
+   ]
+  },
+  "bazaarArc": {
+   "probedAt": "2026-09-23T21:42:54.942Z",
+   "results": [
+    {
+     "provider": "api.insumermodel.com",
+     "method": "POST",
+     "resource": "https://api.insumermodel.com/v1/trust",
+     "status": 402,
+     "arcOffered": true,
+     "matchesCatalog": true,
+     "veyraSelector": "accepted:vanilla",
+     "veyraUsdcCheck": "asset_not_usdc",
+     "arcAccepts": [
+      {
+       "rail": "vanilla",
+       "amount": "150000",
+       "payTo": "0xad982cb19acca2923df8f687c0614a7700255a23",
+       "domain": "USDC/2"
+      }
+     ]
+    },
+    {
+     "provider": "api.insumermodel.com",
+     "method": "POST",
+     "resource": "https://api.insumermodel.com/v1/trust/batch",
+     "status": 402,
+     "arcOffered": true,
+     "matchesCatalog": true,
+     "veyraSelector": "accepted:vanilla",
+     "veyraUsdcCheck": "asset_not_usdc",
+     "arcAccepts": [
+      {
+       "rail": "vanilla",
+       "amount": "150000",
+       "payTo": "0xad982cb19acca2923df8f687c0614a7700255a23",
+       "domain": "USDC/2"
+      }
+     ]
+    },
+    {
+     "provider": "api.insumermodel.com",
+     "method": "POST",
+     "resource": "https://api.insumermodel.com/v1/attest",
+     "status": 402,
+     "arcOffered": true,
+     "matchesCatalog": true,
+     "veyraSelector": "accepted:vanilla",
+     "veyraUsdcCheck": "asset_not_usdc",
+     "arcAccepts": [
+      {
+       "rail": "vanilla",
+       "amount": "50000",
+       "payTo": "0xad982cb19acca2923df8f687c0614a7700255a23",
+       "domain": "USDC/2"
+      }
+     ]
+    },
+    {
+     "provider": "clawg.fixr-the-buildr.workers.dev",
+     "method": "POST",
+     "resource": "https://clawg.fixr-the-buildr.workers.dev/v1/token/:id",
+     "status": 402,
+     "arcOffered": true,
+     "matchesCatalog": true,
+     "veyraSelector": "refused:no_payable_accept",
+     "veyraUsdcCheck": null,
+     "arcAccepts": [
+      {
+       "rail": "gateway",
+       "amount": "20000",
+       "payTo": "0x76c4eee755ee20c973db55c522f1e75ad3132dff",
+       "domain": "GatewayWalletBatched/1"
+      }
+     ]
+    },
+    {
+     "provider": "www.retcg.xyz",
+     "method": "GET",
+     "resource": "https://www.retcg.xyz/api/appraise/:id",
+     "status": 402,
+     "arcOffered": true,
+     "matchesCatalog": true,
+     "veyraSelector": "refused:no_payable_accept",
+     "veyraUsdcCheck": null,
+     "arcAccepts": [
+      {
+       "rail": "gateway",
+       "amount": "20000",
+       "payTo": "0xb7e178e99130046b69761ed0871b52ea9fc6b38b",
+       "domain": "GatewayWalletBatched/1"
+      }
+     ]
+    },
+    {
+     "provider": "clawg.network",
+     "method": "POST",
+     "resource": "https://clawg.network/v1/token/:id",
+     "status": 402,
+     "arcOffered": true,
+     "matchesCatalog": true,
+     "veyraSelector": "refused:no_payable_accept",
+     "veyraUsdcCheck": null,
+     "arcAccepts": [
+      {
+       "rail": "gateway",
+       "amount": "20000",
+       "payTo": "0x76c4eee755ee20c973db55c522f1e75ad3132dff",
+       "domain": "GatewayWalletBatched/1"
+      }
+     ]
+    },
+    {
+     "provider": "www.watchevelive.com",
+     "method": "GET",
+     "resource": "https://www.watchevelive.com/print",
+     "status": 402,
+     "arcOffered": true,
+     "matchesCatalog": true,
+     "veyraSelector": "accepted:vanilla",
+     "veyraUsdcCheck": "asset_not_usdc",
+     "arcAccepts": [
+      {
+       "rail": "gateway",
+       "amount": "50000",
+       "payTo": "0x80aa1fa83f7b771bf2ab815da9ba1236b1b91e3f",
+       "domain": "GatewayWalletBatched/1"
+      },
+      {
+       "rail": "vanilla",
+       "amount": "50000",
+       "payTo": "0x0e56d191219fa7a4a8a50d17d4ce838e80bf566e",
+       "domain": "USDC/2"
+      }
+     ]
+    },
+    {
+     "provider": "www.watchevelive.com",
+     "method": "GET",
+     "resource": "https://www.watchevelive.com/stamp",
+     "status": 402,
+     "arcOffered": true,
+     "matchesCatalog": false,
+     "veyraSelector": "refused:price_above_authorization",
+     "veyraUsdcCheck": null,
+     "arcAccepts": [
+      {
+       "rail": "gateway",
+       "amount": "50000000",
+       "payTo": "0x80aa1fa83f7b771bf2ab815da9ba1236b1b91e3f",
+       "domain": "GatewayWalletBatched/1"
+      },
+      {
+       "rail": "vanilla",
+       "amount": "50000000",
+       "payTo": "0x0e56d191219fa7a4a8a50d17d4ce838e80bf566e",
+       "domain": "USDC/2"
+      }
+     ]
+    },
+    {
+     "provider": "ip402.xyz",
+     "method": "GET",
+     "resource": "https://ip402.xyz/v1/geo",
+     "status": 402,
+     "arcOffered": true,
+     "matchesCatalog": true,
+     "veyraSelector": "refused:no_payable_accept",
+     "veyraUsdcCheck": null,
+     "arcAccepts": [
+      {
+       "rail": "gateway",
+       "amount": "10000",
+       "payTo": "0xed617f79201248df99909fbde4269b6eeaee39b6",
+       "domain": "GatewayWalletBatched/1"
+      }
+     ]
+    },
+    {
+     "provider": "x402.spendthebits.com",
+     "method": "GET",
+     "resource": "https://x402.spendthebits.com/@stbclaudeprod/proof/",
+     "status": 402,
+     "arcOffered": true,
+     "matchesCatalog": true,
+     "veyraSelector": "accepted:vanilla",
+     "veyraUsdcCheck": "asset_not_usdc",
+     "arcAccepts": [
+      {
+       "rail": "vanilla",
+       "amount": "10000",
+       "payTo": "0xbe5cb96d1bd2b4d5d5c0a1f16266cc0ba2849d30",
+       "domain": "USDC/2"
+      }
+     ]
+    }
+   ]
+  }
+ },
+ "erc8004ArcMainnet": {
+  "identity": {
+   "address": "0x8004A169FB4a3325136EB29fA0ceB6D2e539a432",
+   "implementation": "0x7274e874ca62410a93bd8bf61c69d8045e399c02",
+   "name": "AgentIdentity",
+   "version": "2.0.0",
+   "identityRegistry": "error:The contract function \"getIdentityRegistry\" reverted."
+  },
+  "reputation": {
+   "address": "0x8004BAa17C55a88189AE136b182e5fdA19dE9b63",
+   "implementation": "0x16e0fa7f7c56b9a767e34b192b51f921be31da34",
+   "name": "error:The contract function \"name\" reverted.",
+   "version": "2.0.0",
+   "identityRegistry": "0x8004A169FB4a3325136EB29fA0ceB6D2e539a432"
+  },
+  "validation": {
+   "address": "0x8004Cc8439f36fd5F9F049D9fF86523Df6dAAB58",
+   "implementation": "0xdb31f5d9167f8ebc8b30fbbf814c4d297c2d7f99",
+   "name": "error:The contract function \"name\" reverted.",
+   "version": "2.0.0",
+   "identityRegistry": "0x8004A169FB4a3325136EB29fA0ceB6D2e539a432"
+  },
+  "checkedAt": "2026-09-23T21:39:49.432Z",
+  "identities": 192,
+  "distinctOwners": 39,
+  "uriSchemes": {
+   "https:": 139,
+   "ipfs:": 47,
+   "data:": 6
+  },
+  "filesRead": 145,
+  "filesNotRead": {
+   "http_429": 47
+  },
+  "declareX402Support": [
+   1,
+   2,
+   3,
+   4,
+   5,
+   134,
+   186
+  ],
+  "x402Agents": [
+   {
+    "agentId": 1,
+    "name": "APEX Faucet",
+    "services": [
+     {
+      "name": "web",
+      "endpoint": "https://apexfaucet.xyz/arc/",
+      "version": null
+     },
+     {
+      "name": "A2A",
+      "endpoint": "https://apexfaucet.xyz/.well-known/agent-card.json",
+      "version": "1.0"
+     },
+     {
+      "name": "MCP",
+      "endpoint": "https://apexfaucet.xyz/api/mcp",
+      "version": "2024-11-05"
+     },
+     {
+      "name": "arc-faucet-claim",
+      "endpoint": "https://apexfaucet.xyz/api/arc/claim",
+      "version": null
+     },
+     {
+      "name": "arc-faucet-status",
+      "endpoint": "https://apexfaucet.xyz/api/arc/faucet",
+      "version": null
+     },
+     {
+      "name": "x402",
+      "endpoint": "https://apexfaucet.xyz/.well-known/x402",
+      "version": null
+     },
+     {
+      "name": "x402-catalogue",
+      "endpoint": "https://apexfaucet.xyz/discovery/resources",
+      "version": null
+     },
+     {
+      "name": "x402-facilitator",
+      "endpoint": "https://apexfaucet.xyz/api/facilitator/supported",
+      "version": null
+     },
+     {
+      "name": "llms.txt",
+      "endpoint": "https://apexfaucet.xyz/llms.txt",
+      "version": null
+     }
+    ]
+   },
+   {
+    "agentId": 2,
+    "name": "Ledger Scribe",
+    "services": [
+     {
+      "name": "kleos-http-402",
+      "endpoint": "https://kleos.network/api/agents/ledger-scribe",
+      "version": null
+     },
+     {
+      "name": "kleos-escrow-job",
+      "endpoint": "https://kleos.network/jobs",
+      "version": null
+     }
+    ]
+   },
+   {
+    "agentId": 3,
+    "name": "Contract Reader",
+    "services": [
+     {
+      "name": "kleos-http-402",
+      "endpoint": "https://kleos.network/api/agents/contract-reader",
+      "version": null
+     },
+     {
+      "name": "kleos-escrow-job",
+      "endpoint": "https://kleos.network/jobs",
+      "version": null
+     }
+    ]
+   },
+   {
+    "agentId": 4,
+    "name": "Listing Copywriter",
+    "services": [
+     {
+      "name": "kleos-http-402",
+      "endpoint": "https://kleos.network/api/agents/listing-copywriter",
+      "version": null
+     },
+     {
+      "name": "kleos-escrow-job",
+      "endpoint": "https://kleos.network/jobs",
+      "version": null
+     }
+    ]
+   },
+   {
+    "agentId": 5,
+    "name": "Text-to-JSON Extractor",
+    "services": [
+     {
+      "name": "kleos-http-402",
+      "endpoint": "https://kleos.network/api/agents/json-extractor",
+      "version": null
+     },
+     {
+      "name": "kleos-escrow-job",
+      "endpoint": "https://kleos.network/jobs",
+      "version": null
+     }
+    ]
+   },
+   {
+    "agentId": 134,
+    "name": "Roger, StatPad's NFL analyst",
+    "services": [
+     {
+      "name": "web",
+      "endpoint": "https://roger.statpad.ai",
+      "version": null
+     },
+     {
+      "name": "A2A",
+      "endpoint": "https://roger.statpad.ai/.well-known/agent-card.json",
+      "version": "1.0"
+     },
+     {
+      "name": "x402",
+      "endpoint": "https://statpadai-backend-production.up.railway.app/api/pay/quote",
+      "version": "onchain-1"
+     },
+     {
+      "name": "receipts",
+      "endpoint": "https://statpadai-backend-production.up.railway.app/api/pay/receipt/{message_id}",
+      "version": "1"
+     }
+    ]
+   },
+   {
+    "agentId": 186,
+    "name": "CRA AGENT",
+    "services": [
+     {
+      "name": "web",
+      "endpoint": "https://cra-agent.tech",
+      "version": null
+     },
+     {
+      "name": "x402",
+      "endpoint": "https://api.cra-agent.tech/.well-known/x402",
+      "version": "2"
+     },
+     {
+      "name": "x402-search",
+      "endpoint": "https://api.cra-agent.tech/v1/market/search",
+      "version": null
+     },
+     {
+      "name": "x402-facilitator",
+      "endpoint": "https://api.cra-agent.tech/facilitator/supported",
+      "version": null
+     },
+     {
+      "name": "OpenAPI",
+      "endpoint": "https://api.cra-agent.tech/openapi.json",
+      "version": "3.1.0"
+     },
+     {
+      "name": "MCP",
+      "endpoint": "https://www.npmjs.com/package/@cra-agent/mcp",
+      "version": "0.0.11"
+     },
+     {
+      "name": "status",
+      "endpoint": "https://cra-agent.tech/status",
+      "version": null
+     },
+     {
+      "name": "source",
+      "endpoint": "https://github.com/giupy997/arcagentx402",
+      "version": null
+     }
+    ]
+   }
+  ],
+  "endpointProbes": {
+   "probedAt": "2026-09-23T21:45:30.277Z",
+   "rows": [
+    {
+     "agentId": 1,
+     "service": "x402",
+     "url": "https://apexfaucet.xyz/.well-known/x402",
+     "status": 200,
+     "jsonKeys": [
+      "standard",
+      "version",
+      "siteName",
+      "siteUrl",
+      "operator",
+      "discovery",
+      "facilitatorSupported",
+      "selfFacilitated",
+      "custody",
+      "networks",
+      "pricing",
+      "endpoints"
+     ],
+     "listLength": 43,
+     "listNetworks": {}
+    },
+    {
+     "agentId": 1,
+     "service": "x402-catalogue",
+     "url": "https://apexfaucet.xyz/discovery/resources",
+     "status": 200,
+     "jsonKeys": [
+      "x402Version",
+      "items",
+      "count"
+     ],
+     "listLength": 43,
+     "listNetworks": {
+      "eip155:5042": 43,
+      "eip155:8453": 43,
+      "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp": 43
+     }
+    },
+    {
+     "agentId": 1,
+     "service": "x402-facilitator",
+     "url": "https://apexfaucet.xyz/api/facilitator/supported",
+     "status": 200,
+     "jsonKeys": [
+      "ok",
+      "service",
+      "operator",
+      "custody",
+      "kinds",
+      "endpoints",
+      "finality",
+      "price"
+     ],
+     "listLength": 1,
+     "listNetworks": {}
+    },
+    {
+     "agentId": 2,
+     "service": "kleos-http-402",
+     "url": "https://kleos.network/api/agents/ledger-scribe",
+     "status": 402,
+     "jsonKeys": [
+      "error",
+      "agent",
+      "priceUSDC",
+      "payTo",
+      "asset",
+      "chainId",
+      "howToPay",
+      "escrowAlternative"
+     ]
+    },
+    {
+     "agentId": 3,
+     "service": "kleos-http-402",
+     "url": "https://kleos.network/api/agents/contract-reader",
+     "status": 402,
+     "jsonKeys": [
+      "error",
+      "agent",
+      "priceUSDC",
+      "payTo",
+      "asset",
+      "chainId",
+      "howToPay",
+      "escrowAlternative"
+     ]
+    },
+    {
+     "agentId": 4,
+     "service": "kleos-http-402",
+     "url": "https://kleos.network/api/agents/listing-copywriter",
+     "status": 402,
+     "jsonKeys": [
+      "error",
+      "agent",
+      "priceUSDC",
+      "payTo",
+      "asset",
+      "chainId",
+      "howToPay",
+      "escrowAlternative"
+     ]
+    },
+    {
+     "agentId": 5,
+     "service": "kleos-http-402",
+     "url": "https://kleos.network/api/agents/json-extractor",
+     "status": 402,
+     "jsonKeys": [
+      "error",
+      "agent",
+      "priceUSDC",
+      "payTo",
+      "asset",
+      "chainId",
+      "howToPay",
+      "escrowAlternative"
+     ]
+    },
+    {
+     "agentId": 134,
+     "service": "x402",
+     "url": "https://statpadai-backend-production.up.railway.app/api/pay/quote",
+     "status": 405,
+     "jsonKeys": [
+      "detail"
+     ]
+    },
+    {
+     "agentId": 186,
+     "service": "x402",
+     "url": "https://api.cra-agent.tech/.well-known/x402",
+     "status": 200,
+     "jsonKeys": [
+      "x402Version",
+      "name",
+      "description",
+      "network",
+      "payTo",
+      "solana",
+      "networks",
+      "settlement",
+      "routes",
+      "erc8004",
+      "poweredBy"
+     ]
+    },
+    {
+     "agentId": 186,
+     "service": "x402-search",
+     "url": "https://api.cra-agent.tech/v1/market/search",
+     "status": 200,
+     "jsonKeys": [
+      "query",
+      "network",
+      "count",
+      "searched",
+      "results",
+      "note"
+     ]
+    },
+    {
+     "agentId": 186,
+     "service": "x402-facilitator",
+     "url": "https://api.cra-agent.tech/facilitator/supported",
+     "status": 200,
+     "jsonKeys": [
+      "kinds",
+      "extensions",
+      "signers"
+     ],
+     "listLength": 1,
+     "listNetworks": {
+      "eip155:5042": 1
+     }
+    }
+   ]
+  }
+ },
+ "onchainSample": {
+  "window": "2,000 Arc blocks ending about 2026-09-23T21:52Z (about 17 minutes)",
+  "usdc": "0x3600000000000000000000000000000000000000",
+  "authorizationUsedEvents": 169,
+  "distinctPayers": 50,
+  "distinctPayees": 40,
+  "medianValueUsdc": 0.001622,
+  "busiestPayeesInAnyCatalogueOrRegistry": 0
+ },
+ "circleGatewayFacilitatorSupportsArcMainnet": true
+}

@@ -18,6 +18,14 @@ matrix is still **not run**.
 
 ## Where Nova's money would go
 
+> **Corrected the same day.** This section concluded that nothing could be
+> bought on Arc. That described Veyra, not the market. Veyra's discovery asks
+> Circle's catalogue only for Base and does not know Arc mainnet as a network.
+> Asked for Arc mainnet, the same catalogue lists 482 offers. Exa search is
+> sold there from a wallet at $0.007, the same price as on Base. See
+> [Arc first](2026-09-23-arc-first-market-and-discovery.md). The table below
+> is what the owner's agent had seen, not what exists.
+
 The owner's agent has seen 45 distinct paid endpoints:
 
 | Network | Endpoints | How they are paid |
@@ -25,13 +33,15 @@ The owner's agent has seen 45 distinct paid endpoints:
 | Base | 22 | From a wallet: an EIP-3009 authorization |
 | Base | 11 | From a Circle Gateway deposit |
 | Not recorded | 12 | — |
-| Arc | 0 | — |
+| Arc | 0 | Never asked for |
 
 Every paid research so far settled on Base.
 
-So an operational wallet has to pay on Base, or through Gateway. Arc is where
-Veyra's identity and attestations live, on testnet. A wallet that can only
-pay on Arc would have nothing to buy today.
+~~So an operational wallet has to pay on Base, or through Gateway. A wallet
+that can only pay on Arc would have nothing to buy today.~~ Wrong, as the note
+above says. An operational wallet can pay on Arc from a wallet balance (Exa,
+CRA and a few others) or through Gateway (most of the Arc catalogue), once
+Veyra knows Arc mainnet.
 
 ## The three open questions
 
@@ -110,7 +120,7 @@ Not from a Vercel function.
 | Who can change it | Only with a code sent to the owner's email | Whoever holds Veyra's entity secret | The owner's key onchain | Nobody; the balance is what it is |
 | The owner can stop it without Nova | Lower the limits or move the funds, by email code | No: Veyra holds the wallet | Yes, onchain | Stop funding it. With a Gateway delegate, also `removeDelegate` |
 | Runs from Veyra's server | Only from a separate persistent host | Yes, by API | Yes, with a session key | Yes |
-| Pays the live market on Base | Yes, if the seller accepts a smart-account signature | Yes | Only through extra plumbing | Yes |
+| Pays the live market, on Arc and Base | Yes, if the seller accepts a smart-account signature | Yes | Only through extra plumbing | Yes |
 | Arc | Mainnet and testnet | Testnet listed | Third-party providers | Yes |
 | Built already | No | No | No | Partly: the canary x402 adapter, on Arc Testnet and off by default |
 | Unproven | Permit and approve; seller acceptance | — | Everything: custom module, then an audit | — |
@@ -122,9 +132,11 @@ Not from a Vercel function.
 
 - **Veyra keeps quoting, pinning and dispatch.** The signer receives a request
   for one exact EIP-3009 authorization that matches a Veyra clearance, and
-  signs it with `circle wallet sign typed-data`. The existing x402 adapter
-  already takes a signer through `toClientEvmSigner`, so this is a new signer,
-  not a new payment path.
+  signs it with `circle wallet sign typed-data`. It takes the browser wallet's
+  place between Veyra's quote and settle steps, so this is a new signer, not a
+  new payment path. *(Corrected: this said the legacy x402 adapter, which pays
+  from a server key on Arc Testnet and is not the flow to extend. See
+  [the signer note](2026-09-23-d1-operational-signer.md).)*
 - **Not `circle services pay`.** It fetches a fresh 402 and pays whatever payee
   that names. That undoes the payee pinning Veyra exists for, and Parallel
   already issues a new payee on every request.
@@ -133,25 +145,33 @@ Not from a Vercel function.
 - **How much.** A small balance, with limits set by the owner's email code
   before any money goes in. An unset tier reads as none.
 
-**Accepted only after three mainnet tests, with one or two dollars:**
+**Accepted only after three mainnet tests, with one or two dollars.** *(Later
+the same day: tests 1 and 2 need no money. Circle's limit acts when it is asked
+to sign, so they run while the wallet is empty. Only test 3 spends.)*
 1. A permit and an approve are refused, or counted against the cap.
 2. An EIP-3009 authorization above the per-transaction limit is refused.
-3. Exa search on Base accepts the smart-account signature and settles.
+3. Exa search on Arc accepts the smart-account signature and settles. It is
+   sold there from a wallet. The same test on Base follows.
 
 If test 1 fails, the cap does not bind a compromised runtime, and the
 guarantee falls to "risk bounded by the funded balance". Option D gives the
 same guarantee with far less machinery, and the product must say so rather
 than cite Circle's limits.
 
+The full matrix, of which these three are the core, is in
+[the signer note](2026-09-23-d1-operational-signer.md).
+
 ## Decisions for the owner
 
 1. **When.** The funded pilot (D2) still waits for gate V. The three tests
-   need one or two dollars of real USDC and the owner's email code.
+   need the owner's email code, and the seller test needs one or two dollars
+   of real USDC.
 2. **Where the signer runs.** A small always-on host, or the owner's own
    machine for a single-owner pilot.
 3. **The limits and the balance.**
-4. **The chain.** Base, where the sellers are. Arc mainnet works too, and the
-   cap is shared across both.
+4. **The chain.** *(Decided after this note: Arc first, Base additional.)*
+   On Arc, Exa and CRA take a payment from the wallet. Most other Arc sellers
+   need a Gateway deposit. The cap is shared across both chains.
 
 ## Not done
 
