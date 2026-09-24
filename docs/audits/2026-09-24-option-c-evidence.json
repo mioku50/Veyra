@@ -1,0 +1,726 @@
+{
+  "measured": "2026-09-24, 21:30-21:50 UTC",
+  "method": {
+    "fork": "anvil (Foundry) fork of Arc mainnet at block 22556225, chain id 5042, hardfork prague; every step a real transaction mined in order, one per block unless stated",
+    "contractsRunAsDeployed": [
+      "DelegationManager",
+      "EIP7702StatelessDeleGatorImpl",
+      "HybridDeleGatorImpl",
+      "SimpleFactory",
+      "EntryPoint v0.7",
+      "ERC20PeriodTransferEnforcer",
+      "ValueLteEnforcer",
+      "TimestampEnforcer",
+      "RedeemerEnforcer",
+      "AllowedCalldataEnforcer",
+      "NonceEnforcer"
+    ],
+    "substituted": "USDC 0x3600...0000 runs a plain ERC-20 on the fork (transfer, approve, increaseAllowance, transferFrom, open mint). Arc's USDC moves balances through a native-coin precompile that exists only on Arc, so it cannot run on anvil. A second copy at 0x...0c0de2 is the wrong token in V2.",
+    "noStorageWrites": "No contract storage was written by hand. Balances were set with anvil_setBalance for gas. The DelegationManager's owner was impersonated for the pause test (Z1, Z5).",
+    "permissionShape": "Built as MetaMask's gator-permissions-snap 2.5.0 builds erc20-token-periodic with expiry, redeemer and payee rules: ERC20PeriodTransfer(USDC, amount, 86400 s, start), ValueLte(0), Timestamp(0, expiry), Redeemer([Nova]), AllowedCalldata(4, payee), Nonce(current). Signed with @metamask/smart-accounts-kit 2.0.0 for chain 5042.",
+    "keys": "Throwaway keys generated per run; none is stored",
+    "mainnetEstimates": "eth_estimateGas on https://rpc.mainnet.arc.io with state overrides (the user's account given the 7702 designator and 2 USDC); real USDC; nothing broadcast"
+  },
+  "forkOption7702": {
+    "summary": {
+      "forkBlock": 22556225,
+      "passed": 55,
+      "total": 55
+    },
+    "results": [
+      {
+        "id": "S1",
+        "what": "user upgrades to EIP7702StatelessDeleGator (type-4 tx)",
+        "expect": "ok",
+        "status": "success",
+        "reason": null,
+        "gasUsed": 36844,
+        "pass": true,
+        "code": "0xef010063c0c19a282a1b52b07dd5a65b58948a07dae32b"
+      },
+      {
+        "id": "L1",
+        "what": "Nova moves 0.60 to the hot wallet",
+        "expect": "ok",
+        "status": "success",
+        "reason": null,
+        "gasUsed": 351617,
+        "pass": true
+      },
+      {
+        "id": "L2",
+        "what": "Nova moves another 0.60, next transaction (1.20 > 1.00)",
+        "expect": "revert",
+        "status": "reverted",
+        "reason": "ERC20PeriodTransferEnforcer:transfer-amount-exceeded",
+        "gasUsed": 120048,
+        "pass": true
+      },
+      {
+        "id": "L3",
+        "what": "Nova moves 0.40, next transaction (exactly 1.00)",
+        "expect": "ok",
+        "status": "success",
+        "reason": null,
+        "gasUsed": 236979,
+        "pass": true
+      },
+      {
+        "id": "L4",
+        "what": "Nova moves 0.01 more in the same period",
+        "expect": "revert",
+        "status": "reverted",
+        "reason": "ERC20PeriodTransferEnforcer:transfer-amount-exceeded",
+        "gasUsed": 119966,
+        "pass": true
+      },
+      {
+        "id": "P1",
+        "what": "one second before the period ends: 0.01",
+        "expect": "revert",
+        "status": "reverted",
+        "reason": "ERC20PeriodTransferEnforcer:transfer-amount-exceeded",
+        "gasUsed": 119966,
+        "pass": true
+      },
+      {
+        "id": "P2",
+        "what": "first second of the next period: 1.00",
+        "expect": "ok",
+        "status": "success",
+        "reason": null,
+        "gasUsed": 237187,
+        "pass": true
+      },
+      {
+        "id": "P3",
+        "what": "same period: 0.01 more",
+        "expect": "revert",
+        "status": "reverted",
+        "reason": "ERC20PeriodTransferEnforcer:transfer-amount-exceeded",
+        "gasUsed": 119966,
+        "pass": true
+      },
+      {
+        "id": "P4",
+        "what": "three idle periods later: 1.50 at once (no carry-over)",
+        "expect": "revert",
+        "status": "reverted",
+        "reason": "ERC20PeriodTransferEnforcer:transfer-amount-exceeded",
+        "gasUsed": 120029,
+        "pass": true
+      },
+      {
+        "id": "P5",
+        "what": "three idle periods later: 1.00",
+        "expect": "ok",
+        "status": "success",
+        "reason": null,
+        "gasUsed": 237187,
+        "pass": true
+      },
+      {
+        "id": "C1",
+        "what": "parallel: Nova redemption 1 of 3 (0.40 each), one block",
+        "expect": "ok",
+        "status": "success",
+        "reason": null,
+        "gasUsed": 239987,
+        "pass": true,
+        "block": 22556241
+      },
+      {
+        "id": "C2",
+        "what": "parallel: Nova redemption 2 of 3 (0.40 each), one block",
+        "expect": "ok",
+        "status": "success",
+        "reason": null,
+        "gasUsed": 236979,
+        "pass": true,
+        "block": 22556241
+      },
+      {
+        "id": "C3",
+        "what": "parallel: Nova redemption 3 of 3 (0.40 each), one block",
+        "expect": "revert",
+        "status": "reverted",
+        "reason": "ERC20PeriodTransferEnforcer:transfer-amount-exceeded (from debug_traceTransaction)",
+        "gasUsed": 120048,
+        "pass": true,
+        "block": 22556241
+      },
+      {
+        "id": "C4",
+        "what": "parallel: a stranger redeems in the same block",
+        "expect": "revert",
+        "status": "reverted",
+        "reason": "InvalidDelegate() (from debug_traceTransaction)",
+        "gasUsed": null,
+        "pass": true,
+        "block": 22556241
+      },
+      {
+        "id": "V1",
+        "what": "transfer to an address other than the hot wallet",
+        "expect": "revert",
+        "status": "reverted",
+        "reason": "AllowedCalldataEnforcer:invalid-calldata",
+        "gasUsed": 147484,
+        "pass": true
+      },
+      {
+        "id": "V2",
+        "what": "transfer of a different ERC-20 to the hot wallet",
+        "expect": "revert",
+        "status": "reverted",
+        "reason": "ERC20PeriodTransferEnforcer:invalid-contract",
+        "gasUsed": 108140,
+        "pass": true
+      },
+      {
+        "id": "V3",
+        "what": "USDC approve(hot wallet, 1000)",
+        "expect": "revert",
+        "status": "reverted",
+        "reason": "ERC20PeriodTransferEnforcer:invalid-method",
+        "gasUsed": 108390,
+        "pass": true
+      },
+      {
+        "id": "V4",
+        "what": "USDC increaseAllowance(hot wallet, 1000)",
+        "expect": "revert",
+        "status": "reverted",
+        "reason": "ERC20PeriodTransferEnforcer:invalid-method",
+        "gasUsed": 108390,
+        "pass": true
+      },
+      {
+        "id": "V5",
+        "what": "USDC transferFrom(user, hot wallet, 0.10)",
+        "expect": "revert",
+        "status": "reverted",
+        "reason": "ERC20PeriodTransferEnforcer:invalid-execution-length",
+        "gasUsed": 107501,
+        "pass": true
+      },
+      {
+        "id": "V6",
+        "what": "transfer(hot wallet, 0.10) with extra bytes appended",
+        "expect": "revert",
+        "status": "reverted",
+        "reason": "ERC20PeriodTransferEnforcer:invalid-execution-length",
+        "gasUsed": 107273,
+        "pass": true
+      },
+      {
+        "id": "V7",
+        "what": "native value (Arc's gas USDC) straight to the hot wallet",
+        "expect": "revert",
+        "status": "reverted",
+        "reason": "ERC20PeriodTransferEnforcer:invalid-execution-length",
+        "gasUsed": 106792,
+        "pass": true
+      },
+      {
+        "id": "V8",
+        "what": "USDC transfer with native value attached",
+        "expect": "revert",
+        "status": "reverted",
+        "reason": "ValueLteEnforcer:value-too-high",
+        "gasUsed": 134040,
+        "pass": true
+      },
+      {
+        "id": "V9",
+        "what": "batch mode: two transfers in one execution",
+        "expect": "revert",
+        "status": "reverted",
+        "reason": "CaveatEnforcer:invalid-call-type",
+        "gasUsed": 108850,
+        "pass": true
+      },
+      {
+        "id": "V10",
+        "what": "the same transfer redeemed by a stranger",
+        "expect": "revert",
+        "status": "reverted",
+        "reason": "InvalidDelegate()",
+        "gasUsed": 57040,
+        "pass": true
+      },
+      {
+        "id": "V11",
+        "what": "Nova re-delegates to a stranger, who redeems (redeemer rule on)",
+        "expect": "revert",
+        "status": "reverted",
+        "reason": "RedeemerEnforcer:unauthorized-redeemer",
+        "gasUsed": 158314,
+        "pass": true
+      },
+      {
+        "id": "V12",
+        "what": "the same without the redeemer rule",
+        "expect": "any",
+        "status": "success",
+        "reason": null,
+        "gasUsed": 334264,
+        "pass": true
+      },
+      {
+        "id": "V13",
+        "what": "valid transfer after all the refusals above",
+        "expect": "ok",
+        "status": "success",
+        "reason": null,
+        "gasUsed": 239987,
+        "pass": true
+      },
+      {
+        "id": "V14",
+        "what": "the same transfer in try mode (failures not reverted)",
+        "expect": "revert",
+        "status": "reverted",
+        "reason": "CaveatEnforcer:invalid-execution-type",
+        "gasUsed": 106399,
+        "pass": true
+      },
+      {
+        "id": "R1",
+        "what": "user disables the permission (DelegationManager.disableDelegation)",
+        "expect": "ok",
+        "status": "success",
+        "reason": null,
+        "gasUsed": 93850,
+        "pass": true
+      },
+      {
+        "id": "R2",
+        "what": "Nova redeems after the user's revocation",
+        "expect": "revert",
+        "status": "reverted",
+        "reason": "CannotUseADisabledDelegation()",
+        "gasUsed": 67995,
+        "pass": true
+      },
+      {
+        "id": "R3",
+        "what": "hot wallet pays a seller from funds pulled before revocation",
+        "expect": "ok",
+        "status": "success",
+        "reason": null,
+        "gasUsed": 51698,
+        "pass": true
+      },
+      {
+        "id": "R4",
+        "what": "Veyra returns the rest (3.90) from the hot wallet to the user",
+        "expect": "ok",
+        "status": "success",
+        "reason": null,
+        "gasUsed": 29786,
+        "pass": true
+      },
+      {
+        "id": "R5",
+        "what": "user re-enables the same permission (enableDelegation)",
+        "expect": "ok",
+        "status": "success",
+        "reason": null,
+        "gasUsed": 71897,
+        "pass": true
+      },
+      {
+        "id": "R6",
+        "what": "Nova redeems after re-enabling",
+        "expect": "ok",
+        "status": "success",
+        "reason": null,
+        "gasUsed": 254079,
+        "pass": true
+      },
+      {
+        "id": "R7",
+        "what": "user revokes every permission at once (NonceEnforcer.incrementNonce)",
+        "expect": "ok",
+        "status": "success",
+        "reason": null,
+        "gasUsed": 45902,
+        "pass": true
+      },
+      {
+        "id": "R8",
+        "what": "Nova redeems after the nonce bump",
+        "expect": "revert",
+        "status": "reverted",
+        "reason": "NonceEnforcer:invalid-nonce",
+        "gasUsed": 150165,
+        "pass": true
+      },
+      {
+        "id": "R9",
+        "what": "fresh permission, Nova redeems 0.10",
+        "expect": "ok",
+        "status": "success",
+        "reason": null,
+        "gasUsed": 334529,
+        "pass": true
+      },
+      {
+        "id": "R10",
+        "what": "user switches back to a plain account (7702 to address 0)",
+        "expect": "ok",
+        "status": "success",
+        "reason": null,
+        "gasUsed": null,
+        "pass": true,
+        "codeAfter": "0x"
+      },
+      {
+        "id": "R11",
+        "what": "Nova redeems while the account is plain",
+        "expect": "revert",
+        "status": "reverted",
+        "reason": "empty revert data: the signature passes as a plain EOA signature and every enforcer hook runs; the manager then calls executeFromExecutor on the account, which has no code and returns nothing, and decoding that empty answer reverts the whole transaction (from debug_traceTransaction)",
+        "gasUsed": 146913,
+        "pass": true
+      },
+      {
+        "id": "R12",
+        "what": "user upgrades again, e.g. for another dapp",
+        "expect": "ok",
+        "status": "success",
+        "reason": null,
+        "gasUsed": null,
+        "pass": true
+      },
+      {
+        "id": "R13",
+        "what": "Nova redeems the old permission after the re-upgrade",
+        "expect": "any",
+        "status": "success",
+        "reason": null,
+        "gasUsed": 236991,
+        "pass": true
+      },
+      {
+        "id": "R14",
+        "what": "race, revocation ordered first: redemption",
+        "expect": "revert",
+        "status": "reverted",
+        "reason": "CannotUseADisabledDelegation() (from debug_traceTransaction)",
+        "gasUsed": null,
+        "pass": true,
+        "disable": "success",
+        "sameBlock": true,
+        "disableIndex": 0,
+        "redeemIndex": 1
+      },
+      {
+        "id": "R15",
+        "what": "race, Nova's redemption ordered first: redemption",
+        "expect": "ok",
+        "status": "success",
+        "reason": null,
+        "gasUsed": null,
+        "pass": true,
+        "disable": "success",
+        "sameBlock": true,
+        "disableIndex": 1,
+        "redeemIndex": 0
+      },
+      {
+        "id": "X1",
+        "what": "a permission signed for chain 8453 (Base), redeemed on Arc",
+        "expect": "revert",
+        "status": "reverted",
+        "reason": "InvalidERC1271Signature()",
+        "gasUsed": 65634,
+        "pass": true
+      },
+      {
+        "id": "M1",
+        "what": "second active permission: 1.00 through the first",
+        "expect": "ok",
+        "status": "success",
+        "reason": null,
+        "gasUsed": 334529,
+        "pass": true
+      },
+      {
+        "id": "M2",
+        "what": "second active permission: 1.00 through the second, same period",
+        "expect": "ok",
+        "status": "success",
+        "reason": null,
+        "gasUsed": 334517,
+        "pass": true
+      },
+      {
+        "id": "M3",
+        "what": "0.01 more through the first",
+        "expect": "revert",
+        "status": "reverted",
+        "reason": "ERC20PeriodTransferEnforcer:transfer-amount-exceeded",
+        "gasUsed": 119978,
+        "pass": true
+      },
+      {
+        "id": "E1",
+        "what": "permission with a one-hour expiry: 0.10 inside the hour",
+        "expect": "ok",
+        "status": "success",
+        "reason": null,
+        "gasUsed": 334529,
+        "pass": true
+      },
+      {
+        "id": "E2",
+        "what": "the same permission one hour later",
+        "expect": "revert",
+        "status": "reverted",
+        "reason": "TimestampEnforcer:expired-delegation",
+        "gasUsed": 134877,
+        "pass": true
+      },
+      {
+        "id": "Z1",
+        "what": "manager owner 0xB0403B32\u2026 pauses the DelegationManager",
+        "expect": "ok",
+        "status": "success",
+        "reason": null,
+        "gasUsed": 46836,
+        "pass": true
+      },
+      {
+        "id": "Z2",
+        "what": "Nova redeems while paused",
+        "expect": "revert",
+        "status": "reverted",
+        "reason": "EnforcedPause()",
+        "gasUsed": 57070,
+        "pass": true
+      },
+      {
+        "id": "Z3",
+        "what": "user disables a permission while paused",
+        "expect": "any",
+        "status": "success",
+        "reason": null,
+        "gasUsed": 93862,
+        "pass": true
+      },
+      {
+        "id": "Z4",
+        "what": "user revokes all through NonceEnforcer while paused",
+        "expect": "ok",
+        "status": "success",
+        "reason": null,
+        "gasUsed": 28802,
+        "pass": true
+      },
+      {
+        "id": "Z5",
+        "what": "owner unpauses",
+        "expect": "ok",
+        "status": "success",
+        "reason": null,
+        "gasUsed": 24952,
+        "pass": true
+      },
+      {
+        "id": "Z6",
+        "what": "Nova redeems a permission the user did not touch, after the nonce bump",
+        "expect": "revert",
+        "status": "reverted",
+        "reason": "NonceEnforcer:invalid-nonce",
+        "gasUsed": 247715,
+        "pass": true
+      }
+    ]
+  },
+  "forkHybridFallback": {
+    "account": "0x58DB0B23407beac95C4c9E0644e68dd089675463",
+    "proxyImplementation": "0x48dbe696a4d990079e039489ba2053b36e8ffec4",
+    "factory": "0x69Aa2f9fe1572F1B640E1bbc512f5c3a734fc77c",
+    "results": [
+      {
+        "id": "H1",
+        "what": "owner deploys HybridDeleGator 0x58DB0B23\u2026 via SimpleFactory",
+        "expect": "ok",
+        "status": "success",
+        "reason": null,
+        "gasUsed": 186725,
+        "pass": true
+      },
+      {
+        "id": "H2",
+        "what": "Nova moves 0.60 to the hot wallet",
+        "expect": "ok",
+        "status": "success",
+        "reason": null,
+        "gasUsed": 356825,
+        "pass": true
+      },
+      {
+        "id": "H3",
+        "what": "Nova moves another 0.60 (1.20 > 1.00 per day)",
+        "expect": "revert",
+        "status": "reverted",
+        "reason": "ERC20PeriodTransferEnforcer:transfer-amount-exceeded",
+        "gasUsed": 124836,
+        "pass": true
+      },
+      {
+        "id": "H4",
+        "what": "Nova moves 0.10 to somebody else",
+        "expect": "revert",
+        "status": "reverted",
+        "reason": "AllowedCalldataEnforcer:invalid-calldata",
+        "gasUsed": 149252,
+        "pass": true
+      },
+      {
+        "id": "H5",
+        "what": "a stranger redeems",
+        "expect": "revert",
+        "status": "reverted",
+        "reason": "InvalidDelegate()",
+        "gasUsed": 56890,
+        "pass": true
+      },
+      {
+        "id": "H6",
+        "what": "owner calls the account's disableDelegation directly",
+        "expect": "revert",
+        "status": "reverted",
+        "reason": "NotEntryPointOrSelf()",
+        "gasUsed": 50160,
+        "pass": true
+      },
+      {
+        "id": "H7",
+        "what": "owner revokes: UserOp -> account.execute(DM.disableDelegation)",
+        "expect": "ok",
+        "status": "success",
+        "reason": null,
+        "gasUsed": 202456,
+        "pass": true,
+        "userOpSuccess": true,
+        "prefundPaidByAccountWei": "228257717398144"
+      },
+      {
+        "id": "H8",
+        "what": "Nova redeems after the revocation",
+        "expect": "revert",
+        "status": "reverted",
+        "reason": "CannotUseADisabledDelegation()",
+        "gasUsed": 72783,
+        "pass": true
+      },
+      {
+        "id": "H9",
+        "what": "owner withdraws the rest (2.40) to its EOA through a UserOp",
+        "expect": "ok",
+        "status": "success",
+        "reason": null,
+        "gasUsed": 118062,
+        "pass": true,
+        "userOpSuccess": true,
+        "prefundPaidByAccountWei": "163657945446489"
+      }
+    ]
+  },
+  "mainnetGasEstimates": {
+    "measured": "2026-09-24T21:48:58.635Z",
+    "block": 22583738,
+    "gasPriceWei": "20000000000",
+    "maxPriorityFeePerGas": "0x0",
+    "estimates": {
+      "redeem 0.30 USDC to a fresh hot wallet (first use of the permission)": {
+        "gas": 379959,
+        "usdcAtCurrentPrice": 0.00759918
+      },
+      "redeem 0.30 USDC to a hot wallet that already holds USDC": {
+        "gas": 354760,
+        "usdcAtCurrentPrice": 0.0070952
+      },
+      "redeem 0.60 USDC (over the 0.50 cap) -- expected to fail": {
+        "error": "execution reverted: ERC20PeriodTransferEnforcer:transfer-amount-exceeded"
+      },
+      "user disables the permission (disableDelegation)": {
+        "gas": 94745,
+        "usdcAtCurrentPrice": 0.0018949
+      },
+      "user revokes all (NonceEnforcer.incrementNonce)": {
+        "gas": 46284,
+        "usdcAtCurrentPrice": 0.00092568
+      },
+      "hot wallet sweeps 0.30 USDC back to the user (ERC-20 transfer)": {
+        "gas": 49338,
+        "usdcAtCurrentPrice": 0.00098676
+      },
+      "plain native USDC send, for reference": {
+        "gas": 21000,
+        "usdcAtCurrentPrice": 0.00042
+      }
+    }
+  },
+  "gatewaySameChainEstimate": {
+    "endpoint": "POST https://gateway-api.circle.com/v1/estimate, Arc (domain 26) to Arc, 1 USDC, throwaway addresses, unsigned",
+    "baseFeePerIntentUsdc": "0.0035",
+    "maxFeeSuggestedUsdc": "0.00385",
+    "withForwarder": {
+      "forwardingFeeUsdc": "0.014354",
+      "totalUsdc": "0.017854"
+    },
+    "circleDocs": "same-chain transfers pay no 0.005% transfer fee; trustless withdrawal is initiateWithdrawal, then withdraw after 7 days"
+  },
+  "metamask": {
+    "remoteFlags": "https://client-config.api.cx.metamask.io/v1/flags?client=extension&distribution=main&environment=prod, read 2026-09-24 17:49 and 21:48 UTC, identical",
+    "confirmations_eip_7702": {
+      "0x13b2 in supportedChains": true,
+      "contracts[0x13b2]": [
+        {
+          "name": "Arc",
+          "address": "0x63c0c19a282a1B52b07dD5a65b58948A07DAE32B"
+        }
+      ],
+      "entrySignedBy": "0x3c7a1cCCe462e96D186B8ca9a1BCB2010C3dABa3 (personal_sign over address||chainId; the key is in the extension bundle)"
+    },
+    "enabledAdvancedPermissions": [
+      "native-token-stream",
+      "native-token-periodic",
+      "native-token-allowance",
+      "erc20-token-stream",
+      "erc20-token-periodic",
+      "erc20-token-allowance",
+      "token-approval-revocation"
+    ],
+    "extension": "13.49.0, unpacked and read, not run with a wallet",
+    "snaps": {
+      "permissions-kernel-snap": "1.3.0",
+      "gator-permissions-snap": "2.5.0"
+    },
+    "gatorSnap": {
+      "requestShape": "{ chainId, from?, to: <redeemer/session account>, permission: { type, isAdjustmentAllowed, data: { tokenAddress, periodAmount, periodDuration, startTime?, justification? } }, rules: [ {type:'expiry', data:{timestamp}}, {type:'redeemer', data:{addresses}}, {type:'payee', data:{addresses}} ] }",
+      "rulesAllowedForErc20TokenPeriodic": [
+        "expiry",
+        "redeemer",
+        "payee"
+      ],
+      "payee": "one address only for erc20-token-periodic (allowMultiplePayees: false)",
+      "startTime": "today or later",
+      "justification": "at most 300 characters; no quotes, brackets or markup",
+      "response": "{ context, dependencies: [{factory, factoryData}], delegationManager } merged with the request",
+      "contractAddresses": "no Arc entry; falls back to chain 1's table, which holds the same v1.3 addresses deployed on Arc (each appears once in the bundle)",
+      "upgrade": "the dialog warns 'This account will be upgraded to a smart account to complete this permission.'; after Grant the snap calls wallet_upgradeAccount if the account is not upgraded to 0x63c0...E32B, and refuses if MetaMask reports the account cannot be upgraded"
+    },
+    "signatureGuard": "eth_signTypedData_v4 from a site is refused only when primaryType is 'Delegation' and message.delegator is one of the wallet's own accounts, unless the data decodes to a known permission. A HybridDeleGator's delegation (delegator = the smart account) is not refused by this rule.",
+    "revocationInWallet": "GatorPermissionsController with submitRevocation / submitDirectRevocation / addPendingRevocation; screens not clicked through"
+  },
+  "notDone": [
+    "No MetaMask wallet was created and MetaMask's terms were not accepted; the dialogs above are read from code, not seen",
+    "Nothing was broadcast to Arc mainnet and no money moved"
+  ]
+}

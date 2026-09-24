@@ -197,6 +197,19 @@ transactions could be run. Instead:
 4. **Liveness.** The DelegationManager's owner, the same as on Base, can pause
    it. A pause stops redemptions. It cannot move funds.
 
+*(Later on 24 September, [option C in sequence](2026-09-24-option-c-architecture.md)
+changed four points here:*
+- *MetaMask's production configuration enables EIP-7702 on Arc mainnet to this
+  DeleGator, and its permission snap builds exactly this permission. The real
+  screens are still unseen.*
+- *The HybridDeleGator fallback was run on a fork of Arc mainnet, including
+  revocation and withdrawal.*
+- *Revocation, and the cap across separate transactions, were run as real
+  transactions on the fork, with no storage written by hand.*
+- *The chain does not bound the hot wallet's balance. The cap limits how fast
+  money arrives, and Veyra's own ceiling limits how much sits there. "At most
+  one period's cap" holds only while Veyra keeps that ceiling.)*
+
 ## Option D
 
 **What exists on Arc mainnet:**
@@ -282,5 +295,7 @@ owner's wallet. It costs about $0.002.
    - the account type: EIP-7702 or a HybridDeleGator;
    - where Nova's two keys live;
    - a test cap, such as $0.10 a day.
+
+   *(Planned in [the minimal real test](2026-09-24-option-c-pilot-plan.md).)*
 3. **Decide on bounded custody.** The owner's decision comes before either
    route reaches other users.
