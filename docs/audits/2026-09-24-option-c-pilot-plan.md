@@ -31,13 +31,16 @@ money needs the owner's go-ahead for that stage.
     permission.
 - **Where it runs.** The owner's machine. For a single-owner pilot, it is the
   signer host, as the D1 notes decided.
-- **Two small local tools, still to be written:**
+- **Two small local tools,** in [`scripts/arc-c-pilot/`](../../scripts/arc-c-pilot/README.md):
   - **A test page.** It adds Arc, asks for the permission, shows and decodes
     MetaMask's answer, and has a revoke button.
-  - **A script for Nova's side.** It simulates, redeems and sweeps, reusing
-    the fork harness's logic.
+  - **A script for Nova's side.** It simulates, redeems and sweeps, one
+    command per step below.
 
   Neither touches Veyra's production app, its database or Vercel.
+  *(Written on 25 September. They were run end to end on a local fork of Arc
+  mainnet, with a stand-in for MetaMask built on MetaMask's own kit, and
+  passed 50 of 50 checks. MetaMask itself has still not been used.)*
 
 ## Contracts on Arc mainnet (chain 5042, `0x13b2`)
 
@@ -260,5 +263,5 @@ The permission expires in three days whatever happens.
    consent.
 2. **Funding.** 0.02 USDC to the test account for stage 1. Then 1.00 more to
    the test account and 0.05 to N for stage 2.
-3. **A go-ahead for each stage.** The two tools are written first, and read
-   before anything is sent.
+3. **A go-ahead for each stage.** The two tools are written. Each command
+   that sends a transaction shows it and waits for `send` to be typed.

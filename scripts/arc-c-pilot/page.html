@@ -1,0 +1,336 @@
+<!doctype html>
+<!-- Copyright 2026 Veyra. SPDX-License-Identifier: Apache-2.0 -->
+<!-- Served only by `arc:c-pilot serve`, which fills in the page token. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="pilot-token" content="__PILOT_TOKEN__">
+<title>Option C pilot</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #f7f6f2; --card: #ffffff; --fg: #1c1c1a; --muted: #62615b; --line: #dcdad3;
+    --ok: #1a7f37; --bad: #b42318; --warn: #8a5a00;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #151514; --card: #1e1e1c; --fg: #ecebe6; --muted: #a6a59e; --line: #383835; --ok: #56d27a; --bad: #ff8a80; --warn: #e3b341; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--fg); font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  main { max-width: 880px; margin: 0 auto; padding: 24px 16px 64px; }
+  h1 { font-size: 22px; margin: 0 0 4px; }
+  h2 { font-size: 16px; margin: 0 0 8px; }
+  section { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 16px; margin: 16px 0; }
+  p { margin: 6px 0; }
+  code, pre { font: 13px/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+  code { overflow-wrap: anywhere; }
+  pre { white-space: pre-wrap; overflow-wrap: anywhere; background: color-mix(in srgb, var(--fg) 6%, transparent); padding: 10px; border-radius: 6px; max-height: 380px; overflow: auto; margin: 8px 0 0; }
+  button { font: inherit; padding: 7px 13px; border-radius: 7px; border: 1px solid var(--line); background: var(--bg); color: var(--fg); cursor: pointer; margin: 6px 8px 6px 0; }
+  button.primary { background: var(--fg); color: var(--bg); border-color: var(--fg); }
+  button:disabled { opacity: .45; cursor: not-allowed; }
+  table { border-collapse: collapse; width: 100%; margin-top: 6px; }
+  th, td { text-align: left; vertical-align: top; padding: 5px 10px 5px 0; border-bottom: 1px solid var(--line); }
+  th { font-weight: 600; white-space: nowrap; width: 1%; }
+  td { overflow-wrap: anywhere; }
+  details { margin: 8px 0; }
+  .muted { color: var(--muted); }
+  .ok { color: var(--ok); }
+  .bad { color: var(--bad); }
+  .warn { color: var(--warn); }
+  .banner { border-left: 4px solid var(--warn); padding: 8px 12px; margin: 10px 0; background: color-mix(in srgb, var(--warn) 10%, transparent); }
+  .banner.bad { border-color: var(--bad); background: color-mix(in srgb, var(--bad) 10%, transparent); }
+</style>
+</head>
+<body>
+<main>
+  <h1>Option C pilot</h1>
+  <p class="muted">Arc mainnet. Nova's permission, granted and revoked from MetaMask. This page holds no key and signs nothing: each step is a MetaMask prompt you approve or reject. The plan is <code>docs/audits/2026-09-24-option-c-pilot-plan.md</code>.</p>
+  <div id="network-banner" class="banner" hidden></div>
+
+  <section>
+    <h2>1. The test account</h2>
+    <p class="muted">A new MetaMask account made for this test, holding about 0.02 USDC on Arc for stage 1. Never the main wallet.</p>
+    <button id="connect" class="primary">Connect MetaMask</button>
+    <p id="account-line" class="muted">Not connected.</p>
+    <div id="account-warning" class="banner bad" hidden></div>
+  </section>
+
+  <section>
+    <h2>2. Arc mainnet</h2>
+    <button id="switch">Add or switch to Arc</button>
+    <button id="capabilities">Wallet capabilities</button>
+    <p id="chain-line" class="muted">Chain not read yet.</p>
+  </section>
+
+  <section>
+    <h2>3. The permission (T3, T4)</h2>
+    <table>
+      <tr><th>Amount</th><td>0.50 USDC a day, for three days</td></tr>
+      <tr><th>Redeemer (N)</th><td><code id="redeemer"></code> — only this address can use it</td></tr>
+      <tr><th>Payee (H)</th><td><code id="hot"></code> — the only address it can pay</td></tr>
+      <tr><th>From / until</th><td id="times"></td></tr>
+    </table>
+    <details><summary>The exact request</summary><pre id="request-json"></pre></details>
+    <button id="new-request">New start time</button>
+    <button id="grant" class="primary" disabled>Ask MetaMask for this permission</button>
+    <p class="muted">MetaMask should show its own dialog with these terms and the line “This account will be upgraded to a smart account to complete this permission.” Take a screenshot. If anything differs, reject it.</p>
+    <div id="grant-result"></div>
+  </section>
+
+  <section>
+    <h2>4. Status</h2>
+    <button id="refresh">Refresh</button>
+    <table id="status"></table>
+  </section>
+
+  <section>
+    <h2>5. Revoke (T10)</h2>
+    <p class="muted">Try MetaMask's own revoke screen first. These buttons ask MetaMask to send a transaction from the test account.</p>
+    <button id="revoke" disabled>Revoke this permission</button>
+    <button id="revoke-all" disabled>Revoke every MetaMask permission of this account</button>
+    <p id="revoke-result" class="muted"></p>
+  </section>
+
+  <section>
+    <h2>Log</h2>
+    <pre id="log"></pre>
+  </section>
+</main>
+<script>
+"use strict";
+const TOKEN = document.querySelector('meta[name="pilot-token"]').content;
+const ARC = "0x13b2";
+const $ = (id) => document.getElementById(id);
+const state = { config: null, request: null, account: null, chainId: null };
+const same = (a, b) => typeof a === "string" && typeof b === "string" && a.toLowerCase() === b.toLowerCase();
+
+function log(label, value) {
+  const body = value === undefined ? "" : `: ${typeof value === "string" ? value : JSON.stringify(value, null, 2)}`;
+  $("log").textContent = `[${new Date().toLocaleTimeString()}] ${label}${body}\n${$("log").textContent}`;
+}
+
+async function api(path, body) {
+  const response = await fetch(path, {
+    method: body === undefined ? "GET" : "POST",
+    headers: body === undefined ? { "x-pilot-token": TOKEN } : { "x-pilot-token": TOKEN, "content-type": "application/json" },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+  const json = await response.json().catch(() => ({ error: `HTTP ${response.status}` }));
+  if (!response.ok) throw new Error(json.error || `HTTP ${response.status}`);
+  return json;
+}
+
+function wallet() {
+  if (!window.ethereum) throw new Error("No wallet in this browser. Open this page in the browser that has MetaMask.");
+  return window.ethereum;
+}
+
+async function act(label, run) {
+  try {
+    log(label, await run());
+  } catch (error) {
+    log(`${label} failed`, { code: error && error.code, message: (error && error.message) || String(error) });
+  }
+}
+
+function ready() {
+  return Boolean(state.account) && !same(state.account, state.config && state.config.mainWallet) && state.chainId === ARC;
+}
+
+function guard() {
+  if (!state.account) throw new Error("Connect the test account first.");
+  if (same(state.account, state.config.mainWallet)) throw new Error("This is the main wallet. Switch MetaMask to the test account.");
+  if (state.chainId !== ARC) throw new Error("MetaMask is not on Arc mainnet. Use “Add or switch to Arc”.");
+}
+
+function updateButtons() {
+  for (const id of ["grant", "revoke", "revoke-all"]) $(id).disabled = !ready();
+}
+
+function setAccount(account) {
+  state.account = account || null;
+  $("account-line").textContent = account ? `Connected: ${account}` : "Not connected.";
+  const main = Boolean(account) && same(account, state.config.mainWallet);
+  $("account-warning").hidden = !main;
+  $("account-warning").textContent = main ? "This is the owner's main wallet. The pilot will not use it: switch MetaMask to the test account." : "";
+  updateButtons();
+}
+
+async function readChain() {
+  state.chainId = await wallet().request({ method: "eth_chainId" });
+  $("chain-line").textContent = state.chainId === ARC
+    ? "MetaMask is on Arc mainnet (0x13b2)."
+    : `MetaMask is on chain ${state.chainId}, not Arc mainnet.`;
+  $("chain-line").className = state.chainId === ARC ? "ok" : "warn";
+  updateButtons();
+}
+
+function renderRequest() {
+  const request = state.request;
+  $("times").textContent = `${new Date(request.startTime * 1000).toLocaleString()} → ${new Date(request.expiry * 1000).toLocaleString()}`;
+  $("request-json").textContent = JSON.stringify(request.params, null, 2);
+}
+
+function renderChecks(result) {
+  const container = $("grant-result");
+  container.replaceChildren();
+  const head = document.createElement("p");
+  head.className = result.ok ? "ok" : "bad";
+  head.textContent = result.ok
+    ? "Accepted: exactly the pilot's permission. Nova's script can use it now."
+    : `Not accepted${result.error ? `: ${result.error}` : ""}. Do not rely on it. If MetaMask granted it, revoke it below.`;
+  container.append(head);
+  if (!result.checks) return;
+  const table = document.createElement("table");
+  for (const check of result.checks) {
+    const row = table.insertRow();
+    const mark = row.insertCell();
+    mark.textContent = check.ok ? "✓" : "✗";
+    mark.className = check.ok ? "ok" : "bad";
+    row.insertCell().textContent = check.name;
+    const detail = row.insertCell();
+    detail.textContent = check.detail;
+    detail.className = "muted";
+  }
+  container.append(table);
+}
+
+function renderStatus(data) {
+  const table = $("status");
+  table.replaceChildren();
+  const add = (label, value, className) => {
+    const row = table.insertRow();
+    const head = document.createElement("th");
+    head.textContent = label;
+    row.append(head);
+    const cell = row.insertCell();
+    cell.textContent = value;
+    if (className) cell.className = className;
+  };
+  add("Chain read by the server", data.mainnet ? "Arc mainnet" : data.rpc, data.mainnet ? "" : "warn");
+  if (data.account) {
+    add("Test account", `${data.account.address} · ${data.account.usdc} USDC · ${data.account.upgraded ? "upgraded to MetaMask's DeleGator" : "not upgraded"}`);
+  }
+  add("Nova's redeemer (N)", `${data.redeemer.address} · ${data.redeemer.usdc} USDC`);
+  add("Hot wallet (H)", `${data.hot.address} · ${data.hot.usdc} USDC`);
+  if (data.permission) {
+    const permission = data.permission;
+    const blocked = permission.blockers.length > 0;
+    add("Permission", blocked ? `cannot be used: ${permission.blockers.join("; ")}` : "active", blocked ? "bad" : "ok");
+    add("Left this period", permission.available || "not readable yet");
+    add("Expires", permission.expiry ? new Date(permission.expiry * 1000).toLocaleString() : "unknown");
+    add("Permission hash", permission.hash);
+  } else {
+    add("Permission", "none accepted yet");
+  }
+  add("DelegationManager", data.paused ? "paused" : "not paused", data.paused ? "bad" : "");
+}
+
+async function refresh() {
+  const query = state.account ? `?account=${encodeURIComponent(state.account)}` : "";
+  renderStatus(await api(`/api/status${query}`));
+  return "status refreshed";
+}
+
+async function newRequest() {
+  state.request = await api("/api/request", {});
+  renderRequest();
+  return `request ${state.request.id}, from ${new Date(state.request.startTime * 1000).toISOString()}`;
+}
+
+async function sendFromAccount(to, data) {
+  return wallet().request({ method: "eth_sendTransaction", params: [{ from: state.account, to, data, value: "0x0" }] });
+}
+
+$("connect").onclick = () => act("connect", async () => {
+  const accounts = await wallet().request({ method: "eth_requestAccounts" });
+  setAccount(accounts[0]);
+  await readChain();
+  await refresh();
+  return accounts[0];
+});
+
+$("switch").onclick = () => act("switch to Arc", async () => {
+  try {
+    await wallet().request({ method: "wallet_switchEthereumChain", params: [{ chainId: ARC }] });
+  } catch (error) {
+    const code = error && (error.code ?? (error.data && error.data.originalError && error.data.originalError.code));
+    if (code !== 4902) throw error;
+    await wallet().request({ method: "wallet_addEthereumChain", params: [state.config.chain] });
+  }
+  await readChain();
+  return state.chainId;
+});
+
+$("capabilities").onclick = () => act("wallet_getCapabilities", async () => {
+  if (!state.account) throw new Error("Connect the test account first.");
+  return wallet().request({ method: "wallet_getCapabilities", params: [state.account, [ARC]] });
+});
+
+$("new-request").onclick = () => act("new request", newRequest);
+
+$("grant").onclick = () => act("wallet_requestExecutionPermissions", async () => {
+  guard();
+  $("grant-result").replaceChildren();
+  const params = state.request.params.map((permission) => ({ ...permission, from: state.account }));
+  const response = await wallet().request({ method: "wallet_requestExecutionPermissions", params });
+  log("MetaMask answered", response);
+  const result = await api("/api/grant", { requestId: state.request.id, account: state.account, response });
+  renderChecks(result);
+  await refresh();
+  return result.ok ? `accepted, permission ${result.hash}` : "not accepted";
+});
+
+$("refresh").onclick = () => act("status", refresh);
+
+$("revoke").onclick = () => act("revoke (disableDelegation)", async () => {
+  guard();
+  const tx = await api("/api/revoke-tx");
+  if (!same(tx.from, state.account)) throw new Error(`The permission belongs to ${tx.from}. Switch MetaMask to that account.`);
+  const hash = await sendFromAccount(tx.to, tx.data);
+  $("revoke-result").textContent = `Sent ${hash}. Refresh the status in a few seconds.`;
+  setTimeout(() => act("status", refresh), 4000);
+  return hash;
+});
+
+$("revoke-all").onclick = () => act("revoke all (incrementNonce)", async () => {
+  guard();
+  if (!window.confirm("This ends every permission this account granted through MetaMask on Arc, not only Nova's. Continue?")) return "cancelled";
+  const hash = await sendFromAccount(state.config.revokeAll.to, state.config.revokeAll.data);
+  $("revoke-result").textContent = `Sent ${hash}. Refresh the status in a few seconds.`;
+  setTimeout(() => act("status", refresh), 4000);
+  return hash;
+});
+
+(async function start() {
+  try {
+    state.config = await api("/api/config");
+    $("redeemer").textContent = state.config.redeemer;
+    $("hot").textContent = state.config.hot;
+    if (!state.config.mainnet) {
+      $("network-banner").hidden = false;
+      $("network-banner").textContent = `The server reads ${state.config.rpc}, not Arc mainnet. This is a test run.`;
+    }
+    log("ready", await newRequest());
+    if (window.ethereum) {
+      if (typeof window.ethereum.on === "function") {
+        window.ethereum.on("accountsChanged", (accounts) => { setAccount(accounts[0]); act("status", refresh); });
+        window.ethereum.on("chainChanged", () => act("chain", async () => { await readChain(); return state.chainId; }));
+      }
+      const accounts = await window.ethereum.request({ method: "eth_accounts" });
+      if (accounts[0]) {
+        setAccount(accounts[0]);
+        await readChain();
+      }
+    } else {
+      log("No wallet in this browser");
+    }
+    await refresh();
+  } catch (error) {
+    log("start failed", (error && error.message) || String(error));
+  }
+})();
+</script>
+</body>
+</html>

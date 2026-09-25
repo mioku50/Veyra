@@ -182,7 +182,9 @@
     "nova-substance:test": "node --experimental-transform-types --no-warnings scripts/nova-substance-tests.mts",
     "nova-tools:test": "node --experimental-transform-types --no-warnings scripts/nova-tools-tests.mts",
     "market-discovery:test": "node --experimental-transform-types --no-warnings scripts/market-discovery-tests.mts",
-    "arc:market": "node --experimental-transform-types --no-warnings scripts/arc-market-report.mts"
+    "arc:market": "node --experimental-transform-types --no-warnings scripts/arc-market-report.mts",
+    "arc:c-pilot": "node --experimental-transform-types --no-warnings scripts/arc-c-pilot/pilot.mts",
+    "arc:c-pilot:test": "node --experimental-transform-types --no-warnings scripts/arc-c-pilot/pilot-tests.mts"
   },
   "dependencies": {
     "@circle-fin/adapter-viem-v2": "^1.14.0",
