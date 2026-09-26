@@ -184,13 +184,25 @@ else. Nothing was signed or paid.
   - the brief's catalogue read;
   - Nova's proposal for the Fuci card.
 
-## Production, in order
+## Production
 
-1. **Apply the migration.** `20260926100000_arc_registry_snapshots` is
-   additive and is the only migration production has not recorded. It is
-   applied with `npm run db:migrate`.
-2. **Then deploy.** Deployed first, the code would find no table, and every
-   brief would list the ERC-8004 registry on Arc as a source it could not
-   read.
-3. **Then the first snapshot.** Either the daily job at 02:43 UTC, or
-   `npm run --silent arc:registry -- --save` straight away.
+Done in this order on 26 September:
+
+1. **The migration.** The owner applied
+   `20260926100000_arc_registry_snapshots` with `npm run db:migrate`: one
+   applied, 73 already recorded. It went first because code deployed without
+   the table would list the ERC-8004 registry on Arc, in every brief, as a
+   source it could not read.
+2. **The deploy**, commit `dc2a77f`. The release gate passed on GitHub, and
+   production answered as expected:
+   - the home page, 200;
+   - the job's route, 404 without the cron secret, answered by the route
+     itself;
+   - Vercel lists the job at 02:43 UTC, with the three it already ran.
+3. **The first snapshot: not taken yet.** Until it is, the brief lists the
+   registry among the sources it could not read. It comes from one of:
+   - the daily job;
+   - `vercel crons run /api/internal/discovery/arc-registry`, which runs the
+     deployed job now;
+   - `npm run --silent arc:registry -- --save`, the same read from a local
+     checkout.
