@@ -33,7 +33,7 @@ export function veyraRegistrationFile(agentId: number | null = VEYRA_ARC_AGENT_I
     name: "Veyra",
     description: [
       "Veyra is a trust and policy layer between an AI agent's intent and a USDC payment.",
-      "Before a paid call it checks the seller, including whether the seller's ERC-8004 identity names the endpoint back.",
+      "Before a paid call it checks the seller, including whether the seller's ERC-8004 identity declares the endpoint being paid.",
       "It prices the exact request, then decides whether to pay, whom, and how much.",
       "The person who owns the agent approves and signs every payment. Veyra spends nothing on its own.",
       "What Veyra records about a seller is Veyra's own claim, not independent truth.",
