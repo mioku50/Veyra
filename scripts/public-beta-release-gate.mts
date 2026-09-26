@@ -75,7 +75,18 @@ runStep("Migration Versions Are Unique", () => {
   }
 });
 
-// 2b. The published Trust Gate is the one the code calls
+// 2b. Nothing a migration creates is left open to the Data API's client roles
+runStep("Migrations Leave No Table Or Definer Function Open", () => {
+  /* Supabase gives anon and authenticated every right on a new public table
+     and function. A table stays reachable with the publishable key until
+     row-level security is on, and a SECURITY DEFINER function until it is
+     revoked from PUBLIC, anon and authenticated. Five tables and eight such
+     functions, among them the decisions a payment is bound to, stayed open
+     for up to six weeks because each migration had to remember this. */
+  execSync("npm run migration-access:test", { cwd: root, stdio: "inherit" });
+});
+
+// 2c. The published Trust Gate is the one the code calls
 runStep("Documented Trust Gate Matches Deployed Default", () => {
   /* docs/contracts.md published 0x1cD66BCd... as canonical for as long as the
      executor hardcoded it as a fallback, while production ran a different gate
