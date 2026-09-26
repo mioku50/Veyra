@@ -199,10 +199,22 @@ Done in this order on 26 September:
    - the job's route, 404 without the cron secret, answered by the route
      itself;
    - Vercel lists the job at 02:43 UTC, with the three it already ran.
-3. **The first snapshot: not taken yet.** Until it is, the brief lists the
-   registry among the sources it could not read. It comes from one of:
-   - the daily job;
-   - `vercel crons run /api/internal/discovery/arc-registry`, which runs the
-     deployed job now;
-   - `npm run --silent arc:registry -- --save`, the same read from a local
-     checkout.
+3. **The first snapshot**, at 16:09 UTC. The owner ran the deployed job with
+   `vercel crons run /api/internal/discovery/arc-registry`. The read took 20
+   seconds in production and was complete:
+   - 294 identities: 218 registration files read, 76 unreadable, 15 declare
+     x402;
+   - the same 68 offers from the same three sellers. 67 were confirmed by
+     their endpoint's 402, and one could not be.
+
+   The brief's catalogue step was then run locally against production's
+   snapshot, reading only:
+   - no source was listed as unread;
+   - the Arc interest found Fuci's agent (#193, $0.04 on Arc).
+
+   One of the first local reads of the table failed on the network. A failed
+   read is not retried: that refresh lists the registry as unread, and the next
+   read tries again.
+
+The next brief in production is the first to use the snapshot. It comes from
+the scheduler, or from the owner's "Look again" on `/nova`.
