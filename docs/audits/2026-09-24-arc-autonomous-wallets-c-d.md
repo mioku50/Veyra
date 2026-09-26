@@ -296,6 +296,8 @@ owner's wallet. It costs about $0.002.
    - where Nova's two keys live;
    - a test cap, such as $0.10 a day.
 
-   *(Planned in [the minimal real test](2026-09-24-option-c-pilot-plan.md).)*
+   *(Planned in [the minimal real test](2026-09-24-option-c-pilot-plan.md).
+   Its first stage failed in MetaMask on 26 September, and autonomy is frozen:
+   see [autonomy frozen](2026-09-26-autonomy-frozen.md).)*
 3. **Decide on bounded custody.** The owner's decision comes before either
    route reaches other users.

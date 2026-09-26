@@ -1,6 +1,6 @@
 # Veyra product roadmap
 
-**Updated:** 2026-09-23  
+**Updated:** 2026-09-26  
 **Product:** Nova, a personal agent that works toward an owner's goals; Veyra, its deterministic trust and economic governor.  
 **North star:** The owner regularly receives useful, source-grounded work. Payments and onchain history support that work; neither is the product's purpose.
 
@@ -18,13 +18,33 @@ This roadmap supersedes the original sequencing of Daily Product → Paid Invest
 | B — Owner-approved research | Implemented | Nova can propose an x402 purchase; Veyra checks terms and the owner signs. Recorded payment/delivery evidence must not be confused with answer quality. |
 | C — Arc Testnet identity and history | Implemented on testnet | Earned ERC-8004 identity, Veyra attestations and outcome-derived standing exist. An Arc record is a public, tamper-evident **Veyra claim**, not an independent truth oracle. Product ownership still follows the recovery credential, not an ERC-8004 token transfer alone. |
 | Execution security convergence | Internally hardened | Audit findings F1–F9 were addressed in the application; this is not an independent third-party audit or proof of every production configuration. |
-| D0 — Shadow Autonomy | Running; calibration not accepted | PREVIEW v2 evaluates live proposals and signed limits without creating payment authorizations. No automatic mandate renewal or promotion to AUTOPILOT. |
+| D0 — Shadow Autonomy | Closed 2026-09-22; frozen with autonomy 2026-09-26 | The calibration was closed as insufficient for funding. Since the freeze, no shadow-autonomy limits can be signed and the scheduled rehearsal does not run. |
 | **V — Nova Product Value V1** | **Technical first slice implemented; owner-value acceptance open (CURRENT PRIORITY)** | Goal-driven public-source research has shipped. Whether it produces useful work consistently remains to be shown with real owner feedback. |
 | Arc first | Direction set 2026-09-23; Arc mainnet in the payment tables 2026-09-24 | Arc mainnet has a live x402 market: 482 offers in Circle's own catalogue, and more found through the Bazaar and ERC-8004. The owner's own signed purchases work on Arc, and Nova's brief reads Arc first. The first one settled on 2026-09-24: Exa search, $0.007, from the owner's browser wallet. Nova's mandate still names Base. Base stays as an additional network. |
-| D1 — Operational wallet | Research/test design only | The signer's place in the existing payment flow and the check matrix are written down. No production wallet signer, funded Nova wallet, or wallet-enforced autonomy has passed acceptance. |
-| D2 — Bounded live autonomy | Not enabled | Requires fresh AUTOPILOT consent and all D1 gates; PREVIEW cannot be upgraded by an environment flag. |
+| D1 — Operational wallet | **Frozen 2026-09-26** | The signer's place, the check matrix and option C (MetaMask delegation, tested on a fork of Arc) are written down. MetaMask refused to grant the permission on Arc mainnet, and the owner froze autonomous spending. |
+| D2 — Bounded live autonomy | **Frozen 2026-09-26** | The autopilot endpoint and new AUTOPILOT mandates are refused in code, whatever the environment says. |
 | D3 — Nova hires agents | Infrastructure proof only | An ERC-8183 escrow job was demonstrated on Arc Testnet; the owner-facing Nova → agent-hiring workflow is not complete. |
 | Mainnet / broader launch | Preparation only | Existing Nova identity, proofs and contracts are on Arc Testnet; do not describe them as Arc mainnet identity or mainnet revenue. Veyra has no mainnet identity, contracts or paid API: its Trust API sells only on testnets. |
+
+## Autonomy frozen (2026-09-26)
+
+**Decided by the owner.** Nothing spends on its own, for any user. Nova
+proposes, Veyra checks, and the owner approves every payment.
+
+- **What prompted it.** The first stage of option C's real test: MetaMask
+  showed the permission on Arc mainnet and then refused to sign it. Its
+  delegation-contract table has no Arc mainnet.
+- **What is closed.** In code, by `AUTONOMY_FROZEN` rather than a setting:
+  - the autopilot endpoint;
+  - new AUTOPILOT mandates;
+  - new shadow-autonomy limits;
+  - the scheduled shadow pass.
+
+  Nothing was running when it was frozen.
+- **Lifting it.** A reviewed change to the constant and to its test, and the
+  owner's decision.
+
+See [autonomy frozen](audits/2026-09-26-autonomy-frozen.md).
 
 ## V — Nova Product Value (the next product gate)
 
@@ -242,6 +262,25 @@ Steps marked *owner* need the owner's action. *Money* means real USDC.
    `eip155:5042`. Base only under a mandate that names it. Wallet payments
    only (Exa, CRA) until the Gateway checks D6 and D7 pass.
 
+*(2026-09-26: steps 4, 5, 6 and 9 are frozen with autonomy. The owner's order
+from here:*
+
+*a. **Full Arc discovery.** Step 2's remainder: the daily Bazaar snapshot and
+   ERC-8004 offers on cards, then whatever else keeps Arc's market from
+   reaching the owner.*
+
+*b. **Better selection of services.** Gate V item 4's remainder: discovery by
+   what the question needs rather than always a web search, and a free
+   documentation lookup before any paid tool.*
+
+*c. **Veyra's identity and attestations on Arc mainnet.** An ERC-8004 identity
+   from Veyra's own registrant wallet. Contracts only after an external audit.*
+
+*d. **Veyra's own paid service on Arc.** Then the Circle Agent Marketplace
+   intake, and the Arc team for Portal (step 7).*
+
+*e. **Then D3,** with the owner confirming every hire.)*
+
 ## D0 — Close shadow calibration honestly
 
 **Closed as insufficient for funding. The mandate expired 2026-09-22 12:49:49 UTC and the capture required at expiry is complete: [D0 PREVIEW closure](audits/2026-09-21-d0-preview-closure.md).** Final figures are unchanged from the pre-expiry snapshot — 13 decisions, 4 WOULD_ALLOW, 0.030000 USDC hypothetical, **0 of 13 carrying owner feedback**, no duplicates, no integrity violations, `liveAutonomyApproval: NOT_GRANTED`. No budget recommendation is supported, and none is made. One required item could not be answered: the per-tick `unpriced` reasons are emitted to the scheduler log and never persisted, so an epoch-wide figure is unavailable after the fact. Persisting the tick outcome is the fix and belongs to item 3 below.
@@ -255,6 +294,10 @@ The active PREVIEW epoch predates this product-value change. Its original snapsh
 
 ## D1 — Wallet boundary, **only after V's exit gate**
 
+*(Frozen on 2026-09-26 with all autonomous spending. See
+[autonomy frozen](audits/2026-09-26-autonomy-frozen.md). What follows is the
+record.)*
+
 Before writing a production signer adapter, compare Circle Agent Wallet, Developer-Controlled Wallets and enforceable smart-account/session permissions for a **single isolated test wallet**. *(Compared on 2026-09-23 without money, from Circle's documentation and the Circle CLI's own source: see [which wallet Nova would pay from](audits/2026-09-23-d1-wallet-comparison.md). Recommendation: a Circle Agent Wallet on mainnet, used only to sign the exact authorization Veyra approved, from a small host the owner controls. It is accepted only after three small mainnet tests, of which the decisive one is whether a permit or an approve can get round the cap.)* *(2026-09-23, later:* [where the signer plugs in](audits/2026-09-23-d1-operational-signer.md)*. The signer takes the owner's browser wallet's place between `quoteX402Call` and `settleX402Call`. It does not go through the legacy Arc Testnet executor or `circle services pay`. Six Veyra changes are listed, starting with the payer bound from the mandate. The full check matrix is written: set-up, signature compatibility, limits, bypasses, revocation, repeated execution, real sellers and separation. None of it has run. The chain is Arc first, and the seller test is Exa search on Arc, which takes a wallet payment there.)* Circle's documented controls do not prove that every arbitrary typed-data/contract-call path Veyra needs is actually constrained. A Veyra server-side policy alone limits Veyra's code, not a raw wallet key.
 
 **Acceptance:** pin the exact approved endpoint/method/body hash/payee/asset/network/amount/expiry across wallet integration; prove per-action and concurrent budget ceilings, Gateway deposit-vs-per-purchase accounting, cross-chain scope, owner-calendar-day vs rolling-window differences, signer/process isolation, recovery from lost responses, and independent owner revocation of **new** authorizations. Test direct EIP-3009, approvals, permit and arbitrary contract calls as potential bypasses. Preserve already-issued authorizations until settled/expired/provably cancelled. Record actual observed outcomes, not just wallet error messages.
@@ -263,9 +306,15 @@ If permissions cannot be enforced at wallet level, state the narrower guarantee 
 
 ## D2 — One real bounded-autonomy pilot
 
+*(Frozen on 2026-09-26.)*
+
 Only after V and D1 pass: owner explicitly funds a small isolated operational wallet and signs a **new AUTOPILOT mandate** naming that wallet. Reuse the hardened Veyra execution boundary and its atomic budget/reconciliation machinery; do not create a second executor for Nova. Run one narrow research/data purchase; observe actual balance change, payment evidence, delivery result, receipt, budget accounting, revocation and crash recovery. `PREVIEW` signatures must always fail at the live executor. No unlimited approvals, no automatic permission expansion, no DeFi/swaps/arbitrary transfers in this pilot.
 
 ## D3 — Nova in the agent economy
+
+*(2026-09-26: next after Arc first. Nova proposes one ERC-8004 agent for one
+task at one price, and the owner confirms every hire. This needs no
+autonomy.)*
 
 Expose an owner-understandable proposal to hire a specific ERC-8004 agent for a specific result and price. Revalidate counterparty evidence, have the owner approve funding, execute an ERC-8183 job through its existing escrow/evaluator lifecycle, report a truthful outcome and build standing from verified history. The current testnet escrow proof is infrastructure evidence, **not** proof that this end-to-end Nova UX exists. Agent earnings, job acceptance and independent service provision come only after genuine counterparties and settled work exist.
 
@@ -287,4 +336,4 @@ Expose an owner-understandable proposal to hire a specific ERC-8004 agent for a 
 7. The owner chooses if/when to fund autonomy. Pausing and revocation must have truthful, tested semantics independent of the Nova app where possible.
 8. Do not fake activity, reputation, earned income, freshness, payment confirmation, or a claim that a model has proven a result useful.
 
-**Next decision:** review the first real, goal-driven briefs and record owner feedback. Do not start funded autonomy just because the new feature is deployed or the old PREVIEW mandate reaches its expiry date.
+**Next decision:** review the first real, goal-driven briefs and record owner feedback. Do not start funded autonomy just because the new feature is deployed or the old PREVIEW mandate reaches its expiry date. *(2026-09-26: autonomy is frozen. The work goes to Arc first, items a–d above, then to D3. The owner's review of briefs continues alongside.)*

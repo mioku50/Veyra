@@ -87,6 +87,8 @@ export const AUTONOMY_BLOCKS = [
   "mandate_revoked",
   "mandate_timezone_unusable",
   "mandate_sets_terms_shadow_cannot_check",
+  /* 2026-09-26: autonomy frozen for everybody; see lib/execution/autonomy-freeze.ts. */
+  "autonomy_frozen",
 ] as const;
 export type AutonomyBlock = (typeof AUTONOMY_BLOCKS)[number];
 

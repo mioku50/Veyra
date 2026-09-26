@@ -28,6 +28,7 @@ import { observeRepositories, observeX402Catalog, type SourceObservation } from 
 import { settlementNetworkOf } from "./network.ts";
 import { standingFrom } from "./standing.ts";
 import { budgetPeriodFor, mandateReadiness, shadowSummaryFrom } from "./autonomy.ts";
+import { AUTONOMY_FROZEN } from "../execution/autonomy-freeze.ts";
 import { autonomyMandateFor, shadowDecisionsFor } from "./autonomy-db.ts";
 import { isPreviewMandate } from "./autonomy-mandate.ts";
 import type {
@@ -1237,6 +1238,7 @@ async function shadowViewFor(
   agent: Record<string, any>,
   now: Date,
 ): Promise<NovaShadowView> {
+  if (AUTONOMY_FROZEN) return { ...offShadow(), blocked: "autonomy_frozen" };
   const mandate = await autonomyMandateFor({
     ownerWallet: agent.owner_wallet ?? null,
     agentPublicId: agent.public_id,

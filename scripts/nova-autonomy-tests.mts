@@ -13,7 +13,7 @@ import {
   VEYRA_EXECUTION_EIP712_DOMAIN,
 } from "../lib/execution/canonical.ts";
 import {
-  asCaip2, AUTONOMY_CHECKS, budgetPeriodFor, consumesAttempt, evaluateShadow, isValidTimezone,
+  asCaip2, AUTONOMY_BLOCKS, AUTONOMY_CHECKS, budgetPeriodFor, consumesAttempt, evaluateShadow, isValidTimezone,
   mandateReadiness, shadowSummaryFrom, spendOf,
   type ShadowRecord, type VerifiedMandate,
 } from "../lib/nova/autonomy.ts";
@@ -28,6 +28,9 @@ import {
   PREVIEW_MANDATE,
 } from "../lib/nova/autonomy-mandate.ts";
 import { isPolicyCapability } from "../lib/nova/capability.ts";
+import { AUTONOMY_FROZEN } from "../lib/execution/autonomy-freeze.ts";
+import { EXPLAINED_BLOCKS } from "../lib/nova/presentation.ts";
+import { runShadowPass } from "../lib/nova/shadow-run.ts";
 import {
   CALIBRATION_EPOCHS, currentEpoch, epochFor, splitByCalibration,
 } from "../lib/nova/calibration.ts";
@@ -732,10 +735,27 @@ const yesterday = { ...period, start: "2026-09-12T22:00:00.000Z", end: "2026-09-
 const today = shadowSummaryFrom([record(), record({ period: yesterday })], { period });
 assert.equal(today.decisions, 1, "a budget day is the unit the morning reports");
 
+/* ---- autonomy frozen, 2026-09-26 ----
+   The owner froze autonomous spending for every user. The scheduled rehearsal
+   stops before it reads a mandate, so it costs nothing and decides nothing;
+   the reason has words; and lifting the freeze means changing this test too. */
+assert.equal(AUTONOMY_FROZEN, true, "autonomy is frozen until a reviewed change lifts it");
+assert.ok((AUTONOMY_BLOCKS as readonly string[]).includes("autonomy_frozen"));
+assert.ok(EXPLAINED_BLOCKS.has("autonomy_frozen"), "the owner is told why nothing can be signed");
+{
+  const frozenPass = await runShadowPass({
+    agent: { agentId: "agent-under-freeze", publicId: "nva_frozen", name: "Nova", interests: [], ownerWallet: null },
+    now: new Date("2026-09-26T08:00:00Z"),
+  });
+  assert.equal(frozenPass.ran, false, "a frozen rehearsal does not run");
+  assert.equal(frozenPass.blocked, "autonomy_frozen");
+  assert.equal(frozenPass.decided, 0);
+}
+
 console.log("nova autonomy: v1 frozen at its golden hash, budget days on the owner's clock "
   + "through both DST turns, every check reported on every decision, one predicate deciding "
   + "what is executable on both sides of the card, a threshold nobody set reported as one "
   + "nobody set, the terms an owner signs pinned where a diff can see them, a calibration "
   + "run bounded by the signature it was made under, "
   + "and a morning that counts what was withheld as well as what would have been "
-  + "spent");
+  + "spent, and a freeze that stops the rehearsal before it reads anything");

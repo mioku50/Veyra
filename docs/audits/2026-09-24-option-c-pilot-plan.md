@@ -1,5 +1,12 @@
 # Option C: the minimal real test on Arc mainnet (plan, not run)
 
+> **Stopped at stage 1 on 26 September, and frozen.** In the owner's
+> MetaMask, T3 passed: the dialog showed the pilot's terms. T4 failed: Grant
+> was refused with "External signature requests cannot sign delegations for
+> internal accounts". MetaMask's delegation-contract table has no Arc mainnet.
+> Nothing was sent, and the test account was not upgraded. The owner then froze
+> autonomous spending. See [autonomy frozen](2026-09-26-autonomy-frozen.md).
+
 This plan proves on Arc mainnet, with real USDC and MetaMask's real screens,
 what [the fork tests](2026-09-24-option-c-architecture.md) showed:
 - the grant;

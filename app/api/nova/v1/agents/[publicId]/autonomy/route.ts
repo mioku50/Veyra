@@ -15,6 +15,7 @@ import {
   type PreviewMandateTerms,
 } from "@/lib/nova/autonomy-mandate";
 import { mandateReadiness } from "@/lib/nova/autonomy";
+import { AUTONOMY_FROZEN, AUTONOMY_FROZEN_MESSAGE } from "@/lib/execution/autonomy-freeze";
 
 export const dynamic = "force-dynamic";
 
@@ -39,6 +40,10 @@ type RouteContext = { params: Promise<{ publicId: string }> };
  */
 export async function POST(request: NextRequest, { params }: RouteContext) {
   try {
+    /* No limits are offered or saved while autonomy is frozen: signing a
+       rehearsal that never runs would be asking for a signature for nothing.
+       See lib/execution/autonomy-freeze.ts. */
+    if (AUTONOMY_FROZEN) throw new NovaError(AUTONOMY_FROZEN_MESSAGE, "autonomy_frozen", 409);
     const { publicId } = await params;
     const body = await request.json().catch(() => ({})) as {
       wallet?: unknown;
@@ -88,6 +93,10 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
 
 export async function PUT(request: NextRequest, { params }: RouteContext) {
   try {
+    /* No limits are offered or saved while autonomy is frozen: signing a
+       rehearsal that never runs would be asking for a signature for nothing.
+       See lib/execution/autonomy-freeze.ts. */
+    if (AUTONOMY_FROZEN) throw new NovaError(AUTONOMY_FROZEN_MESSAGE, "autonomy_frozen", 409);
     const { publicId } = await params;
     const body = await request.json().catch(() => ({})) as {
       terms?: PreviewMandateTerms;

@@ -371,6 +371,8 @@ const BLOCK_REASON: Record<string, string> = {
     "The limits you signed name a timezone this server cannot read, so there is no budget day to measure.",
   mandate_sets_terms_shadow_cannot_check:
     "The limits you signed include a confidence floor or a verified-identity requirement, and neither is something a decision here can check yet.",
+  autonomy_frozen:
+    "Autonomy is frozen: nothing spends on its own or rehearses spending, and no limits can be signed.",
 };
 
 /** Block reasons that have been given words, asserted against AUTONOMY_BLOCKS

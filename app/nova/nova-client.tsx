@@ -1788,7 +1788,7 @@ export function NovaClient({ view = "today" }: { view?: NovaView } = {}) {
       ) : null}
 
       {view === "agent" ? (
-        <details className="mt-4 rounded-xl border p-5"><summary className="cursor-pointer font-medium">Autonomy · mode and spending limits</summary><AutonomyPanel
+        <details className="mt-4 rounded-xl border p-5"><summary className="cursor-pointer font-medium">{brief.shadow.blocked === "autonomy_frozen" ? "Autonomy · frozen" : "Autonomy · mode and spending limits"}</summary><AutonomyPanel
           brief={brief}
           onSign={() => void signPreviewMandate()}
           signing={signingMandate}
@@ -2117,6 +2117,24 @@ function AutonomyPanel({
   const shadow = brief.shadow;
   const limits = shadow.limits;
   const days = PREVIEW_MANDATE.daysValid;
+
+  /* Frozen for everybody (lib/execution/autonomy-freeze.ts): nothing is offered
+     for signature, and the panel says why rather than showing limits that no
+     signature could put in force. */
+  if (shadow.blocked === "autonomy_frozen") {
+    return (
+      <Panel className="mt-4">
+        <Label>Autonomy · frozen</Label>
+        <p className="mt-3 max-w-xl text-sm leading-relaxed text-muted-foreground">
+          <Said claim={autonomyStateClaim(shadow, brief.agent.name)} />
+        </p>
+        <p className="mt-3 max-w-xl text-sm leading-relaxed text-muted-foreground">
+          {brief.agent.name} proposes a purchase, {BRAND.name} checks it, and you approve it, every
+          time. Limits signed before stay in the record and grant nothing.
+        </p>
+      </Panel>
+    );
+  }
 
   return (
     <Panel className="mt-4">

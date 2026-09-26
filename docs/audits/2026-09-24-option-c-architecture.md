@@ -63,6 +63,12 @@ The raw results are in [the evidence file](2026-09-24-option-c-evidence.json).
   Nobody has yet seen it in the real UI. That needs a MetaMask wallet:
   either the owner's own, or a test profile in which the agent would accept
   MetaMask's terms. That is the owner's decision.
+
+  *(Seen on 26 September, and it does not work. MetaMask showed the dialog
+  with the right terms, then refused to sign: "External signature requests
+  cannot sign delegations for internal accounts." Its delegation-contract
+  table has no Arc mainnet. Autonomy is now frozen. See
+  [autonomy frozen](2026-09-26-autonomy-frozen.md).)*
 - **The fallback works too.** A separate HybridDeleGator smart account,
   deployed through MetaMask's factory, enforced the same limits. Its owner
   revoked and withdrew through UserOps that they submitted themselves.
@@ -247,6 +253,12 @@ all read on 24 September:
 **Not yet seen in the real UI.** Creating even a throwaway MetaMask wallet
 means accepting MetaMask's terms. That was left to the owner. The pilot's
 first step is exactly this check, with about $0.02.
+
+*(Corrected on 26 September. The owner ran that step, and MetaMask refused to
+sign. The evidence above came from MetaMask's feature flags and its permission
+snap. The decoder that decides whether MetaMask signs uses another table, and
+that table has no Arc mainnet. See
+[autonomy frozen](2026-09-26-autonomy-frozen.md).)*
 
 **The fallback: for wallets without 7702, or accounts MetaMask cannot
 upgrade.** The user's EOA deploys a HybridDeleGator that it owns, and moves

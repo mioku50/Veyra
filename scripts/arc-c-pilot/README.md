@@ -1,5 +1,11 @@
 # Option C pilot tools
 
+> **Frozen on 26 September.** In the owner's MetaMask, the permission dialog
+> appeared on Arc mainnet, but Grant was refused. MetaMask's
+> delegation-contract table has no Arc mainnet. Autonomous spending is frozen
+> for every user. These tools are kept as the record, not for use. See
+> [autonomy frozen](../../docs/audits/2026-09-26-autonomy-frozen.md).
+
 These tools run the minimal real test of option C on Arc mainnet:
 
 1. MetaMask grants Nova a permission from a test account: 0.50 USDC a day,

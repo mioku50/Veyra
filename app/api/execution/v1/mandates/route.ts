@@ -15,6 +15,7 @@ import {
   VEYRA_EXECUTION_EIP712_DOMAIN,
 } from "@/lib/execution/canonical";
 import { isValidTimezone } from "@/lib/nova/autonomy";
+import { AUTONOMY_FROZEN, AUTONOMY_FROZEN_CODE, AUTONOMY_FROZEN_MESSAGE } from "@/lib/execution/autonomy-freeze";
 import { listExecutionMandatesByOwner } from "@/lib/execution/db";
 import { sanitizeMandate } from "@/lib/execution/types";
 
@@ -67,6 +68,11 @@ export async function POST(req: Request) {
     }
     if (!["PREVIEW", "PREPARE", "AUTOPILOT"].includes(mode)) {
       return NextResponse.json({ error: "Invalid mode. Allowed: PREVIEW, PREPARE, AUTOPILOT" }, { status: 400 });
+    }
+    /* A mandate is offered for signature here, so a frozen mode is refused
+       before anybody is asked to sign something that can never be used. */
+    if (mode === "AUTOPILOT" && AUTONOMY_FROZEN) {
+      return NextResponse.json({ error: AUTONOMY_FROZEN_MESSAGE, code: AUTONOMY_FROZEN_CODE }, { status: 403 });
     }
     if (
       typeof maxPerTransactionUsdc !== "number" ||

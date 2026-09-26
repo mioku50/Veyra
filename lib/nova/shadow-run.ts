@@ -10,6 +10,7 @@ import {
   asCaip2, budgetPeriodFor, evaluateShadow, mandateReadiness, consumesAttempt, spendOf,
   type AutonomyBlock, type AutonomyUsage, type ShadowDecision,
 } from "./autonomy.ts";
+import { AUTONOMY_FROZEN } from "../execution/autonomy-freeze.ts";
 import { alreadyDecided, autonomyMandateFor, recordShadowDecision, usageFor } from "./autonomy-db.ts";
 import type { NovaSignal } from "./types.ts";
 
@@ -135,6 +136,9 @@ export async function runShadowPass(input: {
    */
   deadlineMs?: number;
 }): Promise<ShadowPass> {
+  /* Before the mandate is read: a frozen rehearsal costs no discovery, no
+     quote and no model call. See lib/execution/autonomy-freeze.ts. */
+  if (AUTONOMY_FROZEN) return { ...EMPTY, blocked: "autonomy_frozen" };
   const now = input.now ?? new Date();
   const mandate = await autonomyMandateFor({
     ownerWallet: input.agent.ownerWallet,

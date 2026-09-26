@@ -7,10 +7,17 @@ import { NextResponse } from "next/server";
 import { assertMandateAccess, authenticateExecutionCaller } from "@/lib/execution/auth";
 import { getExecutionMandate } from "@/lib/execution/db";
 import { ExecutionError, runAutopilotExecution } from "@/lib/execution/executor";
+import { AUTONOMY_FROZEN, AUTONOMY_FROZEN_CODE, AUTONOMY_FROZEN_MESSAGE } from "@/lib/execution/autonomy-freeze";
 
 export const dynamic = "force-dynamic";
 
 export async function POST(req: Request) {
+  /* Frozen for every caller, whatever VEYRA_AUTOPILOT_ENABLED says: see
+     lib/execution/autonomy-freeze.ts. Answered before authentication, since the
+     answer is the same for everybody. */
+  if (AUTONOMY_FROZEN) {
+    return NextResponse.json({ error: AUTONOMY_FROZEN_MESSAGE, code: AUTONOMY_FROZEN_CODE }, { status: 503 });
+  }
   try {
     const caller = await authenticateExecutionCaller(req);
     const body = await req.json();
