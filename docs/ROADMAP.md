@@ -306,6 +306,16 @@ from here:*
 
 *c. **Veyra's identity and attestations on Arc mainnet.** An ERC-8004 identity
    from Veyra's own registrant wallet. Contracts only after an external audit.*
+   *(2026-09-26: prepared. The owner chose a developer-controlled Circle wallet
+   as the registrant.*
+   - *The registration file is served at `/.well-known/agent-registration.json`.
+     It says that Veyra sells nothing on Arc mainnet yet.*
+   - *The owner registers with `npm run veyra-identity`, in three steps:
+     wallet, check, register.*
+   - *A dry call would mint agentId 295, for about 0.004 USDC of gas.*
+   - *Attestations follow verified purchases on Arc, from a separate wallet.*
+
+   *See [Veyra's identity on Arc mainnet](audits/2026-09-26-veyra-arc-identity.md).)*
 
 *d. **Veyra's own paid service on Arc.** Then the Circle Agent Marketplace
    intake, and the Arc team for Portal (step 7).*

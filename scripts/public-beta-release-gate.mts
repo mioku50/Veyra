@@ -246,6 +246,10 @@ runStep("Nova Questions (documentation first, then a tool on Arc)", () => {
   execSync("npm run nova-ask:test", { cwd: root, stdio: "inherit" });
 });
 
+runStep("Veyra's ERC-8004 Identity on Arc Mainnet (file and registrant checks)", () => {
+  execSync("npm run veyra-identity:test", { cwd: root, stdio: "inherit" });
+});
+
 runStep("Nova Calibration Report", () => {
   execSync("npm run nova-calibration:test", { cwd: root, stdio: "inherit" });
 });
