@@ -231,6 +231,10 @@ runStep("Nova Tools", () => {
   execSync("npm run nova-tools:test", { cwd: root, stdio: "inherit" });
 });
 
+runStep("Nova Questions (documentation first, then a tool on Arc)", () => {
+  execSync("npm run nova-ask:test", { cwd: root, stdio: "inherit" });
+});
+
 runStep("Nova Calibration Report", () => {
   execSync("npm run nova-calibration:test", { cwd: root, stdio: "inherit" });
 });

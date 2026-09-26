@@ -27,6 +27,7 @@ import { categoryPhraseFor, dismissedTopicFrom, rankedByReading, scoreFloorFor, 
 import { observeRepositories, observeX402Catalog, type SourceObservation } from "./sources.ts";
 import { settlementNetworkOf } from "./network.ts";
 import { standingFrom } from "./standing.ts";
+import { QUESTION_COLUMNS, questionFromRow } from "./ask.ts";
 import { budgetPeriodFor, mandateReadiness, shadowSummaryFrom } from "./autonomy.ts";
 import { AUTONOMY_FROZEN } from "../execution/autonomy-freeze.ts";
 import { autonomyMandateFor, shadowDecisionsFor } from "./autonomy-db.ts";
@@ -1069,7 +1070,7 @@ export async function loadBrief(input: {
   const visit = visitBoundary({ lastOpenedAt: agent.last_opened_at, seenThrough: agent.seen_through, now: openedAt });
   const awaySince = visit.seenThrough ?? agent.last_opened_at ?? agent.created_at;
 
-  const [signalResult, refreshResult, awayResult, memoryResult, researchResult, projectContext] = await Promise.all([
+  const [signalResult, refreshResult, awayResult, memoryResult, researchResult, projectContext, questionResult] = await Promise.all([
     db().from("nova_signals")
       .select(SIGNAL_COLUMNS)
       .eq("agent_id", agent.agent_id)
@@ -1107,7 +1108,7 @@ export async function loadBrief(input: {
        module for the owner check. One narrow query is a smaller price than an
        import cycle between the two files that write the same agent's rows. */
     db().from("nova_research")
-      .select("research_id, signal_id, status, question, proposal, terms, execution_public_id, paid_usdc, transaction_hash, verification, result, failure, reading, arc_proof, settled_at")
+      .select("research_id, signal_id, question_id, status, question, proposal, terms, execution_public_id, paid_usdc, transaction_hash, verification, result, failure, reading, arc_proof, settled_at")
       .eq("agent_id", agent.agent_id)
       .order("created_at", { ascending: false })
       .limit(60),
@@ -1116,6 +1117,13 @@ export async function loadBrief(input: {
        without the other invites somebody to correct a statement they cannot
        see the effect of. */
     loadProjectContext(agent.agent_id),
+    /* The owner's own questions. Read here for the same reason as the
+       purchases above; a failure costs the list and nothing else. */
+    db().from("nova_questions")
+      .select(QUESTION_COLUMNS)
+      .eq("agent_id", agent.agent_id)
+      .order("created_at", { ascending: false })
+      .limit(8),
   ]);
 
   const signals: NovaSignal[] = ((signalResult.data ?? []) as Array<Record<string, any>>).map((row) => forThePage({
@@ -1153,7 +1161,8 @@ export async function loadBrief(input: {
   const investigations: NovaInvestigation[] = ((researchResult.data ?? []) as Array<Record<string, any>>)
     .map((row) => ({
       researchId: row.research_id,
-      signalId: row.signal_id,
+      signalId: row.signal_id ?? null,
+      questionId: row.question_id ?? null,
       status: row.status,
       question: row.question,
       proposal: row.proposal ?? {},
@@ -1210,6 +1219,7 @@ export async function loadBrief(input: {
     wokeFromDormancy,
     memory,
     investigations,
+    questions: ((questionResult.data ?? []) as Array<Record<string, unknown>>).map(questionFromRow),
     /* From the purchases, not from proxies for them. Counting signals that
        carry an execution id and memory rows that mention one made three
        numbers out of a single fact. */

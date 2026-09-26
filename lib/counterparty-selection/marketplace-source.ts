@@ -181,6 +181,14 @@ export type MarketplaceDiscoveryInput = {
    * See saysItIsAbout. A named counterparty is exempt: it is asked for by id.
    */
   requireWordMatch?: boolean;
+  /**
+   * The order candidates are considered in, before the shortlist is cut. By
+   * default: capability match, then price. A question the owner asked in their
+   * own words is better served by what each listing says about itself, and the
+   * shortlist is what gets probed, so the order has to be decided here rather
+   * than after. Providers are still spread across the shortlist afterwards.
+   */
+  order?: (candidates: MarketplaceCandidate[]) => MarketplaceCandidate[];
 };
 
 export type MarketplaceDiscoveryResult = {
@@ -397,14 +405,19 @@ export function normalizeMarketplaceItem(
  * per-word searches; it has to be a whole word, in the listing's own name,
  * description, tags, path or request fields.
  */
-export function saysItIsAbout(candidate: MarketplaceCandidate, term: string): boolean {
-  const offer = {
+/** What a listing says about itself, in the shape the word matching reads. */
+export function candidateListing(candidate: MarketplaceCandidate) {
+  return {
     resource: candidate.resource,
     provider: candidate.provider.name,
     description: [candidate.description, candidate.provider.description, candidate.provider.category].filter(Boolean).join(" "),
     tags: [...candidate.provider.tags, ...candidate.capabilities],
     inputSchema: candidate.inputSchema,
   };
+}
+
+export function saysItIsAbout(candidate: MarketplaceCandidate, term: string): boolean {
+  const offer = candidateListing(candidate);
   return term.split(/[^a-z0-9]+/i)
     .filter((word) => word.length > 2)
     .some((word) => offerMatchesTerm(offer, word));
@@ -617,12 +630,14 @@ export async function discoverMarketplaceCandidates(
     catalogTotal += 1;
   }
 
-  candidates.sort((left, right) => {
-    const order = { exact: 0, related: 1, generic: 2, none: 3 } as const;
-    return order[left.capabilityMatch] - order[right.capabilityMatch]
-      || left.priceUsdc - right.priceUsdc
-      || left.candidateId.localeCompare(right.candidateId);
-  });
+  const ordered = input.order
+    ? input.order([...candidates])
+    : candidates.sort((left, right) => {
+      const order = { exact: 0, related: 1, generic: 2, none: 3 } as const;
+      return order[left.capabilityMatch] - order[right.capabilityMatch]
+        || left.priceUsdc - right.priceUsdc
+        || left.candidateId.localeCompare(right.candidateId);
+    });
 
   /* A live "web search" discovery returned nine endpoints from one provider at
      an identical price, which filled the shortlist and pushed out a resource
@@ -631,7 +646,7 @@ export async function discoverMarketplaceCandidates(
      as a market. Later entries from the same provider are deferred, never
      dropped, and nothing is promoted above a better match. */
   const shortlist = diversifyByProvider(
-    candidates,
+    ordered,
     (candidate) => candidate.provider.name?.toLowerCase() || candidate.origin,
     MARKETPLACE_DISCOVERY_LIMITS.perProviderInShortlist,
   );

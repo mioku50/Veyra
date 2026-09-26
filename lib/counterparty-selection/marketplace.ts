@@ -580,6 +580,15 @@ export async function selectMarketplaceCounterparty(input: {
    * out.
    */
   registryOffers?: readonly MarketOffer[] | null;
+  /**
+   * Discovery's two options for a question the owner asked in their own
+   * words: keep only listings that say one of the searched words, and order
+   * them by how well they fit the question before the shortlist is cut and
+   * probed. See MarketplaceDiscoveryInput. Neither touches policy: whatever
+   * is probed is still scored, tiered and refused on the same evidence.
+   */
+  requireWordMatch?: boolean;
+  order?: (candidates: MarketplaceCandidate[]) => MarketplaceCandidate[];
 }): Promise<MarketplaceSelection> {
   const request = validateMarketplaceSelectionRequest(input.request);
   const now = input.now ?? new Date();
@@ -608,6 +617,8 @@ export async function selectMarketplaceCounterparty(input: {
       requireCircleGateway: request.requireCircleGateway,
       fetchImpl: input.fetchImpl,
       registryOffers,
+      requireWordMatch: input.requireWordMatch,
+      order: input.order,
     });
   } catch (error) {
     if (error instanceof MarketplaceDiscoveryError) {

@@ -44,6 +44,7 @@ import type { NovaBrief, NovaFeedback, NovaInvestigation, NovaMemory, NovaProjec
 import { NOTE_MAX, NOVA_REASONS, REASON_LABEL, learnedSentence, type NovaLearned, type NovaReason } from "@/lib/nova/verdict";
 import { missUrl, type NovaMiss } from "@/lib/nova/misses";
 import type { NovaResearchProposal } from "@/lib/nova/research";
+import type { NovaDocsAnswer, NovaQuestion } from "@/lib/nova/ask";
 import type { TermsChange } from "@/lib/nova/research-terms";
 import { useArcWallet } from "@/components/wallet/use-arc-wallet";
 import { NoWalletHere } from "@/components/wallet/wallet-app-links";
@@ -201,6 +202,21 @@ const RELEVANCE_CHIP: Record<NovaSignal["relevance"], { label: string; className
   noise: { label: "noise", className: "border-border bg-muted/40 text-muted-foreground" },
 };
 
+/** Where one purchase lives: under a card, or under a question asked directly. */
+type ResearchSubject = { key: string; path: string };
+
+function questionKey(questionId: string): string {
+  return `q:${questionId}`;
+}
+
+function signalSubject(signal: NovaSignal): ResearchSubject {
+  return { key: signal.signalId, path: `signals/${signal.signalId}` };
+}
+
+function questionSubject(questionId: string): ResearchSubject {
+  return { key: questionKey(questionId), path: `questions/${questionId}` };
+}
+
 /** The capability a signal's subject settles under, handed to Veyra's selection
  *  flow so a person is not asked to retype a question Nova already framed. */
 function investigationLink(signal: NovaSignal): string {
@@ -304,6 +320,10 @@ export function NovaClient({ view = "today" }: { view?: NovaView } = {}) {
      against live endpoints, and a person who asks about two things should get
      two answers rather than watch the first one be replaced. */
   const [research, setResearch] = useState<Record<string, ResearchState>>({});
+  /* A question the owner is asking Nova directly, while the documentation is
+     read for it, and why it could not be asked when it could not. */
+  const [asking, setAsking] = useState(false);
+  const [askNote, setAskNote] = useState<string | null>(null);
   /* Editing what the agent watches. Null when nobody is editing, because an
      empty array is a legitimate mid-edit state -- somebody clearing every chip
      before picking new ones -- and the two must not be the same value. */
@@ -359,10 +379,11 @@ export function NovaClient({ view = "today" }: { view?: NovaView } = {}) {
     setResearch((current) => {
       const restored: Record<string, ResearchState> = { ...current };
       for (const entry of payload.investigations ?? []) {
-        if (current[entry.signalId]) continue;
+        const key = entry.signalId ?? (entry.questionId ? questionKey(entry.questionId) : null);
+        if (!key || current[key]) continue;
         const proposal = entry.proposal as unknown as NovaResearchProposal;
         if (!proposal?.provider) continue;
-        restored[entry.signalId] = entry.status === "proposed" || entry.status === "approved"
+        restored[key] = entry.status === "proposed" || entry.status === "approved"
           ? { stage: "ready", researchId: entry.researchId, proposal }
           : { stage: "settled", researchId: entry.researchId, proposal, investigation: entry };
       }
@@ -374,6 +395,11 @@ export function NovaClient({ view = "today" }: { view?: NovaView } = {}) {
       for (const signal of [...payload.worthAttention, ...payload.noise, ...payload.watchlist]) {
         if (restored[signal.signalId] || !signal.refusal) continue;
         restored[signal.signalId] = { stage: "refused", detail: signal.refusal.detail };
+      }
+      for (const question of payload.questions ?? []) {
+        const key = questionKey(question.questionId);
+        if (restored[key] || !question.refusal) continue;
+        restored[key] = { stage: "refused", detail: question.refusal.detail };
       }
       return restored;
     });
@@ -765,6 +791,58 @@ export function NovaClient({ view = "today" }: { view?: NovaView } = {}) {
   };
 
   /**
+   * A question the owner asks Nova directly. The documentation is read for it
+   * first, for nothing; only when that does not answer it is a paid tool on Arc
+   * looked for, and that is priced, never paid, until the owner approves.
+   */
+  const ask = async (text: string): Promise<boolean> => {
+    if (!identity) return false;
+    setAsking(true);
+    setAskNote(null);
+    try {
+      const payload = await call(`/api/nova/v1/agents/${identity.publicId}/questions`, {
+        method: "POST",
+        ownerSecret: identity.ownerSecret,
+        body: JSON.stringify({ question: text }),
+      }) as { ok: boolean; question?: NovaQuestion; detail?: string };
+      if (!payload.ok || !payload.question) {
+        setAskNote(payload.detail ?? "Nova could not take that question.");
+        return false;
+      }
+      const asked = payload.question;
+      setBrief((previous) => previous ? { ...previous, questions: [asked, ...(previous.questions ?? [])] } : previous);
+      if (!asked.docs.answered) void priceQuestion(asked.questionId);
+      return true;
+    } catch (cause) {
+      setAskNote((cause as Error).message);
+      return false;
+    } finally {
+      setAsking(false);
+    }
+  };
+
+  const priceQuestion = async (questionId: string) => {
+    if (!identity) return;
+    const key = questionKey(questionId);
+    setResearch((current) => ({ ...current, [key]: { stage: "looking" } }));
+    try {
+      const payload = await call(`/api/nova/v1/agents/${identity.publicId}/questions/${questionId}/research`, {
+        method: "POST",
+        ownerSecret: identity.ownerSecret,
+        body: JSON.stringify({ wallet: wallet.address ?? undefined }),
+      }) as { ok: boolean; researchId?: string; proposal?: NovaResearchProposal; detail?: string };
+      setResearch((current) => ({
+        ...current,
+        [key]: payload.ok && payload.proposal && payload.researchId
+          ? { stage: "ready", researchId: payload.researchId, proposal: payload.proposal }
+          : { stage: "refused", detail: payload.detail ?? "Veyra found nothing on Arc it would put in front of you." },
+      }));
+    } catch (cause) {
+      setResearch((current) => ({ ...current, [key]: { stage: "failed", detail: (cause as Error).message } }));
+    }
+  };
+
+  /**
    * Pays for one investigation, and shows what it bought.
    *
    * Six steps, and the order is the product.
@@ -785,16 +863,16 @@ export function NovaClient({ view = "today" }: { view?: NovaView } = {}) {
    * accepted. Deliberately a hash rather than a flag: a price that moves twice
    * must not be payable by a click that only ever saw it move once.
    */
-  const pay = async (signal: NovaSignal, acknowledge?: string) => {
+  const pay = async (subject: ResearchSubject, acknowledge?: string) => {
     if (!identity) return;
-    const current = research[signal.signalId];
+    const current = research[subject.key];
     if (!current || !("proposal" in current) || !current.proposal || !("researchId" in current) || !current.researchId) return;
     const { proposal, researchId } = current as { proposal: NovaResearchProposal; researchId: string };
 
     if (!wallet.address) {
       setResearch((state) => ({
         ...state,
-        [signal.signalId]: {
+        [subject.key]: {
           stage: "failed",
           researchId,
           proposal,
@@ -805,12 +883,12 @@ export function NovaClient({ view = "today" }: { view?: NovaView } = {}) {
     }
 
     const at = (next: ResearchState) =>
-      setResearch((state) => ({ ...state, [signal.signalId]: next }));
+      setResearch((state) => ({ ...state, [subject.key]: next }));
 
     at({ stage: "approving", researchId, proposal });
     try {
       const approval = await call(
-        `/api/nova/v1/agents/${identity.publicId}/signals/${signal.signalId}/research/approve`,
+        `/api/nova/v1/agents/${identity.publicId}/${subject.path}/research/approve`,
         {
           method: "POST",
           ownerSecret: identity.ownerSecret,
@@ -869,7 +947,7 @@ export function NovaClient({ view = "today" }: { view?: NovaView } = {}) {
 
       at({ stage: "settling", researchId, proposal });
       const settlement = await call(
-        `/api/nova/v1/agents/${identity.publicId}/signals/${signal.signalId}/research/settle`,
+        `/api/nova/v1/agents/${identity.publicId}/${subject.path}/research/settle`,
         {
           method: "POST",
           ownerSecret: identity.ownerSecret,
@@ -1312,6 +1390,44 @@ export function NovaClient({ view = "today" }: { view?: NovaView } = {}) {
         </Notice>
       ) : null}
 
+      {view === "today" ? <AskNova agentName={agentName} asking={asking} note={askNote} onAsk={ask} /> : null}
+      {view === "today" && (brief.questions ?? []).length > 0 ? (
+        <div className="mb-6 space-y-4">
+          {(brief.questions ?? []).slice(0, 3).map((question) => {
+            const key = questionKey(question.questionId);
+            return (
+              <Panel key={question.questionId}>
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+                  <Label>Your question</Label>
+                  <span className="ml-auto font-mono text-[11px] text-muted-foreground">{timeAgo(question.createdAt)}</span>
+                </div>
+                <h2 className="mt-3 text-lg font-medium leading-snug">{question.question}</h2>
+                <DocsAnswer docs={question.docs} />
+                {research[key] ? (
+                  <DeeperResearch
+                    state={research[key]}
+                    agentName={agentName}
+                    fallbackHref={questionLink(question.question)}
+                    walletAddress={wallet.address}
+                    onConnect={() => void wallet.connect()}
+                    connecting={wallet.connecting}
+                    walletReady={wallet.providerAvailable || !wallet.providerSettled}
+                    onPay={(acknowledge) => void pay(questionSubject(question.questionId), acknowledge)}
+                    refusedAt={question.refusal?.at ?? null}
+                    onLookAgain={() => void priceQuestion(question.questionId)}
+                    prior={priorFor(key)}
+                  />
+                ) : (
+                  <button type="button" onClick={() => void priceQuestion(question.questionId)} className="mt-4 rounded-lg border px-4 py-2 text-sm">
+                    {question.docs.answered ? "Look for a paid tool on Arc anyway" : "Find a tool on Arc for this"}
+                  </button>
+                )}
+              </Panel>
+            );
+          })}
+        </div>
+      ) : null}
+
       {view === "today" ? (
       <div className="space-y-4">
         {attention.map((signal) => {
@@ -1400,7 +1516,7 @@ export function NovaClient({ view = "today" }: { view?: NovaView } = {}) {
                   onConnect={() => void wallet.connect()}
                   connecting={wallet.connecting}
                   walletReady={wallet.providerAvailable || !wallet.providerSettled}
-                  onPay={(acknowledge) => void pay(signal, acknowledge)}
+                  onPay={(acknowledge) => void pay(signalSubject(signal), acknowledge)}
                   refusedAt={signal.refusal?.at ?? null}
                   onLookAgain={() => void price(signal)}
                   prior={priorFor(signal.signalId)}
@@ -1627,7 +1743,7 @@ export function NovaClient({ view = "today" }: { view?: NovaView } = {}) {
                         onConnect={() => void wallet.connect()}
                         connecting={wallet.connecting}
                         walletReady={wallet.providerAvailable || !wallet.providerSettled}
-                        onPay={(acknowledge) => void pay(signal, acknowledge)}
+                        onPay={(acknowledge) => void pay(signalSubject(signal), acknowledge)}
                         refusedAt={signal.refusal?.at ?? null}
                         /* A listed tool is asked the owner's question, so
                            looking again means asking again, not a proposal of
@@ -2854,6 +2970,125 @@ function AskTool({ label, onAsk }: { label: string; onAsk: (question: string) =>
 }
 
 /**
+ * A question for Nova itself, rather than for a tool somebody already picked.
+ * The documentation comes first and costs nothing; the text says so before
+ * anything is sent, and that nothing is paid without a signature.
+ */
+function AskNova({ agentName, asking, note, onAsk }: {
+  agentName: string;
+  asking: boolean;
+  note: string | null;
+  onAsk: (question: string) => Promise<boolean>;
+}) {
+  const [question, setQuestion] = useState("");
+  const trimmed = question.trim();
+  return (
+    <Panel className="mb-6">
+      <Label>Ask {agentName}</Label>
+      <form
+        className="mt-3 space-y-2"
+        onSubmit={(event) => {
+          event.preventDefault();
+          if (trimmed.length < 8 || asking) return;
+          void onAsk(trimmed).then((sent) => { if (sent) setQuestion(""); });
+        }}
+      >
+        <textarea
+          value={question}
+          onChange={(event) => setQuestion(event.target.value)}
+          maxLength={400}
+          rows={2}
+          aria-label={`Your question for ${agentName}`}
+          placeholder="Ask about Arc, Circle or the agent market"
+          className="w-full rounded-lg border bg-transparent px-3 py-2 text-sm"
+        />
+        <p className="text-xs text-muted-foreground">
+          {agentName} reads Arc&apos;s and Circle&apos;s documentation for it first, at no charge. If they do not
+          answer it, {BRAND.name} looks for a tool on Arc that fits and shows you the exact price. Nothing is
+          paid until you approve that price and sign it in your own wallet.
+        </p>
+        <div className="flex flex-wrap items-center gap-3">
+          <button type="submit" disabled={trimmed.length < 8 || asking} className="rounded-lg border px-4 py-2 text-sm disabled:opacity-50">
+            {asking ? "Reading the documentation…" : "Ask"}
+          </button>
+          {note ? <span role="status" className="text-sm text-state-warn">{note}</span> : null}
+        </div>
+      </form>
+    </Panel>
+  );
+}
+
+/** What the documentation said, with the passages it stands on, or why it
+ *  said nothing. A failure to read is never shown as "the docs do not say". */
+function DocsAnswer({ docs }: { docs: NovaDocsAnswer }) {
+  return (
+    <div className="mt-3 text-sm">
+      {docs.answered && docs.answer ? (
+        <>
+          <p className="text-[11px] uppercase tracking-[0.18em] text-state-good">From the documentation, at no charge</p>
+          <p className="mt-1.5 leading-relaxed">{docs.answer}</p>
+          <ul className="mt-2 space-y-1.5">
+            {docs.citations.map((citation) => (
+              <li key={citation.id} className="text-xs leading-relaxed text-muted-foreground">
+                “{citation.quote}” —{" "}
+                <a href={citation.url} target="_blank" rel="noreferrer" className="underline underline-offset-2">{citation.title}</a>
+              </li>
+            ))}
+          </ul>
+          {docs.writtenBy ? (
+            <p className="mt-2 text-[11px] text-muted-foreground/70">Written by {docs.writtenBy}, from the passages above only.</p>
+          ) : null}
+        </>
+      ) : (
+        <>
+          <p className="leading-relaxed text-muted-foreground">{docsSentence(docs)}</p>
+          {docs.checked.length > 0 ? (
+            <ul className="mt-1.5 space-y-0.5 text-xs text-muted-foreground">
+              {docs.checked.map((page) => (
+                <li key={page.url}>
+                  <a href={page.url} target="_blank" rel="noreferrer" className="underline underline-offset-2">{page.title}</a>
+                </li>
+              ))}
+            </ul>
+          ) : null}
+        </>
+      )}
+      {docs.unavailable.length > 0 ? (
+        <p className="mt-2 text-xs text-state-warn">Could not read: {docs.unavailable.join(", ")}.</p>
+      ) : null}
+    </div>
+  );
+}
+
+function docsSentence(docs: NovaDocsAnswer): string {
+  switch (docs.failure) {
+    case "docs_unavailable":
+      return "Arc's and Circle's documentation could not be read just now.";
+    case "nothing_relevant":
+      return "No page in Arc's or Circle's documentation looks like it answers this.";
+    case "model_unavailable":
+      return "Nova could not read the documentation for this just now.";
+    case "ungrounded":
+      return "Nova's answer from the documentation did not stand on the pages it was given, so it is not shown. The pages it read:";
+    default:
+      return docs.missing
+        ? `The documentation it read does not answer this: ${docs.missing}`
+        : "The documentation it read does not answer this.";
+  }
+}
+
+function wordList(words: string[]): string {
+  const quoted = words.map((word) => `“${word}”`);
+  if (quoted.length <= 1) return quoted[0] ?? "nothing it was searched for";
+  return `${quoted.slice(0, -1).join(", ")} and ${quoted[quoted.length - 1]}`;
+}
+
+/** Veyra's selection flow, with the owner's question already in it. */
+function questionLink(question: string): string {
+  return `/run?${new URLSearchParams({ intent: question.slice(0, 300), capability: "research" }).toString()}`;
+}
+
+/**
  * What Veyra found, and what it would cost.
  *
  * Everything above this is free: Nova reads public catalogues and public
@@ -2957,7 +3192,18 @@ function DeeperResearch({
           work it is. An interaction is a deal with one named counterparty and
           nobody else was considered -- saying "picked the best of 8" there
           would describe a choice that was never Veyra's to make. */}
-      {proposal.actionType === "interact_with_subject" ? (
+      {proposal.chosenFor ? (
+        /* A question asked directly: why this tool, in the words its own
+           listing uses, and never a sentence Nova wrote about it. */
+        <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
+          {proposal.chosenFor.general
+            ? `No tool on Arc describes itself in your question's words, so ${BRAND.name} picked a web search, the general option.`
+            : `${BRAND.name} looked at ${proposal.probed} ${proposal.probed === 1 ? "tool" : "tools"} on Arc and picked this one: its own listing says ${wordList(proposal.chosenFor.matched)}.`}
+          {proposal.chosenFor.listing ? (
+            <>{" "}It describes itself as <span className="text-foreground">“{proposal.chosenFor.listing}”</span></>
+          ) : null}
+        </p>
+      ) : proposal.actionType === "interact_with_subject" ? (
         <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
           This is {proposal.subjectLabel ?? proposal.provider} itself, not a report about it.
           {" "}{proposal.askedBy === "owner" ? "Your question to it:" : `${agentName} would ask it:`}{" "}

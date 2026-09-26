@@ -140,7 +140,7 @@ item 1 below is still the only thing that can move it.
 
    Most of this was already structural: a paid proposal needs a fresh reading against the current goal with an open question, and listings never reach one. The card now shows the provider's limitations. It lists the sources read first at no charge, the field the question is sent in, what comes back and what the tool will not do. On the live market every askable tool was a search, so the owner would have paid for pages that match the question while the card promised a result. An error from a tool is no longer called a free answer.
 
-   The lead from item 2 is answered. A seller that issues a new payee per request (Parallel) is refused by Veyra's probe as a changed payee, so it cannot be priced or paid at all. That is safe, but the label is wrong. Supporting such sellers would relax payee pinning and is left to the owner. Not done: discovery by what the question needs (Nova always looks for a web search), and a free documentation lookup for the question itself.
+   The lead from item 2 is answered. A seller that issues a new payee per request (Parallel) is refused by Veyra's probe as a changed payee, so it cannot be priced or paid at all. That is safe, but the label is wrong. Supporting such sellers would relax payee pinning and is left to the owner. Not done: discovery by what the question needs (Nova always looks for a web search), and a free documentation lookup for the question itself. *(2026-09-26: both built for a question the owner asks Nova directly; see [Ask Nova](audits/2026-09-26-ask-nova.md). Proposals from readings still look for a web search.)*
 5. **Feedback-to-brief loop.** *(verified and partly fixed 2026-09-22; its effect on the owner's brief measured and fixed 2026-09-23, see [what the owner's feedback did](audits/2026-09-23-nova-feedback-effect.md).)* Verify that explicit owner feedback changes future prioritization without silently suppressing safety alerts or whole publishers. Keep feedback failures visible and avoid claiming personalization without demonstrated effect.
 
    Verified against the owner's own record. There are three real ratings, all "useful", all on announcements: Sponsored Transactions on Arc, and the Arc Compatibility Guide twice. They taught `cares_about: announcements`, which adds 10 to every announcement — cirBTC and StableFX included, the two the owner had objected to. Feedback does change prioritization; publishers are not silenced (a dismissed announcement never teaches its feed), and payee changes cannot be learned away in either direction.
@@ -291,6 +291,18 @@ from here:*
    - *A GET is no longer a card: Nova can never ask one a question. GETs made
      up 30 of the owner's 82 listing cards in thirty days. They come back when
      a GET's parameters can be bound into the URL the owner approves.)*
+
+   *(2026-09-26, later: built as "Ask Nova", which the owner chose. It is a
+   question box on Today.*
+   - *Arc's and Circle's documentation is read for the question first, at no
+     charge. It is answered only from passages the answer names.*
+   - *If that does not answer it, a tool on Arc is picked for the question,
+     from Circle's catalogue and the ERC-8004 registry, by what each listing
+     says about itself. The tool is priced for the owner to approve and sign.*
+   - *A GET that needs no parameter can be bought this way.*
+   - *Nova's proposals from readings are unchanged.*
+
+   *See [Ask Nova](audits/2026-09-26-ask-nova.md).)*
 
 *c. **Veyra's identity and attestations on Arc mainnet.** An ERC-8004 identity
    from Veyra's own registrant wallet. Contracts only after an external audit.*

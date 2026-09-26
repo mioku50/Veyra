@@ -83,10 +83,20 @@ const NO_WALLET = "0x0000000000000000000000000000000000000000" as const;
 
 export type NovaResearchProposal = {
   researchNeed?: { goal: string; missing: string; expectedResult: string };
-  /** "owner" when the person wrote the question themselves, on a listed tool.
-   *  Absent on proposals Nova made from a reading, and on older ones. */
+  /** "owner" when the person wrote the question themselves: on a listed tool,
+   *  or to Nova directly. Absent on proposals Nova made from a reading, and on
+   *  older ones. */
   askedBy?: "owner";
-  signalId: string;
+  /** The card this was proposed from. Absent for a question asked directly. */
+  signalId?: string;
+  /** The question asked directly, when this answers one. */
+  questionId?: string;
+  /** Why this tool, for a question asked directly: the searched words its own
+   *  listing says, and the listing's own description. `general` when no tool
+   *  said any of them and this is a web search. */
+  chosenFor?: { matched: string[]; listing: string | null; general: boolean };
+  /** The words the market was searched with. */
+  searchedFor?: string;
   /** What Nova would ask, in the words it would ask it. */
   question: string;
   capability: string;
@@ -282,7 +292,7 @@ const BRAND_NAME = "Veyra";
  * the decision is signed, not where this money moves, and the card should not
  * make a reader work that out.
  */
-function paymentLabelFor(funding: "wallet" | "gateway_deposit", network: string): string {
+export function paymentLabelFor(funding: "wallet" | "gateway_deposit", network: string): string {
   const chain = networkName(network);
   const rail = funding === "wallet" ? "Direct USDC" : "Circle Gateway deposit";
   return chain ? `${rail} on ${chain}` : rail;
@@ -295,7 +305,7 @@ function paymentLabelFor(funding: "wallet" | "gateway_deposit", network: string)
  * next to its evidence. Here there is no evidence on screen, so the sentence
  * has to carry its own weight: what was decided, and what it costs at most.
  */
-function verdictFor(decision: TrustDecisionLevel, authorisedUsdc: number): string {
+export function verdictFor(decision: TrustDecisionLevel, authorisedUsdc: number): string {
   switch (decision) {
     case "ALLOW":
       return `Allow. $${authorisedUsdc.toFixed(4)} leaves your wallet, and nothing more.`;
@@ -913,7 +923,9 @@ export async function revalidateResearch(input: {
   method?: "GET" | "POST";
   query: string;
   wallet: string;
-  signalId: string;
+  /** Whose decision this is: `nova:<signal id>` for a card, `nova:q:<question
+   *  id>` for a question asked directly. The same key the proposal used. */
+  tenantKey: string;
   now?: Date;
   fetchImpl?: typeof fetch;
 }): Promise<NovaRevalidation> {
@@ -936,7 +948,7 @@ export async function revalidateResearch(input: {
         budgetUsdc: RESEARCH_BUDGET_USDC,
         limit: RESEARCH_CANDIDATE_LIMIT,
       },
-      tenant: { tenantKey: `nova:${input.signalId}`, requesterWallet },
+      tenant: { tenantKey: input.tenantKey, requesterWallet },
       now: input.now,
       fetchImpl: input.fetchImpl,
       preferCandidate: pinnedTo(shown.resource),

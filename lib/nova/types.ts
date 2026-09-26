@@ -28,6 +28,7 @@ import type { PublicMaterial } from "./value.ts";
 import type { NovaDerivedStanding } from "./standing.ts";
 import type { NovaArcIdentity } from "./identity.ts";
 import type { ShadowRecord, ShadowSummary } from "./autonomy.ts";
+import type { NovaQuestion } from "./ask.ts";
 
 export const NOVA_SUBJECT_KINDS = ["x402_resource", "github_repository", "official_publication"] as const;
 export type NovaSubjectKind = (typeof NOVA_SUBJECT_KINDS)[number];
@@ -295,7 +296,10 @@ export type { ShadowRecord, ShadowSummary, AutonomyCheck } from "./autonomy.ts";
  */
 export type NovaInvestigation = {
   researchId: string;
-  signalId: string;
+  /** The card it was proposed from, or the question the owner asked Nova
+   *  directly: exactly one of the two is set. */
+  signalId: string | null;
+  questionId: string | null;
   status: "proposed" | "approved" | "verified" | "paid_unverified" | "unpaid";
   question: string;
   proposal: Record<string, unknown>;
@@ -372,6 +376,9 @@ export type NovaBrief = {
    *  the card that produced it after a reload and not only in the session that
    *  bought it. */
   investigations: NovaInvestigation[];
+  /** The owner's own questions to Nova, newest first, each with what the
+   *  documentation said. A paid answer to one is in `investigations`. */
+  questions: NovaQuestion[];
   standing: NovaDerivedStanding;
   /** What Nova would have bought while nobody was watching, and what Veyra
    *  would have ruled. Decisions only: no row behind this moved money, and the

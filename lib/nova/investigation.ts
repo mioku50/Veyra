@@ -19,6 +19,7 @@ import {
 } from "./research.ts";
 import { paidResearchReadiness, assessmentOf } from "./value.ts";
 import { loadSignalForOwner } from "./service.ts";
+import { loadQuestion } from "./questions.ts";
 import { hashTerms, type NovaResearchTerms, type TermsChange } from "./research-terms.ts";
 import { db, loadOwned, NovaError } from "./service.ts";
 import type { NovaInvestigation } from "./types.ts";
@@ -54,7 +55,10 @@ export type NovaResearchStatus = NovaInvestigation["status"];
 type ResearchRow = {
   research_id: string;
   agent_id: string;
-  signal_id: string;
+  /** Exactly one of these is set: the card it was proposed from, or the
+   *  question the owner asked directly. */
+  signal_id: string | null;
+  question_id: string | null;
   status: NovaResearchStatus;
   question: string;
   terms: NovaResearchTerms;
@@ -91,7 +95,7 @@ type ApprovalRecord = {
 };
 
 const ROW_COLUMNS =
-  "research_id, agent_id, signal_id, status, question, terms, terms_hash, request_body, request_method, input_schema, output_schema, verification_required, proposal, approval, payer_wallet, clearance_digest, selection_id, execution_public_id, paid_usdc, transaction_hash, verification, result, failure, reading, arc_proof, settled_at";
+  "research_id, agent_id, signal_id, question_id, status, question, terms, terms_hash, request_body, request_method, input_schema, output_schema, verification_required, proposal, approval, payer_wallet, clearance_digest, selection_id, execution_public_id, paid_usdc, transaction_hash, verification, result, failure, reading, arc_proof, settled_at";
 
 function toInvestigation(row: ResearchRow): NovaInvestigation {
   return {
@@ -103,6 +107,7 @@ function toInvestigation(row: ResearchRow): NovaInvestigation {
     provider: row.terms?.provider ?? null,
     researchId: row.research_id,
     signalId: row.signal_id,
+    questionId: row.question_id ?? null,
     status: row.status,
     question: row.question,
     proposal: row.proposal,
@@ -130,22 +135,24 @@ function toInvestigation(row: ResearchRow): NovaInvestigation {
  */
 export async function recordProposal(input: {
   agentId: string;
-  signalId: string;
   proposal: NovaResearchProposal;
   plan: NovaResearchPlan;
-}): Promise<string> {
+} & ({ signalId: string } | { questionId: string })): Promise<string> {
+  const subject = "questionId" in input
+    ? { column: "question_id", id: input.questionId }
+    : { column: "signal_id", id: input.signalId };
   await db()
     .from("nova_research")
     .delete()
     .eq("agent_id", input.agentId)
-    .eq("signal_id", input.signalId)
+    .eq(subject.column, subject.id)
     .eq("status", "proposed");
 
   const { data, error } = await db()
     .from("nova_research")
     .insert({
       agent_id: input.agentId,
-      signal_id: input.signalId,
+      [subject.column]: subject.id,
       status: "proposed",
       question: input.proposal.question.slice(0, 400),
       terms: input.plan.terms,
@@ -165,12 +172,13 @@ export async function recordProposal(input: {
 }
 
 /** The newest offer on this item that has not reached a terminal state. */
-async function loadOpen(agentId: string, signalId: string): Promise<ResearchRow> {
+async function loadOpen(agentId: string, subject: { signalId: string } | { questionId: string }): Promise<ResearchRow> {
+  const [column, id] = "questionId" in subject ? ["question_id", subject.questionId] : ["signal_id", subject.signalId];
   const { data } = await db()
     .from("nova_research")
     .select(ROW_COLUMNS)
     .eq("agent_id", agentId)
-    .eq("signal_id", signalId)
+    .eq(column, id)
     .in("status", ["proposed", "approved"])
     .order("created_at", { ascending: false })
     .limit(1)
@@ -238,7 +246,7 @@ export async function approveResearch(input: {
     throw new NovaError("Connect a wallet before approving a payment.", "wallet_required", 400);
   }
   const agent = await loadOwned(input.publicId, input.ownerSecret);
-  const row = await loadOpen(agent.agent_id, input.signalId);
+  const row = await loadOpen(agent.agent_id, { signalId: input.signalId });
 
   /* Re-derived from the signal rather than stored, because it is a pure
      function of it. The discovery query decides which listings come back at
@@ -264,7 +272,57 @@ export async function approveResearch(input: {
     }
   }
   const { query } = researchRequestFor(signal);
+  return clearRow({ ...input, row, query, tenantKey: `nova:${input.signalId}` });
+}
 
+/**
+ * The same approval, for a question the owner asked Nova directly. Its reason
+ * is the question itself, which is on the row; what is re-checked is that it
+ * is still that question, and then the market, exactly as for a card.
+ */
+export async function approveQuestionResearch(input: {
+  publicId: string;
+  ownerSecret: string;
+  questionId: string;
+  wallet: string;
+  acknowledged?: string | null;
+  now?: Date;
+  fetchImpl?: typeof fetch;
+}): Promise<NovaApproval> {
+  if (!isAddress(input.wallet)) {
+    throw new NovaError("Connect a wallet before approving a payment.", "wallet_required", 400);
+  }
+  const agent = await loadOwned(input.publicId, input.ownerSecret);
+  const question = await loadQuestion(agent.agent_id, input.questionId);
+  const row = await loadOpen(agent.agent_id, { questionId: input.questionId });
+  if (row.question !== question.question) {
+    return { ok: false, reason: "owner_question_invalid", detail: "That question changed. Ask for a fresh price before paying." };
+  }
+  return clearRow({
+    ...input,
+    row,
+    /* The words the market was searched with when this was priced. The
+       endpoint itself is asked for by id, so these only widen the look. */
+    query: row.proposal.searchedFor ?? question.searchTerms.slice(0, 3).join(" "),
+    tenantKey: `nova:q:${input.questionId}`,
+  });
+}
+
+/**
+ * Reads the market again for the row's exact endpoint and body, and signs a
+ * clearance only if it agrees with what the owner was shown, or they accepted
+ * the difference. Shared by a card and a question.
+ */
+async function clearRow(input: {
+  row: ResearchRow;
+  wallet: string;
+  acknowledged?: string | null;
+  query: string;
+  tenantKey: string;
+  now?: Date;
+  fetchImpl?: typeof fetch;
+}): Promise<NovaApproval> {
+  const { row } = input;
   const outcome = await revalidateResearch({
     /* The terms as recorded when the card was drawn, never the ones a client
        sends. The whole check is worthless if the thing being compared against
@@ -274,9 +332,9 @@ export async function approveResearch(input: {
     requestBody: row.request_body,
     inputSchema: row.input_schema,
     method: row.request_method,
-    query,
+    query: input.query,
     wallet: input.wallet,
-    signalId: input.signalId,
+    tenantKey: input.tenantKey,
     now: input.now,
     fetchImpl: input.fetchImpl,
   });
@@ -650,11 +708,14 @@ async function finish(row: ResearchRow, outcome: {
     signalUpdate.status = "investigated";
     if (outcome.executionPublicId) signalUpdate.execution_public_id = outcome.executionPublicId;
   }
-  await db()
-    .from("nova_signals")
-    .update(signalUpdate)
-    .eq("agent_id", row.agent_id)
-    .eq("signal_id", row.signal_id);
+  /* A question asked directly has no card to mark. */
+  if (row.signal_id) {
+    await db()
+      .from("nova_signals")
+      .update(signalUpdate)
+      .eq("agent_id", row.agent_id)
+      .eq("signal_id", row.signal_id);
+  }
 
   if (outcome.status === "verified" && outcome.executionPublicId) {
     await db().from("nova_memory").insert({

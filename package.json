@@ -185,6 +185,7 @@
     "arc:market": "node --experimental-transform-types --no-warnings scripts/arc-market-report.mts",
     "arc:registry": "node --experimental-transform-types --no-warnings --env-file-if-exists=.env.local scripts/arc-registry-snapshot.mts",
     "arc-registry:test": "node --experimental-transform-types --no-warnings scripts/arc-registry-tests.mts",
+    "nova-ask:test": "node --experimental-transform-types --no-warnings scripts/nova-ask-tests.mts",
     "arc:c-pilot": "node --experimental-transform-types --no-warnings scripts/arc-c-pilot/pilot.mts",
     "arc:c-pilot:test": "node --experimental-transform-types --no-warnings scripts/arc-c-pilot/pilot-tests.mts"
   },
