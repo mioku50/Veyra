@@ -91,7 +91,18 @@ What it does not see:
 
 ## Production, in order
 
-1. **The owner applies the migration** with `npm run db:migrate`. No code
-   depends on it, so it can go before or after the deploy.
-2. **A read-only check afterwards**, run as `anon`: every table shows no rows
-   or refuses, and no definer function runs.
+1. **The migration, before the push.** The repository is public, and this
+   commit names what was open. So it was held locally until the owner applied
+   the migration from the local file on 26 September (`applied=1
+   alreadyApplied=75 seed=ok`). No code depends on it.
+2. **A read-only check afterwards:**
+   - the ledger records `20260926140000`;
+   - all five tables have row-level security on;
+   - as `anon`, each of the five refuses: "permission denied";
+   - no definer function in `public` is open to `anon` or `authenticated`
+     (0 of 39), and the service role can run all 39;
+   - the sequence refuses `anon`;
+   - the service role keeps its rights on the five tables. Through the Data
+     API, with the server's own client, they answer as before, with 1, 1, 2, 0
+     and 8 rows.
+3. **Then the push.**
