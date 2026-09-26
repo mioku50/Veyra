@@ -493,6 +493,26 @@ export function publishedAtOf(signal: Pick<NovaSignal, "evidence">): string | nu
 }
 
 /**
+ * Where a paid listing's card came from, in the few words its header has room
+ * for, next to the network it pays on. Null for a card about anything else.
+ *
+ * Cards written before the ERC-8004 registry was read carry no source: every
+ * one of them came from Circle's catalogue, which is what they say.
+ */
+export function listingSource(signal: Pick<NovaSignal, "evidence">): string | null {
+  const subject = signal.evidence.subject as { resource?: unknown; foundIn?: unknown; erc8004?: unknown } | undefined;
+  if (typeof subject?.resource !== "string") return null;
+  const identity = subject.erc8004 && typeof subject.erc8004 === "object"
+    ? subject.erc8004 as { agentId?: unknown; binding?: unknown }
+    : null;
+  const declared = identity && typeof identity.agentId === "string"
+    ? `ERC-8004 #${identity.agentId} · ${identity.binding === "both_ways" ? "confirmed both ways" : "not confirmed by the endpoint"}`
+    : null;
+  if (subject.foundIn === "erc8004_arc") return declared ?? "ERC-8004 registry on Arc";
+  return declared ? `Circle catalogue · ${declared}` : "Circle catalogue";
+}
+
+/**
  * What changed about a card since the owner last looked: it arrived, or its
  * reading was written again. "What's new relative to the previous brief" is
  * the question, and before this the only answer was a count of passes.

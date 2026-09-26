@@ -3,15 +3,26 @@ import { hashCanonical, normalizeCapability } from "./canonical.ts";
 import { capabilityMatchFor } from "./policy.ts";
 import { diversifyByProvider, fundingForAccept, type PaymentFunding } from "./payment-rail.ts";
 import type { CapabilityMatch } from "./types.ts";
+import {
+  DISCOVERY_NETWORKS,
+  isDiscoveryNetwork,
+  offerMatchesTerm,
+  type Erc8004Binding,
+  type MarketOffer,
+} from "../discovery/offers.ts";
 
 /**
- * Circle x402 service discovery adapter.
+ * Circle x402 service discovery adapter, and the ERC-8004 registry on Arc.
  *
  * This is a *candidate source* for the existing counterparty-selection engine,
  * not a second engine. It answers one question: "which externally published
  * x402 endpoints could serve this capability?" Everything downstream - probing,
  * ranking, policy, clearance - is the same machinery used for ERC-8004
  * counterparties.
+ *
+ * Circle's catalogue is asked live. The registry's offers come from its daily
+ * snapshot (lib/discovery/arc-registry.ts), handed in by the caller, and pass
+ * the same normalisation, filters and ranking as a catalogue listing.
  *
  * Deliberately read-only: discovery never authorizes, quotes, or settles.
  */
@@ -117,6 +128,12 @@ export type MarketplaceCandidate = {
   capabilities: string[];
   capabilityMatch: CapabilityMatch;
   catalogHash: Hex;
+  /** Where Veyra found the listing: Circle's catalogue, or an identity in the
+   *  ERC-8004 registry on Arc and the endpoints its registration declares. */
+  foundIn: "circle_catalogue" | "erc8004_arc";
+  /** The identity in the ERC-8004 registry on Arc that declares this endpoint,
+   *  and whether the endpoint names it back. Null when none does. */
+  erc8004: Erc8004Binding | null;
 };
 
 export type MarketplaceDiscoveryInput = {
@@ -151,6 +168,19 @@ export type MarketplaceDiscoveryInput = {
   limit?: number;
   requireCircleGateway?: boolean;
   fetchImpl?: typeof fetch;
+  /**
+   * Offers declared through the ERC-8004 registry on Arc, from its daily
+   * snapshot. Used only when the network is Arc. Matched to the query here,
+   * term by term, because nobody searches them on Veyra's behalf.
+   */
+  registryOffers?: readonly MarketOffer[] | null;
+  /**
+   * Keep only listings that say one of the query's words as a whole word.
+   * For a brief, where a card has to be about the interest it sits under; not
+   * for a purchase, where the caller has already said what it wants done.
+   * See saysItIsAbout. A named counterparty is exempt: it is asked for by id.
+   */
+  requireWordMatch?: boolean;
 };
 
 export type MarketplaceDiscoveryResult = {
@@ -161,6 +191,9 @@ export type MarketplaceDiscoveryResult = {
   networkLabel: string;
   query: string;
   catalogTotal: number;
+  /** Whether Circle's catalogue answered at least one query. With registry
+   *  offers to go on, discovery no longer fails when it does not. */
+  circleAnswered: boolean;
   candidates: MarketplaceCandidate[];
   queriedAt: string;
   readOnly: true;
@@ -346,6 +379,75 @@ export function normalizeMarketplaceItem(
       method,
       siwx: metadata.siwx === true,
     }),
+    foundIn: "circle_catalogue",
+    erc8004: null,
+  };
+}
+
+/**
+ * Whether a listing says, in its own words, that it is about the term.
+ *
+ * Circle's catalogue search matches inside words. Asked for "arc" on Arc on
+ * 2026-09-26, it returned 206 listings and not one of them said "arc" as a
+ * word: they were search engines, matched on "se-arc-h". An owner who chose
+ * Arc as an interest was shown Exa search and Parallel search under it, and a
+ * seller that really is about Arc was cut from the shortlist by them on price.
+ *
+ * One word of the term is enough, as one word is enough for the union of
+ * per-word searches; it has to be a whole word, in the listing's own name,
+ * description, tags, path or request fields.
+ */
+export function saysItIsAbout(candidate: MarketplaceCandidate, term: string): boolean {
+  const offer = {
+    resource: candidate.resource,
+    provider: candidate.provider.name,
+    description: [candidate.description, candidate.provider.description, candidate.provider.category].filter(Boolean).join(" "),
+    tags: [...candidate.provider.tags, ...candidate.capabilities],
+    inputSchema: candidate.inputSchema,
+  };
+  return term.split(/[^a-z0-9]+/i)
+    .filter((word) => word.length > 2)
+    .some((word) => offerMatchesTerm(offer, word));
+}
+
+/**
+ * An offer from the ERC-8004 registry on Arc, written as a catalogue item so
+ * that the same normalisation, ids, capability tokens and hash apply to it as
+ * to Circle's own listings. Only the accepts Veyra could sign on this network
+ * are carried, and the asset and verifying contract come from Veyra's table,
+ * never from the seller.
+ */
+export function registryItemFor(offer: MarketOffer, network: MarketplaceNetwork): Record<string, unknown> | null {
+  if (offer.templated || !isDiscoveryNetwork(network)) return null;
+  const facts = DISCOVERY_NETWORKS[network];
+  const accepts = offer.accepts
+    .filter((accept) => accept.network === network && accept.quotableByVeyra)
+    .map((accept) => ({
+      scheme: "exact",
+      network,
+      asset: facts.usdc,
+      payTo: accept.payTo,
+      amount: accept.amountAtomic,
+      extra: accept.rail === "gateway_deposit"
+        ? { name: "GatewayWalletBatched", version: "1", verifyingContract: facts.gatewayWallet }
+        : {},
+    }));
+  if (accepts.length === 0) return null;
+  let path: string;
+  try { path = new URL(offer.resource).pathname; } catch { return null; }
+  return {
+    resource: offer.resource,
+    lastUpdated: offer.listings.find((listing) => listing.listedAt)?.listedAt ?? null,
+    accepts,
+    metadata: {
+      method: offer.method,
+      description: offer.description,
+      path,
+      provider: { name: offer.provider, tags: offer.tags },
+      ...(offer.inputSchema ? { input: { body: offer.inputSchema } } : {}),
+      supportsVanillax402: accepts.some((accept) => !accept.extra.name),
+      supportsCircleGateway: accepts.some((accept) => accept.extra.name === "GatewayWalletBatched"),
+    },
   };
 }
 
@@ -442,21 +544,31 @@ export async function discoverMarketplaceCandidates(
     }
   }
 
+  /* The ERC-8004 registry on Arc, matched to the same terms Circle is asked.
+     Circle searches its own catalogue; nobody searches these on Veyra's behalf,
+     so a term is matched against what each offer says about itself. */
+  const registry = network === "eip155:5042"
+    ? (input.registryOffers ?? []).filter((offer) => !offer.templated)
+    : [];
+  const registryItems = registry
+    .filter((offer) => queries.some((term) => offerMatchesTerm(offer, term)))
+    /* What Circle's own filter does for its listings, done here for these. */
+    .filter((offer) => !input.requireCircleGateway
+      || offer.accepts.some((accept) => accept.network === network && accept.rail === "gateway_deposit"))
+    .map((offer) => ({ offer, item: registryItemFor(offer, network) }))
+    .filter((entry): entry is { offer: MarketOffer; item: Record<string, unknown> } => entry.item !== null);
+
   /* One term timing out must not lose the other terms' results: the union is a
      widening, so a partial union is still strictly better than the single
-     conjunctive query it replaced. Discovery only fails when nothing answers. */
-  let payloads: Array<Record<string, unknown>>;
-  if (queries.length === 1) {
-    payloads = [await fetchQuery(queries[0])];
-  } else {
-    const settled = await Promise.allSettled(queries.map(fetchQuery));
-    payloads = settled
-      .filter((outcome): outcome is PromiseFulfilledResult<Record<string, unknown>> =>
-        outcome.status === "fulfilled")
-      .map((outcome) => outcome.value);
-    if (payloads.length === 0) {
-      throw new MarketplaceDiscoveryError("marketplace_discovery_unavailable", 502);
-    }
+     conjunctive query it replaced. Discovery only fails when nothing answers:
+     not Circle, and not the registry either. */
+  const settled = await Promise.allSettled(queries.map(fetchQuery));
+  const payloads = settled
+    .filter((outcome): outcome is PromiseFulfilledResult<Record<string, unknown>> =>
+      outcome.status === "fulfilled")
+    .map((outcome) => outcome.value);
+  if (payloads.length === 0 && registryItems.length === 0) {
+    throw new MarketplaceDiscoveryError("marketplace_discovery_unavailable", 502);
   }
 
   const items: unknown[] = [];
@@ -481,9 +593,28 @@ export async function discoverMarketplaceCandidates(
   for (const item of items) {
     const candidate = eligibleItem(item);
     if (!candidate) continue;
+    if (input.requireWordMatch && !queries.some((term) => saysItIsAbout(candidate, term))) continue;
     if (seen.has(candidate.candidateId)) continue;
     seen.add(candidate.candidateId);
     candidates.push(candidate);
+  }
+  const fromRegistry = (offer: MarketOffer, item: Record<string, unknown>): MarketplaceCandidate | null => {
+    const candidate = eligibleItem(item);
+    return candidate ? { ...candidate, foundIn: "erc8004_arc", erc8004: offer.erc8004 } : null;
+  };
+  for (const { offer, item } of registryItems) {
+    const candidate = fromRegistry(offer, item);
+    if (!candidate) continue;
+    /* Listed by Circle as well: one candidate, which also carries the identity
+       that declares it. */
+    const listed = candidates.find((existing) => existing.candidateId === candidate.candidateId);
+    if (listed) {
+      listed.erc8004 ??= candidate.erc8004;
+      continue;
+    }
+    seen.add(candidate.candidateId);
+    candidates.push(candidate);
+    catalogTotal += 1;
   }
 
   candidates.sort((left, right) => {
@@ -514,7 +645,17 @@ export async function discoverMarketplaceCandidates(
        alternatives, even when Circle had returned that exact seller. The same
        normalization and price filters apply; a changed payee changes its id. */
     let named = candidates.find((candidate) => candidate.candidateId === wanted) ?? null;
-    if (!named) {
+    /* A card named after an offer the registry declares is that offer,
+       whatever the search term: looked up by id, before asking Circle again. */
+    for (const offer of named ? [] : registry) {
+      const item = registryItemFor(offer, network);
+      const candidate = item ? fromRegistry(offer, item) : null;
+      if (candidate?.candidateId === wanted) {
+        named = candidate;
+        break;
+      }
+    }
+    if (!named && payloads.length > 0) {
       const fallbackQuery = capability.replace(/_/g, " ");
       const fallbackTerms = Array.from(new Set(fallbackQuery.split(/\s+/).filter(term => term.length > 2)))
         .slice(0, MARKETPLACE_QUERY_TERM_LIMIT);
@@ -540,6 +681,7 @@ export async function discoverMarketplaceCandidates(
     networkLabel: MARKETPLACE_NETWORKS[network],
     query,
     catalogTotal,
+    circleAnswered: payloads.length > 0,
     candidates: top,
     queriedAt: new Date().toISOString(),
     readOnly: true,

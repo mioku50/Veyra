@@ -34,7 +34,7 @@ import {
   agentAccessState, arcIdentityState, arcViewBlurb, briefSummary, identityExplanation,
   identityHeadline, plain, purchaseStanding, purchaseSummary, transferWarning,
   autonomyStateClaim, previewOnlyWarning, shadowDeclineClaims, shadowNightClaim,
-  shadowRemainingClaim, shadowSpendClaim, shadowVerdictClaim, publishedAtOf, sinceLastVisit, plainProse,
+  shadowRemainingClaim, shadowSpendClaim, shadowVerdictClaim, publishedAtOf, sinceLastVisit, plainProse, listingSource,
   type ArcIdentityState, type Claim,
 } from "@/lib/nova/presentation";
 import { IDENTITY_REGISTER_ABI, NOVA_IDENTITY_REGISTRY } from "@/lib/nova/identity";
@@ -1342,6 +1342,13 @@ export function NovaClient({ view = "today" }: { view?: NovaView } = {}) {
                     pays on {signal.settlesOn}
                   </span>
                 ) : null}
+                {/* Where the listing came from, and whether its ERC-8004
+                    identity and its endpoint point at each other. */}
+                {listingSource(signal) ? (
+                  <span className="font-mono text-[11px] text-muted-foreground">
+                    {listingSource(signal)}
+                  </span>
+                ) : null}
                 <SinceLastVisit signal={signal} seenThrough={brief.seenThrough ?? null} />
                 <span className="ml-auto font-mono text-[11px] text-muted-foreground">
                   {dateLine(signal)}
@@ -1598,6 +1605,11 @@ export function NovaClient({ view = "today" }: { view?: NovaView } = {}) {
                       {signal.settlesOn ? (
                         <span className="font-mono text-[11px] text-muted-foreground">
                           pays on {signal.settlesOn}
+                        </span>
+                      ) : null}
+                      {listingSource(signal) ? (
+                        <span className="font-mono text-[11px] text-muted-foreground">
+                          {listingSource(signal)}
                         </span>
                       ) : null}
                       {signal.interest ? (

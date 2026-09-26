@@ -101,6 +101,12 @@ export type MarketOffer = {
   /** The path still holds a template (`{mint}`, `:id`). It cannot be called,
    *  priced or paid as listed; it says what the seller sells, nothing more. */
   templated: boolean;
+  /** Words the seller files it under, in a catalogue or in its own 402
+   *  challenge. Searched, never trusted. */
+  tags: string[];
+  /** The request body the seller publishes, when it does. Without it a
+   *  question has nowhere to go, and Nova cannot ask the endpoint anything. */
+  inputSchema: Record<string, unknown> | null;
 };
 
 export function isTemplatedResource(resource: string): boolean {
@@ -148,6 +154,12 @@ export function normalizeOfferAccept(
   const verifying = lower(extra.verifyingContract);
   if (gateway && verifying !== facts.gatewayWallet) return null;
   if (!gateway && verifying && verifying !== facts.usdc) return null;
+  /* The signature's EIP-712 domain, which the owner's wallet signs under and
+     never guesses (lib/x402/browser-payment.ts). Fuci's own manifest lists its
+     Gateway accept without a verifying contract, and its live challenge with
+     one: only the second can be paid. */
+  const signable = typeof extra.name === "string" && extra.name.length > 0
+    && typeof extra.version === "string" && extra.version.length > 0;
 
   return {
     network,
@@ -156,7 +168,8 @@ export function normalizeOfferAccept(
     payTo,
     /* The same two tables the quote step reads: without them the quote refuses
        as asset_not_usdc or no_payable_accept. */
-    quotableByVeyra: isUsdcAsset(facts.chainId, facts.usdc)
+    quotableByVeyra: signable
+      && isUsdcAsset(facts.chainId, facts.usdc)
       && (!gateway || gatewayContextForChain(facts.chainId) !== null),
   };
 }
@@ -174,7 +187,24 @@ export function offerKey(resource: string, method: string): string | null {
   }
 }
 
-export type OfferInput = Omit<MarketOffer, "key" | "listings" | "templated"> & { listing: OfferListing };
+export type OfferInput = Omit<MarketOffer, "key" | "listings" | "templated" | "tags" | "inputSchema"> & {
+  listing: OfferListing;
+  tags?: string[];
+  inputSchema?: Record<string, unknown> | null;
+};
+
+const MAX_TAGS = 20;
+
+function tagList(...lists: Array<readonly string[] | undefined>): string[] {
+  const out = new Set<string>();
+  for (const list of lists) {
+    for (const tag of list ?? []) {
+      const clean = tag.trim().toLowerCase();
+      if (clean && clean.length <= 60) out.add(clean);
+    }
+  }
+  return [...out].slice(0, MAX_TAGS);
+}
 
 /**
  * Many listings of one offer become one record.
@@ -203,6 +233,8 @@ export function mergeOffers(inputs: OfferInput[]): MarketOffer[] {
         declaredPriceUsd: input.declaredPriceUsd,
         erc8004: input.erc8004,
         templated: isTemplatedResource(input.resource),
+        tags: tagList(input.tags),
+        inputSchema: input.inputSchema ?? null,
       });
       continue;
     }
@@ -215,6 +247,8 @@ export function mergeOffers(inputs: OfferInput[]): MarketOffer[] {
     existing.provider ??= input.provider;
     existing.description ??= input.description;
     existing.declaredPriceUsd ??= input.declaredPriceUsd;
+    existing.tags = tagList(existing.tags, input.tags);
+    existing.inputSchema ??= input.inputSchema ?? null;
     /* A two-way binding outranks a one-way claim, never the reverse. */
     if (input.erc8004 && (!existing.erc8004 || input.erc8004.binding === "both_ways")) {
       existing.erc8004 = input.erc8004;
@@ -250,6 +284,51 @@ export function preferredAccept(
     return onNetwork.find((a) => a.rail === "wallet") ?? onNetwork[0];
   }
   return null;
+}
+
+/**
+ * The words an offer can be found by: its seller's name, what it says it does,
+ * its tags, the words of its path, and the fields it asks for. Never its host
+ * name: every `.ai` domain would otherwise answer an interest in AI.
+ *
+ * Circle's catalogue is searched on Circle's side. An offer from the ERC-8004
+ * registry has no search service behind it, so it is matched here, one term at
+ * a time, the way Veyra already asks Circle's catalogue one term at a time.
+ *
+ * The fields count because they are often the only place an offer says what
+ * it is about: Fuci's agent describes itself as answering "your question", and
+ * only its `prompt` field says the question is about Argus launches and Arc
+ * markets.
+ */
+export function offerWords(offer: Pick<MarketOffer, "resource" | "provider" | "description" | "tags"> & { inputSchema?: Record<string, unknown> | null }): Set<string> {
+  let path = "";
+  try { path = decodeURIComponent(new URL(offer.resource).pathname); } catch { /* no path words */ }
+  const fields: string[] = [];
+  const properties = offer.inputSchema?.properties;
+  if (properties && typeof properties === "object" && !Array.isArray(properties)) {
+    for (const [name, field] of Object.entries(properties as Record<string, unknown>).slice(0, 40)) {
+      fields.push(name);
+      const description = (field as { description?: unknown } | null)?.description;
+      if (typeof description === "string") fields.push(description.slice(0, 300));
+    }
+  }
+  const text = [offer.provider, offer.description, ...offer.tags, path, ...fields].filter(Boolean).join(" ").toLowerCase();
+  const words = new Set<string>();
+  for (const word of text.split(/[^a-z0-9]+/)) {
+    if (word.length < 2) continue;
+    words.add(word);
+    /* "prices" answers "price"; nothing cleverer than a plural. */
+    if (word.length > 3 && word.endsWith("s")) words.add(word.slice(0, -1));
+  }
+  return words;
+}
+
+/** Whether every word of the term is among the offer's words. */
+export function offerMatchesTerm(offer: Parameters<typeof offerWords>[0], term: string): boolean {
+  const parts = term.toLowerCase().split(/[^a-z0-9]+/).filter((part) => part.length > 1);
+  if (parts.length === 0) return false;
+  const words = offerWords(offer);
+  return parts.every((part) => words.has(part) || (part.length > 3 && part.endsWith("s") && words.has(part.slice(0, -1))));
 }
 
 export type MarketSummary = {

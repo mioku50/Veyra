@@ -14,6 +14,7 @@ import {
   planRepositorySubjects,
 } from "./interests.ts";
 import { ARC_FIRST } from "../discovery/offers.ts";
+import { loadArcRegistryView, type ArcRegistryView } from "../discovery/arc-registry.ts";
 import { repositoryDigest, x402Digest } from "./observation.ts";
 import type { SubjectDigest } from "./types.ts";
 import { buildRequestBody } from "../x402/request-body.ts";
@@ -102,7 +103,14 @@ export async function observeX402Catalog(input: {
   interests: string[];
   fetchImpl?: typeof fetch;
   limitPerQuery?: number;
+  /** The ERC-8004 registry on Arc as of its last daily read. Read from the
+   *  store when not given. */
+  registry?: ArcRegistryView;
 }): Promise<SourceResult> {
+  /* Sellers registered on Arc, alongside Circle's catalogue. The brief read
+     Circle's alone, so an agent that registered on Arc and sold there reached
+     nobody's brief however well it answered. */
+  const registry = input.registry ?? await loadArcRegistryView();
   const observations: SourceObservation[] = [];
   const seen = new Set<string>();
   const labels = new Set<string>();
@@ -136,13 +144,16 @@ export async function observeX402Catalog(input: {
            and an interest whose first three all failed got nothing at all. */
         limit: input.limitPerQuery ?? SUBJECT_LIMITS.candidatesPerQuery,
         fetchImpl: input.fetchImpl,
+        registryOffers: registry.offers,
+        /* A card is about the interest it sits under. See saysItIsAbout. */
+        requireWordMatch: true,
       });
     } catch {
       // One failed query is not a failed source; the loop keeps going and the
       // source is only called unavailable if every query failed.
       continue;
     }
-    anySucceeded = true;
+    if (result.circleAnswered) anySucceeded = true;
 
     /* Per interest, not per query. It reset on every capability term, so an
        interest with three terms could take three times its share while the
@@ -214,15 +225,24 @@ export async function observeX402Catalog(input: {
           provider: candidate.provider.name,
           docsUrl: candidate.provider.docsUrl,
           description: candidate.description,
+          /* Where it was found and who declares it, for the card to say. A
+             registry entry alone proves nothing about who runs an endpoint;
+             one the endpoint's own manifest names back does. */
+          foundIn: candidate.foundIn,
+          erc8004: candidate.erc8004
+            ? { agentId: candidate.erc8004.agentId, binding: candidate.erc8004.binding }
+            : null,
         },
       });
     }
   }
 
-  return {
-    observations,
-    unavailable: anyAttempted && !anySucceeded ? ["Circle x402 catalog"] : [],
-  };
+  const unavailable: string[] = [];
+  if (anyAttempted && !anySucceeded) unavailable.push("Circle x402 catalog");
+  /* Named when it has not been read in three days, or never: a blind spot is
+     said, not shown as a quiet market. */
+  if (anyAttempted && registry.state !== "fresh") unavailable.push("ERC-8004 registry on Arc");
+  return { observations, unavailable };
 }
 
 /**
@@ -242,8 +262,17 @@ export async function observeX402Catalog(input: {
  *
  * Neither check costs a request, which is why both belong at the point where
  * subjects are chosen rather than at the point where money is.
+ *
+ * A GET is the third. Veyra sends a GET without a body, and the quote refuses
+ * a GET that would need one rather than drop the question in silence
+ * (lib/x402/execution.ts), so Nova can never ask a GET anything: the purchase
+ * path skips it every time. On 2026-09-26, 30 of the 82 listings the owner's
+ * agent had been shown in thirty days were GETs, and so were 67 of the 68
+ * offers the ERC-8004 registry on Arc declared. They come back once a GET's
+ * parameters can be bound into the URL the owner approves.
  */
-function worthWatching(candidate: { resource: string; inputSchema?: unknown }): boolean {
+export function worthWatching(candidate: { resource: string; method: "GET" | "POST"; inputSchema?: unknown }): boolean {
+  if (candidate.method === "GET") return false;
   if (/[{}]/.test(candidate.resource)) return false;
   const plan = buildRequestBody({
     intent: "what is this for",

@@ -20,7 +20,7 @@ This roadmap supersedes the original sequencing of Daily Product → Paid Invest
 | Execution security convergence | Internally hardened | Audit findings F1–F9 were addressed in the application; this is not an independent third-party audit or proof of every production configuration. |
 | D0 — Shadow Autonomy | Closed 2026-09-22; frozen with autonomy 2026-09-26 | The calibration was closed as insufficient for funding. Since the freeze, no shadow-autonomy limits can be signed and the scheduled rehearsal does not run. |
 | **V — Nova Product Value V1** | **Technical first slice implemented; owner-value acceptance open (CURRENT PRIORITY)** | Goal-driven public-source research has shipped. Whether it produces useful work consistently remains to be shown with real owner feedback. |
-| Arc first | Direction set 2026-09-23; Arc mainnet in the payment tables 2026-09-24 | Arc mainnet has a live x402 market: 482 offers in Circle's own catalogue, and more found through the Bazaar and ERC-8004. The owner's own signed purchases work on Arc, and Nova's brief reads Arc first. The first one settled on 2026-09-24: Exa search, $0.007, from the owner's browser wallet. Nova's mandate still names Base. Base stays as an additional network. |
+| Arc first | Direction set 2026-09-23; Arc mainnet in the payment tables 2026-09-24; the ERC-8004 registry read daily 2026-09-26 | Arc mainnet has a live x402 market: 482 offers in Circle's own catalogue, and 68 more declared through the ERC-8004 registry on Arc. Those now reach Veyra's selection and Nova's cards from a daily snapshot. The owner dropped the Bazaar. The owner's own signed purchases work on Arc, and Nova's brief reads Arc first. The first one settled on 2026-09-24: Exa search, $0.007, from the owner's browser wallet. Nova's mandate still names Base. Base stays as an additional network. |
 | D1 — Operational wallet | **Frozen 2026-09-26** | The signer's place, the check matrix and option C (MetaMask delegation, tested on a fork of Arc) are written down. MetaMask refused to grant the permission on Arc mainnet, and the owner froze autonomous spending. |
 | D2 — Bounded live autonomy | **Frozen 2026-09-26** | The autopilot endpoint and new AUTOPILOT mandates are refused in code, whatever the environment says. |
 | D3 — Nova hires agents | Infrastructure proof only | An ERC-8183 escrow job was demonstrated on Arc Testnet; the owner-facing Nova → agent-hiring workflow is not complete. |
@@ -223,7 +223,12 @@ Steps marked *owner* need the owner's action. *Money* means real USDC.
    22 offers bound to their ERC-8004 identity both ways. Later the same day
    Nova's brief began reading Circle's catalogue for Arc first and Base second,
    with one card per endpoint naming the network it pays on. Not yet done: the
-   daily Bazaar snapshot, and ERC-8004 offers on cards.)*
+   daily Bazaar snapshot, and ERC-8004 offers on cards.)* *(2026-09-26: the
+   owner dropped the Bazaar, which lists almost nothing on Arc. The ERC-8004
+   registry on Arc is read once a day into `arc_registry_snapshots`, and its
+   offers join Circle's in selection and on cards, which say where each listing
+   came from. See [Arc discovery through the ERC-8004
+   registry](audits/2026-09-26-arc-registry-discovery.md).)*
 3. **Arc mainnet in the payment tables:** USDC on chain 5042, Gateway domain
    26, the chain definition and reconciliation, each with tests. The owner's
    own signed purchases then work on Arc through the existing flow. *Owner
@@ -267,11 +272,25 @@ from here:*
 
 *a. **Full Arc discovery.** Step 2's remainder: the daily Bazaar snapshot and
    ERC-8004 offers on cards, then whatever else keeps Arc's market from
-   reaching the owner.*
+   reaching the owner.* *(2026-09-26: built, without the Bazaar, which the owner
+   dropped. The registry is read every day through Multicall3. Each offer is
+   checked against its own unpaid 402, and its binding is judged by host.
+   Registry offers enter selection on Arc and reach cards. On the first read, 68
+   offers came from three sellers, and only one takes a question: Fuci's agent,
+   $0.04 from a Gateway deposit on Arc. Its card was priced without paying,
+   and stops at payability, because the owner's wallet holds no Gateway deposit
+   on Arc.)*
 
 *b. **Better selection of services.** Gate V item 4's remainder: discovery by
    what the question needs rather than always a web search, and a free
-   documentation lookup before any paid tool.*
+   documentation lookup before any paid tool.* *(2026-09-26, two faults fixed
+   first, found while doing a:*
+   - *Circle's search matches inside words, so "arc" found search engines
+     ("se-arc-h"). A card now needs the term as a whole word in the listing's
+     own words.*
+   - *A GET is no longer a card: Nova can never ask one a question. GETs made
+     up 30 of the owner's 82 listing cards in thirty days. They come back when
+     a GET's parameters can be bound into the URL the owner approves.)*
 
 *c. **Veyra's identity and attestations on Arc mainnet.** An ERC-8004 identity
    from Veyra's own registrant wallet. Contracts only after an external audit.*

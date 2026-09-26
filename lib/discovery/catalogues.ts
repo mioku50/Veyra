@@ -83,7 +83,8 @@ export function offerFromCatalogueItem(
   const resource = text(item.resource);
   if (!resource || !resource.startsWith("https://")) return null;
   const metadata = asRecord(item.metadata);
-  const bazaarInput = asRecord(asRecord(asRecord(asRecord(item.extensions).bazaar).info).input);
+  const bazaarInfo = asRecord(asRecord(asRecord(item.extensions).bazaar).info);
+  const bazaarInput = asRecord(bazaarInfo.input);
   const method = String(metadata.method ?? bazaarInput.method ?? "GET").toUpperCase();
   if (method !== "GET" && method !== "POST") return null;
   const accepts = (Array.isArray(item.accepts) ? item.accepts : [])
@@ -95,12 +96,33 @@ export function offerFromCatalogueItem(
     resource,
     method,
     provider: text(provider.name) ?? text(metadata.provider) ?? null,
-    description: text(metadata.description) ?? text(item.description),
+    /* APEX's catalogue says what a route does only in the Bazaar extension's
+       output description. */
+    description: text(metadata.description) ?? text(item.description) ?? text(asRecord(bazaarInfo.output).description),
     accepts,
     declaredPriceUsd: null,
     erc8004: null,
     listing: { source, listedAt: text(item.lastUpdated) },
+    tags: [...strings(provider.tags), ...strings(metadata.tags)],
+    inputSchema: bodySchema(asRecord(metadata.input).body) ?? bazaarBodySchema(item.extensions),
   };
+}
+
+/** The Bazaar extension's JSON schema for a request body. Its `info.input.body`
+ *  is an example, not a schema. */
+export function bazaarBodySchema(extensions: unknown): Record<string, unknown> | null {
+  const schema = asRecord(asRecord(asRecord(extensions).bazaar).schema);
+  return bodySchema(asRecord(asRecord(asRecord(schema.properties).input).properties).body);
+}
+
+function strings(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((entry): entry is string => typeof entry === "string") : [];
+}
+
+/** A request schema only when it names fields: `{}` promises nothing. */
+export function bodySchema(value: unknown): Record<string, unknown> | null {
+  const schema = asRecord(value);
+  return Object.keys(asRecord(schema.properties)).length > 0 ? schema : null;
 }
 
 export async function readCircleCatalogue(input: {

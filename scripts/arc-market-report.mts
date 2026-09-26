@@ -15,49 +15,14 @@
  * public RPC.
  */
 
-import { createPublicClient, defineChain, http, parseAbi } from "viem";
+import { arcRegistryReader } from "../lib/discovery/arc-registry.ts";
 import { readBazaar, readCircleCatalogue } from "../lib/discovery/catalogues.ts";
-import { ARC_IDENTITY_REGISTRY, readArcErc8004Offers, type IdentityRegistryReader } from "../lib/discovery/erc8004-arc.ts";
+import { readArcErc8004Offers } from "../lib/discovery/erc8004-arc.ts";
 import { ARC_FIRST, mergeOffers, preferredAccept, summarizeMarket, type OfferInput } from "../lib/discovery/offers.ts";
 
 const args = new Set(process.argv.slice(2));
-const rpcUrl = process.env.ARC_MAINNET_RPC_URL || "https://rpc.mainnet.arc.io";
-
-const arcMainnet = defineChain({
-  id: 5042,
-  name: "Arc",
-  nativeCurrency: { name: "USDC", symbol: "USDC", decimals: 18 },
-  rpcUrls: { default: { http: [rpcUrl] } },
-});
-const client = createPublicClient({ chain: arcMainnet, transport: http(rpcUrl, { timeout: 30_000, retryCount: 2 }) });
-const registryAbi = parseAbi([
-  "function ownerOf(uint256) view returns (address)",
-  "function tokenURI(uint256) view returns (string)",
-]);
-const pause = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
-
-/* The public RPC rate-limits; one call at a time, with a pause, and a longer
-   one on a 429. A revert is an answer (no such id), a rate limit is not. */
-async function call<T>(fn: () => Promise<T>): Promise<T | null> {
-  for (let attempt = 0; attempt < 5; attempt += 1) {
-    await pause(250);
-    try { return await fn(); }
-    catch (error) {
-      if (/rate limit|429/i.test(String((error as Error)?.message))) { await pause(3_000); continue; }
-      return null;
-    }
-  }
-  throw new Error("arc_rpc_rate_limited");
-}
-
-const reader: IdentityRegistryReader = {
-  exists: async (id) => (await call(() => client.readContract({
-    address: ARC_IDENTITY_REGISTRY, abi: registryAbi, functionName: "ownerOf", args: [BigInt(id)],
-  }))) !== null,
-  tokenURI: async (id) => call(() => client.readContract({
-    address: ARC_IDENTITY_REGISTRY, abi: registryAbi, functionName: "tokenURI", args: [BigInt(id)],
-  })),
-};
+/* Multicall3, as the daily job reads it: a few calls for every identity. */
+const reader = arcRegistryReader();
 
 const inputs: OfferInput[] = [];
 const circle = await readCircleCatalogue({ networks: ARC_FIRST });

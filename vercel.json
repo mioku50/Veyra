@@ -11,6 +11,10 @@
     {
       "path": "/api/internal/monitoring/recheck",
       "schedule": "37 5 * * *"
+    },
+    {
+      "path": "/api/internal/discovery/arc-registry",
+      "schedule": "43 2 * * *"
     }
   ]
 }

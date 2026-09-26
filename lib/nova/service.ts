@@ -531,6 +531,7 @@ export async function runRefresh(input: {
       now,
       catalogUpdatedAt: observation.catalogUpdatedAt,
       commitsAreLowerBound: observation.context.commitsAreLowerBound === true,
+      listing: observation.context,
     });
 
     for (const change of changes) {

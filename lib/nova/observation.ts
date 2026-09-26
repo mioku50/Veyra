@@ -110,6 +110,9 @@ export type ChangeInput = {
    *  floor. Wording only -- it must never enter the digest, or a repository
    *  crossing the cap would register as a change in its own right. */
   commitsAreLowerBound?: boolean;
+  /** Where a paid listing was found, and the ERC-8004 identity that declares
+   *  it: the observation's own context. Wording only, like the two above. */
+  listing?: { foundIn?: unknown; erc8004?: unknown } | null;
 };
 
 export function changesForSubject(input: ChangeInput): ObservedChange[] {
@@ -125,7 +128,7 @@ export function changesForSubject(input: ChangeInput): ObservedChange[] {
     const previous = input.previous?.kind === "x402_resource" ? input.previous : null;
     return previous
       ? x402Changes(input.label, previous, input.next, input.now)
-      : x402FirstLook(input.label, input.next, input.now, input.catalogUpdatedAt ?? null);
+      : x402FirstLook(input.label, input.next, input.now, input.catalogUpdatedAt ?? null, input.listing ?? null);
   }
   const previous = input.previous?.kind === "github_repository" ? input.previous : null;
   const floor = input.commitsAreLowerBound === true;
@@ -223,11 +226,34 @@ function x402Changes(
   return changes;
 }
 
+/**
+ * Where a listing was found, as the card says it.
+ *
+ * Anyone can register an ERC-8004 identity that names any endpoint, so a
+ * registration alone says nothing about who runs it. When the endpoint's own
+ * manifest names the identity back, the two point at each other, and that is
+ * said too.
+ */
+export function listedWhere(listing: { foundIn?: unknown; erc8004?: unknown } | null | undefined): string {
+  const identity = listing?.erc8004 && typeof listing.erc8004 === "object"
+    ? listing.erc8004 as { agentId?: unknown; binding?: unknown }
+    : null;
+  const agent = identity && typeof identity.agentId === "string" ? `agent #${identity.agentId}` : null;
+  const declared = agent
+    ? identity!.binding === "both_ways"
+      ? `declared by ${agent} in the ERC-8004 registry on Arc, and the endpoint names that agent back`
+      : `declared by ${agent} in the ERC-8004 registry on Arc; the endpoint does not name that agent back`
+    : null;
+  if (listing?.foundIn === "erc8004_arc") return declared ? `Not in Circle's catalog: ${declared}` : "Found in the ERC-8004 registry on Arc";
+  return declared ? `Listed in Circle's catalog, and ${declared}` : "Listed in Circle's catalog";
+}
+
 function x402FirstLook(
   label: string,
   next: Extract<SubjectDigest, { kind: "x402_resource" }>,
   now: Date,
   catalogUpdatedAt: string | null,
+  listing: { foundIn?: unknown; erc8004?: unknown } | null,
 ): ObservedChange[] {
   /* A finding, and worded as one.
    *
@@ -245,7 +271,7 @@ function x402FirstLook(
     kind: "capability_available",
     headline: `${label} is available for ${usdc(next.priceAtomic)}`,
     detail: `A paid capability matching your interests${next.provider ? `, from ${next.provider}` : ""}. ${
-      next.reachable ? "Listed in Circle's catalog" : "Listed, but not answering"
+      next.reachable ? listedWhere(listing) : "Listed, but not answering"
     }${catalogUpdatedAt ? `, last updated ${describeAge(hoursSince(catalogUpdatedAt, now) ?? 0)}` : ""}.`,
     evidence: {
       priceAtomic: next.priceAtomic,

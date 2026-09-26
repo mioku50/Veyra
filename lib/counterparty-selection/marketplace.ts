@@ -38,6 +38,8 @@ import {
   type MarketplaceCandidate,
   type MarketplaceNetwork,
 } from "./marketplace-source.ts";
+import { loadArcRegistryView } from "../discovery/arc-registry.ts";
+import type { MarketOffer } from "../discovery/offers.ts";
 import { COUNTERPARTY_SELECTION_POLICY, MARKETPLACE_RANKING_WEIGHTS } from "./policy.ts";
 import { CounterpartySelectionError } from "./service.ts";
 import type {
@@ -126,6 +128,11 @@ export type MarketplaceRankedCandidate = RankedCandidate & {
     inputSchemaSource: "catalog" | "challenge" | null;
     lastUpdated: string | null;
     catalogHash: Hex;
+    /** Circle's catalogue, or the ERC-8004 registry on Arc. */
+    foundIn: MarketplaceCandidate["foundIn"];
+    /** The ERC-8004 identity that declares the endpoint, if one does, and
+     *  whether the endpoint names it back. */
+    erc8004: MarketplaceCandidate["erc8004"];
   };
   probe: {
     probeVersion: typeof X402_PROBE_VERSION;
@@ -567,11 +574,27 @@ export async function selectMarketplaceCounterparty(input: {
    * leave a quotable decision behind.
    */
   recordDecision?: boolean;
+  /**
+   * Offers declared through the ERC-8004 registry on Arc. Read from the daily
+   * snapshot when not given, and only for a decision on Arc; null leaves them
+   * out.
+   */
+  registryOffers?: readonly MarketOffer[] | null;
 }): Promise<MarketplaceSelection> {
   const request = validateMarketplaceSelectionRequest(input.request);
   const now = input.now ?? new Date();
   const createdAt = now.toISOString();
   const expiresAt = new Date(now.getTime() + MARKETPLACE_SELECTION_EXPIRY_SECONDS * 1000).toISOString();
+
+  let onArc = false;
+  try {
+    onArc = normalizeMarketplaceNetwork(request.network) === "eip155:5042";
+  } catch {
+    /* An unsupported network is refused by discovery below, with its code. */
+  }
+  const registryOffers = input.registryOffers !== undefined
+    ? input.registryOffers
+    : onArc ? (await loadArcRegistryView({ now })).offers : null;
 
   let discovery;
   try {
@@ -584,6 +607,7 @@ export async function selectMarketplaceCounterparty(input: {
       limit: request.limit,
       requireCircleGateway: request.requireCircleGateway,
       fetchImpl: input.fetchImpl,
+      registryOffers,
     });
   } catch (error) {
     if (error instanceof MarketplaceDiscoveryError) {
@@ -663,7 +687,9 @@ export async function selectMarketplaceCounterparty(input: {
       registryAddress: payTo,
       metadataUri: candidate.resource,
       serviceIds: [candidate.candidateId],
-      source: "circle_marketplace",
+      source: candidate.foundIn === "erc8004_arc" ? "erc8004" : "circle_marketplace",
+      /* A registration names an endpoint; nothing here proves the payee is
+         the identity's owner, so it is not a verified identity. */
       verifiedOnchain: false,
     };
     const candidateEvidence = buildCandidateEvidence({
@@ -757,6 +783,8 @@ export async function selectMarketplaceCounterparty(input: {
             : null,
         lastUpdated: context.candidate.lastUpdated,
         catalogHash: context.candidate.catalogHash,
+        foundIn: context.candidate.foundIn,
+        erc8004: context.candidate.erc8004,
       },
       probe: {
         probeVersion: X402_PROBE_VERSION,
