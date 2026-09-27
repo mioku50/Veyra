@@ -112,7 +112,9 @@ export function TrustScoreChart({ snapshots }: { snapshots: TrustScorePoint[] })
           <div
             className="pointer-events-none absolute top-2 z-10 w-48 rounded-md border bg-popover p-3 text-xs shadow-xl"
             style={{
-              left: `${Math.min(84, Math.max(16, active.x))}%`,
+              /* Half the tooltip's 12rem from either edge. Clamped in percent,
+                 it overhung a phone-width chart and scrolled the page sideways. */
+              left: `clamp(6rem, ${active.x}%, calc(100% - 6rem))`,
               transform: "translateX(-50%)",
             }}
           >
