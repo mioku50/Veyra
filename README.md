@@ -72,7 +72,6 @@ come from Circle's catalogue and from the ERC-8004 registry on Arc.
 A missing answer is a research hypothesis, not permission to spend. Financial
 permission remains Veyra's separate deterministic decision. The owner signs
 every payment, because autonomous spending is [frozen](#autonomy-is-frozen).
-See also [Nova Product Value V1](docs/audits/2026-09-21-nova-product-value-v1.md).
 
 Nova never holds money and there is no signing path in its code. It can want to
 spend and it says so, with a price and a verdict on the item; the payment goes
@@ -124,16 +123,14 @@ Before the freeze, Nova rehearsed spending it could not do:
 - Each pass stopped one step before the only step that costs anything.
 
 That epoch ended on 22 September, when its mandate expired. It was not
-renewed. Its record is in
-[D0 preview closure](docs/audits/2026-09-21-d0-preview-closure.md).
+renewed.
 
 > **A PREVIEW mandate can never authorize a live payment.** Execution refuses any
 > mode but `AUTOPILOT`. The decision table has no column for a signature, a
 > clearance, a transaction or a settled amount.
 
 The next step keeps the owner in control. Nova will propose hiring a specific
-ERC-8004 agent for a task at a price, and the owner will confirm every hire. See
-the [roadmap](docs/ROADMAP.md).
+ERC-8004 agent for a task at a price, and the owner will confirm every hire.
 
 Deterministic evaluator: [`lib/nova/autonomy.ts`](lib/nova/autonomy.ts) · the one
 mandate it issues: [`lib/nova/autonomy-mandate.ts`](lib/nova/autonomy-mandate.ts)

@@ -73,3 +73,8 @@ diff.patch
 /screen/
 /diff.patch
 /arc-agent-commerce@0.1.0/
+
+# Internal notes: kept on the owner's machine, never published (2026-09-27)
+/docs/audits/
+/docs/ROADMAP.md
+/docs/circle-agent-marketplace-readiness.md

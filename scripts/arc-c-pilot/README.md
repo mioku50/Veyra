@@ -3,8 +3,7 @@
 > **Frozen on 26 September.** In the owner's MetaMask, the permission dialog
 > appeared on Arc mainnet, but Grant was refused. MetaMask's
 > delegation-contract table has no Arc mainnet. Autonomous spending is frozen
-> for every user. These tools are kept as the record, not for use. See
-> [autonomy frozen](../../docs/audits/2026-09-26-autonomy-frozen.md).
+> for every user. These tools are kept as the record, not for use.
 
 These tools run the minimal real test of option C on Arc mainnet:
 
@@ -14,9 +13,7 @@ These tools run the minimal real test of option C on Arc mainnet:
 3. The owner revokes the permission.
 4. The hot wallet sends the rest back.
 
-- The plan: [the pilot plan](../../docs/audits/2026-09-24-option-c-pilot-plan.md),
-  with steps T0–T13.
-- Why it is built this way: [the architecture note](../../docs/audits/2026-09-24-option-c-architecture.md).
+- The plan and the architecture are internal notes, with steps T0–T13.
 - Scope: nothing here touches Veyra's app, its database or Vercel.
 
 | File | What it is |
