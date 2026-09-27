@@ -131,7 +131,7 @@ function ReceiptSummary({
           {formatDate(receipt.createdAt)}
         </p>
       </CardHeader>
-      <CardContent className="grid gap-5">
+      <CardContent className="grid grid-cols-1 gap-5">
         <dl className="grid gap-4 text-sm sm:grid-cols-2 lg:grid-cols-4">
           <div>
             <dt className="text-muted-foreground">Amount</dt>
@@ -174,7 +174,7 @@ function ReceiptLinks({ receipt }: { receipt: CommerceReceipt }) {
           Audit links
         </CardTitle>
       </CardHeader>
-      <CardContent className="grid gap-3">
+      <CardContent className="grid grid-cols-1 gap-3">
         <Button asChild variant="outline">
           <Link href={receipt.links.run}>
             <ListChecks />
@@ -214,12 +214,14 @@ function MetadataCard({ receipt }: { receipt: CommerceReceipt }) {
   const paymentEventId =
     receipt.paymentEventId ?? receipt.matchedPaymentEventId ?? null;
 
+  /* grid-cols-1 is minmax(0, 1fr). With an auto column this card took the
+     width of its longest line, about 10,800 px, once receipts rendered again. */
   return (
     <Card className="rounded-lg shadow-sm">
       <CardHeader>
         <CardTitle className="text-xl">Purchase metadata</CardTitle>
       </CardHeader>
-      <CardContent className="grid gap-5">
+      <CardContent className="grid grid-cols-1 gap-5">
         <dl className="grid gap-4 text-sm sm:grid-cols-2">
           <div>
             <dt className="text-muted-foreground">Buyer wallet</dt>
@@ -380,7 +382,7 @@ function OnchainProofCard({ receipt }: { receipt: CommerceReceipt }) {
           </Badge>
         </div>
       </CardHeader>
-      <CardContent className="grid gap-5">
+      <CardContent className="grid grid-cols-1 gap-5">
         {!proof ? (
           <p className="text-sm leading-6 text-muted-foreground">
             This legacy receipt does not have onchain proof metadata.
@@ -533,7 +535,7 @@ async function ReceiptDetail({ params }: ReceiptDetailPageProps) {
         </div>
       </section>
 
-      <section className="mx-auto grid w-full max-w-6xl gap-4 px-4 py-8 sm:px-6 lg:grid-cols-[1fr_320px]">
+      <section className="mx-auto grid w-full max-w-6xl grid-cols-1 gap-4 px-4 py-8 sm:px-6 lg:grid-cols-[minmax(0,1fr)_320px]">
         <div className="grid gap-4">
           <MetadataCard receipt={receipt} />
           <OnchainProofCard receipt={receipt} />
@@ -547,7 +549,7 @@ async function ReceiptDetail({ params }: ReceiptDetailPageProps) {
 
 function ReceiptDetailFallback() {
   return (
-    <section className="mx-auto grid w-full max-w-6xl gap-4 px-4 py-8 sm:px-6">
+    <section className="mx-auto grid w-full max-w-6xl grid-cols-1 gap-4 px-4 py-8 sm:px-6">
       <Card className="rounded-lg">
         <CardContent className="p-6 text-sm text-muted-foreground">
           Loading commerce receipt...
