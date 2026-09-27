@@ -106,6 +106,7 @@ These three affected the testnet routes as well, and are fixed in both.
    compares against it. Done on 27 September: the wallet is
    `0x8F8E0C9Fa2F67AED5b16e04f2716022aeB200eD6`.
 4. **The identity is registered,** and its id goes into `VEYRA_ARC_AGENT_ID`.
+   Done on 27 September: Veyra is agentId 298.
 5. **The first paid call.** A buyer needs a Gateway deposit on Arc, and the
    owner's wallet holds none.
 6. **The owner submits Circle's Agent Marketplace intake form,** with the
@@ -124,7 +125,7 @@ URLs given.
 | Payment | x402 v2, `exact`, Circle Gateway (`GatewayWalletBatched`) on Arc mainnet, `eip155:5042` |
 | OpenAPI | `https://agent-commerce-six.vercel.app/openapi/veyra-arc-trust-api.json` |
 | Payout wallet | Veyra's Circle wallet on Arc, `0x8F8E0C9Fa2F67AED5b16e04f2716022aeB200eD6` |
-| Identity | ERC-8004 on Arc, `https://agent-commerce-six.vercel.app/.well-known/agent-registration.json`, once registered |
+| Identity | ERC-8004 on Arc mainnet, agentId 298 in `0x8004A169FB4a3325136EB29fA0ceB6D2e539a432`, file at `https://agent-commerce-six.vercel.app/.well-known/agent-registration.json` |
 
 ## Not done
 

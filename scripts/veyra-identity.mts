@@ -169,7 +169,7 @@ async function walletStep() {
 async function fileServed(): Promise<boolean> {
   try {
     const response = await fetch(VEYRA_AGENT_URI, { headers: { accept: "application/json" }, signal: AbortSignal.timeout(15_000) });
-    return response.ok && isDeepStrictEqual(await response.json(), veyraRegistrationFile(null));
+    return response.ok && isDeepStrictEqual(await response.json(), veyraRegistrationFile());
   } catch {
     return false;
   }

@@ -112,16 +112,24 @@ message, because the request behind it carries the key.
    by wallet id alone. A Circle read that fails now prints its reason, still
    without the key. `check` then passed: nothing in flight, and Circle's high
    fee estimate was 0.012 USDC.
+
+   Then the owner registered. Veyra is **agentId 298** on Arc mainnet:
+   - transaction `0xd770ed6af88eb3adc8756365b2e9a6a50377e13bdd3ee408f45b7102770b05b4`,
+     in block 22997667, from the registrant to the registry;
+   - it paid 0.0043 USDC in gas, and the registrant keeps 0.1057 USDC;
+   - read back from the chain: `ownerOf(298)` is the registrant, and
+     `tokenURI(298)` is the agentURI.
 4. **Then the id goes into the file.** Set `VEYRA_ARC_AGENT_ID`, deploy, and
    check the binding both ways:
    - the token's owner and URI;
    - the file's `registrations` entry.
 
+   `VEYRA_ARC_AGENT_ID` is 298. With it:
+   - the file names the identity back;
+   - Veyra's x402 catalogue carries an `erc8004` field, as CRA's does;
+   - `check` compares the served file with the code's file as it now is.
+
 ## Not done
 
 - **Attestations.** Feedback in the ReputationRegistry needs a separate
   attester wallet, and it follows verified purchases on Arc mainnet.
-- **The `erc8004` field in Veyra's own x402 manifest.** This is how CRA names
-  its identity back. It comes with item d: today the manifest sells on
-  testnets.
-- **The mint itself.** It waits for the owner's steps above.

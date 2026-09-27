@@ -24,9 +24,10 @@ export const VEYRA_AGENT_REGISTRY = `eip155:5042:${ARC_IDENTITY_REGISTRY}`;
 /** How the script finds the registrant wallet again among the owner's Circle wallets. */
 export const VEYRA_REGISTRANT_REF = "veyra-erc8004-registrant";
 
-/** Veyra's agentId on Arc mainnet, as the registry minted it. Null until the
- *  mint, and until then the file lists no registration. */
-export const VEYRA_ARC_AGENT_ID: number | null = null;
+/** Veyra's agentId on Arc mainnet, as the registry minted it to the
+ *  registrant on 27 September, in transaction 0xd770ed6a…05b4. Before the
+ *  mint it was null, and the file listed no registration. */
+export const VEYRA_ARC_AGENT_ID: number | null = 298;
 
 export function veyraRegistrationFile(
   agentId: number | null = VEYRA_ARC_AGENT_ID,
@@ -113,7 +114,8 @@ export type RegistrantState = {
   identitiesHeld: number | null;
   /** The registrant's Circle transactions that have not reached a final state. */
   inFlight: number | null;
-  /** The file at the agentURI is exactly this code's file, with no registration yet. */
+  /** The file at the agentURI is exactly this code's file. Before the mint,
+   *  that file names no registration. */
   fileMatches: boolean;
   /** The id a call from the registrant would mint now, from eth_call. */
   wouldMint: number | null;
@@ -123,7 +125,7 @@ export type RegistrantState = {
 export function registrationRefusals(state: RegistrantState): string[] {
   const refusals: string[] = [];
   if (!state.address) refusals.push("There is no registrant wallet yet. Run the wallet step first.");
-  if (!state.fileMatches) refusals.push(`The file at ${VEYRA_AGENT_URI} is not this code's file without a registration. Deploy first.`);
+  if (!state.fileMatches) refusals.push(`The file at ${VEYRA_AGENT_URI} is not this code's file. Deploy first.`);
   if (state.identitiesHeld === null) refusals.push("Could not read how many identities the registrant holds.");
   else if (state.identitiesHeld > 0) refusals.push(`The registrant already holds ${state.identitiesHeld === 1 ? "an identity" : `${state.identitiesHeld} identities`}. Veyra registers once.`);
   if (state.inFlight === null) refusals.push("Could not read the registrant's Circle transactions.");
