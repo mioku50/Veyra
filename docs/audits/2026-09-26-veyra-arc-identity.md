@@ -104,6 +104,14 @@ message, because the request behind it carries the key.
    - it holds no identity;
    - a dry call of `register()` from it would mint agentId 298, for about
      203,500 gas, or 0.004 USDC.
+
+   The owner's first `register` was refused before anything was sent: "Could
+   not read the registrant's Circle transactions." Circle refuses a listing by
+   `walletIds` together with `blockchain` (400, code 2, "API parameter
+   invalid"). A Circle wallet is on one chain already, so the listing now goes
+   by wallet id alone. A Circle read that fails now prints its reason, still
+   without the key. `check` then passed: nothing in flight, and Circle's high
+   fee estimate was 0.012 USDC.
 4. **Then the id goes into the file.** Set `VEYRA_ARC_AGENT_ID`, deploy, and
    check the binding both ways:
    - the token's owner and URI;

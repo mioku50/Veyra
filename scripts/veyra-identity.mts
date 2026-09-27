@@ -175,9 +175,16 @@ async function fileServed(): Promise<boolean> {
   }
 }
 
-async function gather(): Promise<{ state: RegistrantState; walletId: string | null }> {
+async function gather(): Promise<{ state: RegistrantState; walletId: string | null; unread: string[] }> {
   const wallet = await findRegistrant();
   const address = (wallet?.address ?? null) as Address | null;
+  /* Why a read from Circle failed, through describe(), so that the owner sees
+     the reason and never the key. */
+  const unread: string[] = [];
+  const unreadable = (what: string) => (error: unknown) => {
+    unread.push(`${what}: ${describe(error)}`);
+    return null;
+  };
   const [balanceUsdc, identitiesHeld, wouldMint, fileMatches, inFlight, feeUsdc] = await Promise.all([
     address ? chain.getBalance({ address }).then((wei) => Number(formatUnits(wei, 18))).catch(() => null) : null,
     address
@@ -188,10 +195,13 @@ async function gather(): Promise<{ state: RegistrantState; walletId: string | nu
         .then((simulated) => Number(simulated.result)).catch(() => null)
       : null,
     fileServed(),
+    /* By wallet id alone. Circle refuses walletIds together with blockchain
+       (400, code 2, "API parameter invalid"), and a Circle wallet is on one
+       chain already. */
     wallet
-      ? circle().listTransactions({ walletIds: [wallet.id], blockchain: "ARC" })
+      ? circle().listTransactions({ walletIds: [wallet.id] })
         .then((listed) => (listed.data?.transactions ?? []).filter((transaction) => !FINAL_STATES.has(transaction.state)).length)
-        .catch(() => null)
+        .catch(unreadable("Circle transactions"))
       : null,
     wallet
       ? circle().estimateContractExecutionFee({
@@ -202,13 +212,13 @@ async function gather(): Promise<{ state: RegistrantState; walletId: string | nu
       }).then((estimate) => {
         const fee = Number(estimate.data?.high?.networkFee);
         return Number.isFinite(fee) ? fee : null;
-      }).catch(() => null)
+      }).catch(unreadable("Circle fee estimate"))
       : null,
   ]);
-  return { state: { address, balanceUsdc, feeUsdc, identitiesHeld, inFlight, fileMatches, wouldMint }, walletId: wallet?.id ?? null };
+  return { state: { address, balanceUsdc, feeUsdc, identitiesHeld, inFlight, fileMatches, wouldMint }, walletId: wallet?.id ?? null, unread };
 }
 
-function printState(state: RegistrantState) {
+function printState(state: RegistrantState, unread: string[]) {
   const shown = (value: unknown) => value === null ? "could not be read" : String(value);
   console.log([
     `Registrant         ${state.address ?? "none yet"}`,
@@ -218,12 +228,13 @@ function printState(state: RegistrantState) {
     `In flight          ${shown(state.inFlight)}`,
     `File               ${state.fileMatches ? "served, and it is this code's file" : "not this code's file"} (${VEYRA_AGENT_URI})`,
     `Dry call           ${state.wouldMint === null ? "did not succeed" : `would mint agentId ${state.wouldMint}`}`,
+    ...(unread.length > 0 ? ["", "Why a Circle read failed:", ...unread.map((reason) => `  - ${reason}`)] : []),
   ].join("\n"));
 }
 
 async function checkStep() {
-  const { state } = await gather();
-  printState(state);
+  const { state, unread } = await gather();
+  printState(state, unread);
   const refusals = registrationRefusals(state);
   console.log(refusals.length === 0
     ? `\nReady. To register:\n  npm run veyra-identity -- register --confirm ${VEYRA_AGENT_URI}`
@@ -235,8 +246,8 @@ async function registerStep(confirm: string | undefined) {
     console.error(`Confirm the agentURI by typing it:\n  npm run veyra-identity -- register --confirm ${VEYRA_AGENT_URI}`);
     process.exit(1);
   }
-  const { state, walletId } = await gather();
-  printState(state);
+  const { state, walletId, unread } = await gather();
+  printState(state, unread);
   const refusals = registrationRefusals(state);
   if (refusals.length > 0 || !walletId || !state.address) {
     console.error(`\nRefused:\n${refusals.map((refusal) => `  - ${refusal}`).join("\n")}`);
