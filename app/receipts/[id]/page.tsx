@@ -536,7 +536,10 @@ async function ReceiptDetail({ params }: ReceiptDetailPageProps) {
       </section>
 
       <section className="mx-auto grid w-full max-w-6xl grid-cols-1 gap-4 px-4 py-8 sm:px-6 lg:grid-cols-[minmax(0,1fr)_320px]">
-        <div className="grid gap-4">
+        {/* One bounded column: an auto one took the width of the longest line
+            in the response card, about 10,000 characters of JSON, and all
+            three cards grew to it. */}
+        <div className="grid min-w-0 grid-cols-1 gap-4">
           <MetadataCard receipt={receipt} />
           <OnchainProofCard receipt={receipt} />
           <ResponseCard receipt={receipt} />

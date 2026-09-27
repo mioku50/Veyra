@@ -144,7 +144,7 @@ export function LocalAgentSetupGuide({ compact = false }: { compact?: boolean })
                         key={name}
                         className="grid gap-2 rounded-md border bg-muted/20 p-3 sm:grid-cols-[180px_1fr]"
                       >
-                        <code className="font-mono text-xs text-code">{name}</code>
+                        <code className="break-all font-mono text-xs text-code">{name}</code>
                         <p className="text-xs leading-5 text-muted-foreground">{detail}</p>
                       </div>
                     ))}
