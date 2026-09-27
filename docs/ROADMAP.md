@@ -24,7 +24,7 @@ This roadmap supersedes the original sequencing of Daily Product → Paid Invest
 | D1 — Operational wallet | **Frozen 2026-09-26** | The signer's place, the check matrix and option C (MetaMask delegation, tested on a fork of Arc) are written down. MetaMask refused to grant the permission on Arc mainnet, and the owner froze autonomous spending. |
 | D2 — Bounded live autonomy | **Frozen 2026-09-26** | The autopilot endpoint and new AUTOPILOT mandates are refused in code, whatever the environment says. |
 | D3 — Nova hires agents | Infrastructure proof only | An ERC-8183 escrow job was demonstrated on Arc Testnet; the owner-facing Nova → agent-hiring workflow is not complete. |
-| Mainnet / broader launch | Preparation only | Existing Nova identity, proofs and contracts are on Arc Testnet; do not describe them as Arc mainnet identity or mainnet revenue. Veyra has no mainnet identity, contracts or paid API: its Trust API sells only on testnets. |
+| Mainnet / broader launch | Veyra's identity and Trust API on Arc mainnet since 2026-09-27; contracts on testnet only | Veyra is ERC-8004 agent #298 on Arc mainnet, and it sells `history` and `select` there through Circle Gateway. Its contracts, and Nova's identities and proofs, are on Arc Testnet; do not describe those as mainnet. On 2026-09-27 its Gateway balance on Arc was 0: no paid call had reached it, so there is no mainnet revenue yet. The Circle Agent Marketplace intake and Arc Portal are the owner's to submit. |
 
 ## Autonomy frozen (2026-09-26)
 
@@ -315,6 +315,11 @@ from here:*
    - *A dry call would mint agentId 295, for about 0.004 USDC of gas.*
    - *Attestations follow verified purchases on Arc, from a separate wallet.*
 
+   *2026-09-27: registered. Veyra is agentId 298, from its Circle wallet
+   `0x8F8E0C9Fa2F67AED5b16e04f2716022aeB200eD6`, for 0.0043 USDC of gas. The
+   file names the identity back, and the binding was checked both ways.
+   Attestations are still to come.*
+
    *See [Veyra's identity on Arc mainnet](audits/2026-09-26-veyra-arc-identity.md).)*
 
 *d. **Veyra's own paid service on Arc.** Then the Circle Agent Marketplace
@@ -327,6 +332,13 @@ from here:*
    - *Nothing is sold until the wallet's address is in the code.*
    - *Found on the way: `select` refused its own published `requesterWallet`,
      after payment and as a 503. Requests are now checked before settlement.*
+
+   *2026-09-27, later: live.*
+   - *The payout wallet is in the code, and the 402 challenge offers Arc
+     alone, paid to it.*
+   - *The catalogue lists both Arc items and names identity 298.*
+   - *Still to come: the Marketplace intake and the Portal form, both the
+     owner's to submit, and a first paid call.*
 
    *See [Veyra's Trust API on Arc](audits/2026-09-27-veyra-arc-trust-api.md).)*
 

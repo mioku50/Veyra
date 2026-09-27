@@ -1,8 +1,9 @@
 # Veyra
 
-[![Release](https://img.shields.io/badge/release-v0.2.0--beta.8-blue.svg)](https://github.com/mioku50/Veyra/releases/tag/v0.2.0-beta.8)
+[![Release](https://img.shields.io/badge/release-v0.3.0--beta.1-blue.svg)](https://github.com/mioku50/Veyra/releases/tag/v0.3.0-beta.1)
 [![CI](https://github.com/mioku50/Veyra/actions/workflows/release-gate.yml/badge.svg)](https://github.com/mioku50/Veyra/actions/workflows/release-gate.yml)
-[![Network](https://img.shields.io/badge/network-Arc%20Testnet%20(5042002)-emerald.svg)](https://testnet.arcscan.app)
+[![Arc mainnet](https://img.shields.io/badge/Arc%20mainnet-agent%20%23298-emerald.svg)](https://agent-commerce-six.vercel.app/.well-known/agent-registration.json)
+[![Arc Testnet](https://img.shields.io/badge/Arc%20Testnet-5042002-emerald.svg)](https://testnet.arcscan.app)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 [![Live](https://img.shields.io/badge/live-agent--commerce--six.vercel.app-7b6cff.svg)](https://agent-commerce-six.vercel.app)
 
@@ -18,13 +19,19 @@ observed outcome becomes new reputation on Arc.
 
 `ERC-8004` · `ERC-8183` · `x402` · `Gateway Nanopayments` · `USDC` · `Arc`
 
-**Live on Arc Testnet — [agent-commerce-six.vercel.app](https://agent-commerce-six.vercel.app)**
+**Live — [agent-commerce-six.vercel.app](https://agent-commerce-six.vercel.app)**
 · [Create an agent](https://agent-commerce-six.vercel.app), the front door — a
 personal agent, its brief, and what it has earned on Arc
 · [Choose and pay yourself](https://agent-commerce-six.vercel.app/run), the same
 decision driven by hand
 · [Decision log](https://agent-commerce-six.vercel.app/executions), every
 trust-routed action, authorization and onchain settlement as it happened
+
+On **Arc mainnet** Veyra is ERC-8004 agent
+[#298](https://agent-commerce-six.vercel.app/.well-known/agent-registration.json).
+It sells its Trust API there, paid through Circle Gateway. Its own contracts
+(the Trust Gate, the evaluator and the proof registry) stay on **Arc Testnet**
+until they are audited.
 
 ## The agent in front of it
 
@@ -54,10 +61,18 @@ PROPOSE    suitable tool · expected result · exact price · Veyra policy
 SIGN → EXECUTE → VERIFY → RECEIPT / ARC ATTESTATION
 ```
 
+**Ask Nova.** The owner can put a question to Nova directly.
+- Nova answers from Arc's and Circle's documentation first, at no charge.
+- Only when that does not answer does it choose a tool on Arc for the
+  question, and price it for the owner to approve.
+
+The brief reads Arc first and Base after, with one card per endpoint. The cards
+come from Circle's catalogue and from the ERC-8004 registry on Arc.
+
 A missing answer is a research hypothesis, not permission to spend. Financial
-permission remains Veyra's separate deterministic decision. The operational-wallet
-phase is deferred until Nova demonstrates useful work; see
-[Nova Product Value V1](docs/audits/2026-09-21-nova-product-value-v1.md).
+permission remains Veyra's separate deterministic decision. The owner signs
+every payment, because autonomous spending is [frozen](#autonomy-is-frozen).
+See also [Nova Product Value V1](docs/audits/2026-09-21-nova-product-value-v1.md).
 
 Nova never holds money and there is no signing path in its code. It can want to
 spend and it says so, with a price and a verdict on the item; the payment goes
@@ -91,43 +106,34 @@ LEARN      observed outcome → reputation on Arc
 One decision core. Two ways to spend. Every score traceable to the evidence that
 produced it.
 
-## Shadow autonomy
+## Autonomy is frozen
 
-Nova is currently rehearsing a kind of spending it cannot do.
+Nova proposes, and the owner signs every payment. On 26 September autonomous
+spending was frozen for every user:
+- `AUTONOMY_FROZEN` is a constant in
+  [`lib/execution/autonomy-freeze.ts`](lib/execution/autonomy-freeze.ts), not a
+  setting, so no environment variable can undo it.
+- The autopilot route answers 503, and new `AUTOPILOT` mandates are refused.
+- The scheduled shadow pass stops before it reads a mandate.
 
-The owner signs an `ExecutionMandate` — EIP-712, v2, `mode: PREVIEW` — naming the
-capabilities, rails, per-action, per-day and total ceilings, attempts per day,
-minimum trust score and budget timezone a rehearsal runs under. On every
-scheduled pass the whole path then runs for real: a model notices something, a
-question is written for it, discovery runs, an endpoint quotes a live price,
-Veyra decides, and the signed mandate is evaluated against all of it. Then it
-stops, one step before the only step that costs anything.
+Before the freeze, Nova rehearsed spending it could not do:
+- The owner signed an `ExecutionMandate` (EIP-712, v2, `mode: PREVIEW`). It named
+  the capabilities, rails, spending ceilings and minimum trust score.
+- Every scheduled pass then ran the whole path for real: a question,
+  discovery, a live price, Veyra's decision and all eleven mandate checks.
+- Each pass stopped one step before the only step that costs anything.
 
-No payment authorization is built, no EIP-3009 signature is produced, and no
-wallet is touched. The decision table has no column for a signature, a clearance,
-a transaction or a settled amount, so a bug cannot write one into it.
-
-All eleven checks run on every proposal, including the ones after the first
-failure, so a refusal names everything that was wrong rather than the first thing
-— which matters, because raising the limit would not have helped if the trust
-score was also too low:
-
-```text
-capability_allowed · rail_allowed · network_matches_mandate · veyra_decision_allows
-trust_at_least_minimum · within_per_action_limit · within_daily_budget
-within_total_budget · attempts_remaining · payable_unattended · evaluator_where_required
-```
+That epoch ended on 22 September, when its mandate expired. It was not
+renewed. Its record is in
+[D0 preview closure](docs/audits/2026-09-21-d0-preview-closure.md).
 
 > **A PREVIEW mandate can never authorize a live payment.** Execution refuses any
-> mode but `AUTOPILOT`, and `subjectWallet` is the zero address, deliberately —
-> Nova has no operational wallet, and inventing one would put an address naming
-> nothing into a signed document. Enabling real autonomy later requires a fresh
-> signature on a mandate that names a real wallet.
+> mode but `AUTOPILOT`. The decision table has no column for a signature, a
+> clearance, a transaction or a settled amount.
 
-It exists because the honest way to decide whether an agent should be funded is
-to watch what it would have done, for a week, with nothing at risk. The record
-that produces — what it would have bought, what Veyra refused, what the market
-would not price at all — is what the real limits get set from.
+The next step keeps the owner in control. Nova will propose hiring a specific
+ERC-8004 agent for a task at a price, and the owner will confirm every hire. See
+the [roadmap](docs/ROADMAP.md).
 
 Deterministic evaluator: [`lib/nova/autonomy.ts`](lib/nova/autonomy.ts) · the one
 mandate it issues: [`lib/nova/autonomy-mandate.ts`](lib/nova/autonomy-mandate.ts)
@@ -164,18 +170,20 @@ the candidate source and the shape of the evidence.
 
 | | **API purchase** | **Agent job** |
 | :--- | :--- | :--- |
-| Discover | Circle x402 marketplace | ERC-8004 IdentityRegistry on Arc |
+| Discover | Circle x402 marketplace · offers declared in the ERC-8004 registry on Arc | ERC-8004 IdentityRegistry on Arc |
 | Evidence | live 402 probe, catalog drift, latency | onchain settlement history, evaluator verdicts |
 | Execute | x402 / Gateway Nanopayments | ERC-8183 job with USDC escrow |
 | Verify | response validity, settlement | independent evaluator verdict, signed EIP-712 |
 
-Circle's catalogue publishes zero resources on Arc — measured, not assumed — so an
-x402 purchase settles wherever the endpoint lives, usually Base, while identity,
-authorization, attestation and escrow stay on Arc. The product says which chain a
-price is on rather than letting the Arc heading imply one. Settlement is a
-property of the endpoint too: 74 of the 389 catalogue resources take a batched
-Gateway accept, which spends a deposit already sitting in Circle's GatewayWallet
-on that chain rather than the wallet's balance, 289 do not, and none offers both.
+An x402 purchase settles wherever the endpoint sells, and Nova reads Arc first.
+On 23 September Circle's catalogue listed 482 offers on Arc mainnet and 1,009 on
+Base. Identity, authorization, attestation and escrow stay on Arc. The product
+says which chain a price is on, rather than letting the Arc heading imply one.
+
+Settlement is a property of the endpoint too:
+- All 482 Arc offers take a batched Gateway accept. It spends a deposit already
+  held in Circle's GatewayWallet, not the wallet's balance.
+- Only two of them also take a plain wallet payment.
 
 A trust score is worth nothing if you cannot see what produced it, so every
 decision exposes its evidence: the live 402 challenge against the advertised one,
@@ -215,25 +223,37 @@ verdict is free, with its evidence; the signed clearance costs, because a contra
 can consume an attestation and cannot consume an opinion. Reporting what happened
 after a purchase earns a credit toward the next one.
 
+On Arc mainnet Veyra sells two answers of its own:
+- `history`, what it has observed of an endpoint, at 0.005 USDC;
+- `select`, a ranked choice of sellers for a task, at 0.02 USDC.
+
+Both are paid only on Arc, through Circle Gateway, to Veyra's own Circle wallet.
+Credits do not pay there, and no clearance is signed there, because the Trust
+Gate is on Arc Testnet. See the
+[OpenAPI document](https://agent-commerce-six.vercel.app/openapi/veyra-arc-trust-api.json)
+and the [ERC-8004 registration](https://agent-commerce-six.vercel.app/.well-known/agent-registration.json).
+
 ## Arc integration
 
-| | |
-| :--- | :--- |
-| Network | Arc Testnet |
-| Chain ID | `5042002` (`0x4CEF52`) |
-| RPC | `https://rpc.testnet.arc.network` |
-| Explorer | [testnet.arcscan.app](https://testnet.arcscan.app) |
-| Native gas | USDC — 18 decimals native, 6 decimals ERC-20 (`0x3600…0000`) |
-| ERC-8183 | [`0x0747EEf0706327138c69792bF28Cd525089e4583`](https://testnet.arcscan.app/address/0x0747EEf0706327138c69792bF28Cd525089e4583) |
-| ERC-8004 Identity | [`0x8004A818BFB912233c491871b3d84c89A494BD9e`](https://testnet.arcscan.app/address/0x8004A818BFB912233c491871b3d84c89A494BD9e) |
-| Veyra Evaluator | [`0x0d2C04580E081e222BBE5BF9818af337E2633eb7`](https://testnet.arcscan.app/address/0x0d2C04580E081e222BBE5BF9818af337E2633eb7) |
+| | Arc mainnet | Arc Testnet |
+| :--- | :--- | :--- |
+| Chain ID | `5042` | `5042002` (`0x4CEF52`) |
+| RPC | `https://rpc.mainnet.arc.io` | `https://rpc.testnet.arc.network` |
+| Explorer | [explorer.arc.io](https://explorer.arc.io) | [testnet.arcscan.app](https://testnet.arcscan.app) |
+| Native gas | USDC — 18 decimals native, 6 decimals ERC-20 (`0x3600…0000`) | the same |
+| ERC-8004 Identity | [`0x8004A169FB4a3325136EB29fA0ceB6D2e539a432`](https://explorer.arc.io/address/0x8004A169FB4a3325136EB29fA0ceB6D2e539a432) | [`0x8004A818BFB912233c491871b3d84c89A494BD9e`](https://testnet.arcscan.app/address/0x8004A818BFB912233c491871b3d84c89A494BD9e) |
+| Veyra's identity | agent #298, [registered](https://explorer.arc.io/tx/0xd770ed6af88eb3adc8756365b2e9a6a50377e13bdd3ee408f45b7102770b05b4) by Veyra's Circle wallet [`0x8F8E…eD6`](https://explorer.arc.io/address/0x8F8E0C9Fa2F67AED5b16e04f2716022aeB200eD6) | — |
+| Circle Gateway | GatewayWallet [`0x7777…00eE`](https://explorer.arc.io/address/0x77777777Dcc4d5A8B6E418Fd04D8997ef11000eE) | Circle's testnet Gateway |
+| ERC-8183 | — | [`0x0747EEf0706327138c69792bF28Cd525089e4583`](https://testnet.arcscan.app/address/0x0747EEf0706327138c69792bF28Cd525089e4583) |
+| Veyra Evaluator | — | [`0x0d2C04580E081e222BBE5BF9818af337E2633eb7`](https://testnet.arcscan.app/address/0x0d2C04580E081e222BBE5BF9818af337E2633eb7) |
 
 Authorization, escrow, evaluation and reputation all live on Arc, and Gateway is
 where the agent's USDC comes from. Sub-second finality and USDC-denominated gas
 are what make a per-job escrow sensible at cent scale.
 
-> Contracts are deployed on Arc Testnet for evaluation and have **not** had an
-> independent third-party security audit.
+> Veyra's contracts are deployed on Arc Testnet only, for evaluation, and have
+> **not** had an independent third-party security audit. On Arc mainnet Veyra
+> uses Arc's ERC-8004 registry and Circle Gateway, and deploys nothing of its own.
 
 ## Quickstart
 
@@ -283,6 +303,8 @@ npm run x402-payment:test && npm run x402-trust-api:test
 npm run nova:test && npm run nova-standing:test && npm run nova-identity:test
 npm run nova-product-value:test && npm run nova-project-context:test
 npm run nova-presentation:test && npm run nova-autonomy:test && npm run nova-arc-proof:test
+npm run arc-registry:test && npm run arc-trust-api:test && npm run veyra-identity:test
+npm run migration-access:test
 (cd contracts && forge test)
 ```
 
@@ -304,7 +326,11 @@ preview mandate are rejected before a wallet is ever asked to sign one.
 
 ## Security
 
-- **Testnet only.** Never use keys that control real assets.
+- **Mainnet, with care.**
+  - Veyra's identity and its Trust API are on Arc mainnet.
+  - Owner-approved purchases settle on Arc mainnet and Base.
+  - Veyra's contracts are on Arc Testnet only.
+  - Autonomous spending is frozen, so the owner signs every payment.
 - **Unaudited.** Contracts and protocol implementations are experimental.
 - **No custody.** Nova holds no key and cannot sign a payment; an owner is proven
   by a secret whose SHA-256 is all the database stores.

@@ -191,12 +191,12 @@ export function Sidebar({ collapsed = false }: { collapsed?: boolean }) {
               "flex items-center gap-2.5 rounded-lg border border-sky-500/20 bg-sky-500/10 px-3 py-2.5 text-xs text-sky-300 backdrop-blur-md shadow-[0_0_15px_rgba(0,208,132,0.1)]",
               collapsed && "justify-center px-2",
             )}
-            title={collapsed ? "v0.2.0-beta.8" : undefined}
+            title={collapsed ? "v0.3.0-beta.1" : undefined}
           >
             <div className="flex h-2 w-2 items-center justify-center">
               <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-sky-500" />
             </div>
-            {!collapsed && <span className="truncate">v0.2.0-beta.8</span>}
+            {!collapsed && <span className="truncate">v0.3.0-beta.1</span>}
           </div>
         </div>
       </div>

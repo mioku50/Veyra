@@ -5,6 +5,135 @@ All notable changes to the Veyra platform will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0-beta.1] - 2026-09-27
+
+Six weeks and 198 commits after 0.2.0-beta.8. Veyra now has a personal agent,
+Nova, in front of its decision engine. It also has its first presence on Arc
+mainnet: an ERC-8004 identity and a paid Trust API. Autonomous spending is
+frozen, so the owner signs every payment.
+
+### Veyra on Arc mainnet
+- **ERC-8004 identity, agentId 298.**
+  - Registered on 27 September in Arc's IdentityRegistry
+    (`0x8004A169FB4a3325136EB29fA0ceB6D2e539a432`), from Veyra's own
+    developer-controlled Circle wallet (`0x8F8E0C9Fa2F67AED5b16e04f2716022aeB200eD6`).
+  - The agentURI is `/.well-known/agent-registration.json` on Veyra's own
+    domain, and the file names the identity back.
+  - `npm run veyra-identity` has four steps: `entity-secret`, `wallet`, `check`
+    and `register`. The owner runs them, and they never print a credential.
+- **The Trust API on Arc mainnet.**
+  - `history` costs 0.005 USDC and `select` 0.02 USDC, at `/api/x402/v1/arc/*`.
+  - Both are paid only on Arc, through Circle's mainnet Gateway
+    (`GatewayWalletBatched`), to Veyra's Circle wallet.
+  - Credits earned on testnets are refused there.
+  - `select` signs no clearance there, because the TrustGate is on Arc
+    Testnet only.
+  - The OpenAPI document is at `/openapi/veyra-arc-trust-api.json`. The x402
+    catalogue lists both products and names the identity in an `erc8004` field.
+- **A paid request is checked before it is settled.** x402 has no refund, so a
+  request that cannot be served is refused while it is still unpaid, on every
+  rail. On the way, two more faults were fixed:
+  - `select` refused its own published `requesterWallet`;
+  - the engine's refusals came back as 503 rather than 400.
+
+### Nova, the personal agent
+- **The front door creates Nova.**
+  - It belongs to the person who made it, who proves ownership with a key
+    they keep.
+  - It reads official publications, release notes and payment changes against
+    the owner's goal and project context.
+  - It explains what changed, with source excerpts.
+- **A scheduled brief.**
+  - It reads Arc first, then Base, with one card per endpoint.
+  - It says which chain a price is on.
+  - An empty brief says whether it was a quiet day or a failure.
+- **Ask Nova.** The owner's question is answered from Arc's and Circle's
+  documentation first, at no charge. Only when that does not answer is a tool
+  on Arc chosen for the question and priced for the owner to approve.
+- **Owner-approved purchases.**
+  - They are signed in the owner's own wallet, on Arc mainnet and Base.
+  - The first on Arc mainnet settled on 24 September: an Exa search for
+    $0.007.
+- **Receipts that last**, on Arc Testnet:
+  - verified purchases in the proof registry;
+  - standing counted from what was bought;
+  - an ERC-8004 identity owned by the person.
+- **Feedback.** An owner can:
+  - rate a card, with reasons;
+  - dismiss an announcement as "less of this", and take it back;
+  - name what Nova missed;
+  - correct the project context a line at a time.
+- **Reading.**
+  - Readings are grounded in public sources, and a failed reading says which
+    step failed.
+  - The model reads the whole article.
+  - Production reads with deepseek-v4.1-flash.
+
+### Discovery
+- **The x402 market on Arc and Base, one record per offer.** On 23 September
+  Circle's catalogue listed 482 offers on Arc mainnet. All of them are paid
+  through a Gateway deposit.
+- **The ERC-8004 registry on Arc mainnet is read daily.** Its x402 offers join
+  Circle's in selection and on Nova's cards.
+- **Veyra is never its own candidate.** A listing on Veyra's hosts, or paid to
+  its wallet, is dropped.
+
+### Decision and payment
+- **The decision screen (`/run`):**
+  - the user's own wallet pays;
+  - Gateway can be funded from the panel;
+  - the signature is shown before the wallet asks for it.
+- **The verdict is free and the signed clearance is sold.** Reporting an
+  outcome earns a credit toward the next one.
+- **ERC-8183** has a role-separated lifecycle with real USDC escrow. A live job
+  is recorded on Arc Testnet.
+- **The decision a payment rests on outlives the request that made it.** The
+  relay no longer asks the buyer what Veyra decided.
+- **Arc mainnet is in the payment tables.**
+
+### Autonomy
+- **The D0 shadow rehearsal.**
+  - The owner signed a PREVIEW mandate.
+  - Every pass decided a purchase for real and paid for it never.
+  - The epoch ended on 22 September, when its mandate expired, and was not
+    renewed.
+- **Frozen on 26 September, for every user.**
+  - `AUTONOMY_FROZEN` is a constant in the code, not a setting.
+  - The autopilot route answers 503, and new AUTOPILOT mandates are refused.
+  - Owner-approved purchases are unchanged.
+
+### Security
+- The payment records and their SECURITY DEFINER functions are closed to
+  Supabase's client roles. A release-gate check now keeps every table under
+  RLS and every definer function closed.
+- The public ledger no longer publishes the signatures that spend it.
+- One signature no longer opens every route, and a nonce is checked before it
+  is spent.
+- A signed sentence names the server it is addressed to.
+- The body a signature covers is bound to it.
+- Nineteen scripts no longer turn off TLS verification for the whole process.
+- A caller can no longer name an address for Veyra's own key to pay.
+- A seller's word about its own payment is no longer Veyra's strongest economic
+  claim.
+- The x402 allowlist checks the whole pair, not each half of it.
+
+### Fixed
+- **The execution ledger records purchases.**
+  - It had recorded none: every insert named columns that no migration had
+    declared, and the failure was swallowed on purpose.
+  - It could not record any state after the money left.
+- **A lost response** is no longer recorded as proof that nothing was paid.
+- **Reconciliation** settles into the budget day the reservation was taken in,
+  not the day it happens to run.
+- **A Gateway-batched payment** is no longer judged by asking USDC about a nonce
+  it never saw. Such a payment used to be recorded as rejected, and later
+  released as unused.
+- **Two migrations** shared a version, so only one of them would reach a fresh
+  database.
+- **The release gate** was red for a missing key rather than a bug.
+
+---
+
 ## [0.2.0-beta.8] - 2026-08-15
 
 ### Security, Cryptographic Authorization Binding & Exact Settlement
