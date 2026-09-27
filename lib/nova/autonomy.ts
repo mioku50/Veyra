@@ -4,6 +4,7 @@
  */
 
 import type { ExecutionMandate } from "../execution/types.ts";
+import { BRAND } from "../brand.ts";
 import { MANDATE_VERSION_V2 } from "../execution/canonical.ts";
 /* The owner's day and the zone it is read in moved to the execution layer, so
    that shadow and live spending measure the same Tuesday. Re-exported here
@@ -300,11 +301,11 @@ export function evaluateShadow(input: {
     && (proposal.decision !== "REQUIRE_EVALUATOR" || verifiedAfterPaying);
   add("veyra_decision_allows", decisionOk, decisionOk
     ? proposal.decision === "REQUIRE_EVALUATOR"
-      ? "Veyra's own decision is REQUIRE_EVALUATOR, and the answer is checked after paying"
-      : `Veyra's own decision is ${proposal.decision}`
+      ? `${BRAND.name}'s own decision is REQUIRE_EVALUATOR, and the answer is checked after paying`
+      : `${BRAND.name}'s own decision is ${proposal.decision}`
     : proposal.decision === "REQUIRE_EVALUATOR"
-      ? "Veyra's own decision is REQUIRE_EVALUATOR, and nothing here would check the answer afterwards"
-      : `Veyra's own decision is ${proposal.decision}, which Veyra will not execute`);
+      ? `${BRAND.name}'s own decision is REQUIRE_EVALUATOR, and nothing here would check the answer afterwards`
+      : `${BRAND.name}'s own decision is ${proposal.decision}, which ${BRAND.name} will not execute`);
 
   const trustOk = proposal.trustScore >= mandate.minimumTrustScore;
   add("trust_at_least_minimum", trustOk,

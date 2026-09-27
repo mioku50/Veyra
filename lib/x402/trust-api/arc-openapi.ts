@@ -1,5 +1,6 @@
 /** Copyright 2026 Veyra. SPDX-License-Identifier: Apache-2.0 */
 import { VEYRA_ORIGIN } from "../../erc8004/veyra-registration.ts";
+import { BRAND } from "../../brand.ts";
 import { ARC_MAINNET_NETWORK, ARC_TRUST_API, type ArcTrustApiProduct } from "./arc-mainnet.ts";
 
 /**
@@ -14,10 +15,10 @@ export function arcTrustApiOpenApi() {
   return {
     openapi: "3.1.0",
     info: {
-      title: "Veyra Trust API on Arc",
+      title: `${BRAND.name} Trust API on Arc`,
       version: "1.0.0",
       description: [
-        "Veyra checks x402 sellers before an agent pays them.",
+        `${BRAND.name} checks x402 sellers before an agent pays them.`,
         `These routes are paid per call with x402 v2, in USDC on Arc mainnet (${ARC_MAINNET_NETWORK}), through Circle Gateway.`,
         "A request without payment is answered 402, with the price and payment terms in the PAYMENT-REQUIRED header.",
         "Pay by sending the signed payment in the PAYMENT-SIGNATURE header.",
@@ -45,7 +46,7 @@ export function arcTrustApiOpenApi() {
             402: {
               description: `Payment required: ${entry.priceUsdc} USDC on Arc mainnet through Circle Gateway. The terms are in the PAYMENT-REQUIRED header.`,
             },
-            503: { description: "Veyra cannot take payment or answer right now. Nothing was charged." },
+            503: { description: `${BRAND.name} cannot take payment or answer right now. Nothing was charged.` },
           },
           "x-payment-info": {
             protocol: "x402",

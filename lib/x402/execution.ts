@@ -4,6 +4,7 @@
  */
 
 import { randomBytes } from "node:crypto";
+import { BRAND } from "../brand.ts";
 import { isAddress, keccak256, stringToBytes } from "viem";
 import { CanonicalRequestError, canonicalRequestHash } from "../canonical-request.ts";
 import {
@@ -466,7 +467,7 @@ export async function quoteX402Call(input: X402QuoteRequest): Promise<X402QuoteO
     return refuse(
       QUOTE_REFUSAL_CODES[created.reason] ? created.reason.toLowerCase() : "quote_not_authorized",
       QUOTE_REFUSAL_CODES[created.reason]
-        ?? "Veyra's decision does not authorize this payment.",
+        ?? `${BRAND.name}'s decision does not authorize this payment.`,
       created.reason === "QUOTE_STORE_UNAVAILABLE" ? 503 : 409,
     );
   }
@@ -502,7 +503,7 @@ const SETTLE_REFUSAL_MESSAGES: Record<string, string> = {
   QUOTE_NOT_OWNED: "No quote with that id.",
   QUOTE_ALREADY_CLAIMED: "That quote has already been used. A signed authorization is relayed once and never re-sent -- if the result did not reach you, reconcile it rather than paying again.",
   QUOTE_EXPIRED: "That quote has expired. Quote again before paying.",
-  QUOTE_STORE_UNAVAILABLE: "Veyra cannot confirm this authorization has not already been relayed, so it will not relay it. Retry shortly.",
+  QUOTE_STORE_UNAVAILABLE: `${BRAND.name} cannot confirm this authorization has not already been relayed, so it will not relay it. Retry shortly.`,
 };
 
 const QUOTE_REFUSAL_CODES: Record<string, string> = {
@@ -514,7 +515,7 @@ const QUOTE_REFUSAL_CODES: Record<string, string> = {
   NETWORK_NOT_DECIDED: "This endpoint now settles on a chain Veyra did not approve.",
   AMOUNT_ABOVE_DECIDED_CEILING: "This endpoint now asks for more than the decision allows.",
   QUOTE_OUTLIVES_SELECTION: "A quote cannot outlive the decision that authorized it.",
-  QUOTE_STORE_UNAVAILABLE: "Veyra cannot record this authorization right now, so it will not start a payment. Retry shortly.",
+  QUOTE_STORE_UNAVAILABLE: `${BRAND.name} cannot record this authorization right now, so it will not start a payment. Retry shortly.`,
 };
 
 /* ---- settlement ---- */

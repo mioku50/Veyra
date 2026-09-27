@@ -4,6 +4,7 @@
  */
 
 import type { NovaArcIdentity } from "./identity.ts";
+import { BRAND } from "../brand.ts";
 import type { NovaShadowView, NovaSignal } from "./types.ts";
 import { assessmentOf } from "./value.ts";
 import type { ShadowSummary } from "./autonomy.ts";
@@ -299,7 +300,7 @@ const DECLINE_LABELS: Record<string, [one: string, many: string]> = {
   capability_allowed: ["a capability you did not allow", "capabilities you did not allow"],
   rail_allowed: ["a rail you did not allow", "rails you did not allow"],
   network_matches_mandate: ["the wrong chain", "the wrong chain"],
-  veyra_decision_allows: ["Veyra's own decision", "Veyra's own decision"],
+  veyra_decision_allows: [`${BRAND.name}'s own decision`, `${BRAND.name}'s own decision`],
   trust_at_least_minimum: ["trust below your minimum", "trust below your minimum"],
   within_per_action_limit: ["over your per-action limit", "over your per-action limit"],
   within_daily_budget: ["over today's budget", "over today's budget"],
@@ -475,7 +476,7 @@ export function shadowVerdictClaim(
 
 /* Named here rather than imported, so this module stays free of anything that
    reaches a network or a database and can be exercised on its own. */
-const BRAND_NAME = "Veyra";
+const BRAND_NAME = BRAND.name;
 
 /**
  * When the thing itself happened, as its source says.

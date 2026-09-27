@@ -17,6 +17,7 @@
  */
 
 import { getAddress, isAddress } from "viem";
+import { BRAND } from "../brand.ts";
 import {
   issueMarketplaceClearance,
   selectMarketplaceCounterparty,
@@ -210,8 +211,8 @@ export function researchRequestFor(signal: NovaSignal): { capability: string; qu
  * had its own list, and the list was wrong twice over.
  *
  * First it allowed only ALLOW and ALLOW_WITH_LIMITS, which against the live
- * catalogue meant every question came back "Veyra checked eight providers and
- * would not authorise any of them" -- three questions, two subject kinds, three
+ * catalogue meant every question came back “Veyra checked eight providers and
+ * would not authorise any of them” -- three questions, two subject kinds, three
  * refusals. A young catalogue has no payment history, so almost nothing reaches
  * the top two tiers.
  *
@@ -279,7 +280,7 @@ function refusalDetail(selection: MarketplaceSelection): string {
   return `${BRAND_NAME} probed ${selection.probed} ${selection.probed === 1 ? "provider" : "providers"} and would not put any of them in front of you${tail}`;
 }
 
-const BRAND_NAME = "Veyra";
+const BRAND_NAME = BRAND.name;
 
 /**
  * What the money does, and where.
@@ -350,9 +351,9 @@ type PayableOutcome =
    * The object of the action cannot be paid, and nothing may stand in for it.
    *
    * Three outcomes, not one. They used to share the code `subject_refused`, and
-   * a calibration week cannot use that number: "the card is stale", "Veyra
-   * looked at this endpoint and said no" and "the endpoint is real and will not
-   * take a plain question" are a defect, a policy decision and a fact about the
+   * a calibration week cannot use that number: “the card is stale”, “Veyra
+   * looked at this endpoint and said no” and “the endpoint is real and will not
+   * take a plain question” are a defect, a policy decision and a fact about the
    * market. Exactly the distinction `unpriced` already draws between
    * nothing_askable and nothing_allowed, missing one level down.
    */
@@ -695,7 +696,7 @@ export async function proposeResearch(input: {
     return {
       ok: false,
       reason: "lookup_failed",
-      detail: error instanceof Error ? error.message : "Veyra could not reach the market just now.",
+      detail: error instanceof Error ? error.message : `${BRAND.name} could not reach the market just now.`,
     };
   }
 
@@ -736,8 +737,8 @@ export async function proposeResearch(input: {
     return {
       ok: false,
       reason: allowed > 0 ? "nothing_askable" : "nothing_allowed",
-      /* Two different refusals, kept apart. "Veyra would not authorise any of
-         them" and "the ones it would authorise do not answer questions" are
+      /* Two different refusals, kept apart. “Veyra would not authorise any of
+         them” and “the ones it would authorise do not answer questions” are
          different facts about the market, and collapsing them into one would
          make the policy look stricter than it is. */
       detail: allowed > 0
@@ -967,7 +968,7 @@ export async function revalidateResearch(input: {
     return {
       ok: false,
       reason: "unquotable",
-      detail: error instanceof Error ? error.message : "Veyra could not reach the market just now.",
+      detail: error instanceof Error ? error.message : `${BRAND.name} could not reach the market just now.`,
     };
   }
 

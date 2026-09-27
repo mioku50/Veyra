@@ -1,5 +1,6 @@
 /** Copyright 2026 Veyra. SPDX-License-Identifier: Apache-2.0 */
 import { decodeEventLog, parseAbi, zeroAddress, type Hex } from "viem";
+import { BRAND } from "../brand.ts";
 import { ARC_IDENTITY_REGISTRY } from "../discovery/erc8004-arc.ts";
 import { ARC_OPENAPI_PATH, ARC_TRUST_API, VEYRA_ARC_PAY_TO } from "../x402/trust-api/arc-mainnet.ts";
 
@@ -36,16 +37,16 @@ export function veyraRegistrationFile(
   const selling = payTo !== null;
   return {
     type: "https://eips.ethereum.org/EIPS/eip-8004#registration-v1",
-    name: "Veyra",
+    name: BRAND.name,
     description: [
-      "Veyra is a trust and policy layer between an AI agent's intent and a USDC payment.",
+      `${BRAND.name} is a trust and policy layer between an AI agent's intent and a USDC payment.`,
       "Before a paid call it checks the seller, including whether the seller's ERC-8004 identity declares the endpoint being paid.",
       "It prices the exact request, then decides whether to pay, whom, and how much.",
       "The person who owns the agent approves and signs every payment. Veyra spends nothing on its own.",
       "What Veyra records about a seller is Veyra's own claim, not independent truth.",
       selling
         ? `On Arc mainnet it sells two answers, paid in USDC through Circle Gateway: what it has observed of an endpoint (${ARC_TRUST_API.history.priceUsdc} USDC) and a ranked choice of sellers for a task (${ARC_TRUST_API.select.priceUsdc} USDC). It signs no clearance there: its TrustGate is on Arc Testnet only.`
-        : "Veyra sells no paid service on Arc mainnet yet. Its paid Trust API runs on testnets only.",
+        : `${BRAND.name} sells no paid service on Arc mainnet yet. Its paid Trust API runs on testnets only.`,
     ].join(" "),
     image: `${VEYRA_ORIGIN}/icon.svg`,
     services: [

@@ -62,8 +62,8 @@ export async function POST(request: NextRequest, { params }: RouteContext) {
       memory: await recentLearnings(agent.agent_id),
     });
     if (!outcome.ok) {
-      /* 200, not an error status. "Veyra looked and would not authorise any of
-         them" is an answer, and the most useful one the product gives -- a 4xx
+      /* 200, not an error status. “Veyra looked and would not authorise any of
+         them” is an answer, and the most useful one the product gives -- a 4xx
          would make the client render it as a failure of Nova rather than a
          decision by Veyra.
 

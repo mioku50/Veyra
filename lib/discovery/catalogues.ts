@@ -71,7 +71,7 @@ function asRecord(value: unknown): Record<string, unknown> {
 
 /**
  * One catalogue item as an offer, or null when it cannot be one: not HTTPS,
- * not GET or POST (Veyra's transport sends only those, and an unpaid DELETE is
+ * not GET or POST (the transport sends only those, and an unpaid DELETE is
  * not a probe), or no USDC accept Veyra recognises on an allowed network.
  */
 export function offerFromCatalogueItem(

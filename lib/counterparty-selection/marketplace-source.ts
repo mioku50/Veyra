@@ -155,8 +155,8 @@ export type MarketplaceDiscoveryInput = {
    * top up" and "twit.sh search" are display names, not search terms, and
    * Circle's search is conjunctive, so each one selected a different slice of
    * the catalogue that happened not to contain the endpoint it was named after.
-   * The refusal downstream then read "Veyra could not reach the terms of this
-   * endpoint to authorise it", which was true and pointed nowhere.
+   * The refusal downstream then read “Veyra could not reach the terms of this
+   * endpoint to authorise it”, which was true and pointed nowhere.
    *
    * So the named one is fetched rather than hoped for, and is never truncated
    * out of the shortlist. It is still normalized, still price-filtered, and

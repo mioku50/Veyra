@@ -776,7 +776,7 @@ export function NovaClient({ view = "today" }: { view?: NovaView } = {}) {
           /* Veyra looking and refusing is an answer, not a failure, and it is
              shown as one. Rendering it as an error would blame Nova for the
              product doing its job. */
-          : { stage: "refused", detail: payload.detail ?? "Veyra would not authorise any of them." },
+          : { stage: "refused", detail: payload.detail ?? `${BRAND.name} would not authorise any of them.` },
       }));
       /* Only a card with a price is being investigated. Marking a refused one
          as under investigation put it in a state the brief reads as live work
@@ -835,7 +835,7 @@ export function NovaClient({ view = "today" }: { view?: NovaView } = {}) {
         ...current,
         [key]: payload.ok && payload.proposal && payload.researchId
           ? { stage: "ready", researchId: payload.researchId, proposal: payload.proposal }
-          : { stage: "refused", detail: payload.detail ?? "Veyra found nothing on Arc it would put in front of you." },
+          : { stage: "refused", detail: payload.detail ?? `${BRAND.name} found nothing on Arc it would put in front of you.` },
       }));
     } catch (cause) {
       setResearch((current) => ({ ...current, [key]: { stage: "failed", detail: (cause as Error).message } }));
@@ -918,11 +918,11 @@ export function NovaClient({ view = "today" }: { view?: NovaView } = {}) {
           });
           return;
         }
-        at({ stage: "failed", researchId, proposal, detail: approval.detail ?? "Veyra would not authorise that payment." });
+        at({ stage: "failed", researchId, proposal, detail: approval.detail ?? `${BRAND.name} would not authorise that payment.` });
         return;
       }
       if (!approval.accept || !approval.nonce) {
-        at({ stage: "failed", researchId, proposal, detail: "Veyra cleared the payment but returned nothing to sign." });
+        at({ stage: "failed", researchId, proposal, detail: `${BRAND.name} cleared the payment but returned nothing to sign.` });
         return;
       }
 

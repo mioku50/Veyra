@@ -1,5 +1,6 @@
 /** Copyright 2026 Veyra. SPDX-License-Identifier: Apache-2.0 */
 import { getAddress, isAddress } from "viem";
+import { BRAND } from "../brand.ts";
 import { rejectHostedWorkflowSecrets } from "../agent/hosted-workflows.ts";
 import { generateOpenAiCompatibleText, resolveReadingLlmConfig } from "../llm/openai-compatible.ts";
 import { offerMatchesTerm } from "../discovery/offers.ts";
@@ -472,7 +473,7 @@ async function firstAnswering(input: {
   for (const candidate of ordered) {
     if (input.requireSpecific && !fitOf(candidate).specific) continue;
     if (!isExecutableTrustDecision(candidate.trustDecision)) {
-      pass(candidate, "Veyra would not authorise it.");
+      pass(candidate, `${BRAND.name} would not authorise it.`);
       continue;
     }
     allowed += 1;
@@ -631,18 +632,18 @@ export async function proposeForQuestion(input: {
   const searched = specific.length > 0 ? ` Searched for: ${specific.join(", ")}.` : "";
   const closest = passedOver.length > 0 ? ` Passed over: ${passedOver.join(" ")}` : "";
   if (!reached) {
-    return { ok: false, reason: "lookup_failed", detail: "Veyra could not reach the market on Arc just now. Nothing was priced." };
+    return { ok: false, reason: "lookup_failed", detail: `${BRAND.name} could not reach the market on Arc just now. Nothing was priced.` };
   }
   if (probed === 0) {
     return { ok: false, reason: "nothing_fits", detail: `Nothing on Arc's market says it does this, and no web search could be reached.${searched} Nothing was priced.` };
   }
   if (allowed === 0) {
-    return { ok: false, reason: "nothing_allowed", detail: `Veyra probed ${probed} tools on Arc and would not put any of them in front of you.${searched} Nothing was paid.` };
+    return { ok: false, reason: "nothing_allowed", detail: `${BRAND.name} probed ${probed} tools on Arc and would not put any of them in front of you.${searched} Nothing was paid.` };
   }
   if (cannotPay > 0) {
     return { ok: false, reason: "not_payable", detail: `The tools that fit settle only through a Circle Gateway deposit on Arc, and there is none to pay from.${closest} Nothing was signed.` };
   }
-  return { ok: false, reason: "nothing_askable", detail: `Veyra found tools on Arc it would authorise, and none of them can take this question.${closest} Nothing was paid.` };
+  return { ok: false, reason: "nothing_askable", detail: `${BRAND.name} found tools on Arc it would authorise, and none of them can take this question.${closest} Nothing was paid.` };
 }
 
 function questionProposal(input: {

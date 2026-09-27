@@ -227,7 +227,7 @@ export function verifyPostCall(input: {
 
   if (input.declaredOutputSchema) {
     const result = validateJsonSchemaValue(input.parsedBody, input.declaredOutputSchema);
-    /* "Veyra cannot enforce this schema" is not "the endpoint broke it".
+    /* “Veyra cannot enforce this schema” is not “the endpoint broke it”.
        Collapsing the two charged somebody $0.0070, let Exa answer correctly,
        and then reported the answer as failing its published output schema --
        because that schema used `oneOf`, and later a `$ref`. The seller had

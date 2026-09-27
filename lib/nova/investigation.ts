@@ -4,6 +4,7 @@
  */
 
 import { getAddress, isAddress } from "viem";
+import { BRAND } from "../brand.ts";
 import {
   asTransferAuthorization,
   asX402Accept,
@@ -589,7 +590,7 @@ export async function settleResearch(input: {
        failed delivery did not, which is the one case where the money is gone
        and the reader has to decide what to do about it. */
     failure: moneyMoved
-      ? `The payment went through and the answer did not pass ${"Veyra"}'s check: ${settled.verification.summary} ${sellerReason(settled.result ?? settled.body)}`.trim()
+      ? `The payment went through and the answer did not pass ${BRAND.name}'s check: ${settled.verification.summary} ${sellerReason(settled.result ?? settled.body)}`.trim()
       : `${settled.verification.summary || "The endpoint did not answer with a usable result."} ${sellerReason(settled.result ?? settled.body)}`.trim(),
   });
 }
