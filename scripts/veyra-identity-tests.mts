@@ -68,7 +68,22 @@ assert.ok(VEYRA_ARC_AGENT_ID === null || (Number.isInteger(VEYRA_ARC_AGENT_ID) &
   const good = circleCredentials({ CIRCLE_API_KEY: ` ${LIVE} `, CIRCLE_ENTITY_SECRET: SECRET });
   assert.ok(good.ok && good.apiKey === LIVE && good.entitySecret === SECRET);
 
-  for (const env of [{ CIRCLE_API_KEY: LIVE.replace("LIVE_", "TEST_"), CIRCLE_ENTITY_SECRET: "z".repeat(64) }]) {
+  const said = (secret: string) => {
+    const checked = circleCredentials({ CIRCLE_API_KEY: LIVE, CIRCLE_ENTITY_SECRET: secret });
+    return checked.ok ? "" : checked.problems.join(" ");
+  };
+  const CLIENT_KEY = "LIVE_CLIENT_KEY:0123456789abcdef0123456789abcdef:fedcba9876543210fedcba9876543210";
+  assert.match(said(CLIENT_KEY), /holds a client key/, "A client key in the secret's place is named as one, as the owner did on 27 September");
+  assert.match(said(CLIENT_KEY), /npm run veyra-identity -- entity-secret/);
+  assert.match(said(LIVE), /holds an API key/);
+  assert.match(said(`0x${SECRET}`), /starts with 0x/);
+  assert.match(said(""), /not set\. Create it with/);
+
+  for (const env of [
+    { CIRCLE_API_KEY: LIVE.replace("LIVE_", "TEST_"), CIRCLE_ENTITY_SECRET: "z".repeat(64) },
+    { CIRCLE_API_KEY: LIVE, CIRCLE_ENTITY_SECRET: CLIENT_KEY },
+    { CIRCLE_API_KEY: LIVE, CIRCLE_ENTITY_SECRET: `0x${SECRET}` },
+  ]) {
     const checked = circleCredentials(env);
     const said = checked.ok ? "" : checked.problems.join(" ");
     assert.ok(!said.includes(env.CIRCLE_API_KEY) && !said.includes(env.CIRCLE_ENTITY_SECRET), "A problem never repeats a credential");

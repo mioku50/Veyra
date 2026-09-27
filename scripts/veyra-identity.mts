@@ -1,7 +1,10 @@
 /** Copyright 2026 Veyra. SPDX-License-Identifier: Apache-2.0 */
-import { randomUUID } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
+import { appendFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { homedir } from "node:os";
+import { join, resolve } from "node:path";
 import { isDeepStrictEqual } from "node:util";
-import { initiateDeveloperControlledWalletsClient } from "@circle-fin/developer-controlled-wallets";
+import { initiateDeveloperControlledWalletsClient, registerEntitySecretCiphertext } from "@circle-fin/developer-controlled-wallets";
 import { createPublicClient, formatUnits, http, parseAbi, type Address, type Hex } from "viem";
 import { ARC_IDENTITY_REGISTRY } from "../lib/discovery/erc8004-arc.ts";
 import {
@@ -22,6 +25,11 @@ import { ARC_MAINNET_EXPLORER_URL, ARC_MAINNET_RPC_URL, arcMainnetChain } from "
  * The owner runs this with their own Circle credentials in .env.local:
  * CIRCLE_API_KEY, a mainnet key, and CIRCLE_ENTITY_SECRET.
  *
+ *   npm run veyra-identity -- entity-secret
+ *     Creates the entity secret and registers it with Circle, as Circle's own
+ *     example does. The secret goes into .env.local, and Circle's recovery
+ *     file into ~/.circle/veyra, outside the repository. Neither is printed.
+ *     It refuses when .env.local already names a CIRCLE_ENTITY_SECRET.
  *   npm run veyra-identity -- wallet
  *     Finds the registrant wallet, or creates it: one EOA on Arc mainnet, in a
  *     wallet set of its own. Prints the address to fund with 0.10 USDC.
@@ -63,19 +71,66 @@ function describe(error: unknown): string {
   return error instanceof Error ? error.message.split("\n")[0].slice(0, 300) : "an unknown error";
 }
 
-const credentials = circleCredentials(process.env);
-if (!credentials.ok) {
-  console.error([
-    "The Circle credentials are missing or wrong:",
-    ...credentials.problems.map((problem) => `  - ${problem}`),
-    "Add them to .env.local yourself. Never paste them into a chat.",
-  ].join("\n"));
-  process.exit(1);
+let circleClient: ReturnType<typeof initiateDeveloperControlledWalletsClient> | null = null;
+
+/* Made on first use: the entity-secret step runs before there is a secret. */
+function circle() {
+  if (circleClient) return circleClient;
+  const credentials = circleCredentials(process.env);
+  if (!credentials.ok) {
+    console.error([
+      "The Circle credentials are missing or wrong:",
+      ...credentials.problems.map((problem) => `  - ${problem}`),
+      "Add them to .env.local yourself. Never paste them into a chat.",
+    ].join("\n"));
+    process.exit(1);
+  }
+  circleClient = initiateDeveloperControlledWalletsClient({ apiKey: credentials.apiKey, entitySecret: credentials.entitySecret });
+  return circleClient;
 }
-const circle = initiateDeveloperControlledWalletsClient({ apiKey: credentials.apiKey, entitySecret: credentials.entitySecret });
+
+async function entitySecretStep() {
+  const apiKey = process.env.CIRCLE_API_KEY?.trim() ?? "";
+  if (!apiKey.startsWith("LIVE_API_KEY:")) {
+    console.error("Put a mainnet CIRCLE_API_KEY (LIVE_API_KEY:…) in .env.local first.");
+    process.exit(1);
+  }
+  const envPath = resolve(process.cwd(), ".env.local");
+  const envText = existsSync(envPath) ? readFileSync(envPath, "utf8") : "";
+  if (/^\s*CIRCLE_ENTITY_SECRET\s*=/m.test(envText)) {
+    console.error([
+      "CIRCLE_ENTITY_SECRET is already in .env.local, so nothing was created.",
+      "If that line holds something else, such as a key starting LIVE_CLIENT_KEY:, delete it and run this again.",
+    ].join("\n"));
+    process.exit(1);
+  }
+
+  const dir = join(homedir(), ".circle", "veyra");
+  mkdirSync(dir, { recursive: true, mode: 0o700 });
+  /* Made here, not with the SDK's generateEntitySecret, which prints it. */
+  const entitySecret = randomBytes(32).toString("hex");
+  /* On disk before Circle holds it, so a failure to write .env.local after
+     the registration cannot lose a secret that is already registered. */
+  const pending = join(dir, `entity-secret-${Date.now()}.pending`);
+  writeFileSync(pending, `${entitySecret}\n`, { mode: 0o600 });
+  try {
+    await registerEntitySecretCiphertext({ apiKey, entitySecret, recoveryFileDownloadPath: dir });
+  } catch (error) {
+    rmSync(pending, { force: true });
+    throw error;
+  }
+  appendFileSync(envPath, `${envText === "" || envText.endsWith("\n") ? "" : "\n"}CIRCLE_ENTITY_SECRET=${entitySecret}\n`);
+  rmSync(pending, { force: true });
+  console.log([
+    "",
+    "The entity secret is registered with Circle and written to .env.local as CIRCLE_ENTITY_SECRET. It was not printed.",
+    `Circle's recovery file is in ${dir}. It is the only way to reset the secret: keep a copy somewhere safe off this computer.`,
+    "Next: npm run veyra-identity -- wallet",
+  ].join("\n"));
+}
 
 async function findRegistrant() {
-  const wallets = (await circle.listWallets({ blockchain: "ARC", refId: VEYRA_REGISTRANT_REF })).data?.wallets ?? [];
+  const wallets = (await circle().listWallets({ blockchain: "ARC", refId: VEYRA_REGISTRANT_REF })).data?.wallets ?? [];
   return wallets.length > 0 ? wallets[0] : null;
 }
 
@@ -84,13 +139,13 @@ async function walletStep() {
   if (wallet) {
     console.log("The registrant wallet already exists.");
   } else {
-    const sets = (await circle.listWalletSets({})).data?.walletSets ?? [];
+    const sets = (await circle().listWalletSets({})).data?.walletSets ?? [];
     let walletSetId = sets.find((set) => "name" in set && set.name === WALLET_SET_NAME)?.id;
     if (!walletSetId) {
-      walletSetId = (await circle.createWalletSet({ name: WALLET_SET_NAME, idempotencyKey: randomUUID() })).data?.walletSet?.id;
+      walletSetId = (await circle().createWalletSet({ name: WALLET_SET_NAME, idempotencyKey: randomUUID() })).data?.walletSet?.id;
     }
     if (!walletSetId) throw new Error("Circle returned no wallet set.");
-    wallet = (await circle.createWallets({
+    wallet = (await circle().createWallets({
       walletSetId,
       blockchains: ["ARC"],
       accountType: "EOA",
@@ -134,12 +189,12 @@ async function gather(): Promise<{ state: RegistrantState; walletId: string | nu
       : null,
     fileServed(),
     wallet
-      ? circle.listTransactions({ walletIds: [wallet.id], blockchain: "ARC" })
+      ? circle().listTransactions({ walletIds: [wallet.id], blockchain: "ARC" })
         .then((listed) => (listed.data?.transactions ?? []).filter((transaction) => !FINAL_STATES.has(transaction.state)).length)
         .catch(() => null)
       : null,
     wallet
-      ? circle.estimateContractExecutionFee({
+      ? circle().estimateContractExecutionFee({
         source: { walletId: wallet.id },
         contractAddress: REGISTRY,
         abiFunctionSignature: REGISTER_SIGNATURE,
@@ -189,7 +244,7 @@ async function registerStep(confirm: string | undefined) {
   }
 
   console.log(`\nSending register("${VEYRA_AGENT_URI}") from ${state.address} on Arc mainnet.`);
-  const id = (await circle.createContractExecutionTransaction({
+  const id = (await circle().createContractExecutionTransaction({
     walletId,
     contractAddress: REGISTRY,
     abiFunctionSignature: REGISTER_SIGNATURE,
@@ -205,7 +260,7 @@ async function registerStep(confirm: string | undefined) {
   let last = "";
   const deadline = Date.now() + 5 * 60_000;
   while (Date.now() < deadline) {
-    transaction = (await circle.getTransaction({ id })).data?.transaction;
+    transaction = (await circle().getTransaction({ id })).data?.transaction;
     if (transaction?.state && transaction.state !== last) {
       last = transaction.state;
       console.log(`  ${last}`);
@@ -240,11 +295,12 @@ async function registerStep(confirm: string | undefined) {
 const command = process.argv[2];
 const confirmAt = process.argv.indexOf("--confirm");
 try {
-  if (command === "wallet") await walletStep();
+  if (command === "entity-secret") await entitySecretStep();
+  else if (command === "wallet") await walletStep();
   else if (command === "check") await checkStep();
   else if (command === "register") await registerStep(confirmAt > 0 ? process.argv[confirmAt + 1] : undefined);
   else {
-    console.error("Usage: npm run veyra-identity -- wallet | check | register --confirm <agentURI>");
+    console.error("Usage: npm run veyra-identity -- entity-secret | wallet | check | register --confirm <agentURI>");
     process.exit(1);
   }
 } catch (error) {

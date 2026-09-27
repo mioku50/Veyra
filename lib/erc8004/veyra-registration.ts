@@ -78,8 +78,11 @@ export function circleCredentials(env: Record<string, string | undefined>):
   const problems: string[] = [];
   if (!apiKey) problems.push("CIRCLE_API_KEY is not set.");
   else if (!apiKey.startsWith("LIVE_API_KEY:")) problems.push("CIRCLE_API_KEY is not a mainnet key (LIVE_API_KEY:…). Arc mainnet wallets need one.");
-  if (!entitySecret) problems.push("CIRCLE_ENTITY_SECRET is not set.");
-  else if (!/^[0-9a-f]{64}$/i.test(entitySecret)) problems.push("CIRCLE_ENTITY_SECRET is not 32 bytes of hex.");
+  if (!entitySecret) problems.push("CIRCLE_ENTITY_SECRET is not set. Create it with: npm run veyra-identity -- entity-secret");
+  else if (/^(LIVE|TEST)_CLIENT_KEY:/.test(entitySecret)) problems.push("CIRCLE_ENTITY_SECRET holds a client key (…_CLIENT_KEY:…), not the entity secret. Remove that line, then create the secret with: npm run veyra-identity -- entity-secret");
+  else if (/^(LIVE|TEST)_API_KEY:/.test(entitySecret)) problems.push("CIRCLE_ENTITY_SECRET holds an API key, not the entity secret. Remove that line, then create the secret with: npm run veyra-identity -- entity-secret");
+  else if (/^0x[0-9a-f]{64}$/i.test(entitySecret)) problems.push("CIRCLE_ENTITY_SECRET starts with 0x. Write the 64 hex characters without it.");
+  else if (!/^[0-9a-f]{64}$/i.test(entitySecret)) problems.push("CIRCLE_ENTITY_SECRET is not 32 bytes of hex (64 characters, 0-9 and a-f).");
   return problems.length > 0 ? { ok: false, problems } : { ok: true, apiKey, entitySecret };
 }
 

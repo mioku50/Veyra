@@ -75,12 +75,22 @@ message, because the request behind it carries the key.
 
 1. **Deploy.** The file must be live before the mint, and `check` refuses
    until it is.
-2. **The owner, in the Circle Console, not through this chat:**
-   - a mainnet API key;
-   - the entity secret, created in the Console's entity secret page, with the
-     recovery file kept outside the repository;
-   - both written into `.env.local` by hand, as `CIRCLE_API_KEY` and
-     `CIRCLE_ENTITY_SECRET`.
+2. **The owner, not through this chat:**
+   - a mainnet API key, from the Circle Console, written into `.env.local` by
+     hand as `CIRCLE_API_KEY`;
+   - the entity secret, created one of two ways:
+     - on the Console's entity secret page, and written into `.env.local` by
+       hand as `CIRCLE_ENTITY_SECRET`;
+     - or with `npm run veyra-identity -- entity-secret`, which does what
+       Circle's own example does. It makes the secret itself, because the
+       SDK's `generateEntitySecret` prints it. It registers it and appends it
+       to `.env.local`. Circle's recovery file goes to `~/.circle/veyra`,
+       outside the repository. Neither is printed, and the step refuses when
+       `.env.local` already names a secret.
+
+   On 27 September a client key (`LIVE_CLIENT_KEY:…`) went into
+   `CIRCLE_ENTITY_SECRET`. The check found it only by shape, and printed
+   neither value. It now names a client key or an API key in that place.
 3. **The owner:**
    - runs `npm run veyra-identity -- wallet`;
    - sends 0.10 USDC on Arc to the address it prints;
