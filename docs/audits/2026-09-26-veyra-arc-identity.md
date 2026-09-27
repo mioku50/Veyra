@@ -95,6 +95,15 @@ message, because the request behind it carries the key.
    - runs `npm run veyra-identity -- wallet`;
    - sends 0.10 USDC on Arc to the address it prints;
    - runs `check`, then `register --confirm <agentURI>`.
+
+   On 27 September the owner created the entity secret and ran the wallet
+   step. The registrant is `0x8F8E0C9Fa2F67AED5b16e04f2716022aeB200eD6`, an
+   EOA on `ARC`, and it is also Veyra's payout wallet on Arc. Read from the
+   chain before `check`:
+   - it holds 0.11 USDC and has sent nothing;
+   - it holds no identity;
+   - a dry call of `register()` from it would mint agentId 298, for about
+     203,500 gas, or 0.004 USDC.
 4. **Then the id goes into the file.** Set `VEYRA_ARC_AGENT_ID`, deploy, and
    check the binding both ways:
    - the token's owner and URI;

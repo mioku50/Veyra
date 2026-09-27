@@ -27,8 +27,10 @@ import { TRUST_API_PRICING } from "./pricing.ts";
 export const ARC_MAINNET_GATEWAY_URL = "https://gateway-api.circle.com";
 export { ARC_MAINNET_NETWORK };
 
-/** Veyra's Circle wallet on Arc, which the owner chose to be paid to. Null until it exists. */
-export const VEYRA_ARC_PAY_TO: `0x${string}` | null = null;
+/** Veyra's Circle wallet on Arc, which the owner chose to be paid to. The
+ *  owner created it on 27 September with the identity script's wallet step:
+ *  a developer-controlled EOA, the registrant of Veyra's ERC-8004 identity. */
+export const VEYRA_ARC_PAY_TO: `0x${string}` | null = "0x8F8E0C9Fa2F67AED5b16e04f2716022aeB200eD6";
 
 /** The OpenAPI document for these routes, which Circle's marketplace asks for. */
 export const ARC_OPENAPI_PATH = "/openapi/veyra-arc-trust-api.json";

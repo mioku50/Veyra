@@ -17,11 +17,11 @@ import {
 /* ---- the registration file ---- */
 
 {
-  const file = veyraRegistrationFile(null);
+  const file = veyraRegistrationFile(null, null);
   assert.equal(file.type, "https://eips.ethereum.org/EIPS/eip-8004#registration-v1");
   assert.equal(file.name, "Veyra");
   assert.deepEqual(file.registrations, [], "Before the mint the file names no identity");
-  assert.equal(file.x402Support, false, "Veyra sells nothing on Arc mainnet yet");
+  assert.equal(file.x402Support, false, "With no wallet to be paid to, Veyra sells nothing on Arc mainnet");
   assert.equal(file.active, true);
   assert.deepEqual(file.supportedTrust, ["reputation"]);
   for (const url of [file.image, ...file.services.map((service) => service.endpoint)]) {

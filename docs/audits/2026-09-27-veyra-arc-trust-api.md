@@ -103,7 +103,8 @@ These three affected the testnet routes as well, and are fixed in both.
    `npm run veyra-identity`.
 3. **The wallet's address goes into `VEYRA_ARC_PAY_TO`,** and the service is
    deployed. The registration file then describes the sales, and `check`
-   compares against it.
+   compares against it. Done on 27 September: the wallet is
+   `0x8F8E0C9Fa2F67AED5b16e04f2716022aeB200eD6`.
 4. **The identity is registered,** and its id goes into `VEYRA_ARC_AGENT_ID`.
 5. **The first paid call.** A buyer needs a Gateway deposit on Arc, and the
    owner's wallet holds none.
@@ -122,7 +123,7 @@ URLs given.
 | Endpoints | `POST https://agent-commerce-six.vercel.app/api/x402/v1/arc/history` (0.005 USDC), `POST https://agent-commerce-six.vercel.app/api/x402/v1/arc/select` (0.02 USDC) |
 | Payment | x402 v2, `exact`, Circle Gateway (`GatewayWalletBatched`) on Arc mainnet, `eip155:5042` |
 | OpenAPI | `https://agent-commerce-six.vercel.app/openapi/veyra-arc-trust-api.json` |
-| Payout wallet | Veyra's Circle wallet, the address from the wallet step |
+| Payout wallet | Veyra's Circle wallet on Arc, `0x8F8E0C9Fa2F67AED5b16e04f2716022aeB200eD6` |
 | Identity | ERC-8004 on Arc, `https://agent-commerce-six.vercel.app/.well-known/agent-registration.json`, once registered |
 
 ## Not done
