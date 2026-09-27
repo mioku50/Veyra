@@ -7,8 +7,10 @@ import { checkHistoryRequest, checkSelectRequest } from "../lib/x402/trust-api/a
 import { buildTrustApiCatalog } from "../lib/x402/trust-api/catalog.ts";
 import { TrustApiError } from "../lib/x402/trust-api/resource.ts";
 import { requirementsFromKinds, withTrustApiPayment, type SupportedKind } from "../lib/x402/trust-api/seller.ts";
+import { TRUST_API_PRICING } from "../lib/x402/trust-api/pricing.ts";
 import { VEYRA_ARC_AGENT_ID, VEYRA_ORIGIN, veyraRegistrationFile } from "../lib/erc8004/veyra-registration.ts";
 import { isVeyraItself } from "../lib/veyra-self.ts";
+import { challengeSchemas } from "../lib/providers/x402-probe.ts";
 
 /* ---- Circle's facilitators, stubbed at fetch ---- */
 
@@ -31,6 +33,25 @@ const SEPOLIA_KIND: SupportedKind = {
   network: "eip155:11155111",
   extra: { ...ARC_KIND.extra, verifyingContract: "0x0077777d7eba4688bdef3e311b846f25870a19b9", assets: [{ symbol: "USDC", address: "0x1c7d4b196cb0c7b01d743fbc6116a902379c7238", decimals: 6 }] },
 };
+/* The twelve networks Circle's testnet facilitator published on 27 September,
+   with their USDC. The challenge's size depends on how many there are. */
+const TESTNET_KINDS: SupportedKind[] = ([
+  ["eip155:11155111", "0x1c7d4b196cb0c7b01d743fbc6116a902379c7238"],
+  ["eip155:84532", "0x036cbd53842c5426634e7929541ec2318f3dcf7e"],
+  ["eip155:43113", "0x5425890298aed601595a70ab815c96711a31bc65"],
+  ["eip155:421614", "0x75faf114eafb1bdbe2f0316df893fd58ce46aa4d"],
+  ["eip155:14601", "0x0ba304580ee7c9a980cf72e55f5ed2e9fd30bc51"],
+  ["eip155:4801", "0x66145f38cbac35ca6f1dfb4914df98f1614aea88"],
+  ["eip155:1328", "0x4fcf1784b31630811181f670aea7a7bef803eaed"],
+  ["eip155:998", "0x2b3370ee501b4a559b57d449569354196457d8ab"],
+  ["eip155:5042002", "0x3600000000000000000000000000000000000000"],
+  ["eip155:11155420", "0x5fd84259d66cd46123540766be93dfe6d43130d7"],
+  ["eip155:80002", "0x41e94eb019c0762f9bfcf9fb1e58725bfb0e7582"],
+  ["eip155:1301", "0x31d0220469e10c4e71834a79b1f276d740d3768f"],
+] as const).map(([network, usdc]) => ({
+  network,
+  extra: { ...SEPOLIA_KIND.extra, assets: [{ symbol: "USDC", address: usdc, decimals: 6 }] },
+}));
 
 const facilitatorCalls: string[] = [];
 globalThis.fetch = (async (input: string | URL | Request) => {
@@ -38,7 +59,9 @@ globalThis.fetch = (async (input: string | URL | Request) => {
   facilitatorCalls.push(url);
   const json = (body: unknown) => new Response(JSON.stringify(body), { status: 200, headers: { "content-type": "application/json" } });
   if (url.endsWith("/v1/x402/supported")) {
-    return json({ kinds: url.includes("testnet") ? [{ scheme: "exact", ...SEPOLIA_KIND }] : [{ scheme: "exact", ...ARC_KIND }, { scheme: "exact", ...BASE_KIND }] });
+    return json({ kinds: url.includes("testnet")
+      ? TESTNET_KINDS.map((kind) => ({ scheme: "exact", ...kind }))
+      : [{ scheme: "exact", ...ARC_KIND }, { scheme: "exact", ...BASE_KIND }] });
   }
   if (url.endsWith("/v1/x402/verify")) return json({ isValid: false, invalidReason: "stubbed" });
   return new Response("not stubbed", { status: 599 });
@@ -156,6 +179,29 @@ const post = (path: string, body: unknown, headers: Record<string, string> = {})
   const challenge = await testnetSelect(post("/api/x402/v1/select", {}));
   assert.equal(challenge.status, 402, "An unpaid request is not checked: a probe with no body still gets the challenge");
   assert.equal((await challenge.json()).freeAlternative.earnCredit, "/api/x402/v1/outcomes");
+}
+
+/* ---- a challenge a Node buyer can read ---- */
+
+for (const product of ["history", "select"] as const) {
+  const route = withTrustApiPayment(async () => new Response("{}") as never, {
+    endpoint: TRUST_API_PRICING[product].path,
+    priceUsdc: TRUST_API_PRICING[product].priceUsdc,
+    description: "t",
+    schema: TRUST_API_PRICING[product].schema,
+  });
+  const challenge = await route(post(TRUST_API_PRICING[product].path, {}));
+  assert.equal(challenge.status, 402);
+
+  /* Node's fetch reads at most 16 KB of headers, and throws before the body.
+     With the schema on each of twelve networks this header was about 20 KB. */
+  const header = challenge.headers.get("PAYMENT-REQUIRED") ?? "";
+  assert.ok(header.length > 0 && header.length < 12 * 1024, `${product}: the challenge header is ${header.length} bytes; a Node buyer must be able to read it`);
+  const decoded = JSON.parse(Buffer.from(header, "base64").toString("utf8")) as { accepts: Array<Record<string, unknown>> };
+  assert.equal(decoded.accepts.length, 12, "Every network the facilitator settles is still offered");
+  assert.deepEqual(decoded.accepts.map((accept) => "outputSchema" in accept), [true, ...Array(11).fill(false)], "The schema rides once, on the first accept");
+  const schemas = challengeSchemas(decoded.accepts);
+  assert.ok(schemas.input && schemas.output, "A reader still finds both schemas");
 }
 
 /* ---- the catalogue ---- */

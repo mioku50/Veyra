@@ -59,7 +59,8 @@ export type TrustApiRequirement = {
   maxTimeoutSeconds: number;
   /* Where x402 carries the schemas, despite the name: `.input` describes the
      request and `.output` the response. Buyers read it from the challenge, and
-     Veyra's own probe scores an endpoint that omits it. */
+     Veyra's own probe scores an endpoint that omits it. It rides on the first
+     accept only: see requirementsFromKinds. */
   outputSchema?: { input: { body: unknown }; output: { body: unknown } };
   extra: Record<string, unknown>;
 };
@@ -144,7 +145,14 @@ export function requirementsFromKinds(kinds: SupportedKind[], input: {
       amount,
       payTo,
       maxTimeoutSeconds: BATCHED_MAX_TIMEOUT_SECONDS,
-      ...(schema ? { outputSchema: { input: { body: schema.input }, output: { body: schema.output } } } : {}),
+      /* Once, on the first accept. Repeated on each of the testnet
+         facilitator's twelve networks, it made the challenge header about
+         20 KB. Node's fetch reads at most 16 KB of headers, so a buyer on Node
+         failed before it saw the price. Readers, Veyra's own probe among them,
+         take the schema from the first accept that has one. */
+      ...(schema && requirements.length === 0
+        ? { outputSchema: { input: { body: schema.input }, output: { body: schema.output } } }
+        : {}),
       // Echo the facilitator's own domain data. Rebuilding it here is how a
       // resource server ends up advertising a verifying contract the
       // facilitator does not recognise.
