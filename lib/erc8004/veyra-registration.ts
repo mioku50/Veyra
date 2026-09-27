@@ -1,6 +1,7 @@
 /** Copyright 2026 Veyra. SPDX-License-Identifier: Apache-2.0 */
 import { decodeEventLog, parseAbi, zeroAddress, type Hex } from "viem";
 import { ARC_IDENTITY_REGISTRY } from "../discovery/erc8004-arc.ts";
+import { ARC_OPENAPI_PATH, ARC_TRUST_API, VEYRA_ARC_PAY_TO } from "../x402/trust-api/arc-mainnet.ts";
 
 /**
  * Veyra's own identity on Arc mainnet, under ERC-8004.
@@ -12,8 +13,8 @@ import { ARC_IDENTITY_REGISTRY } from "../discovery/erc8004-arc.ts";
  * against the other.
  *
  * The file says what Veyra does on Arc mainnet today and nothing more. What
- * Veyra records about a seller is Veyra's claim, and Veyra sells nothing on
- * mainnet yet.
+ * Veyra records about a seller is Veyra's claim. Until Veyra has a wallet to
+ * be paid to on Arc, it sells nothing there, and the file says so.
  */
 
 export const VEYRA_ORIGIN = "https://agent-commerce-six.vercel.app";
@@ -27,7 +28,11 @@ export const VEYRA_REGISTRANT_REF = "veyra-erc8004-registrant";
  *  mint, and until then the file lists no registration. */
 export const VEYRA_ARC_AGENT_ID: number | null = null;
 
-export function veyraRegistrationFile(agentId: number | null = VEYRA_ARC_AGENT_ID) {
+export function veyraRegistrationFile(
+  agentId: number | null = VEYRA_ARC_AGENT_ID,
+  payTo: string | null = VEYRA_ARC_PAY_TO,
+) {
+  const selling = payTo !== null;
   return {
     type: "https://eips.ethereum.org/EIPS/eip-8004#registration-v1",
     name: "Veyra",
@@ -37,11 +42,21 @@ export function veyraRegistrationFile(agentId: number | null = VEYRA_ARC_AGENT_I
       "It prices the exact request, then decides whether to pay, whom, and how much.",
       "The person who owns the agent approves and signs every payment. Veyra spends nothing on its own.",
       "What Veyra records about a seller is Veyra's own claim, not independent truth.",
-      "Veyra sells no paid service on Arc mainnet yet. Its paid Trust API runs on testnets only.",
+      selling
+        ? `On Arc mainnet it sells two answers, paid in USDC through Circle Gateway: what it has observed of an endpoint (${ARC_TRUST_API.history.priceUsdc} USDC) and a ranked choice of sellers for a task (${ARC_TRUST_API.select.priceUsdc} USDC). It signs no clearance there: its TrustGate is on Arc Testnet only.`
+        : "Veyra sells no paid service on Arc mainnet yet. Its paid Trust API runs on testnets only.",
     ].join(" "),
     image: `${VEYRA_ORIGIN}/icon.svg`,
-    services: [{ name: "web", endpoint: `${VEYRA_ORIGIN}/` }],
-    x402Support: false,
+    services: [
+      { name: "web", endpoint: `${VEYRA_ORIGIN}/` },
+      ...(selling
+        ? [
+          { name: "x402", endpoint: `${VEYRA_ORIGIN}/.well-known/x402` },
+          { name: "OpenAPI", endpoint: `${VEYRA_ORIGIN}${ARC_OPENAPI_PATH}` },
+        ]
+        : []),
+    ],
+    x402Support: selling,
     active: true,
     registrations: agentId === null ? [] : [{ agentId, agentRegistry: VEYRA_AGENT_REGISTRY }],
     supportedTrust: ["reputation"],

@@ -189,6 +189,7 @@
     "migration-access:test": "node --experimental-transform-types --no-warnings scripts/migration-access-tests.mts",
     "veyra-identity": "node --experimental-transform-types --no-warnings --env-file-if-exists=.env.local scripts/veyra-identity.mts",
     "veyra-identity:test": "node --experimental-transform-types --no-warnings scripts/veyra-identity-tests.mts",
+    "arc-trust-api:test": "node --experimental-transform-types --no-warnings scripts/arc-trust-api-tests.mts",
     "arc:c-pilot": "node --experimental-transform-types --no-warnings scripts/arc-c-pilot/pilot.mts",
     "arc:c-pilot:test": "node --experimental-transform-types --no-warnings scripts/arc-c-pilot/pilot-tests.mts"
   },

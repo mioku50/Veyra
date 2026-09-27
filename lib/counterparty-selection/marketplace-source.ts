@@ -1,4 +1,5 @@
 import { getAddress, isAddress, type Hex } from "viem";
+import { isVeyraItself } from "../veyra-self.ts";
 import { hashCanonical, normalizeCapability } from "./canonical.ts";
 import { capabilityMatchFor } from "./policy.ts";
 import { diversifyByProvider, fundingForAccept, type PaymentFunding } from "./payment-rail.ts";
@@ -601,6 +602,7 @@ export async function discoverMarketplaceCandidates(
     if (!candidate || candidate.capabilityMatch === "none") return null;
     if (maxPriceUsdc !== undefined && candidate.priceUsdc > maxPriceUsdc) return null;
     if (!isAddress(candidate.selectedAccept.payTo)) return null;
+    if (isVeyraItself({ resource: candidate.resource, payTo: candidate.selectedAccept.payTo })) return null;
     return candidate;
   }
   for (const item of items) {

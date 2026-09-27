@@ -5,10 +5,12 @@
 
 import { randomUUID } from "node:crypto";
 import { BatchFacilitatorClient } from "@circle-fin/x402-batching/server";
-import { NextResponse, type NextRequest } from "next/server";
+import { NextResponse, type NextRequest } from "next/server.js";
 import { BRAND } from "../../brand.ts";
 import { getByoaClient } from "../../byoa/service.ts";
+import { ARC_MAINNET_GATEWAY_URL, ARC_MAINNET_NETWORK, VEYRA_ARC_PAY_TO } from "./arc-mainnet.ts";
 import { CREDIT_HEADER, isCreditTokenShaped, redeemCredit } from "./credits.ts";
+import { readJsonBody, trustApiError } from "./http.ts";
 import { TRUST_API_DOCS_PATH } from "./pricing.ts";
 
 /**
@@ -26,7 +28,18 @@ import { TRUST_API_DOCS_PATH } from "./pricing.ts";
 const GATEWAY_URL = process.env.VEYRA_X402_GATEWAY_URL
   ?? "https://gateway-api-testnet.circle.com";
 
-const facilitator = new BatchFacilitatorClient({ url: GATEWAY_URL });
+/**
+ * Where a Trust API route is paid. `testnets` is every testnet Circle's
+ * testnet facilitator settles on, and takes credits. `arc` is Arc mainnet
+ * alone, through Circle's mainnet facilitator, and takes no credits; see
+ * arc-mainnet.ts for why.
+ */
+export type TrustApiRail = "testnets" | "arc";
+
+const facilitators: Record<TrustApiRail, BatchFacilitatorClient> = {
+  testnets: new BatchFacilitatorClient({ url: GATEWAY_URL }),
+  arc: new BatchFacilitatorClient({ url: ARC_MAINNET_GATEWAY_URL }),
+};
 
 /** Circle's batched authorizations must stay valid long enough to be batched. */
 const BATCHED_MAX_TIMEOUT_SECONDS = 604_900;
@@ -51,11 +64,14 @@ export type TrustApiRequirement = {
   extra: Record<string, unknown>;
 };
 
-type SupportedCache = { at: number; kinds: Array<{ network: string; extra?: Record<string, unknown> }> };
-let supportedCache: SupportedCache | null = null;
+export type SupportedKind = { network: string; extra?: Record<string, unknown> };
+type SupportedCache = { at: number; kinds: SupportedKind[] };
+const supportedCache = new Map<TrustApiRail, SupportedCache>();
 
-function payoutAddress(): string | null {
-  const address = process.env.VEYRA_TRUST_API_PAY_TO || process.env.SELLER_ADDRESS || "";
+function payoutAddress(rail: TrustApiRail): string | null {
+  const address = rail === "arc"
+    ? VEYRA_ARC_PAY_TO ?? ""
+    : process.env.VEYRA_TRUST_API_PAY_TO || process.env.SELLER_ADDRESS || "";
   return /^0x[0-9a-fA-F]{40}$/.test(address) ? address : null;
 }
 
@@ -67,15 +83,16 @@ function allowedNetworks(): Set<string> | null {
   return entries.length > 0 ? new Set(entries) : null;
 }
 
-async function supportedKinds() {
-  if (supportedCache && Date.now() - supportedCache.at < SUPPORTED_TTL_MS) {
-    return supportedCache.kinds;
+async function supportedKinds(rail: TrustApiRail): Promise<SupportedKind[]> {
+  const cached = supportedCache.get(rail);
+  if (cached && Date.now() - cached.at < SUPPORTED_TTL_MS) {
+    return cached.kinds;
   }
-  const supported = await facilitator.getSupported();
+  const supported = await facilitators[rail].getSupported();
   const kinds = (supported.kinds ?? [])
     .filter((kind) => kind.scheme === "exact" && typeof kind.network === "string")
     .map((kind) => ({ network: kind.network, extra: kind.extra }));
-  supportedCache = { at: Date.now(), kinds };
+  supportedCache.set(rail, { at: Date.now(), kinds });
   return kinds;
 }
 
@@ -91,14 +108,28 @@ function usdcAtomic(priceUsdc: number): string {
 export async function buildTrustApiRequirements(
   priceUsdc: number,
   schema?: { input: unknown; output: unknown },
+  rail: TrustApiRail = "testnets",
 ): Promise<TrustApiRequirement[]> {
-  const payTo = payoutAddress();
+  const payTo = payoutAddress(rail);
   if (!payTo) return [];
-  const amount = usdcAtomic(priceUsdc);
-  const allowed = allowedNetworks();
+  return requirementsFromKinds(await supportedKinds(rail), {
+    amount: usdcAtomic(priceUsdc),
+    payTo,
+    allowed: rail === "arc" ? new Set([ARC_MAINNET_NETWORK]) : allowedNetworks(),
+    schema,
+  });
+}
 
+/** The accepts for the kinds a facilitator settles, narrowed to the networks allowed. */
+export function requirementsFromKinds(kinds: SupportedKind[], input: {
+  amount: string;
+  payTo: string;
+  allowed: Set<string> | null;
+  schema?: { input: unknown; output: unknown };
+}): TrustApiRequirement[] {
+  const { amount, payTo, allowed, schema } = input;
   const requirements: TrustApiRequirement[] = [];
-  for (const kind of await supportedKinds()) {
+  for (const kind of kinds) {
     if (allowed && !allowed.has(kind.network.toLowerCase())) continue;
     const extra = kind.extra ?? {};
     const assets = Array.isArray(extra.assets) ? extra.assets : [];
@@ -166,6 +197,7 @@ function challengeResponse(input: {
   docsUrl: string;
   requestId: string;
   priceUsdc: number;
+  rail: TrustApiRail;
 }) {
   const challenge = {
     x402Version: 2,
@@ -185,12 +217,14 @@ function challengeResponse(input: {
     message: input.description,
     priceUsdc: input.priceUsdc,
     // Repeated in the body so a client that reads neither the header nor the
-    // spec still learns how to earn it for free.
-    freeAlternative: {
-      verdict: "/api/x402/v1/verdict",
-      earnCredit: "/api/x402/v1/outcomes",
-      creditHeader: CREDIT_HEADER,
-    },
+    // spec still learns how to earn it for free. Credits do not buy mainnet work.
+    freeAlternative: input.rail === "arc"
+      ? { verdict: "/api/x402/v1/verdict" }
+      : {
+        verdict: "/api/x402/v1/verdict",
+        earnCredit: "/api/x402/v1/outcomes",
+        creditHeader: CREDIT_HEADER,
+      },
     accepts: input.requirements,
   }), {
     status: 402,
@@ -224,8 +258,14 @@ export function withTrustApiPayment(
      *  a signature it has no attester key for, most of all. There is no refund
      *  in x402, so the only honest place to fail is before settlement. */
     preflight?: () => Promise<{ ok: true } | { ok: false; code: string; message: string }>;
+    /** Checks the request body once a payment is presented, before it is
+     *  verified or settled. Throwing refuses the call unpaid. */
+    validate?: (body: Record<string, unknown>) => unknown;
+    rail?: TrustApiRail;
   },
 ) {
+  const rail = options.rail ?? "testnets";
+  const facilitator = facilitators[rail];
   return async (request: NextRequest): Promise<NextResponse> => {
     const requestId = randomUUID();
     const resourceUrl = new URL(options.endpoint, request.nextUrl.origin).toString();
@@ -240,8 +280,14 @@ export function withTrustApiPayment(
       }
     }
 
-    // 1. A credit spends before any money is asked for.
+    // 1. A credit spends before any money is asked for, on testnets only.
     const creditToken = request.headers.get(CREDIT_HEADER);
+    if (creditToken && rail === "arc") {
+      return NextResponse.json({
+        error: "credits_not_accepted",
+        message: "Credits are earned on testnets and do not pay for work on Arc mainnet. Pay in USDC on Arc.",
+      }, { status: 402, headers: { "X-Veyra-Request-Id": requestId, "Cache-Control": "no-store" } });
+    }
     if (creditToken && isCreditTokenShaped(creditToken)) {
       const redeemed = await redeemCredit(creditToken);
       if (redeemed) {
@@ -267,7 +313,7 @@ export function withTrustApiPayment(
 
     let requirements: TrustApiRequirement[];
     try {
-      requirements = await buildTrustApiRequirements(options.priceUsdc, options.schema);
+      requirements = await buildTrustApiRequirements(options.priceUsdc, options.schema, rail);
     } catch {
       requirements = [];
     }
@@ -289,6 +335,7 @@ export function withTrustApiPayment(
         requestId,
         priceUsdc: options.priceUsdc,
         docsUrl: new URL(TRUST_API_DOCS_PATH, request.nextUrl.origin).toString(),
+        rail,
       });
     }
 
@@ -319,6 +366,17 @@ export function withTrustApiPayment(
         message: "That payment names a network this resource did not offer.",
         accepts: requirements,
       }, { status: 402, headers: { "X-Veyra-Request-Id": requestId } });
+    }
+
+    // A request that cannot be served is refused before it is paid for.
+    if (options.validate) {
+      try {
+        options.validate(await readJsonBody(request.clone()));
+      } catch (error) {
+        const refused = trustApiError(error);
+        refused.headers.set("X-Veyra-Request-Id", requestId);
+        return refused;
+      }
     }
 
     try {

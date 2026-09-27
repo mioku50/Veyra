@@ -189,6 +189,21 @@ assert.equal(discovery.candidates[1].capabilityMatch, "generic", "A weather endp
 assert.equal(discovery.readOnly, true);
 assert.equal(discovery.paymentCreated, false);
 
+/* Veyra listed where it looks for sellers is never one of them: the owner
+   would be paying Veyra's own wallet for Veyra's own answer. */
+const withVeyra = await discoverMarketplaceCandidates({
+  capability: "market_research",
+  network: NETWORK,
+  limit: 5,
+  fetchImpl: stubCatalog([
+    catalogItem(),
+    catalogItem({ resource: "https://agent-commerce-six.vercel.app/api/x402/v1/arc/select" }),
+    catalogItem({ resource: "https://veyras.vercel.app/api/x402/v1/arc/history" }),
+  ]),
+});
+assert.deepEqual(withVeyra.candidates.map((candidate) => candidate.resource), ["https://research.example.com/v1/market-research"],
+  "Veyra's own routes, on either of its hosts, are not candidates");
+
 await assert.rejects(
   () => discoverMarketplaceCandidates({ capability: "market_research", limit: 999, fetchImpl: stubCatalog([]) }),
   (error: unknown) => error instanceof MarketplaceDiscoveryError && error.code === "marketplace_limit_invalid",

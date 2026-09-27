@@ -250,6 +250,10 @@ runStep("Veyra's ERC-8004 Identity on Arc Mainnet (file and registrant checks)",
   execSync("npm run veyra-identity:test", { cwd: root, stdio: "inherit" });
 });
 
+runStep("Veyra's Trust API on Arc Mainnet (Arc only, no credits, checked before payment)", () => {
+  execSync("npm run arc-trust-api:test", { cwd: root, stdio: "inherit" });
+});
+
 runStep("Nova Calibration Report", () => {
   execSync("npm run nova-calibration:test", { cwd: root, stdio: "inherit" });
 });

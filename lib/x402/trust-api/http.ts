@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { NextResponse } from "next/server";
+import { NextResponse } from "next/server.js";
 import { TrustApiError } from "./resource.ts";
 
 const PUBLIC_MESSAGES: Record<string, string> = {

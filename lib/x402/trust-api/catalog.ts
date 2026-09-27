@@ -4,7 +4,9 @@
  */
 
 import { BRAND } from "../../brand.ts";
-import { buildTrustApiRequirements } from "./seller.ts";
+import { VEYRA_AGENT_REGISTRY, VEYRA_ARC_AGENT_ID } from "../../erc8004/veyra-registration.ts";
+import { ARC_TRUST_API, VEYRA_ARC_PAY_TO, type ArcTrustApiProduct } from "./arc-mainnet.ts";
+import { buildTrustApiRequirements, type TrustApiRail, type TrustApiRequirement } from "./seller.ts";
 import { TRUST_API_PRICING, type TrustApiProduct } from "./pricing.ts";
 import { CREDIT_HEADER } from "./credits.ts";
 
@@ -31,60 +33,80 @@ const CAPABILITIES: Record<TrustApiProduct, string[]> = {
    drift apart, and a buyer that trusts the catalog then builds a request the
    endpoint refuses. */
 
+type CatalogEntry = {
+  path: string;
+  priceUsdc: number;
+  description: string;
+  schema?: { input: unknown; output: unknown };
+};
+
 export async function buildTrustApiCatalog(origin: string, lastUpdated = new Date().toISOString()) {
-  const items = await Promise.all(
-    (Object.keys(TRUST_API_PRICING) as TrustApiProduct[]).map(async (product) => {
+  const listed = async (entry: CatalogEntry, tags: string[], rail: TrustApiRail) => {
+    const accepts: TrustApiRequirement[] = entry.priceUsdc > 0
+      ? await buildTrustApiRequirements(entry.priceUsdc, entry.schema, rail).catch(() => [])
+      : [];
+    return catalogItem(origin, lastUpdated, entry, accepts, tags);
+  };
+  const items = await Promise.all([
+    ...(Object.keys(TRUST_API_PRICING) as TrustApiProduct[]).map((product) => {
       const entry = TRUST_API_PRICING[product];
-      const schema = "schema" in entry ? entry.schema : undefined;
-      const accepts = entry.priceUsdc > 0
-        ? await buildTrustApiRequirements(entry.priceUsdc, schema).catch(() => [])
-        : [];
-      return {
-        resource: new URL(entry.path, origin).toString(),
-        type: "http" as const,
-        x402Version: 2,
-        lastUpdated,
-        accepts,
-        metadata: {
-          method: "POST",
-          path: entry.path,
-          description: entry.description,
-          mimeType: "application/json",
-          priceUsdc: entry.priceUsdc,
-          free: entry.priceUsdc === 0,
-          siwx: false,
-          supportsVanillax402: false,
-          supportsCircleGateway: true,
-          /* Both directions, in the field names Circle's catalog uses. Publishing
-             only `output` is exactly the gap that made Veyra guess at Serper's
-             request shape and pay for an HTTP 400: a reader of this catalog
-             could not have built a valid call either. */
-          input: schema ? { body: schema.input } : undefined,
-          output: schema ? schema.output : undefined,
-          provider: {
-            name: BRAND.name,
-            website: origin,
-            docsUrl: new URL("/console/agent-api", origin).toString(),
-            description: BRAND.description,
-            category: "trust",
-            tags: CAPABILITIES[product],
-          },
-        },
-      };
+      return listed({ ...entry, schema: "schema" in entry ? entry.schema : undefined }, CAPABILITIES[product], "testnets");
     }),
-  );
+    /* Listed once Veyra has a wallet to be paid to on Arc, and not before: an
+       item nobody can pay is what Veyra marks others down for. */
+    ...(VEYRA_ARC_PAY_TO === null ? [] : (Object.keys(ARC_TRUST_API) as ArcTrustApiProduct[])
+      .map((product) => listed(ARC_TRUST_API[product], CAPABILITIES[product], "arc"))),
+  ]);
 
   return {
     x402Version: 2,
     provider: BRAND.name,
     description: "Verify before your agent pays.",
+    /* The identity that declares this catalogue, named back, as CRA's does. */
+    ...(VEYRA_ARC_AGENT_ID === null ? {} : { erc8004: { agentId: VEYRA_ARC_AGENT_ID, agentRegistry: VEYRA_AGENT_REGISTRY } }),
     // Said where a buying agent will read it, not only in the docs.
     economics: {
       free: [TRUST_API_PRICING.verdict.path, TRUST_API_PRICING.outcomes.path],
       creditHeader: CREDIT_HEADER,
-      creditPolicy: "Report the outcome of a clearance you bought and receive a credit that pays for the next one.",
+      creditPolicy: "Report the outcome of a clearance you bought and receive a credit that pays for the next one. Credits do not pay on Arc mainnet.",
     },
     items,
     total: items.length,
+  };
+}
+
+function catalogItem(origin: string, lastUpdated: string, entry: CatalogEntry, accepts: TrustApiRequirement[], tags: string[]) {
+  const schema = entry.schema;
+  return {
+    resource: new URL(entry.path, origin).toString(),
+    type: "http" as const,
+    x402Version: 2,
+    lastUpdated,
+    accepts,
+    metadata: {
+      method: "POST",
+      path: entry.path,
+      description: entry.description,
+      mimeType: "application/json",
+      priceUsdc: entry.priceUsdc,
+      free: entry.priceUsdc === 0,
+      siwx: false,
+      supportsVanillax402: false,
+      supportsCircleGateway: true,
+      /* Both directions, in the field names Circle's catalog uses. Publishing
+         only `output` is exactly the gap that made Veyra guess at Serper's
+         request shape and pay for an HTTP 400: a reader of this catalog
+         could not have built a valid call either. */
+      input: schema ? { body: schema.input } : undefined,
+      output: schema ? schema.output : undefined,
+      provider: {
+        name: BRAND.name,
+        website: origin,
+        docsUrl: new URL("/console/agent-api", origin).toString(),
+        description: BRAND.description,
+        category: "trust",
+        tags,
+      },
+    },
   };
 }

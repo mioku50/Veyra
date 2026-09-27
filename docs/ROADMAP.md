@@ -319,6 +319,16 @@ from here:*
 
 *d. **Veyra's own paid service on Arc.** Then the Circle Agent Marketplace
    intake, and the Arc team for Portal (step 7).*
+   *(2026-09-27: built. It waits for the payout wallet.*
+   - *The owner chose `history` (0.005 USDC) and `select` (0.02 USDC), paid
+     only on Arc through Circle's mainnet Gateway, to Veyra's Circle wallet.*
+   - *These are their own routes. They take no credits, and `select` there
+     signs no clearance.*
+   - *Nothing is sold until the wallet's address is in the code.*
+   - *Found on the way: `select` refused its own published `requesterWallet`,
+     after payment and as a 503. Requests are now checked before settlement.*
+
+   *See [Veyra's Trust API on Arc](audits/2026-09-27-veyra-arc-trust-api.md).)*
 
 *e. **Then D3,** with the owner confirming every hire.)*
 
