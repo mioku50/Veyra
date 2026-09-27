@@ -16,8 +16,9 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { SupabaseClient } from "@supabase/supabase-js";
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { createPublicSupabase } from "@/lib/agent/runs-public";
+import { getServerSupabaseConfig } from "@/lib/supabase/server-env";
 import {
   ARC_TESTNET_EXPLORER_URL,
   onchainProofMetadataFromRow,
@@ -485,6 +486,24 @@ function buildReceipt(input: {
   };
 }
 
+/*
+ * payment_events has been closed to the publishable key since 8 August
+ * (p544_t5_security_closure). Every receipt read it with that key, the read
+ * was refused, and every public receipt answered "page does not exist". The
+ * server reads it instead, the way other public pages read the tables closed
+ * that day, and a receipt still publishes only paymentEventColumns.
+ */
+let paymentEventsReader: SupabaseClient | null = null;
+function paymentEventsClient(): SupabaseClient {
+  if (!paymentEventsReader) {
+    const config = getServerSupabaseConfig();
+    paymentEventsReader = createClient(config.url, config.key, {
+      auth: { persistSession: false, autoRefreshToken: false },
+    });
+  }
+  return paymentEventsReader;
+}
+
 async function buildReceipts(
   client: SupabaseClient,
   steps: AgentPurchaseStepRow[],
@@ -494,7 +513,7 @@ async function buildReceipts(
   const [{ services }, runsById, paymentEvents] = await Promise.all([
     listAllStoreServices(),
     fetchRunsForSteps(client, steps),
-    fetchPaymentEventsForSteps(client, steps),
+    fetchPaymentEventsForSteps(paymentEventsClient(), steps),
   ]);
   const servicesBySlug = new Map(services.map((service) => [service.slug, service]));
   const servicesByEndpoint = new Map(services.map((service) => [service.endpoint, service]));

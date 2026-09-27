@@ -4,7 +4,8 @@
  */
 
 import { NextResponse } from "next/server";
-import { getArcPublicClient, getCanonicalVeyraAgentIdentity } from "@/lib/erc8004/client.ts";
+import { Erc8004IdentityVerificationError, getArcPublicClient, getCanonicalVeyraAgentIdentity } from "@/lib/erc8004/client.ts";
+import { VEYRA_AGENT_URI, VEYRA_ARC_AGENT_ID } from "@/lib/erc8004/veyra-registration.ts";
 import { BRAND } from "@/lib/brand.ts";
 import {
   ARC_ERC8004_REPUTATION_REGISTRY,
@@ -17,7 +18,29 @@ export const revalidate = 60;
 export async function GET() {
   const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "https://agent-commerce-six.vercel.app";
   const publicClient = getArcPublicClient();
-  const identityRecord = await getCanonicalVeyraAgentIdentity(publicClient);
+  let identityRecord;
+  try {
+    identityRecord = await getCanonicalVeyraAgentIdentity(publicClient);
+  } catch (error) {
+    /* Arc Testnet stopped returning the identity's registration transaction.
+       That is not a server fault: this answered 500 with no body. It now says
+       what failed, as /api/erc8004/v1/reputation does, and where the mainnet
+       identity is. */
+    if (error instanceof Erc8004IdentityVerificationError) {
+      return NextResponse.json(
+        {
+          error: {
+            code: "identity_verification_unavailable",
+            message: "The canonical Arc Testnet identity could not be verified.",
+            reason: error.code,
+          },
+          arcMainnet: VEYRA_ARC_AGENT_ID === null ? null : { agentId: VEYRA_ARC_AGENT_ID, registration: VEYRA_AGENT_URI },
+        },
+        { status: 503, headers: { "Cache-Control": "no-store" } },
+      );
+    }
+    throw error;
+  }
   if (!identityRecord) {
     return NextResponse.json(
       { error: { code: "identity_not_found", message: "Canonical Veyra identity was not found." } },

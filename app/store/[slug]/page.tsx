@@ -186,10 +186,12 @@ export default async function ServiceDetailPage({
                 <CopyButton value={service.endpoint} label="Copy endpoint" />
                 {isCallable ? (
                   <Button asChild variant="outline">
-                    <Link href={service.endpoint}>
+                    {/* A plain link: <Link> prefetched the paid API as a page,
+                        and every visit to this page drew a 402. */}
+                    <a href={service.endpoint}>
                       Open endpoint
                       <ArrowUpRight />
-                    </Link>
+                    </a>
                   </Button>
                 ) : (
                   <Button disabled variant="outline">
@@ -202,7 +204,7 @@ export default async function ServiceDetailPage({
         </div>
       </section>
 
-      <section className="mx-auto grid w-full max-w-6xl gap-4 px-4 py-8 sm:px-6 lg:grid-cols-[1fr_1fr]">
+      <section className="mx-auto grid w-full max-w-6xl grid-cols-1 gap-4 px-4 py-8 sm:px-6 lg:grid-cols-2">
         <section className="rounded-lg border bg-card p-5">
           <h2 className="text-sm font-semibold uppercase text-muted-foreground">
             Example use case
@@ -265,7 +267,7 @@ export default async function ServiceDetailPage({
         </section>
       ) : null}
 
-      <section className="mx-auto grid w-full max-w-6xl gap-4 px-4 pb-16 sm:px-6 lg:grid-cols-2">
+      <section className="mx-auto grid w-full max-w-6xl grid-cols-1 gap-4 px-4 pb-16 sm:px-6 lg:grid-cols-2">
         <JsonPanel title="Input schema" value={service.inputSchema} />
         <JsonPanel title="Output schema" value={service.outputSchema} />
         <JsonPanel title="Example request" value={service.exampleRequest} />

@@ -20,7 +20,10 @@ import {
   ArrowRight,
 } from "lucide-react";
 import { getByoaClient } from "@/lib/byoa/service.ts";
-import { getCanonicalVeyraAgentIdentity, getArcPublicClient } from "@/lib/erc8004/client.ts";
+import { Erc8004IdentityVerificationError, getCanonicalVeyraAgentIdentity, getArcPublicClient } from "@/lib/erc8004/client.ts";
+import { IdentityUnverifiablePanel } from "@/components/erc8004/identity-unverifiable-panel";
+import { BRAND } from "@/lib/brand";
+import { VEYRA_AGENT_URI, VEYRA_ARC_AGENT_ID } from "@/lib/erc8004/veyra-registration.ts";
 import {
   ARC_ERC8004_REPUTATION_REGISTRY,
   ARC_ERC8004_VALIDATION_REGISTRY,
@@ -31,7 +34,37 @@ export const revalidate = 30;
 
 export default async function PublicVeyraAgentIdentityPage() {
   const publicClient = getArcPublicClient();
-  const identityRecord = await getCanonicalVeyraAgentIdentity(publicClient);
+  let identityRecord;
+  try {
+    identityRecord = await getCanonicalVeyraAgentIdentity(publicClient);
+  } catch (error) {
+    /* Arc Testnet stopped returning the registration transaction, and this
+       page answered 500 to everyone. It now says so, as /reputation does. */
+    if (error instanceof Erc8004IdentityVerificationError) {
+      console.error("veyra_identity_verification_failed", {
+        code: error.code,
+        cause: error.cause instanceof Error ? error.cause.name : undefined,
+      });
+      return (
+        <IdentityUnverifiablePanel failure={error} withheld={`${BRAND.name}'s Arc Testnet identity is withheld until it verifies against Arc.`}>
+          <p>
+            This page states Veyra&apos;s onchain identity, and it shows nothing it
+            cannot re-check.
+          </p>
+          {VEYRA_ARC_AGENT_ID !== null ? (
+            <p>
+              On Arc mainnet Veyra is ERC-8004 agent #{VEYRA_ARC_AGENT_ID}, and its{" "}
+              <a href={VEYRA_AGENT_URI} className="text-sky-400 hover:text-sky-300 underline">
+                registration file
+              </a>{" "}
+              names that identity back.
+            </p>
+          ) : null}
+        </IdentityUnverifiablePanel>
+      );
+    }
+    throw error;
+  }
   if (!identityRecord) notFound();
   const agentId = identityRecord.agent_id;
   const identityRegistry = identityRecord.registry_address;

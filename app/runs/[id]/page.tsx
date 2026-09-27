@@ -192,7 +192,9 @@ function TimelineStep({ step }: { step: PublicAgentStep }) {
           </p>
         ) : null}
       </CardHeader>
-      <CardContent className="grid gap-4">
+      {/* grid-cols-1 is minmax(0, 1fr): without it the column took the width of
+          the longest line in the response preview, about 11,000 px. */}
+      <CardContent className="grid grid-cols-1 gap-4">
         <dl className="grid gap-3 text-sm sm:grid-cols-3">
           <div>
             <dt className="text-muted-foreground">Price</dt>
@@ -313,7 +315,7 @@ async function RunDetail({ params }: RunDetailPageProps) {
         </div>
       </section>
 
-      <section className="mx-auto grid w-full max-w-6xl gap-4 px-4 py-8 sm:px-6">
+      <section className="mx-auto grid w-full max-w-6xl grid-cols-1 gap-4 px-4 py-8 sm:px-6">
         {result.steps.length === 0 ? (
           <Card className="rounded-lg">
             <CardContent className="p-6 text-sm text-muted-foreground">

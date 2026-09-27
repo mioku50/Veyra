@@ -30,11 +30,15 @@ import { USDCAmount } from "@/components/wallet/USDCAmount";
 import { WalletAddress } from "@/components/wallet/WalletAddress";
 import type { PublicAgentRun } from "@/lib/agent/runs-public";
 
+/* In UTC, and labelled so. The server renders this list in UTC and the
+   browser rendered it again in its own zone; the two texts differed, and
+   React discarded the server's HTML with error #418. */
 function formatDate(value: string) {
-  return new Intl.DateTimeFormat("en", {
+  return `${new Intl.DateTimeFormat("en", {
     dateStyle: "medium",
     timeStyle: "short",
-  }).format(new Date(value));
+    timeZone: "UTC",
+  }).format(new Date(value))} UTC`;
 }
 
 function failedRunReason(run: PublicAgentRun) {

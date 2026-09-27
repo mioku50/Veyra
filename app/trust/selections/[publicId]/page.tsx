@@ -54,7 +54,7 @@ export default async function SelectionReceiptPage({ params }: Context) {
         </div>
       </section>
 
-      <section className="mx-auto grid max-w-6xl gap-5 px-4 py-8 sm:px-6 lg:grid-cols-3">
+      <section className="mx-auto grid max-w-6xl grid-cols-1 gap-5 px-4 py-8 sm:px-6 lg:grid-cols-3">
         <Card className="lg:col-span-2"><CardHeader><CardTitle>Recommended counterparty</CardTitle></CardHeader><CardContent className="space-y-4">
           <div className="grid gap-4 sm:grid-cols-3">
             <div><p className="text-xs text-muted-foreground">Agent ID</p><p className="mt-1 font-mono text-xl">{data.recommendedAgentId}</p></div>
@@ -64,7 +64,7 @@ export default async function SelectionReceiptPage({ params }: Context) {
           <p>{data.winnerExplanation}</p>
           <dl className="grid gap-2 text-sm sm:grid-cols-2">
             <div><dt className="text-muted-foreground">Owner</dt><dd className="break-all font-mono">{data.recommendedWallet}</dd></div>
-            <div><dt className="text-muted-foreground">Service</dt><dd className="font-mono">{data.recommendedServiceId || "Identity-level selection"}</dd></div>
+            <div><dt className="text-muted-foreground">Service</dt><dd className="break-all font-mono">{data.recommendedServiceId || "Identity-level selection"}</dd></div>
             <div><dt className="text-muted-foreground">ERC-8004 registry</dt><dd className="break-all font-mono">{winner?.registryAddress || "Verified registry"}</dd></div>
             <div><dt className="text-muted-foreground">Identity metadata</dt><dd className="break-all font-mono">{winner?.metadataUri || "Verified onchain"}</dd></div>
             <div><dt className="text-muted-foreground">Decision</dt><dd>{data.decision}</dd></div>

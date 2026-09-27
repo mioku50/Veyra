@@ -34,6 +34,9 @@ function relativeTime(value: string) {
   return `${Math.floor(hours / 24)}d ago`;
 }
 
+/* What the alerts API says without an owner session, so the bell reads the same. */
+const SESSION_REQUIRED = "A verified owner-wallet session is required.";
+
 export function ActivityDropdown() {
   const [alerts, setAlerts] = useState<TrustAlert[]>([]);
   const [unread, setUnread] = useState(0);
@@ -42,16 +45,22 @@ export function ActivityDropdown() {
 
   useEffect(() => {
     const controller = new AbortController();
-    fetch("/api/monitoring/alerts?state=unread&limit=5", {
-      signal: controller.signal,
-    })
+    /* Only an owner has alerts. Asked for without a session, they were a 401 on
+       every page for every visitor, and an error in every console. The session
+       check answers 200 either way. */
+    fetch("/api/byoa/management/session", { signal: controller.signal, cache: "no-store" })
+      .then(async (response) => {
+        const session = (await response.json().catch(() => ({}))) as { authenticated?: boolean };
+        if (!session.authenticated) throw new Error(SESSION_REQUIRED);
+        return fetch("/api/monitoring/alerts?state=unread&limit=5", { signal: controller.signal });
+      })
       .then(async (response) => {
         const body = (await response.json().catch(() => ({}))) as {
           alerts?: TrustAlert[];
           unreadCount?: number;
           error?: { message?: string };
         };
-        if (!response.ok) throw new Error(body.error?.message ?? "Owner session required.");
+        if (!response.ok) throw new Error(body.error?.message ?? SESSION_REQUIRED);
         setAlerts(body.alerts ?? []);
         setUnread(body.unreadCount ?? 0);
       })
