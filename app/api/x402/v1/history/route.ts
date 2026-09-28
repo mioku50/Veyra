@@ -6,7 +6,7 @@
 import type { NextRequest } from "next/server";
 import { answerHistory, checkHistoryRequest } from "@/lib/x402/trust-api/answers";
 import { TRUST_API_PRICING } from "@/lib/x402/trust-api/pricing";
-import { withTrustApiPayment } from "@/lib/x402/trust-api/seller";
+import { withTrustApiChallenge, withTrustApiPayment, type TrustApiRouteOptions } from "@/lib/x402/trust-api/seller";
 
 export const dynamic = "force-dynamic";
 
@@ -19,10 +19,15 @@ export const dynamic = "force-dynamic";
  * something that has been watching has a distribution and a list of the days
  * its payee changed.
  */
-export const POST = withTrustApiPayment((request: NextRequest) => answerHistory(request), {
+const TERMS: TrustApiRouteOptions = {
   endpoint: TRUST_API_PRICING.history.path,
   priceUsdc: TRUST_API_PRICING.history.priceUsdc,
   description: TRUST_API_PRICING.history.description,
   schema: TRUST_API_PRICING.history.schema,
   validate: checkHistoryRequest,
-});
+};
+
+export const POST = withTrustApiPayment((request: NextRequest) => answerHistory(request), TERMS);
+
+/** A GET reads the challenge and is never charged: see withTrustApiChallenge. */
+export const GET = withTrustApiChallenge(TERMS);

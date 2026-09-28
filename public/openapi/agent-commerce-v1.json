@@ -1674,9 +1674,7 @@
                         },
                         "settlementNetworkIsArc": {
                           "type": "boolean",
-                          "enum": [
-                            false
-                          ]
+                          "description": "True when the sellers are paid on Arc mainnet (eip155:5042)."
                         },
                         "catalogTotal": {
                           "type": "integer"

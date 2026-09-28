@@ -14,7 +14,7 @@ import {
 import { publicVerdict, readJsonBody, trustApiError, TRUST_API_HEADERS } from "@/lib/x402/trust-api/http";
 import { TRUST_API_PRICING } from "@/lib/x402/trust-api/pricing";
 import { TrustApiError } from "@/lib/x402/trust-api/resource";
-import { withTrustApiPayment } from "@/lib/x402/trust-api/seller";
+import { withTrustApiChallenge, withTrustApiPayment, type TrustApiRouteOptions } from "@/lib/x402/trust-api/seller";
 import { computeTrustApiVerdict } from "@/lib/x402/trust-api/verdict";
 
 export const dynamic = "force-dynamic";
@@ -31,6 +31,21 @@ export const dynamic = "force-dynamic";
  * The clearance is bound to the wallet that paid for it. A payer that reports
  * back what happened earns a credit that pays for the next one.
  */
+const TERMS: TrustApiRouteOptions = {
+  endpoint: TRUST_API_PRICING.clearance.path,
+  priceUsdc: TRUST_API_PRICING.clearance.priceUsdc,
+  description: TRUST_API_PRICING.clearance.description,
+  schema: TRUST_API_PRICING.clearance.schema,
+  // Never charge for a signature that cannot be produced.
+  preflight: async () => attesterConfigured()
+    ? { ok: true }
+    : {
+        ok: false,
+        code: "clearance_unavailable",
+        message: `${BRAND.name} cannot sign clearances right now, so this call was refused before it was charged. The free verdict endpoint is unaffected.`,
+      },
+};
+
 export const POST = withTrustApiPayment(async (request: NextRequest, context) => {
   try {
     const body = await readJsonBody(request);
@@ -113,17 +128,7 @@ export const POST = withTrustApiPayment(async (request: NextRequest, context) =>
   } catch (error) {
     return trustApiError(error);
   }
-}, {
-  endpoint: TRUST_API_PRICING.clearance.path,
-  priceUsdc: TRUST_API_PRICING.clearance.priceUsdc,
-  description: TRUST_API_PRICING.clearance.description,
-  schema: TRUST_API_PRICING.clearance.schema,
-  // Never charge for a signature that cannot be produced.
-  preflight: async () => attesterConfigured()
-    ? { ok: true }
-    : {
-        ok: false,
-        code: "clearance_unavailable",
-        message: `${BRAND.name} cannot sign clearances right now, so this call was refused before it was charged. The free verdict endpoint is unaffected.`,
-      },
-});
+}, TERMS);
+
+/** A GET reads the challenge and is never charged: see withTrustApiChallenge. */
+export const GET = withTrustApiChallenge(TERMS);

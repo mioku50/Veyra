@@ -5,12 +5,13 @@ import { BRAND } from "../../brand.ts";
 import {
   selectMarketplaceCounterparty,
   validateMarketplaceSelectionRequest,
+  type MarketplaceSelection,
 } from "../../counterparty-selection/marketplace.ts";
 import { CounterpartySelectionError } from "../../counterparty-selection/service.ts";
 import { ARC_MAINNET_NETWORK } from "./arc-mainnet.ts";
 import { attesterConfigured } from "./clearance-ledger.ts";
 import { readJsonBody, trustApiError, TRUST_API_HEADERS } from "./http.ts";
-import { loadEndpointObservations, summariseEndpointHistory } from "./observations.ts";
+import { loadEndpointObservations, summariseEndpointHistory, type EndpointHistory } from "./observations.ts";
 import { normalizeResourceUrl, parseProbeMethod, resourceKeyFor, TrustApiError } from "./resource.ts";
 import type { TrustApiRail } from "./seller.ts";
 
@@ -34,50 +35,61 @@ export async function answerHistory(request: NextRequest): Promise<NextResponse>
     const { resource, method, resourceKey } = checkHistoryRequest(await readJsonBody(request));
 
     const rows = await loadEndpointObservations(resourceKey);
-    const history = summariseEndpointHistory(resourceKey, rows);
-
-    return NextResponse.json({
-      resource,
-      resourceKey,
-      method,
-      observations: history.observations,
-      firstObservedAt: history.firstObservedAt,
-      lastObservedAt: history.lastObservedAt,
-      // Stated rather than implied: below ten observations the quality engine
-      // refuses to score, and so does this response.
-      statisticalEvidenceAvailable: history.statisticalEvidenceAvailable,
-      availability: {
-        uptimePercent: history.metrics.uptimePercent,
-        validResponsePercent: history.metrics.validResponsePercent,
-      },
-      latencyMs: {
-        p50: history.metrics.latencyP50Ms,
-        p95: history.metrics.latencyP95Ms,
-        max: history.metrics.latencyMaxMs,
-      },
-      priceUsdc: {
-        min: history.metrics.quotedPriceMinUsdc,
-        median: history.metrics.quotedPriceMedianUsdc,
-        max: history.metrics.quotedPriceMaxUsdc,
-      },
-      quality: {
-        status: history.quality.status,
-        confidenceLevel: history.quality.confidenceLevel,
-        overallScore: history.quality.overallScore,
-      },
-      payee: {
-        current: history.payToNow,
-        stableSince: history.payToStableSince,
-        distinctSeen: history.distinctPayTos,
-      },
-      changes: history.changes,
-      note: history.observations === 0
-        ? `${BRAND.name} has no observations of this endpoint yet. Ask for a verdict first - that probe is free and it is what starts the record.`
-        : undefined,
-    }, { headers: TRUST_API_HEADERS });
+    return NextResponse.json(historyAnswer({ resource, method, resourceKey }, summariseEndpointHistory(resourceKey, rows)), { headers: TRUST_API_HEADERS });
   } catch (error) {
     return trustApiError(error);
   }
+}
+
+/** What `history` answers, kept apart from the route so a test can hold it to the published schema. */
+export function historyAnswer(request: { resource: string; method: string; resourceKey: string }, history: EndpointHistory) {
+  const { resource, method, resourceKey } = request;
+  return {
+    resource,
+    resourceKey,
+    method,
+    observations: history.observations,
+    firstObservedAt: history.firstObservedAt,
+    lastObservedAt: history.lastObservedAt,
+    // Stated rather than implied: below ten observations the quality engine
+    // refuses to score, and so does this response.
+    statisticalEvidenceAvailable: history.statisticalEvidenceAvailable,
+    availability: {
+      uptimePercent: history.metrics.uptimePercent,
+      validResponsePercent: history.metrics.validResponsePercent,
+    },
+    latencyMs: {
+      p50: history.metrics.latencyP50Ms,
+      p95: history.metrics.latencyP95Ms,
+      max: history.metrics.latencyMaxMs,
+    },
+    /* Null when no challenge ever stated a price. The quality engine reports 0
+       for a price it never saw, and this answered "free" for an endpoint that
+       charges per request. */
+    priceUsdc: history.priceQuotes > 0
+      ? {
+        min: history.metrics.quotedPriceMinUsdc,
+        median: history.metrics.quotedPriceMedianUsdc,
+        max: history.metrics.quotedPriceMaxUsdc,
+      }
+      : null,
+    quality: {
+      status: history.quality.status,
+      confidenceLevel: history.quality.confidenceLevel,
+      overallScore: history.quality.overallScore,
+    },
+    payee: {
+      current: history.payToNow,
+      stableSince: history.payToStableSince,
+      distinctSeen: history.distinctPayTos,
+    },
+    changes: history.changes,
+    note: history.observations === 0
+      ? `${BRAND.name} has no observations of this endpoint yet. Ask for a verdict first - that probe is free and it is what starts the record.`
+      : history.priceQuotes === 0 && history.zeroQuotes > 0
+        ? "This endpoint prices each request: asked for nothing, it quotes 0 USDC. The price of a real request is in the challenge that request receives."
+        : undefined,
+  };
 }
 
 /**
@@ -134,15 +146,20 @@ export async function answerSelect(request: NextRequest, payer: string | null, r
       issueClearance: !onArc && requesterWallet !== zeroAddress && attesterConfigured(),
     });
 
-    return NextResponse.json({
-      selection,
-      note: onArc
-        ? "No clearance is signed on Arc mainnet: the TrustGate that verifies one exists on Arc Testnet only."
-        : requesterWallet === zeroAddress
-          ? "No payer wallet was identified, so this selection is unsigned. Pay from the wallet that will spend, or send `requesterWallet`, to receive a clearance."
-          : undefined,
-    }, { headers: TRUST_API_HEADERS });
+    return NextResponse.json(selectAnswer(selection, { onArc, unsigned: requesterWallet === zeroAddress }), { headers: TRUST_API_HEADERS });
   } catch (error) {
     return trustApiError(error);
   }
+}
+
+/** What `select` answers, kept apart from the route so a test can hold it to the published schema. */
+export function selectAnswer(selection: MarketplaceSelection, context: { onArc: boolean; unsigned: boolean }) {
+  return {
+    selection,
+    note: context.onArc
+      ? "No clearance is signed on Arc mainnet: the TrustGate that verifies one exists on Arc Testnet only."
+      : context.unsigned
+        ? "No payer wallet was identified, so this selection is unsigned. Pay from the wallet that will spend, or send `requesterWallet`, to receive a clearance."
+        : undefined,
+  };
 }

@@ -182,7 +182,10 @@ export type MarketplaceSelection = {
   query: string;
   network: MarketplaceNetwork;
   networkLabel: string;
-  settlementNetworkIsArc: false;
+  /** True when these sellers are paid on Arc mainnet. It was the constant
+   *  false from when selections never settled on Arc, and still said so on
+   *  the Arc mainnet route. */
+  settlementNetworkIsArc: boolean;
   requestedBudgetUsdc: number;
   maxPriceUsdc: number | null;
   catalogTotal: number;
@@ -1064,7 +1067,7 @@ export async function selectMarketplaceCounterparty(input: {
     query: discovery.query,
     network: discovery.network,
     networkLabel: discovery.networkLabel,
-    settlementNetworkIsArc: false,
+    settlementNetworkIsArc: discovery.network === "eip155:5042",
     requestedBudgetUsdc: request.budgetUsdc,
     maxPriceUsdc: request.maxPriceUsdc ?? null,
     catalogTotal: discovery.catalogTotal,

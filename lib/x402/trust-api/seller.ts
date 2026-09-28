@@ -61,7 +61,7 @@ export type TrustApiRequirement = {
      request and `.output` the response. Buyers read it from the challenge, and
      Veyra's own probe scores an endpoint that omits it. It rides on the first
      accept only: see requirementsFromKinds. */
-  outputSchema?: { input: { body: unknown }; output: { body: unknown } };
+  outputSchema?: { input: { type: "http"; method: "POST"; body: unknown }; output: { body: unknown } };
   extra: Record<string, unknown>;
 };
 
@@ -150,8 +150,10 @@ export function requirementsFromKinds(kinds: SupportedKind[], input: {
          20 KB. Node's fetch reads at most 16 KB of headers, so a buyer on Node
          failed before it saw the price. Readers, Veyra's own probe among them,
          take the schema from the first accept that has one. */
+      /* The method rides with it, as Circle's catalogue records it: every paid
+         route answers POST, and a client that guessed GET got a 405. */
       ...(schema && requirements.length === 0
-        ? { outputSchema: { input: { body: schema.input }, output: { body: schema.output } } }
+        ? { outputSchema: { input: { type: "http", method: "POST", body: schema.input }, output: { body: schema.output } } }
         : {}),
       // Echo the facilitator's own domain data. Rebuilding it here is how a
       // resource server ends up advertising a verifying contract the
@@ -245,6 +247,89 @@ function challengeResponse(input: {
   });
 }
 
+export type TrustApiRouteOptions = {
+  endpoint: string;
+  priceUsdc: number;
+  description: string;
+  /** Published in the challenge so a buyer can build a valid request and
+   *  check the answer, instead of guessing the shape and paying for a 400. */
+  schema?: { input: unknown; output: unknown };
+  /** Runs before any money moves. Returning a reason refuses the call with a
+   *  503 instead of charging for something Veyra cannot currently deliver -
+   *  a signature it has no attester key for, most of all. There is no refund
+   *  in x402, so the only honest place to fail is before settlement. */
+  preflight?: () => Promise<{ ok: true } | { ok: false; code: string; message: string }>;
+  /** Checks the request body once a payment is presented, before it is
+   *  verified or settled. Throwing refuses the call unpaid. */
+  validate?: (body: Record<string, unknown>) => unknown;
+  rail?: TrustApiRail;
+};
+
+/** The preflight's refusal, as a 503, or null when the route can sell. */
+async function preflightRefusal(options: TrustApiRouteOptions, requestId: string): Promise<NextResponse | null> {
+  if (!options.preflight) return null;
+  const ready = await options.preflight();
+  if (ready.ok) return null;
+  return NextResponse.json({
+    error: ready.code,
+    message: ready.message,
+  }, { status: 503, headers: { "X-Veyra-Request-Id": requestId, "Cache-Control": "no-store" } });
+}
+
+/** What the route can be paid with right now, or the 503 when nothing. */
+async function requirementsOrRefusal(
+  options: TrustApiRouteOptions,
+  rail: TrustApiRail,
+  requestId: string,
+): Promise<TrustApiRequirement[] | NextResponse> {
+  let requirements: TrustApiRequirement[];
+  try {
+    requirements = await buildTrustApiRequirements(options.priceUsdc, options.schema, rail);
+  } catch {
+    requirements = [];
+  }
+  if (requirements.length > 0) return requirements;
+  return NextResponse.json({
+    error: "payments_unavailable",
+    message: `${BRAND.name} cannot currently accept payment for this resource. The free verdict endpoint is unaffected.`,
+  }, { status: 503, headers: { "X-Veyra-Request-Id": requestId } });
+}
+
+/**
+ * A GET on a paid route: the challenge, and never an answer.
+ *
+ * The routes answer POST only, so a GET used to get a bare 405, and
+ * `circle services inspect`, which probes with GET unless told otherwise,
+ * reported both Arc routes as unavailable. A GET now reads the same challenge a
+ * POST does. Nothing past that: the answer needs a body a GET cannot carry, so
+ * a GET that brings a payment is refused before anything reaches Circle.
+ */
+export function withTrustApiChallenge(options: TrustApiRouteOptions) {
+  const rail = options.rail ?? "testnets";
+  return async (request: NextRequest): Promise<NextResponse> => {
+    const requestId = randomUUID();
+    if (request.headers.get(PAYMENT_SIGNATURE_HEADER) ?? request.headers.get("x-payment")) {
+      return NextResponse.json({
+        error: "method_not_allowed",
+        message: "Send the request and its payment with POST. Nothing was charged.",
+      }, { status: 405, headers: { Allow: "POST", "X-Veyra-Request-Id": requestId, "Cache-Control": "no-store" } });
+    }
+    const refused = await preflightRefusal(options, requestId);
+    if (refused) return refused;
+    const requirements = await requirementsOrRefusal(options, rail, requestId);
+    if (requirements instanceof NextResponse) return requirements;
+    return challengeResponse({
+      requirements,
+      resourceUrl: new URL(options.endpoint, request.nextUrl.origin).toString(),
+      description: options.description,
+      requestId,
+      priceUsdc: options.priceUsdc,
+      docsUrl: new URL(TRUST_API_DOCS_PATH, request.nextUrl.origin).toString(),
+      rail,
+    });
+  };
+}
+
 /**
  * Wraps a Trust API handler in payment.
  *
@@ -254,23 +339,7 @@ function challengeResponse(input: {
  */
 export function withTrustApiPayment(
   handler: (request: NextRequest, context: PaidContext) => Promise<NextResponse>,
-  options: {
-    endpoint: string;
-    priceUsdc: number;
-    description: string;
-    /** Published in the challenge so a buyer can build a valid request and
-     *  check the answer, instead of guessing the shape and paying for a 400. */
-    schema?: { input: unknown; output: unknown };
-    /** Runs before any money moves. Returning a reason refuses the call with a
-     *  503 instead of charging for something Veyra cannot currently deliver -
-     *  a signature it has no attester key for, most of all. There is no refund
-     *  in x402, so the only honest place to fail is before settlement. */
-    preflight?: () => Promise<{ ok: true } | { ok: false; code: string; message: string }>;
-    /** Checks the request body once a payment is presented, before it is
-     *  verified or settled. Throwing refuses the call unpaid. */
-    validate?: (body: Record<string, unknown>) => unknown;
-    rail?: TrustApiRail;
-  },
+  options: TrustApiRouteOptions,
 ) {
   const rail = options.rail ?? "testnets";
   const facilitator = facilitators[rail];
@@ -278,15 +347,8 @@ export function withTrustApiPayment(
     const requestId = randomUUID();
     const resourceUrl = new URL(options.endpoint, request.nextUrl.origin).toString();
 
-    if (options.preflight) {
-      const ready = await options.preflight();
-      if (!ready.ok) {
-        return NextResponse.json({
-          error: ready.code,
-          message: ready.message,
-        }, { status: 503, headers: { "X-Veyra-Request-Id": requestId, "Cache-Control": "no-store" } });
-      }
-    }
+    const refused = await preflightRefusal(options, requestId);
+    if (refused) return refused;
 
     // 1. A credit spends before any money is asked for, on testnets only.
     const creditToken = request.headers.get(CREDIT_HEADER);
@@ -319,18 +381,8 @@ export function withTrustApiPayment(
       }, { status: 402, headers: { "X-Veyra-Request-Id": requestId } });
     }
 
-    let requirements: TrustApiRequirement[];
-    try {
-      requirements = await buildTrustApiRequirements(options.priceUsdc, options.schema, rail);
-    } catch {
-      requirements = [];
-    }
-    if (requirements.length === 0) {
-      return NextResponse.json({
-        error: "payments_unavailable",
-        message: `${BRAND.name} cannot currently accept payment for this resource. The free verdict endpoint is unaffected.`,
-      }, { status: 503, headers: { "X-Veyra-Request-Id": requestId } });
-    }
+    const requirements = await requirementsOrRefusal(options, rail, requestId);
+    if (requirements instanceof NextResponse) return requirements;
 
     // 2. No payment presented: publish the challenge.
     const paymentHeader = request.headers.get(PAYMENT_SIGNATURE_HEADER)

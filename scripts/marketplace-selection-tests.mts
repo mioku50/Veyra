@@ -33,6 +33,10 @@ import {
 import { recordApiQualityObservation } from "../lib/providers/api-quality.ts";
 import { buildClearanceMessage } from "../lib/trust-gate/sign.ts";
 import type { SelectionTenant } from "../lib/counterparty-selection/types.ts";
+import { selectAnswer } from "../lib/x402/trust-api/answers.ts";
+import { ARC_TRUST_API } from "../lib/x402/trust-api/arc-mainnet.ts";
+import { TRUST_API_PRICING } from "../lib/x402/trust-api/pricing.ts";
+import { validateJsonSchemaValue } from "../lib/seller/json-schema.ts";
 
 const REQUESTER = "0x00000000000000000000000000000000000000aa" as const;
 const PAY_TO = "0x6302D9e6DBB22fEC3c350551568Bb39B4b35Ad57";
@@ -255,6 +259,33 @@ const payeeDrift = await probeX402Resource(expectation, {
 });
 assert.ok(payeeDrift.catalogDrift.includes("payto_changed"), "A changed payee is drift, not a detail");
 assert.equal(payeeDrift.integrityScore, 0);
+
+/* A seller that prices each request quotes 0 for the probe's empty one, as
+   Exa's /contents does. That is no price, so it is no price change: read as
+   one, it made every probe of such a seller disqualifying. */
+const zeroQuoteProbe = await probeX402Resource(expectation, {
+  fetchImpl: stubChallenge({
+    x402Version: 2,
+    accepts: [{ scheme: "exact", network: NETWORK, asset: USDC_BASE, payTo: PAY_TO, amount: "0" }],
+  }),
+});
+assert.deepEqual(zeroQuoteProbe.catalogDrift, [], "A zero quote is not a price change");
+assert.equal(zeroQuoteProbe.criticalFailure, null);
+assert.equal(zeroQuoteProbe.quotedZero, true);
+assert.equal(zeroQuoteProbe.integrityScore, cleanProbe.integrityScore, "Pricing each request costs a seller nothing on integrity");
+assert.equal(zeroQuoteProbe.observation.quotedPriceUsdc, null, "The quality engine is not handed a price of 0");
+assert.equal(zeroQuoteProbe.observation.responseSchemaValid, true);
+assert.equal(cleanProbe.quotedZero, false);
+assert.deepEqual(
+  compareChallengeToCatalog([{ network: NETWORK, payTo: PAY_TO, asset: USDC_BASE, amount: "10000" }], { ...expectation, amountAtomic: "0", priceUsdc: 0 }).drift,
+  [],
+  "A baseline that stated no price cannot have changed",
+);
+assert.deepEqual(
+  compareChallengeToCatalog([{ network: NETWORK, payTo: PAY_TO, asset: USDC_BASE, amount: "" }], expectation).drift,
+  ["price_changed"],
+  "An amount that cannot be read is still drift",
+);
 
 // Real x402 v2 sellers return an empty body and carry the challenge in the
 // `payment-required` header. The probe must read it there.
@@ -486,6 +517,37 @@ const selection = await selectMarketplaceCounterparty({
 
 assert.equal(selection.settlementNetworkIsArc, false, "Marketplace settlement is off-Arc and says so");
 assert.equal(selection.network, NETWORK);
+
+/* The same selection on Arc mainnet says it settles on Arc. It said false
+   there too, a constant from when no selection ever settled on Arc. The accept
+   is vanilla so that nothing asks Circle for a Gateway balance. */
+{
+  const ARC = "eip155:5042";
+  const arcAccept = { scheme: "exact", network: ARC, asset: "0x3600000000000000000000000000000000000000", payTo: PAY_TO, amount: "10000", maxTimeoutSeconds: 300, extra: { name: "USDC", version: "2" } };
+  const arcSelection = await selectMarketplaceCounterparty({
+    request: { capability: "market_research", budgetUsdc: 0.05, maxPriceUsdc: 0.02, limit: 5, network: ARC },
+    tenant,
+    issueClearance: false,
+    registryOffers: [],
+    fetchImpl: stubCatalog([catalogItem({ accepts: [arcAccept] })]),
+    probeFetchImpl: stubChallenge({ x402Version: 2, accepts: [arcAccept] }) as unknown as (url: string, init: RequestInit) => Promise<Response>,
+  });
+  assert.equal(arcSelection.network, ARC);
+  assert.equal(arcSelection.settlementNetworkIsArc, true, "A selection on Arc mainnet settles on Arc and says so");
+  assert.ok(arcSelection.candidates.length >= 1);
+
+  /* What `select` answers is what it publishes. The schema described a flat
+     `selectionId`, `candidates` and `winner` that no answer ever had, and the
+     owner's first paid call on Arc failed it. Checked with the validator Veyra
+     holds sellers' answers to. */
+  for (const [answer, output] of [
+    [selectAnswer(selection, { onArc: false, unsigned: true }), TRUST_API_PRICING.select.schema.output],
+    [selectAnswer(arcSelection, { onArc: true, unsigned: false }), ARC_TRUST_API.select.schema.output],
+  ] as const) {
+    const result = validateJsonSchemaValue(JSON.parse(JSON.stringify(answer)), output as Record<string, unknown>);
+    assert.ok(result.ok, `select's answer fails its own published schema: ${result.ok ? "" : `${result.path} ${result.message}`}`);
+  }
+}
 assert.ok(selection.candidates.length >= 1);
 assert.equal(selection.candidates[0].rank, 1);
 assert.equal(selection.candidates[0].evidenceLimits.arcProofBacked, false);

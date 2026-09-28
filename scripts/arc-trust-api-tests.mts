@@ -1,12 +1,13 @@
 /** Copyright 2026 Veyra. SPDX-License-Identifier: Apache-2.0 */
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { NextRequest } from "next/server.js";
 import { ARC_OPENAPI_PATH, ARC_TRUST_API, VEYRA_ARC_PAY_TO } from "../lib/x402/trust-api/arc-mainnet.ts";
 import { arcTrustApiOpenApi } from "../lib/x402/trust-api/arc-openapi.ts";
 import { checkHistoryRequest, checkSelectRequest } from "../lib/x402/trust-api/answers.ts";
 import { buildTrustApiCatalog } from "../lib/x402/trust-api/catalog.ts";
 import { TrustApiError } from "../lib/x402/trust-api/resource.ts";
-import { requirementsFromKinds, withTrustApiPayment, type SupportedKind } from "../lib/x402/trust-api/seller.ts";
+import { requirementsFromKinds, withTrustApiChallenge, withTrustApiPayment, type SupportedKind } from "../lib/x402/trust-api/seller.ts";
 import { TRUST_API_PRICING } from "../lib/x402/trust-api/pricing.ts";
 import { VEYRA_ARC_AGENT_ID, VEYRA_ORIGIN, veyraRegistrationFile } from "../lib/erc8004/veyra-registration.ts";
 import { isVeyraItself } from "../lib/veyra-self.ts";
@@ -179,6 +180,55 @@ const post = (path: string, body: unknown, headers: Record<string, string> = {})
   const challenge = await testnetSelect(post("/api/x402/v1/select", {}));
   assert.equal(challenge.status, 402, "An unpaid request is not checked: a probe with no body still gets the challenge");
   assert.equal((await challenge.json()).freeAlternative.earnCredit, "/api/x402/v1/outcomes");
+}
+
+/* ---- a GET reads the challenge, and is never charged ---- */
+
+{
+  /* The routes answer POST only, and a GET used to get a bare 405, so
+     `circle services inspect`, which probes with GET unless told otherwise,
+     reported both Arc routes as unavailable. */
+  const terms = {
+    endpoint: ARC_TRUST_API.history.path,
+    priceUsdc: ARC_TRUST_API.history.priceUsdc,
+    description: "t",
+    schema: ARC_TRUST_API.history.schema,
+    validate: checkHistoryRequest,
+    rail: "arc" as const,
+  };
+  const arcHistoryGet = withTrustApiChallenge(terms);
+  const get = (headers: Record<string, string> = {}) => new NextRequest(`https://veyra.test${terms.endpoint}`, { method: "GET", headers });
+
+  facilitatorCalls.length = 0;
+  const challenged = await arcHistoryGet(get());
+  if (VEYRA_ARC_PAY_TO === null) {
+    assert.equal(challenged.status, 503, "Nothing is offered before there is a wallet to be paid to");
+  } else {
+    assert.equal(challenged.status, 402, "A GET reads the same challenge a POST does");
+    const decoded = JSON.parse(Buffer.from(challenged.headers.get("PAYMENT-REQUIRED") ?? "", "base64").toString("utf8")) as { accepts: Array<Record<string, any>> };
+    assert.deepEqual(decoded.accepts.map((accept) => accept.network), ["eip155:5042"]);
+    assert.equal(decoded.accepts[0].payTo.toLowerCase(), VEYRA_ARC_PAY_TO.toLowerCase());
+    assert.equal(decoded.accepts[0].outputSchema.input.method, "POST", "And it says the answer takes a POST");
+  }
+
+  const paidByGet = await arcHistoryGet(get({ "PAYMENT-SIGNATURE": paymentHeader("eip155:5042") }));
+  assert.equal(paidByGet.status, 405, "A payment sent with a GET is refused, since there is no body to answer");
+  assert.equal(paidByGet.headers.get("Allow"), "POST");
+  assert.match((await paidByGet.json()).message, /Nothing was charged/);
+  assert.ok(!facilitatorCalls.some((url) => url.endsWith("/verify") || url.endsWith("/settle")), "A GET never reaches verify or settle");
+
+  // Every paid route answers GET this way, with the terms its POST sells on.
+  for (const path of [
+    "app/api/x402/v1/arc/history/route.ts",
+    "app/api/x402/v1/arc/select/route.ts",
+    "app/api/x402/v1/history/route.ts",
+    "app/api/x402/v1/select/route.ts",
+    "app/api/x402/v1/clearance/route.ts",
+  ]) {
+    const source = readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
+    assert.match(source, /export const GET = withTrustApiChallenge\(TERMS\);/, `${path} answers GET with the challenge`);
+    assert.match(source, /export const POST = withTrustApiPayment\([\s\S]*, TERMS\);/, `${path} sells on the same terms`);
+  }
 }
 
 /* ---- a challenge a Node buyer can read ---- */

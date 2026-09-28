@@ -56,7 +56,8 @@ export type TrustApiAlert = {
     | "catalog_drift"
     | "first_sighting"
     | "endpoint_unreachable"
-    | "no_challenge";
+    | "no_challenge"
+    | "price_not_quoted";
   severity: "critical" | "warning" | "info";
   detail: string;
 };
@@ -158,6 +159,7 @@ function alertsFrom(input: {
   changes: EndpointChangeEvent[];
   liveAccept: ObservedAccept | null;
   lastPayTo: string | null;
+  quotedZero: boolean;
 }): TrustApiAlert[] {
   const alerts: TrustApiAlert[] = [];
 
@@ -194,6 +196,16 @@ function alertsFrom(input: {
       code: "price_changed",
       severity: "warning",
       detail: `Price moved from ${priceChange.from} to ${priceChange.to} USDC on ${priceChange.observedAt}.`,
+    });
+  }
+
+  /* The price in this verdict is then the 0 the seller asked for nothing, and
+     the real one is in the challenge for the real request. See isZeroQuote. */
+  if (input.quotedZero) {
+    alerts.push({
+      code: "price_not_quoted",
+      severity: "info",
+      detail: "The endpoint asks 0 USDC for a request with no input: it prices each request. The price of a real request is in the challenge that request receives.",
     });
   }
 
@@ -388,6 +400,7 @@ export async function computeTrustApiVerdict(input: {
     changes: summary.changes,
     liveAccept,
     lastPayTo: lastObservation?.observed_pay_to?.toLowerCase() ?? null,
+    quotedZero: probe.quotedZero,
   });
 
   const maxExposureUsdc = Math.min(

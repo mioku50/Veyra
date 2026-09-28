@@ -6,7 +6,7 @@
 import type { NextRequest } from "next/server";
 import { answerSelect, checkSelectRequest } from "@/lib/x402/trust-api/answers";
 import { TRUST_API_PRICING } from "@/lib/x402/trust-api/pricing";
-import { withTrustApiPayment } from "@/lib/x402/trust-api/seller";
+import { withTrustApiChallenge, withTrustApiPayment, type TrustApiRouteOptions } from "@/lib/x402/trust-api/seller";
 
 export const dynamic = "force-dynamic";
 
@@ -19,10 +19,15 @@ export const dynamic = "force-dynamic";
  * those probes is also written to the evidence base, so a paid selection makes
  * every later verdict — including the free ones — a little better informed.
  */
-export const POST = withTrustApiPayment((request: NextRequest, context) => answerSelect(request, context.payer, "testnets"), {
+const TERMS: TrustApiRouteOptions = {
   endpoint: TRUST_API_PRICING.select.path,
   priceUsdc: TRUST_API_PRICING.select.priceUsdc,
   description: TRUST_API_PRICING.select.description,
   schema: TRUST_API_PRICING.select.schema,
   validate: (body) => checkSelectRequest(body, "testnets"),
-});
+};
+
+export const POST = withTrustApiPayment((request: NextRequest, context) => answerSelect(request, context.payer, "testnets"), TERMS);
+
+/** A GET reads the challenge and is never charged: see withTrustApiChallenge. */
+export const GET = withTrustApiChallenge(TERMS);

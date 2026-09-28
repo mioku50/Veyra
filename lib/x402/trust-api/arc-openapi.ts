@@ -21,6 +21,7 @@ export function arcTrustApiOpenApi() {
         `${BRAND.name} checks x402 sellers before an agent pays them.`,
         `These routes are paid per call with x402 v2, in USDC on Arc mainnet (${ARC_MAINNET_NETWORK}), through Circle Gateway.`,
         "A request without payment is answered 402, with the price and payment terms in the PAYMENT-REQUIRED header.",
+        "A GET is answered with the same 402 and is never charged: the answer takes a POST.",
         "Pay by sending the signed payment in the PAYMENT-SIGNATURE header.",
         "A request that cannot be served is refused before any payment is taken.",
         "What Veyra says about a seller is its own claim, not independent truth.",

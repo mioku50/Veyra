@@ -105,6 +105,8 @@ export type X402ProbeResult = {
   respondedWith402: boolean;
   challengeParseable: boolean;
   observedPriceUsdc: number | null;
+  /** The challenge asked 0 for the probe's empty request: no price was stated. */
+  quotedZero: boolean;
   observedPayTo: string | null;
   catalogDrift: string[];
   latencyMs: number | null;
@@ -256,6 +258,20 @@ function usableSchema(value: unknown): Record<string, unknown> | null {
 }
 
 /**
+ * A challenge that asks for nothing states no price.
+ *
+ * A seller that prices each request answers the probe's empty request with an
+ * amount of 0, because there is nothing in it to charge for: Exa's /contents
+ * charges per page, and a request naming no pages costs 0. Read as a price,
+ * every probe of it since 15 September recorded a change from the catalogued
+ * 0.001 USDC, and that drift is disqualifying, so `select` denied the endpoint
+ * outright and `history` sold it as free with no valid responses.
+ */
+export function isZeroQuote(amount: unknown): boolean {
+  return /^0+$/.test(String(amount ?? "").trim());
+}
+
+/**
  * Compares a live challenge against the catalog entry. Any mismatch on money
  * fields is catalog drift - the seller changed price or payee since indexing,
  * which is exactly the condition an agent must not pay through blindly.
@@ -278,7 +294,10 @@ export function compareChallengeToCatalog(
     drift.push("asset_changed");
   }
   const amount = String(candidate.amount ?? candidate.maxAmountRequired ?? "");
-  if (amount !== expected.amountAtomic) drift.push("price_changed");
+  // Only two stated prices can disagree; see isZeroQuote.
+  if (amount !== expected.amountAtomic && !isZeroQuote(amount) && !isZeroQuote(expected.amountAtomic)) {
+    drift.push("price_changed");
+  }
   return { matched: candidate, drift };
 }
 
@@ -381,6 +400,10 @@ export async function probeX402Resource(
   const observedPriceUsdc = comparison.matched
     ? atomicToUsdc(comparison.matched.amount ?? comparison.matched.maxAmountRequired)
     : null;
+  /* Kept as the 0 the seller quoted, so a verdict can still compare payees
+     against it, but never counted as a price. */
+  const quotedZero = comparison.matched !== null
+    && isZeroQuote(comparison.matched.amount ?? comparison.matched.maxAmountRequired);
   const observedPayTo = comparison.matched ? String(comparison.matched.payTo || "") || null : null;
 
   const checks: X402ProbeCheck[] = [];
@@ -420,10 +443,12 @@ export async function probeX402Resource(
       ? "Payee is a well-formed EVM address."
       : "Payee address is malformed.");
   scored("price_matches_catalog",
-    observedPriceUsdc !== null && Math.abs(observedPriceUsdc - expected.priceUsdc) < 1e-9,
+    observedPriceUsdc !== null && (quotedZero || Math.abs(observedPriceUsdc - expected.priceUsdc) < 1e-9),
     observedPriceUsdc === null
       ? "Live price could not be read from the challenge."
-      : `Live price ${observedPriceUsdc} USDC vs catalog ${expected.priceUsdc} USDC.`);
+      : quotedZero && expected.priceUsdc > 0
+        ? `The challenge asks 0 USDC for a request with no input: the endpoint prices each request, and the catalog lists ${expected.priceUsdc} USDC.`
+        : `Live price ${observedPriceUsdc} USDC vs catalog ${expected.priceUsdc} USDC.`);
   scored("settlement_surface_automatable",
     expected.supportsVanillaX402 || expected.supportsCircleGateway,
     `vanilla=${expected.supportsVanillaX402} gateway=${expected.supportsCircleGateway}`);
@@ -480,7 +505,7 @@ export async function probeX402Resource(
     sellerPublicId: null,
     startedAt,
     completedAt: new Date(startMs + (latencyMs ?? 0)).toISOString(),
-    quotedPriceUsdc: observedPriceUsdc,
+    quotedPriceUsdc: quotedZero ? null : observedPriceUsdc,
     paidAmountUsdc: null,
     latencyMs,
     httpStatusClass: respondedWith402 ? "4xx" : statusClass(status),
@@ -509,6 +534,7 @@ export async function probeX402Resource(
     respondedWith402,
     challengeParseable,
     observedPriceUsdc,
+    quotedZero,
     observedPayTo,
     catalogDrift: comparison.drift,
     latencyMs,

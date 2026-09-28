@@ -23,6 +23,8 @@ import {
 } from "../lib/x402/trust-api/resource.ts";
 import { TRUST_API_PRICING } from "../lib/x402/trust-api/pricing.ts";
 import { consumeFreeCall } from "../lib/x402/trust-api/rate-limit.ts";
+import { historyAnswer } from "../lib/x402/trust-api/answers.ts";
+import { validateJsonSchemaValue } from "../lib/seller/json-schema.ts";
 
 /* ---- resource identity ---- */
 
@@ -149,6 +151,45 @@ const none = summariseEndpointHistory("a".repeat(64), []);
 assert.equal(none.observations, 0);
 assert.equal(none.payToNow, null);
 assert.equal(none.statisticalEvidenceAvailable, false);
+
+/* A seller that prices each request, as Exa's /contents does, quotes 0 for the
+   probe's empty request. Rows stored before the probe knew that also carry the
+   price change it raised against the catalogue. Read as prices, they sold the
+   endpoint as free with 0% valid responses. */
+const perRequest = summariseEndpointHistory(
+  "a".repeat(64),
+  Array.from({ length: 12 }, (_, i) => row({
+    probed_at: `2026-09-${String(i + 1).padStart(2, "0")}T00:00:00.000Z`,
+    observed_price_usdc: "0.000000",
+    catalog_drift: ["price_changed"],
+  })),
+);
+assert.equal(perRequest.priceQuotes, 0);
+assert.equal(perRequest.zeroQuotes, 12);
+assert.equal(perRequest.metrics.validResponsePercent, 100, "A zero quote's price change does not make the response invalid");
+assert.equal(perRequest.changes.length, 0);
+const perRequestAnswer = historyAnswer({ resource: canonical, method: "POST", resourceKey: "a".repeat(64) }, perRequest);
+assert.equal(perRequestAnswer.priceUsdc, null, "No price was stated, so none is reported, and certainly not 0");
+assert.match(perRequestAnswer.note ?? "", /prices each request/);
+// A zero among stated prices is not a price change either.
+const mixed = summariseEndpointHistory("a".repeat(64), [
+  row({}),
+  row({ probed_at: "2026-09-02T00:00:00.000Z", observed_price_usdc: 0 }),
+  row({ probed_at: "2026-09-03T00:00:00.000Z" }),
+]);
+assert.equal(mixed.changes.length, 0);
+assert.equal(mixed.priceQuotes, 2);
+assert.equal(mixed.metrics.quotedPriceMinUsdc, 0.002, "The zero is left out of the price distribution");
+// Other drift on a zero-quote row still counts against it.
+assert.equal(summariseEndpointHistory("a".repeat(64), [row({ observed_price_usdc: 0, catalog_drift: ["price_changed", "payto_changed"] })]).metrics.validResponsePercent, 0);
+
+// Every history answer matches the schema it publishes, checked with the
+// validator Veyra holds sellers' answers to.
+for (const summary of [changed, steady, many, none, perRequest]) {
+  const answer = historyAnswer({ resource: canonical, method: "POST", resourceKey: "a".repeat(64) }, summary);
+  const result = validateJsonSchemaValue(JSON.parse(JSON.stringify(answer)), TRUST_API_PRICING.history.schema.output);
+  assert.ok(result.ok, `history's answer fails its own published schema: ${result.ok ? "" : `${result.path} ${result.message}`}`);
+}
 
 /* ---- credits ---- */
 

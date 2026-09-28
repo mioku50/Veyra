@@ -254,6 +254,10 @@ runStep("Veyra's Trust API on Arc Mainnet (Arc only, no credits, checked before 
   execSync("npm run arc-trust-api:test", { cwd: root, stdio: "inherit" });
 });
 
+runStep("Veyra's Trust API History (payee and price changes, per-request prices, answers match their schemas)", () => {
+  execSync("npm run x402-trust-api:test", { cwd: root, stdio: "inherit" });
+});
+
 runStep("Nova Calibration Report", () => {
   execSync("npm run nova-calibration:test", { cwd: root, stdio: "inherit" });
 });

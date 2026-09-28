@@ -123,14 +123,41 @@ export const TRUST_API_PRICING = {
         },
         required: ["capability", "budgetUsdc"],
       },
+      /* The answer as the route sends it. This used to describe a flat
+         `selectionId`, `candidates` and `winner` that no answer ever had; the
+         owner's first paid call on Arc, on 27 September, failed it. */
       output: {
         type: "object",
         properties: {
-          selectionId: { type: "string" },
-          candidates: { type: "array" },
-          winner: { type: ["object", "null"], description: "Null when no candidate cleared policy." },
+          selection: {
+            type: "object",
+            properties: {
+              selectionId: { type: "string" },
+              network: { type: "string", description: "Where the sellers are paid, as CAIP-2." },
+              candidates: { type: "array", description: "Every seller probed, ranked, with its trust decision and evidence." },
+              recommendation: {
+                type: "object",
+                description: "The seller to buy from, or why there is none.",
+                properties: {
+                  granted: { type: "boolean", description: "True only when a clearance was signed." },
+                  reason: { type: "string" },
+                  candidateId: { type: ["string", "null"] },
+                  resource: { type: ["string", "null"] },
+                  payTo: { type: ["string", "null"] },
+                  priceUsdc: { type: ["number", "null"] },
+                  decision: { type: ["string", "null"], description: "The recommended seller's trust decision, such as ALLOW_WITH_LIMITS." },
+                  maxExposureUsdc: { type: "number" },
+                },
+                required: ["granted", "reason", "candidateId", "decision", "maxExposureUsdc"],
+              },
+              clearance: { type: ["object", "null"], description: "The signed EIP-712 clearance, or null when none was signed." },
+              expiresAt: { type: "string" },
+            },
+            required: ["selectionId", "network", "candidates", "recommendation", "clearance", "expiresAt"],
+          },
+          note: { type: "string", description: "Why no clearance was signed, when none was." },
         },
-        required: ["selectionId", "candidates"],
+        required: ["selection"],
       },
     },
   },

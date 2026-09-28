@@ -133,6 +133,12 @@ export async function loadEndpointObservations(
 }
 
 export function rowToApiQualityObservation(row: EndpointObservationRow): ApiQualityObservation {
+  /* A stored 0 is a seller pricing the probe's empty request, not a price (see
+     isZeroQuote in x402-probe.ts). Rows written before the probe knew that also
+     carry the "price_changed" it raised against the catalogue, which made each
+     of them an invalid response. */
+  const quotedZero = numeric(row.observed_price_usdc) === 0;
+  const drift = (row.catalog_drift ?? []).filter((entry) => !(quotedZero && entry === "price_changed"));
   return {
     observationId: row.observation_id,
     serviceId: row.resource_key,
@@ -141,14 +147,12 @@ export function rowToApiQualityObservation(row: EndpointObservationRow): ApiQual
     completedAt: new Date(
       Date.parse(row.probed_at) + (row.latency_ms ?? 0),
     ).toISOString(),
-    quotedPriceUsdc: numeric(row.observed_price_usdc),
+    quotedPriceUsdc: quotedZero ? null : numeric(row.observed_price_usdc),
     paidAmountUsdc: null,
     latencyMs: row.latency_ms,
     httpStatusClass: row.responded_with_402 ? "4xx" : row.http_status_class,
     endpointReached: row.reachable,
-    responseSchemaValid: row.challenge_parseable
-      ? (row.catalog_drift ?? []).length === 0
-      : false,
+    responseSchemaValid: row.challenge_parseable ? drift.length === 0 : false,
     responseWithinSizeLimit: true,
     paymentRequired: row.responded_with_402,
     paymentAuthorized: null,
@@ -180,6 +184,11 @@ export type EndpointHistory = {
   payToStableSince: string | null;
   distinctPayTos: number;
   changes: EndpointChangeEvent[];
+  /** Observations whose challenge stated a price. The quality engine reports
+   *  0 for a price it never saw, so without this none reads as free. */
+  priceQuotes: number;
+  /** Stored observations whose challenge asked 0 for the probe's empty request. */
+  zeroQuotes: number;
 };
 
 /**
@@ -229,7 +238,8 @@ export function summariseEndpointHistory(
       previousPayTo = payTo;
     }
     const price = numeric(row.observed_price_usdc);
-    if (price !== null) {
+    // A 0 is no price, so it cannot be one side of a price change.
+    if (price !== null && price !== 0) {
       if (previousPrice !== null && Math.abs(price - previousPrice) > 1e-9) {
         changes.push({
           field: "price_usdc",
@@ -253,6 +263,8 @@ export function summariseEndpointHistory(
     payToNow: previousPayTo,
     payToStableSince,
     distinctPayTos: payTos.size,
+    priceQuotes: observations.filter((observation) => observation.quotedPriceUsdc !== null).length,
+    zeroQuotes: chronological.filter((row) => numeric(row.observed_price_usdc) === 0).length,
     /* Newest first, and within one observation the payee change outranks the
        price change: a caller that reads only the first entry must see the one
        that decides whether to pay at all. Relying on push order made this
