@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { encodeAbiParameters, encodePacked, keccak256, toHex } from "viem";
+import { encodeAbiParameters, encodePacked, formatUnits, keccak256, toHex } from "viem";
+import { AccountSetupError, METROPOLIS_DEPLOYMENT, readAccountSetup, type MetropolisAccountSetup } from "@/lib/monad/account";
 import { getMonadReadClient } from "@/lib/monad/erc8004";
 import { MONAD_P256_PRECOMPILE } from "@/lib/monad/config";
 import { createMetropolisPasskey, METROPOLIS_ORIGIN, passkeyCoordinates, requirePasskeyOrigin,
@@ -15,6 +16,9 @@ export function MetropolisPrototype() {
   const [busy,setBusy] = useState(false);
   const [notice,setNotice] = useState("");
   const [verified,setVerified] = useState(false);
+  const [setup,setSetup] = useState<MetropolisAccountSetup|null>(null);
+  const [setupBusy,setSetupBusy] = useState(false);
+  const [setupNotice,setSetupNotice] = useState("");
   useEffect(() => {
     try {
       requirePasskeyOrigin(window.location.origin);
@@ -42,7 +46,7 @@ export function MetropolisPrototype() {
   }
   async function verify() {
     if (!credential) return;
-    setBusy(true);setNotice("");setVerified(false);
+    setBusy(true);setNotice("");setVerified(false);setSetup(null);setSetupNotice("");
     try {
       // A domain-separated diagnostic challenge, never a payment authorization.
       const challenge = keccak256(encodeAbiParameters([{type:"bytes32"},{type:"uint256"},{type:"string"},{type:"uint64"},{type:"bytes32"}],
@@ -61,6 +65,24 @@ export function MetropolisPrototype() {
     } catch { setNotice("Verification did not complete. The prompt may have been cancelled, the browser format may be unsupported, or the RPC may be unavailable."); }
     finally {setBusy(false);}
   }
+  async function prepareAccount() {
+    if (!credential || !verified) return;
+    setSetupBusy(true);setSetup(null);setSetupNotice("");
+    try {
+      const result = await readAccountSetup(credential.publicKey,window.location.origin);
+      setSetup(result);
+      setSetupNotice("Public account details are ready. No account was created by this check.");
+    } catch (error) {
+      setSetupNotice(error instanceof AccountSetupError ? error.message : "Account preparation did not complete. Try again when the Monad RPC is available.");
+    } finally {setSetupBusy(false);}
+  }
+  async function copySetup() {
+    if (!setup) return;
+    try {
+      await navigator.clipboard.writeText(JSON.stringify(setup,null,2));
+      setSetupNotice("Public account details copied. Send these details to prepare the deployment.");
+    } catch {setSetupNotice("Copy is unavailable here. Open Public setup details below and copy the text manually.");}
+  }
 
   return <main className="mx-auto max-w-3xl px-5 py-10 sm:py-16">
     <div className="mb-8 flex flex-wrap items-center justify-between gap-3">
@@ -75,16 +97,37 @@ export function MetropolisPrototype() {
       <p className="mt-3 text-muted-foreground">Create a browser passkey and verify a diagnostic signature using Monad&apos;s native P256 verifier. This check sends no transaction and authorizes no payment.</p>
       <div className="mt-6 flex flex-wrap gap-3">
         {!credential ? <button onClick={register} disabled={!ready||busy} className="rounded-xl bg-violet-500 px-5 py-3 font-semibold disabled:opacity-50">{busy?"Creating…":"Create test passkey"}</button>
-          : <button onClick={verify} disabled={!ready||busy} className="rounded-xl bg-violet-500 px-5 py-3 font-semibold disabled:opacity-50">{busy?"Verifying…":"Verify on Monad"}</button>}
+          : <button onClick={verify} disabled={!ready||busy||setupBusy} className="rounded-xl bg-violet-500 px-5 py-3 font-semibold disabled:opacity-50">{busy?"Verifying…":"Verify on Monad"}</button>}
       </div>
       <p className={`mt-4 text-sm ${verified?"text-emerald-300":"text-muted-foreground"}`} role="status" aria-live="polite">{notice || "Face ID, Touch ID or your device's user-verification method will confirm the request."}</p>
-      {credential ? <p className="mt-4 text-xs text-muted-foreground">Public credential metadata is saved in this browser. Account deployment and funding have not happened.</p>:null}
+      {credential ? <p className="mt-4 text-xs text-muted-foreground">Public credential metadata is saved in this browser. Prepare your account below to check its deployment and balance.</p>:null}
       {!ready ? <a className="mt-4 inline-block break-all text-sm text-cyan-300 underline" href={`${METROPOLIS_ORIGIN}/metropolis`}>Open the canonical Veyra address</a>:null}
     </section>
+    {credential ? <section className="mt-6 rounded-2xl border border-white/15 p-5 sm:p-7" aria-labelledby="account-title">
+      <h2 id="account-title" className="text-xl font-semibold">Your personal account</h2>
+      <p className="mt-3 text-sm text-muted-foreground">Prepare an account for the passkey saved in this browser. Veyra reads the deployed factory to check its address and configuration. Deployment requires a separate approval.</p>
+      <button onClick={prepareAccount} disabled={!ready||!verified||busy||setupBusy} className="mt-5 rounded-xl border border-violet-400/40 px-5 py-3 font-semibold disabled:opacity-50">{setupBusy?"Checking Monad…":"Prepare account"}</button>
+      {!verified ? <p className="mt-3 text-sm text-muted-foreground">Verify your saved passkey above first.</p>:null}
+      <p className="mt-4 text-sm text-muted-foreground" role="status" aria-live="polite">{setupNotice}</p>
+      {setup ? <div className="mt-5 space-y-4">
+        <dl className="space-y-3 text-sm">
+          <div><dt className="text-muted-foreground">Account address</dt><dd className="mt-1 break-all font-mono" data-testid="account-address">{setup.accountAddress}</dd></div>
+          <div><dt className="text-muted-foreground">Status at finalized block {setup.observedBlock}</dt><dd>{setup.accountDeployed?"Deployed":"Not deployed"}</dd></div>
+          <div><dt className="text-muted-foreground">Testnet USDC balance</dt><dd>{formatUnits(BigInt(setup.usdcBalanceUnits),6)} USDC</dd></div>
+        </dl>
+        <p className="text-sm text-muted-foreground">The setup details contain your public key and account configuration. Your private passkey stays with your authenticator.</p>
+        <button onClick={copySetup} className="rounded-xl bg-violet-500 px-5 py-3 font-semibold">Copy public account details</button>
+        <details className="text-sm"><summary className="cursor-pointer py-2 text-violet-300">Public setup details</summary>
+          <textarea aria-label="Public account setup JSON" readOnly value={JSON.stringify(setup,null,2)} onFocus={event=>event.currentTarget.select()} className="mt-3 h-64 w-full rounded-lg border border-white/15 bg-black/20 p-3 font-mono text-xs" />
+        </details>
+      </div>:null}
+    </section>:null}
     <section className="mt-6 rounded-2xl border border-white/15 p-5 sm:p-7">
       <h2 className="text-xl font-semibold">Integration status</h2>
       <ul className="mt-4 space-y-3 text-sm text-muted-foreground">
-        <li>Account and CREATE2 factory: implemented and tested locally.</li>
+        <li>TrustGate and CREATE2 factory: deployed on Monad Testnet; source verification matched.</li>
+        <li><a className="break-all text-cyan-300 underline" href={`https://testnet.monadscan.com/address/${METROPOLIS_DEPLOYMENT.factory}`} target="_blank" rel="noreferrer">View the deployed factory</a></li>
+        <li>Passkey account contract: implemented and tested locally.</li>
         <li>Native P256: verified through live RPC and a pinned Monad fork.</li>
         <li>Deployed account, actual payment, service delivery and feedback: pending.</li>
       </ul>

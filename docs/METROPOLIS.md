@@ -236,6 +236,70 @@ account creation, funding and payment follow as separate actions. Keep
 Mainnet reads available, but do not enable Mainnet execution by removing the
 account's Testnet restriction without a separate reviewed specification.
 
+### Per-user account preparation
+
+The updated diagnostic prepares a personal account from the public key already
+saved in the user's canonical-origin browser. After native P256 verification,
+**Prepare account** reads a finalized Testnet block, checks the deployed factory
+and TrustGate runtime hashes, checks USDC and RP/origin configuration, and asks
+the factory for the CREATE2 address. An existing account is checked against the
+same key and immutable configuration. Deployment status and USDC balance are
+observations at that block, not promises that state remains unchanged.
+
+**Copy public account details** exports only the public P256 coordinates,
+configuration, deterministic namespace salt, predicted account address and
+observation metadata. It exports no credential ID, private key or signature and
+does not upload the setup to a server. The fixed salt selects one account per
+credential in this factory; reloading or preparing again does not create a new
+address. A fresh browser verification is required after a reload. This setup
+record does not authorize a transaction or establish ownership by itself.
+
+`scripts/metropolis/account-plan.mts` accepts a public setup JSON file and a
+public sender address. It checks the P256 point, rejects other networks/origins
+and unknown fields, re-reads the deployed configuration, and independently
+calculates CREATE2 using the compiled account creation code. It then prepares
+unsigned `createAccount` calldata and estimates gas with a 5% buffer. Sender
+nonce, pending transactions, balance and fee caps are included in the reviewable
+plan. A simulation-only balance override is explicitly disclosed if needed.
+An already deployed account returns no creation transaction. This script has no
+environment-file loading, signer, private-key input or broadcast path.
+
+Keep an actual user's setup file in an ignored local location, such as
+`.local-tools/user-account-setup.json`, rather than adding it to public evidence.
+Prepare the concrete transaction before requesting its separate approval:
+
+```bash
+node --experimental-transform-types --no-warnings scripts/metropolis/account-plan.mts \
+  --setup .local-tools/user-account-setup.json --sender DEPLOYER_PUBLIC_ADDRESS
+```
+
+This browser update is prepared locally; it has not yet been published to the
+canonical domain. The earlier diagnostic remains live until a separately
+authorized publication replaces it.
+
+### Pending publication increment — 2026-10-08
+
+The public file changes since the last pushed diagnostic revision are:
+
+```text
+app/metropolis/prototype.tsx
+docs/METROPOLIS.md
+docs/metropolis-testnet-deployment.json
+docs/metropolis-testnet-factory-deployment.json
+lib/monad/account.ts
+scripts/metropolis/account-plan.mts
+scripts/metropolis/account-tests.mts
+scripts/metropolis/browser-smoke.mts
+scripts/metropolis/deployment-plan.mts
+scripts/metropolis/deployment-plan-tests.mts
+```
+
+The intended publication updates the diagnostic on the canonical `/metropolis`
+path. It enables public account preparation and reflects the two verified
+Testnet deployments. It introduces no browser signer, transaction submission or
+automatic account funding. Private setup files, environment files, local skills,
+tool binaries and `MonadPlan.md` remain excluded from Git and deployment uploads.
+
 ### Public change manifest
 
 The new public implementation files are:
@@ -254,11 +318,14 @@ docs/METROPOLIS.md
 docs/metropolis-testnet-deployment.json
 docs/metropolis-testnet-factory-deployment.json
 lib/monad/config.ts
+lib/monad/account.ts
 lib/monad/erc8004.ts
 lib/monad/evidence.ts
 lib/monad/passkey.ts
 lib/monad/trust.ts
 scripts/metropolis/browser-smoke.mts
+scripts/metropolis/account-plan.mts
+scripts/metropolis/account-tests.mts
 scripts/metropolis/deployment-plan.mts
 scripts/metropolis/deployment-plan-tests.mts
 scripts/metropolis/generate-webauthn-fixtures.mts
@@ -384,6 +451,14 @@ Verified locally on 2026-10-08 with official Foundry 1.8.5:
   authenticator and the live Testnet RPC: credential creation, native signature
   verification, public metadata restoration and alternate-host rejection.
   This does not establish Face ID compatibility on an actual iPhone.
+- Account preparation passed 44 input/network/key guards, plus a live read-only
+  factory/CREATE2 and gas-estimation check using a synthetic public key. No
+  account was created. The browser check of the local build also exercised a
+  virtual credential under the canonical origin, finalized factory reads,
+  public-only setup copying, metadata restoration and mobile layout. This is
+  separate from publication and from testing the new setup flow on an iPhone.
+  A simulated RPC failure cleared the old setup and showed a concise retry
+  message without raw provider error details.
 - TypeScript, scoped ESLint, `npm run build` and the existing deterministic
   trust-policy test passed.
 
@@ -393,6 +468,7 @@ Reproduce from the worktree root after `npm ci`, with official Foundry >=1.8:
 node --experimental-transform-types --no-warnings scripts/metropolis/generate-webauthn-fixtures.mts
 node --experimental-transform-types --no-warnings scripts/metropolis/trust-tests.mts --write-contract-fixture
 node --experimental-transform-types --no-warnings scripts/metropolis/deployment-plan-tests.mts
+node --experimental-transform-types --no-warnings scripts/metropolis/account-tests.mts
 forge test --root contracts/monad --network monad --no-match-contract MonadPrecompileForkTest -vv
 forge test --root contracts/monad --network monad --match-contract MonadPrecompileForkTest --fork-url https://testnet-rpc.monad.xyz --fork-block-number 69196275 -vv
 forge test --root contracts --network ethereum -vv
@@ -407,6 +483,12 @@ npx eslint app/metropolis lib/monad components/layout/layout.tsx scripts/metropo
 For the browser smoke, start `npm run dev -- --hostname localhost --port 3123`,
 then run `node --experimental-transform-types --no-warnings scripts/metropolis/browser-smoke.mts`
 in another terminal. Install Chromium with `npx playwright install chromium` if needed.
+Run `scripts/metropolis/account-tests.mts --live` with the same Node flags for
+the read-only factory and account-creation simulation check. To test public
+account preparation in the local browser build, set
+`METROPOLIS_SMOKE_ACCOUNT_SETUP=1` when running the browser smoke. The test serves
+the local build under the canonical browser origin using Playwright routing;
+it does not publish anything or create a real user credential on the device.
 All these smoke checks use read-only network calls. Test fixture generation keeps
 its ephemeral private key in memory and writes only public signatures/metadata.
 
