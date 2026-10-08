@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import dynamic from "next/dynamic";
 import { encodeAbiParameters, encodePacked, formatUnits, keccak256, toHex } from "viem";
 import { AccountSetupError, METROPOLIS_DEPLOYMENT, readAccountSetup, type MetropolisAccountSetup } from "@/lib/monad/account";
 import { getMonadReadClient } from "@/lib/monad/erc8004";
@@ -10,6 +11,7 @@ import { createMetropolisPasskey, METROPOLIS_ORIGIN, passkeyCoordinates, require
   signMetropolisChallenge, webAuthnSignedHash, type MetropolisCredential } from "@/lib/monad/passkey";
 
 const STORAGE_KEY = "veyra.metropolis.public-credential.v1";
+const MetropolisPurchase=dynamic(()=>import("./purchase").then(module=>module.MetropolisPurchase));
 export function MetropolisPrototype() {
   const [credential,setCredential] = useState<MetropolisCredential|null>(null);
   const [ready,setReady] = useState(false);
@@ -89,7 +91,7 @@ export function MetropolisPrototype() {
       <Link href="/" className="font-semibold">Veyra</Link>
       <span className="rounded-full border border-violet-400/40 px-3 py-1 text-sm text-violet-300">Metropolis · Monad Testnet</span>
     </div>
-    <p className="text-sm uppercase tracking-widest text-violet-300">Read-only prototype</p>
+    <p className="text-sm uppercase tracking-widest text-violet-300">Human-approved Testnet prototype</p>
     <h1 className="mt-3 text-4xl font-semibold tracking-tight sm:text-5xl">Veyra checks the spend.<br />You hold the final say.</h1>
     <p className="mt-5 text-lg text-muted-foreground">The Monad integration pairs Veyra&apos;s trust policy with an owner&apos;s passkey approval for an exact USDC payment.</p>
     <section className="mt-8 rounded-2xl border border-white/15 bg-white/5 p-5 sm:p-7" aria-labelledby="passkey-title">
@@ -122,6 +124,7 @@ export function MetropolisPrototype() {
         </details>
       </div>:null}
     </section>:null}
+    {credential&&setup?.accountDeployed?<MetropolisPurchase credential={credential} enabled={ready&&verified&&!busy&&!setupBusy} />:null}
     <section className="mt-6 rounded-2xl border border-white/15 p-5 sm:p-7">
       <h2 className="text-xl font-semibold">Integration status</h2>
       <ul className="mt-4 space-y-3 text-sm text-muted-foreground">
@@ -129,7 +132,9 @@ export function MetropolisPrototype() {
         <li><a className="break-all text-cyan-300 underline" href={`https://testnet.monadscan.com/address/${METROPOLIS_DEPLOYMENT.factory}`} target="_blank" rel="noreferrer">View the deployed factory</a></li>
         <li>Passkey account contract: implemented and tested locally.</li>
         <li>Native P256: verified through live RPC and a pinned Monad fork.</li>
-        <li>Deployed account, actual payment, service delivery and feedback: pending.</li>
+        <li>Personal account: deployment and funding are shown above from finalized reads.</li>
+        <li>Purchase approval: exact task and payment review, passkey signature and contract simulation.</li>
+        <li>Actual payment, service delivery and feedback: pending until separately verified.</li>
       </ul>
       <p className="mt-5 text-sm text-muted-foreground">Payment success and delivery success will be shown separately. Demonstration agents and their evidence will be identified explicitly.</p>
     </section>

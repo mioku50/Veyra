@@ -25,7 +25,7 @@ const feedbackClient: Address = "0x0000000000000000000000000000000000000444";
 const tx = hash("synthetic-payment");
 const blockHash = hash("synthetic-block");
 const reporter = privateKeyToAccount(generatePrivateKey());
-const publicTestAttester = privateKeyToAccount(`0x${"b0b".padStart(64, "0")}`);
+export const publicTestAttester = privateKeyToAccount(`0x${"b0b".padStart(64, "0")}`);
 const intent = { executor, amountUsdc: "0.012", budgetUsdc: "0.02", serviceId: "synthetic-research-test", requestHash: hash("test-research-request") };
 const abi = [...erc20Abi, ...MONAD_IDENTITY_ABI, ...MONAD_REPUTATION_ABI];
 let checks = 0;
@@ -34,7 +34,7 @@ function check(condition: unknown, message: string) { assert.ok(condition, messa
 type Scenario = { chainId?: number; code?: Hex; wallet?: Address; owner?: Address; decimals?: number; registry?: Address;
   feedback?: bigint; feedbackDecimals?: number; failedReceipt?: boolean; reorg?: boolean;
   token?: Address; payer?: Address; recipient?: Address; confirmations?: number; age?: number; clock?: number; finalizedBlock?: number };
-function mockClient(options: Scenario = {}) {
+export function mockClient(options: Scenario = {}) {
   const client = createPublicClient({ chain: monadDemoTestnet, transport: custom({
     async request({ method, params }) {
       if (method === "eth_chainId") return `0x${(options.chainId ?? 10143).toString(16)}`;
@@ -72,7 +72,7 @@ function mockClient(options: Scenario = {}) {
   }, { retryCount: 0 }) });
   return client as ReturnType<typeof getMonadReadClient>;
 }
-async function assessment(overrides: Partial<MonadDeliveryAssessment> = {}, signer = reporter) {
+export async function assessment(overrides: Partial<MonadDeliveryAssessment> = {}, signer = reporter) {
   const message: MonadDeliveryAssessment = { agentId: 1n, buyer, seller, amount: 12_000n, paymentTx: tx,
     requestHash: hash("prior-test-request"), responseHash: hash("test-response"), delivered: true, score: 80,
     assessedAt: 1_799_999_980n, ...overrides };
@@ -80,7 +80,7 @@ async function assessment(overrides: Partial<MonadDeliveryAssessment> = {}, sign
     primaryType: "DeliveryAssessment", message }) };
 }
 const validAssessment = await assessment();
-const policy: MonadEvidencePolicy = { payments: [{ transactionHash: tx, logIndex: 0 }],
+export const policy: MonadEvidencePolicy = { payments: [{ transactionHash: tx, logIndex: 0 }],
   assessmentReporters: [reporter.address], assessments: [validAssessment] };
 const identityOnly = await collectMonadEvidence(1n, {}, mockClient(), now);
 const insufficient = evaluateMonadPurchase(identityOnly, intent, now);

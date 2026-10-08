@@ -3,7 +3,10 @@
 Status: local implementation and publication of the read-only `/metropolis`
 diagnostic on the existing Veyra domain authorized on 2026-10-08. Separately
 approved TrustGate and account factory deployments on Monad Testnet are complete.
-Per-user account creation, funding and payments still require separate approval.
+One owner-approved personal account has also been created and funded. Purchase
+execution and delivery are still pending. A local human-approved purchase increment
+is described in [the purchase runbook](METROPOLIS_PURCHASE.md); publication of that
+increment is recorded separately from the earlier account-setup publication below.
 Starting commit: `3b0a29e780b83246509d54638567c3c2dc6c6cbb`.
 Branch: `metropolis-monad`. Network for the demo: Monad Testnet, chain ID 10143.
 
@@ -147,11 +150,12 @@ deadline, domain and digest. Candidate selection shares one task/executor/budget
 filters by executable policy first, then orders by trust or price. Shared onchain
 ownership is disclosed. Selection never promises independent providers.
 
-These are backend primitives and verification scripts. A public signing endpoint,
-production attester/relayer configuration, device account deployment, fresh
-identity/account checks before submission and order/delivery persistence are not
-enabled yet. The browser diagnostic remains read-only. No first-time purchase
-override or autonomous wallet has been introduced.
+The local purchase increment adds signed task context, fresh identity/account
+checks, passkey approval, full contract simulation, an unsigned relayer plan and
+receipt verification. A public signing/broadcast endpoint and order/delivery
+persistence are not enabled. The currently published account diagnostic remains
+read-only until the purchase increment is separately published. No first-time
+purchase override or autonomous wallet has been introduced.
 
 ## Milestones and acceptance
 
@@ -275,8 +279,12 @@ node --experimental-transform-types --no-warnings scripts/metropolis/account-pla
 
 The owner separately authorized this browser update and the branch push on
 2026-10-08. It is published on the canonical domain; see the account-setup
-publication evidence below. A real-device run of the new setup/copy flow remains
-pending. The existing browser credential storage key is unchanged.
+publication evidence below. The owner subsequently completed the real-device
+setup/copy flow, separately authorized account creation and funded it with Testnet
+USDC. Configuration, source match, creation and funding receipts were verified;
+device setup and receipt details remain in ignored local files. Account creation
+and funding do not establish a passkey-approved purchase or successful delivery.
+The existing browser credential storage key is unchanged.
 
 ### Published increment — 2026-10-08
 

@@ -21,6 +21,7 @@ export type MonadTrustDecision = {
   decision: TrustDecision;
   requestedAmount: bigint;
   maxAmount: bigint;
+  ownerBudgetUnits: bigint;
   requestHash: Hex;
   actionHash: Hex;
   evidenceHash: Hex;
@@ -88,7 +89,7 @@ export function evaluateMonadPurchase(bundle: MonadEvidenceBundle, intent: Monad
   const expiresAt = new Date(Math.min(now.getTime() + TRUST_DECISION_EXPIRY_SECONDS * 1000,
     collectedAtMs + TRUST_DECISION_EXPIRY_SECONDS * 1000)).toISOString();
   const binding = { chainId: 10143, executor: intent.executor.toLowerCase(), payee: bundle.identity.paymentWallet.toLowerCase(),
-    requestedAmount, maxAmount, serviceId: intent.serviceId, requestHash: intent.requestHash, evidenceHash: bundle.evidenceHash,
+    requestedAmount, maxAmount, ownerBudgetUnits: budget, serviceId: intent.serviceId, requestHash: intent.requestHash, evidenceHash: bundle.evidenceHash,
     policyVersion: METROPOLIS_TRUST_VERSION, issuedAt, expiresAt };
   const decision: TrustDecision = {
     decisionId: `vmd_${canonicalMonadHash(binding).slice(2)}`,
@@ -104,7 +105,7 @@ export function evaluateMonadPurchase(bundle: MonadEvidenceBundle, intent: Monad
     reasons: [...riskSignals], riskSignals: [...riskSignals], issuedAt, expiresAt, canonicalHash: "",
   };
   decision.canonicalHash = computeCanonicalDecisionHash(decision);
-  const output = deepFreeze({ chainId: 10143 as const, decision, requestedAmount, maxAmount: executable ? maxAmount : BigInt(0),
+  const output = deepFreeze({ chainId: 10143 as const, decision, requestedAmount, maxAmount: executable ? maxAmount : BigInt(0), ownerBudgetUnits: budget,
     requestHash: intent.requestHash, actionHash: monadPaymentActionHash(bundle.identity.paymentWallet, requestedAmount),
     evidenceHash: bundle.evidenceHash, executable, reasons: [...new Set(reasons)],
     disclosures: [...bundle.disclosures, ...bundle.excluded,
