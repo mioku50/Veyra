@@ -52,6 +52,9 @@ load-test-env.sh
 /contracts/cache/
 /contracts/out/
 /contracts/broadcast/
+/contracts/monad/cache/
+/contracts/monad/out/
+/contracts/monad/broadcast/
 .env*
 !.env.example
 
@@ -78,3 +81,4 @@ diff.patch
 /docs/audits/
 /docs/ROADMAP.md
 /docs/circle-agent-marketplace-readiness.md
+/docs/MonadPlan.md

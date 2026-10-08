@@ -29,6 +29,11 @@ export function CommandCenterLayout({
      the page look like somewhere you work. */
   const isConsole = pathname === "/console" || pathname.startsWith("/console/");
 
+  // The isolated Monad prototype does not mount Arc wallet/session providers.
+  if (pathname === "/metropolis" || pathname.startsWith("/metropolis/")) {
+    return <div className="min-h-screen text-foreground">{children}</div>;
+  }
+
   /* No background colour here on purpose. `body` carries the ground: two
      violet glows and a dust of points over a near-black purple. An opaque
      `bg-background` on this wrapper paints over all of it and the page reads

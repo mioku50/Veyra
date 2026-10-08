@@ -1,0 +1,14 @@
+[profile.default]
+src = "../src/monad"
+test = "test"
+out = "out"
+cache_path = "cache"
+solc_version = "0.8.25"
+evm_version = "cancun"
+network = "monad"
+chain_id = 10143
+optimizer = true
+optimizer_runs = 200
+allow_paths = ["../.."]
+remappings = ["@openzeppelin/contracts/=../../node_modules/@openzeppelin/contracts/", "veyra/=../src/"]
+fs_permissions = [{ access = "read", path = "test/fixtures" }]

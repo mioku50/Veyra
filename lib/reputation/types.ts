@@ -13,6 +13,11 @@ export type CanonicalAgentIdentity = {
   verifiedOnchain: boolean;
 };
 
+/** Pure scoring accepts verified Monad identity without pretending it is on Arc. */
+export type ReputationScoringIdentity = Omit<CanonicalAgentIdentity, "chainId"> & {
+  chainId: 5042002 | 10143;
+};
+
 export type ReputationEvidenceType =
   | "erc8004_feedback"
   | "erc8004_validation"
@@ -25,6 +30,8 @@ export type ReputationEvidenceType =
   | "api_quality"
   | "treasury_health"
   | "project_360"
+  | "usdc_payment_success"
+  | "service_delivery"
   | "arc_proof";
 
 export type ReputationEvidenceTier = 0 | 1 | 2 | 3 | 4;

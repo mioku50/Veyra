@@ -8,6 +8,7 @@ import {
   AGENT_REPUTATION_WEIGHTS,
   type AgentReputationDimensions,
   type CanonicalAgentIdentity,
+  type ReputationScoringIdentity,
   type ReputationConfidenceLevel,
   type ReputationEvidence,
   type ReputationExplanation,
@@ -65,7 +66,7 @@ export function calculateCounterpartyMultiplier(interactionIndex: number): numbe
 
 export function calculateEvidenceWeight(
   evidence: ReputationEvidence,
-  identity: CanonicalAgentIdentity,
+  identity: ReputationScoringIdentity,
   interactionIndex: number,
   now: Date = new Date()
 ): { weight: number; reason?: string } {
@@ -95,7 +96,7 @@ export function calculateEvidenceWeight(
 }
 
 export function computeAgentReputation(
-  identity: CanonicalAgentIdentity,
+  identity: ReputationScoringIdentity,
   evidenceList: ReputationEvidence[],
   now: Date = new Date()
 ): ReputationExplanation {
@@ -135,7 +136,7 @@ export function computeAgentReputation(
       positive: true,
       confidence: 1.0,
       verifiedOnchain: true,
-      arcProofVerified: true,
+      arcProofVerified: identity.chainId === 5042002,
       sybilRisk: "none",
       observedAt: now.toISOString(),
       canonicalHash: keccak256(stringToBytes(`identity-${identity.agentId}-${identity.owner}`)),
@@ -147,11 +148,11 @@ export function computeAgentReputation(
       categoryEvidence.reputation.push(item);
     } else if (item.type === "erc8004_validation") {
       categoryEvidence.validation.push(item);
-    } else if (item.type === "erc8183_job_completed" || item.type === "erc8183_job_rejected") {
+    } else if (item.type === "erc8183_job_completed" || item.type === "erc8183_job_rejected" || item.type === "service_delivery") {
       categoryEvidence.execution.push(item);
     } else if (item.type === "erc8183_evaluation") {
       categoryEvidence.validation.push(item);
-    } else if (item.type === "x402_payment_success" || item.type === "x402_payment_failure") {
+    } else if (item.type === "x402_payment_success" || item.type === "x402_payment_failure" || item.type === "usdc_payment_success") {
       categoryEvidence.economicReliability.push(item);
     } else if (
       item.type === "veyra_agent_trust" ||
@@ -214,7 +215,7 @@ export function computeAgentReputation(
       if (item.positive) {
         if (item.type === "erc8183_job_completed") totalCompletedJobs++;
         if (item.type === "erc8183_evaluation") totalPassedEvaluations++;
-        if (item.type === "x402_payment_success") totalSettlements++;
+        if (item.type === "x402_payment_success" || item.type === "usdc_payment_success") totalSettlements++;
       } else {
         if (item.type === "erc8183_job_rejected") {
           riskSignals.push("ERC-8183 deliverable rejected by evaluator");
