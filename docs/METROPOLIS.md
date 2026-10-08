@@ -282,6 +282,7 @@ authorized publication replaces it.
 The public file changes since the last pushed diagnostic revision are:
 
 ```text
+.vercelignore
 app/metropolis/prototype.tsx
 docs/METROPOLIS.md
 docs/metropolis-testnet-deployment.json
