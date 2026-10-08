@@ -273,18 +273,21 @@ node --experimental-transform-types --no-warnings scripts/metropolis/account-pla
   --setup .local-tools/user-account-setup.json --sender DEPLOYER_PUBLIC_ADDRESS
 ```
 
-This browser update is prepared locally; it has not yet been published to the
-canonical domain. The earlier diagnostic remains live until a separately
-authorized publication replaces it.
+The owner separately authorized this browser update and the branch push on
+2026-10-08. It is published on the canonical domain; see the account-setup
+publication evidence below. A real-device run of the new setup/copy flow remains
+pending. The existing browser credential storage key is unchanged.
 
-### Pending publication increment — 2026-10-08
+### Published increment — 2026-10-08
 
-The public file changes since the last pushed diagnostic revision are:
+The reviewed changes from diagnostic revision `efa0f21` are listed below.
+The publication evidence file was added afterward without rebuilding the site:
 
 ```text
 .vercelignore
 app/metropolis/prototype.tsx
 docs/METROPOLIS.md
+docs/metropolis-account-publication.json
 docs/metropolis-testnet-deployment.json
 docs/metropolis-testnet-factory-deployment.json
 lib/monad/account.ts
@@ -295,7 +298,7 @@ scripts/metropolis/deployment-plan.mts
 scripts/metropolis/deployment-plan-tests.mts
 ```
 
-The intended publication updates the diagnostic on the canonical `/metropolis`
+The publication updates the diagnostic on the canonical `/metropolis`
 path. It enables public account preparation and reflects the two verified
 Testnet deployments. It introduces no browser signer, transaction submission or
 automatic account funding. Private setup files, environment files, local skills,
@@ -316,6 +319,7 @@ contracts/monad/test/fixtures/webauthn.json
 contracts/src/monad/VeyraPasskeyAccount.sol
 contracts/src/monad/VeyraPasskeyAccountFactory.sol
 docs/METROPOLIS.md
+docs/metropolis-account-publication.json
 docs/metropolis-testnet-deployment.json
 docs/metropolis-testnet-factory-deployment.json
 lib/monad/config.ts
@@ -388,8 +392,37 @@ in `docs/metropolis-testnet-factory-deployment.json`.
 The next account must use the public P256 key of the user's existing credential
 on the canonical origin. The private passkey remains with the authenticator.
 Account deployment, funding, passkey-authorized payment and delivery remain
-pending. The currently published diagnostic has not been updated by these
-contract deployments.
+pending. The factory transaction itself did not update the diagnostic; the
+separately authorized account-setup publication below reflects these deployments.
+
+### Account-setup publication — 2026-10-08
+
+Deployment `dpl_2LFxbxzfeWQEGZwcPiERmmPL3aPm` was built from branch
+`metropolis-monad`, source commit `a99398801ffe183a6976e31d7896c04163f98fdd`,
+with Production environment variables and automatic domain assignment disabled.
+The build reached `READY` in **66,347 ms**. Authenticated checks of staged
+`/metropolis`, `/`, `/arc` and `/console` all returned HTTP 200 before promotion.
+The prior canonical deployment is `dpl_CBnJUpJTx9ps747vTC1DjR26kPtx` for rollback.
+
+After the owner-authorized promotion, both alias mappings completed and the
+canonical deployment lookup resolved to the new deployment ID. Public checks of
+the same four paths returned HTTP 200. `veyras.vercel.app/metropolis` still
+redirects to `https://agent-commerce-six.vercel.app/metropolis`.
+
+The browser smoke passed on the actual canonical site at a mobile viewport with
+a Chromium virtual platform authenticator: native P256 `eth_call`, finalized
+factory/configuration reads, predicted account address, public setup copy,
+credential restoration and clearing stale setup on a simulated RPC failure.
+This is not a real iPhone setup test or an account-creation transaction. The
+deployment's runtime error-log scan returned **0 entries** for the first
+10-minute query window; this is a bounded observation, not a future guarantee.
+
+The CLI's dry upload manifest contained **965 reviewed tracked files**, with no
+private or untracked files. Environment files, local skills and skill lock,
+tool binaries, generated TypeScript cache and `MonadPlan.md` were excluded.
+Publication sent no blockchain transactions and spent no USDC. Public evidence
+is saved in `docs/metropolis-account-publication.json`. The branch push did not
+change `main`.
 
 ### Diagnostic publication — 2026-10-08
 
