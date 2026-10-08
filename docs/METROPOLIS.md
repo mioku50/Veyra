@@ -1,8 +1,9 @@
 # Veyra on Monad — Metropolis implementation spec
 
 Status: local implementation and publication of the read-only `/metropolis`
-diagnostic on the existing Veyra domain authorized on 2026-10-08. Contract
-deployments and spending still require separate approval.
+diagnostic on the existing Veyra domain authorized on 2026-10-08. Separately
+approved TrustGate and account factory deployments on Monad Testnet are complete.
+Per-user account creation, funding and payments still require separate approval.
 Starting commit: `3b0a29e780b83246509d54638567c3c2dc6c6cbb`.
 Branch: `metropolis-monad`. Network for the demo: Monad Testnet, chain ID 10143.
 
@@ -230,8 +231,8 @@ Deployment planning guards passed 30 checks with mocked read-only RPC values;
 TypeScript and scoped ESLint also passed. Recheck nonce, gas and fees immediately
 before submission; the estimate does not authorize sending a transaction.
 
-The approved first write, TrustGate deployment, is complete. Factory deployment,
-per-user account creation, funding and payment follow as separate actions. Keep
+The separately approved TrustGate and factory deployments are complete. Per-user
+account creation, funding and payment follow as separate actions. Keep
 Mainnet reads available, but do not enable Mainnet execution by removing the
 account's Testnet restriction without a separate reviewed specification.
 
@@ -251,6 +252,7 @@ contracts/src/monad/VeyraPasskeyAccount.sol
 contracts/src/monad/VeyraPasskeyAccountFactory.sol
 docs/METROPOLIS.md
 docs/metropolis-testnet-deployment.json
+docs/metropolis-testnet-factory-deployment.json
 lib/monad/config.ts
 lib/monad/erc8004.ts
 lib/monad/evidence.ts
@@ -273,8 +275,8 @@ MCP setup, MONSKILLS and Foundry binaries are excluded from deployment uploads.
 
 ## Evidence
 
-TrustGate is deployed on Monad Testnet. Factory/account deployment and USDC
-payments have not been authorized or executed.
+TrustGate and the account factory are deployed on Monad Testnet. Per-user account
+creation and USDC payments have not been authorized or executed.
 
 ### TrustGate transaction — 2026-10-08
 
@@ -293,11 +295,33 @@ USDC spent: **0**. Monad Sourcify source verification completed with status
 This proves TrustGate deployment and configuration, not a passkey-authorized
 payment or service delivery.
 
-An unsigned factory deployment plan has been simulated against the deployed
-TrustGate and canonical Testnet USDC. It uses the existing production RP ID/origin
-and requires separate approval: nonce 1, gas limit 2,829,586, fee cap 122 gwei,
-maximum MON fee 0.345209492. Creating the factory does not create or fund a user's
-account and does not transfer USDC.
+### Account factory transaction — 2026-10-08
+
+Contract: `0x8fbaAcB3390ba67F80db02434c024fF2F04ca94B`.
+Receipt: `0x82eb3aa96bcaa6c4054a69268e99d129a08b577a88935b5e739fcbbca1743e9d`,
+status `success`, block **69276485**, checked against finalized block **69276781**.
+The owner separately approved this transaction. Its sender, nonce `1`, deployment
+data hash, gas limit **2,829,586**, maximum fee **122 gwei** and priority fee
+**2 gwei** matched the approved bounds.
+
+Finalized contract reads confirmed the deployed TrustGate, canonical Testnet USDC,
+RP ID hash for `agent-commerce-six.vercel.app` and origin
+`https://agent-commerce-six.vercel.app`. The factory's CREATE2 prediction matched
+an independent calculation using the compiled account creation code and a
+synthetic public WebAuthn fixture. This read-only check did not deploy a user's
+account or establish that the fixture belongs to the user's iPhone passkey.
+
+Charged fee: **0.288617772 MON**, below the approved **0.345209492 MON** cap.
+USDC spent: **0**. Monad Sourcify source verification completed with status
+`match`, job `14980993-ff87-4dd9-b667-370041d5726f`.
+Runtime code hash, immutable configuration and public receipt evidence are saved
+in `docs/metropolis-testnet-factory-deployment.json`.
+
+The next account must use the public P256 key of the user's existing credential
+on the canonical origin. The private passkey remains with the authenticator.
+Account deployment, funding, passkey-authorized payment and delivery remain
+pending. The currently published diagnostic has not been updated by these
+contract deployments.
 
 ### Diagnostic publication — 2026-10-08
 

@@ -1,0 +1,33 @@
+{
+  "network": "Monad Testnet",
+  "chainId": 10143,
+  "contract": "VeyraPasskeyAccountFactory",
+  "address": "0x8fbaAcB3390ba67F80db02434c024fF2F04ca94B",
+  "deployer": "0x861FBe92678Bd6421aCee2dC37b50FDe1Dc01A1E",
+  "trustGate": "0x4a8f26B1d376c9924aAE80877261E0c635eb54Bb",
+  "usdc": "0x534b2f3A21130d7a60830c2Df862319e593943A3",
+  "origin": "https://agent-commerce-six.vercel.app",
+  "rpIdHash": "0x7c889c49472504031aaf422df587c2f3927d208eb218a4b14356788c267a6d6e",
+  "transactionHash": "0x82eb3aa96bcaa6c4054a69268e99d129a08b577a88935b5e739fcbbca1743e9d",
+  "blockNumber": "69276485",
+  "blockHash": "0x1410e456fabc6530c06ec6aeb8b3943d90e636d34ecc06d3adfe16b6287455c0",
+  "finalizedBlock": "69276781",
+  "status": "success",
+  "nonce": 1,
+  "gasLimit": "2829586",
+  "gasUsed": "2829586",
+  "effectiveGasPriceWei": "102000000000",
+  "chargedFeeMon": "0.288617772",
+  "maximumAuthorizedFeeMon": "0.345209492",
+  "runtimeCodeHash": "0xe9630176eb7ac1acabf30aa40fdf3e8b1925897502d9f095ccb267ea880f07e9",
+  "deploymentDataHash": "0xee66eae359578d51a748f1489fc18c2379f3cb089135bc5788f3bdae2fcb25c5",
+  "configurationVerified": true,
+  "create2PredictionVerifiedWithSyntheticFixture": true,
+  "userAccountCreated": false,
+  "usdcSpent": "0",
+  "sourceVerification": {
+    "provider": "Monad Sourcify",
+    "status": "match",
+    "jobId": "14980993-ff87-4dd9-b667-370041d5726f"
+  }
+}
