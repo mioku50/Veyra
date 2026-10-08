@@ -3,10 +3,12 @@
 Status: local implementation and publication of the read-only `/metropolis`
 diagnostic on the existing Veyra domain authorized on 2026-10-08. Separately
 approved TrustGate and account factory deployments on Monad Testnet are complete.
-One owner-approved personal account has also been created and funded. Purchase
-execution and delivery are still pending. A local human-approved purchase increment
-is described in [the purchase runbook](METROPOLIS_PURCHASE.md); publication of that
-increment is recorded separately from the earlier account-setup publication below.
+One owner-approved personal account has also been created and funded. Real purchase
+execution and delivery are still pending. The human-approved purchase interface is
+published on the canonical domain; see [the purchase runbook](METROPOLIS_PURCHASE.md)
+and [publication evidence](metropolis-purchase-publication.json). Its browser flow
+was verified with a virtual authenticator and disposable Monad fork, separately
+from the earlier account-setup publication below.
 Starting commit: `3b0a29e780b83246509d54638567c3c2dc6c6cbb`.
 Branch: `metropolis-monad`. Network for the demo: Monad Testnet, chain ID 10143.
 
@@ -153,9 +155,10 @@ ownership is disclosed. Selection never promises independent providers.
 The local purchase increment adds signed task context, fresh identity/account
 checks, passkey approval, full contract simulation, an unsigned relayer plan and
 receipt verification. A public signing/broadcast endpoint and order/delivery
-persistence are not enabled. The currently published account diagnostic remains
-read-only until the purchase increment is separately published. No first-time
-purchase override or autonomous wallet has been introduced.
+persistence are not enabled. The published browser can approve a signed exact
+purchase and verify its receipt, while transaction relay remains a separate
+operator action. No first-time purchase override or autonomous wallet has been
+introduced.
 
 ## Milestones and acceptance
 

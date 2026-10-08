@@ -19,7 +19,8 @@ import { mockClient,policy,assessment,publicTestAttester } from "./trust-tests.m
 // All writes are to a disposable localhost fork. History is explicitly synthetic.
 // The virtual browser authenticator performs real WebAuthn/P256 cryptography.
 const localOrigin=process.env.METROPOLIS_E2E_ORIGIN??"http://127.0.0.1:3126";
-assert.ok(["localhost","127.0.0.1"].includes(new URL(localOrigin).hostname));
+assert.ok(["localhost","127.0.0.1"].includes(new URL(localOrigin).hostname)||localOrigin===METROPOLIS_ORIGIN,
+  "Load the local build or the exact canonical Veyra frontend; all chain writes still use localhost.");
 const rpc="http://127.0.0.1:18555";
 const fundingSource=process.env.METROPOLIS_TEST_FUNDING_SOURCE as Address;
 assert.ok(/^0x[0-9a-fA-F]{40}$/.test(fundingSource??""),"Provide a public funded address for the fork-only test.");
@@ -184,7 +185,7 @@ try {
     'eth_getTransactionReceipt','eth_getTransactionByHash'].includes(method)),[],"Browser uses only read methods, including receipt reads");
   const left=await fork.readContract({address:MONAD_CONTRACTS[10143].usdc,abi:erc20Abi,functionName:"balanceOf",args:[account]});
   assert.equal(left,988_000n);
-  console.log(JSON.stringify({result:"PASS",scope:"disposable localhost Monad fork only",forkBlock,virtualWebAuthn:true,
+  console.log(JSON.stringify({result:"PASS",scope:"disposable localhost Monad fork only",frontendOrigin:localOrigin,forkBlock,virtualWebAuthn:true,
     nativeP256AccountExecution:true,amountUsdc:"0.012",receiptVerified:true,replayRejected:true,
     tamperedTaskRejected:true,identityOnlyBlocked:true,receiptRestoredAfterReload:true,externalTransactionsSent:0,serviceDelivery:"not assessed"}));
 }catch(error){

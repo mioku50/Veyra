@@ -85,6 +85,12 @@ reload. Browser RPC methods were read-only, with no horizontal overflow or brows
 runtime errors. **No external transaction was sent or service delivered.** This
 does not establish a payment approved by the actual iPhone credential.
 
+The same complete flow passed using the published canonical frontend with its
+chain reads/writes isolated to the localhost fork. Publication and HTTP checks are
+recorded in [metropolis-purchase-publication.json](metropolis-purchase-publication.json).
+For that check, add `METROPOLIS_E2E_ORIGIN=https://agent-commerce-six.vercel.app`
+to the fork-test command below. It still sends no live blockchain transaction.
+
 Run packet tests and the existing account authorization suite:
 
 ```bash
