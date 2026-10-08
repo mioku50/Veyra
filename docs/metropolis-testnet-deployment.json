@@ -1,0 +1,29 @@
+{
+  "network": "Monad Testnet",
+  "chainId": 10143,
+  "contract": "VeyraTrustGate",
+  "address": "0x4a8f26B1d376c9924aAE80877261E0c635eb54Bb",
+  "deployer": "0x861FBe92678Bd6421aCee2dC37b50FDe1Dc01A1E",
+  "admin": "0x861FBe92678Bd6421aCee2dC37b50FDe1Dc01A1E",
+  "attester": "0x861FBe92678Bd6421aCee2dC37b50FDe1Dc01A1E",
+  "transactionHash": "0x1c48705ab59edce5bae251beadb76ccbc11c1b9f025e53bb6c4374a9e8b86b11",
+  "blockNumber": "69271003",
+  "blockHash": "0x0ff1cd6311e767dbea327df5adfc4d8e70faac42e045402749b570229ca9afbb",
+  "finalizedBlock": "69271314",
+  "status": "success",
+  "gasLimit": "1236257",
+  "gasUsed": "1236257",
+  "effectiveGasPriceWei": "102000000000",
+  "chargedFeeMon": "0.126098214",
+  "maximumAuthorizedFeeMon": "0.150823354",
+  "runtimeCodeHash": "0x9720d8163fb50e28636619a075c82152782ae33d71ba4a3663f2e28aeff9ac1f",
+  "deploymentDataHash": "0x3ebc65a222e99a3392fd480d87aea085acdc9cd86455abafaf64f4b69dffd93f",
+  "usdcSpent": "0",
+  "rolesVerified": true,
+  "domainVerified": true,
+  "sourceVerification": {
+    "provider": "Monad Sourcify",
+    "status": "match",
+    "jobId": "0afb9548-d6bc-4bb8-a6f9-b1b3499aecf9"
+  }
+}

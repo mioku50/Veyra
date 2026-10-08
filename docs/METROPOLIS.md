@@ -163,8 +163,11 @@ override or autonomous wallet has been introduced.
    Monad fork test. These do not establish a deployed payment transaction.
 3. **Actual device prototype:** fix a dedicated HTTPS origin and RP ID before
    registration. Create a real iPhone/browser credential, extract its P256 key,
-   normalize DER/low-s, and verify the assertion through the deployed account.
-   Record a transaction receipt. No Face ID success claim before this passes.
+   normalize DER/low-s, and verify its signature through native P256 `eth_call`.
+   This read-only device check was reported successful by the user on 2026-10-08.
+   Next verify the assertion through the deployed account and record a transaction
+   receipt; that contract-execution acceptance remains pending. User verification
+   does not identify whether the authenticator used Face ID or a device passcode.
 4. **Trust integration:** reuse the existing policy resolver with honest Monad
    evidence. The current full decision service has Arc-specific proof/database
    assumptions; do not invent an Arc proof to make a Monad candidate pass it.
@@ -190,6 +193,48 @@ contract/action, recipient, amount and estimated gas cost. No mainnet writes.
 Before publishing review the explicit file list; private planning documents,
 local skills, local MCP configuration, secrets and build artifacts must be absent.
 
+### TrustGate deployment preparation
+
+`scripts/metropolis/deployment-plan.mts` prepares unsigned CREATE data for the
+unchanged TrustGate using the two owner-selected role addresses. It uses only a
+public RPC client and rejects Mainnet, RPC chain mismatch, pending sender nonces,
+contract deployers/attesters, occupied CREATE addresses and failed gas estimation.
+It loads no signing material and has no broadcast path.
+
+Compile and prepare a reviewable plan using public EVM addresses:
+
+```bash
+forge build --root contracts/monad
+node --experimental-transform-types --no-warnings scripts/metropolis/deployment-plan.mts \
+  --sender DEPLOYER_PUBLIC_ADDRESS --admin ADMIN_PUBLIC_ADDRESS --attester ATTESTER_PUBLIC_ADDRESS
+```
+
+The output includes constructor roles, creation/data hashes, predicted CREATE
+address, sender nonce, current balance, a 5% gas-limit buffer and maximum MON
+fee at the sampled EIP-1559 cap. Gas fees are based on the gas limit on Monad.
+An unfunded sender can still receive an estimate using an explicitly disclosed
+simulation-only balance override; the output continues to require real funding.
+No simulated funding is described as an actual deposit.
+
+The owner supplied one address for both roles on 2026-10-08 and approved one
+TrustGate deployment from that same address through Foundry.
+Approved transaction bounds are chain ID 10143, nonce 0, gas limit 1,236,257,
+maximum fee per gas 122 gwei, and maximum total MON fee 0.150823354. A live
+Testnet estimate succeeded with actual funding and no balance override. Owner-
+provided local signing material was checked against the approved sender, encrypted
+into a temporary Foundry keystore and used for this single deployment. The temporary
+keystore and password file were removed after submission; no secret was copied
+into the worktree or recorded in deployment evidence. The resulting transaction
+and finalized role/domain checks are recorded below.
+Deployment planning guards passed 30 checks with mocked read-only RPC values;
+TypeScript and scoped ESLint also passed. Recheck nonce, gas and fees immediately
+before submission; the estimate does not authorize sending a transaction.
+
+The approved first write, TrustGate deployment, is complete. Factory deployment,
+per-user account creation, funding and payment follow as separate actions. Keep
+Mainnet reads available, but do not enable Mainnet execution by removing the
+account's Testnet restriction without a separate reviewed specification.
+
 ### Public change manifest
 
 The new public implementation files are:
@@ -205,12 +250,15 @@ contracts/monad/test/fixtures/webauthn.json
 contracts/src/monad/VeyraPasskeyAccount.sol
 contracts/src/monad/VeyraPasskeyAccountFactory.sol
 docs/METROPOLIS.md
+docs/metropolis-testnet-deployment.json
 lib/monad/config.ts
 lib/monad/erc8004.ts
 lib/monad/evidence.ts
 lib/monad/passkey.ts
 lib/monad/trust.ts
 scripts/metropolis/browser-smoke.mts
+scripts/metropolis/deployment-plan.mts
+scripts/metropolis/deployment-plan-tests.mts
 scripts/metropolis/generate-webauthn-fixtures.mts
 scripts/metropolis/rpc-smoke.mts
 scripts/metropolis/trust-smoke.mts
@@ -225,7 +273,31 @@ MCP setup, MONSKILLS and Foundry binaries are excluded from deployment uploads.
 
 ## Evidence
 
-No Metropolis contracts have been deployed yet. No spending has been authorized.
+TrustGate is deployed on Monad Testnet. Factory/account deployment and USDC
+payments have not been authorized or executed.
+
+### TrustGate transaction — 2026-10-08
+
+Contract: `0x4a8f26B1d376c9924aAE80877261E0c635eb54Bb`.
+Receipt: `0x1c48705ab59edce5bae251beadb76ccbc11c1b9f025e53bb6c4374a9e8b86b11`,
+status `success`, block **69271003**, checked against finalized block **69271314**.
+The sender, nonce, constructor data hash, gas limit and fee caps matched the
+approved transaction. Both admin and attester roles belong to the approved owner.
+The EIP-712 domain reads `Veyra Trust Gate`, version `1`, chain ID `10143`, and
+this contract's address. Runtime code hash and public receipt evidence are saved
+in `docs/metropolis-testnet-deployment.json`.
+
+Charged fee: **0.126098214 MON**, below the approved **0.150823354 MON** cap.
+USDC spent: **0**. Monad Sourcify source verification completed with status
+`match`, job `0afb9548-d6bc-4bb8-a6f9-b1b3499aecf9`.
+This proves TrustGate deployment and configuration, not a passkey-authorized
+payment or service delivery.
+
+An unsigned factory deployment plan has been simulated against the deployed
+TrustGate and canonical Testnet USDC. It uses the existing production RP ID/origin
+and requires separate approval: nonce 1, gas limit 2,829,586, fee cap 122 gwei,
+maximum MON fee 0.345209492. Creating the factory does not create or fund a user's
+account and does not transfer USDC.
 
 ### Diagnostic publication — 2026-10-08
 
@@ -250,6 +322,17 @@ METROPOLIS_SMOKE_ORIGIN=https://agent-commerce-six.vercel.app \
 The previous production deployment for rollback is
 `dpl_J9idbKUn4cH7wM3PRMuLg6rZV5RA`. Private planning documents, local skills,
 credentials and local tool binaries were absent from the uploaded file manifest.
+
+### Actual iPhone diagnostic — 2026-10-08
+
+The user reported creating a passkey and completing verification on an iPhone.
+Provided Safari screenshots on the canonical Veyra hostname show both the
+credential-created message and the successful RP/origin/user-verification plus
+native Monad P256 `eth_call` result. This is user-provided device evidence,
+separate from the automated virtual-authenticator check above. The screenshots
+do not identify the exact biometric/passcode method and are not a transaction
+receipt. Deployed-account authorization, payment and delivery remain pending.
+The screenshots and private credential metadata are not copied into the repository.
 
 Verified locally on 2026-10-08 with official Foundry 1.8.5:
 
@@ -285,6 +368,7 @@ Reproduce from the worktree root after `npm ci`, with official Foundry >=1.8:
 ```bash
 node --experimental-transform-types --no-warnings scripts/metropolis/generate-webauthn-fixtures.mts
 node --experimental-transform-types --no-warnings scripts/metropolis/trust-tests.mts --write-contract-fixture
+node --experimental-transform-types --no-warnings scripts/metropolis/deployment-plan-tests.mts
 forge test --root contracts/monad --network monad --no-match-contract MonadPrecompileForkTest -vv
 forge test --root contracts/monad --network monad --match-contract MonadPrecompileForkTest --fork-url https://testnet-rpc.monad.xyz --fork-block-number 69196275 -vv
 forge test --root contracts --network ethereum -vv
