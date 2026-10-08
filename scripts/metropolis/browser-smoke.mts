@@ -4,7 +4,8 @@ import { chromium } from "playwright";
 // Uses a browser's virtual authenticator and live read-only Monad RPC calls.
 // This is not a real iPhone/Face ID test or a deployed account transaction.
 const origin = process.env.METROPOLIS_SMOKE_ORIGIN ?? "http://localhost:3123";
-assert.equal(new URL(origin).hostname, "localhost", "Run the browser smoke against localhost only");
+const isLocal = new URL(origin).hostname === "localhost";
+assert.ok(isLocal || origin === "https://agent-commerce-six.vercel.app", "Use localhost or the canonical Veyra origin only");
 const browser = await chromium.launch({ headless: true });
 try {
   const context = await browser.newContext({ viewport: { width: 390, height: 844 } });
@@ -41,11 +42,13 @@ try {
   assert.deepEqual(errors, [], "Browser runtime must remain error-free");
 
   // An alternative hostname must not silently register a different RP credential.
-  await page.goto(`${origin.replace("localhost", "127.0.0.1")}/metropolis`, { waitUntil: "networkidle" });
-  const alternate = page.getByRole("button", { name: "Create test passkey" });
-  await alternate.waitFor();
-  assert.equal(await alternate.isDisabled(), true);
-  console.log("Metropolis browser smoke PASS: virtual passkey, live P256 eth_call, public-metadata reload, mobile layout and alternate-origin rejection. No transaction sent.");
+  if (isLocal) {
+    await page.goto(`${origin.replace("localhost", "127.0.0.1")}/metropolis`, { waitUntil: "networkidle" });
+    const alternate = page.getByRole("button", { name: "Create test passkey" });
+    await alternate.waitFor();
+    assert.equal(await alternate.isDisabled(), true);
+  }
+  console.log(`Metropolis browser smoke PASS at ${origin}: virtual passkey, live P256 eth_call, public-metadata reload, mobile layout${isLocal ? " and alternate-origin rejection" : ""}. No transaction sent.`);
 } finally {
   await browser.close();
 }

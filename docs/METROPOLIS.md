@@ -227,6 +227,30 @@ MCP setup, MONSKILLS and Foundry binaries are excluded from deployment uploads.
 
 No Metropolis contracts have been deployed yet. No spending has been authorized.
 
+### Diagnostic publication — 2026-10-08
+
+The user authorized publication of the read-only diagnostic on the existing
+Veyra hostname. Deployment `dpl_CBnJUpJTx9ps747vTC1DjR26kPtx`, built from branch
+`metropolis-monad`, commit `e8a86caa6f5f209bfd17a14a860afed142ca853e`, reached
+`READY` and was promoted after staging checks. The canonical URL is
+https://agent-commerce-six.vercel.app/metropolis. `main` was not changed.
+
+The production browser check passed using a virtual platform authenticator:
+credential creation, live Monad Testnet P256 `eth_call`, public-metadata reload
+and mobile layout. No write RPC methods were used. This is not a real iPhone
+Face ID test or a deployed smart-account transaction.
+
+Reproduce the read-only production check:
+
+```bash
+METROPOLIS_SMOKE_ORIGIN=https://agent-commerce-six.vercel.app \
+  node --experimental-transform-types --no-warnings scripts/metropolis/browser-smoke.mts
+```
+
+The previous production deployment for rollback is
+`dpl_J9idbKUn4cH7wM3PRMuLg6rZV5RA`. Private planning documents, local skills,
+credentials and local tool binaries were absent from the uploaded file manifest.
+
 Verified locally on 2026-10-08 with official Foundry 1.8.5:
 
 - 37 Monad account/factory tests passed with generated cryptographic assertions.
