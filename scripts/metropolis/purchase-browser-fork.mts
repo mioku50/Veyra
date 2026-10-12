@@ -102,6 +102,19 @@ try {
   browser=await chromium.launch({headless:true});
   const context=await browser.newContext({viewport:{width:390,height:844}});
   await context.addInitScript(()=>{
+    const originalCreate=navigator.credentials.create.bind(navigator.credentials);
+    const registrationWindow=window as unknown as {registrationDiagnostics:unknown[]};
+    registrationWindow.registrationDiagnostics=[];
+    navigator.credentials.create=async options=>{
+      const publicKey=options?.publicKey;
+      if(publicKey) {
+        const hex=(input:BufferSource)=>Array.from(new Uint8Array(input instanceof ArrayBuffer?input:input.buffer,input instanceof ArrayBuffer?0:input.byteOffset,input.byteLength),byte=>byte.toString(16).padStart(2,"0")).join("");
+        registrationWindow.registrationDiagnostics.push({userHandle:hex(publicKey.user.id),challenge:hex(publicKey.challenge),
+          name:publicKey.user.name,displayName:publicKey.user.displayName,rpId:publicKey.rp.id,
+          residentKey:publicKey.authenticatorSelection?.residentKey,userVerification:publicKey.authenticatorSelection?.userVerification});
+      }
+      return originalCreate(options);
+    };
     const originalGet=navigator.credentials.get.bind(navigator.credentials);
     const testWindow=window as unknown as {assertionDiagnostics:unknown[];forcedCredentialId?:string};
     testWindow.assertionDiagnostics=[];
@@ -154,7 +167,7 @@ try {
     await route.fulfill({status:response.status,contentType:"application/json",body});
   });
   const cdp=await context.newCDPSession(page);await cdp.send("WebAuthn.enable");
-  await cdp.send("WebAuthn.addVirtualAuthenticator",{options:{protocol:"ctap2",transport:"internal",hasResidentKey:true,
+  const {authenticatorId}=await cdp.send("WebAuthn.addVirtualAuthenticator",{options:{protocol:"ctap2",transport:"internal",hasResidentKey:true,
     hasUserVerification:true,isUserVerified:true,automaticPresenceSimulation:true}});
   await page.goto(`${METROPOLIS_ORIGIN}/metropolis`,{waitUntil:"networkidle"});
   if(await page.getByRole("button",{name:"Create test passkey"}).isDisabled()) {
@@ -164,6 +177,7 @@ try {
   await page.getByRole("button",{name:"Create test passkey"}).click();
   await page.getByRole("button",{name:"Verify on Monad",exact:true}).waitFor({timeout:20000});
   const credential=await page.evaluate(()=>JSON.parse(localStorage.getItem("veyra.metropolis.public-credential.v1")!)) as {id:string;publicKey:Hex;origin:string};
+  const firstRegistration=await page.evaluate(()=>(window as unknown as {registrationDiagnostics:Record<string,string>[]}).registrationDiagnostics[0]);
   const qx=`0x${credential.publicKey.slice(2,66)}` as Hex,qy=`0x${credential.publicKey.slice(66)}` as Hex;
   const createHash=await wallet.writeContract({address:METROPOLIS_V2_DEPLOYMENT.factory,abi:METROPOLIS_FACTORY_ABI,functionName:"createAccount",args:[qx,qy,METROPOLIS_V2_ACCOUNT_SALT]});
   await finalizeLocal((await fork.waitForTransactionReceipt({hash:createHash})).blockNumber);
@@ -172,20 +186,29 @@ try {
   const fundingWallet=createWalletClient({account:fundingSource,chain:monadDemoTestnet,transport:http(rpc)});
   const fundingHash=await fundingWallet.writeContract({address:MONAD_CONTRACTS[10143].usdc,abi:erc20Abi,functionName:"transfer",args:[account,1_000_000n]});
   await finalizeLocal((await fork.waitForTransactionReceipt({hash:fundingHash})).blockNumber);
-  // Reproduce the user's other-browser metadata: a second resident credential
-  // is currently saved, while the first credential owns the funded V2 account.
-  const otherCredential=await page.evaluate(async()=>{
-    const raw=await navigator.credentials.create({publicKey:{rp:{id:location.hostname,name:"Veyra existing-key fork test"},
-      user:{id:crypto.getRandomValues(new Uint8Array(32)),name:"other-local-key",displayName:"Other local key"},
-      challenge:crypto.getRandomValues(new Uint8Array(32)),pubKeyCredParams:[{type:"public-key",alg:-7}],
-      authenticatorSelection:{authenticatorAttachment:"platform",residentKey:"required",userVerification:"required"}}}) as PublicKeyCredential;
-    const spki=(raw.response as AuthenticatorAttestationResponse).getPublicKey();if(!spki)throw new Error("No public key");
-    const key=await crypto.subtle.importKey("spki",spki,{name:"ECDSA",namedCurve:"P-256"},true,["verify"]);
-    const bytes=new Uint8Array(await crypto.subtle.exportKey("raw",key));
-    const saved={id:raw.id,publicKey:`0x${Array.from(bytes.slice(1),x=>x.toString(16).padStart(2,"0")).join("")}`,origin:location.origin};
-    localStorage.setItem("veyra.metropolis.public-credential.v1",JSON.stringify(saved));return saved;
-  });
+  // Repeat the actual app registration after losing only the browser pointer.
+  // The old test manually supplied a random user.id for the second key and
+  // therefore missed replacement by the application's constant user handle.
+  await page.evaluate(()=>localStorage.removeItem("veyra.metropolis.public-credential.v1"));
+  await page.reload({waitUntil:"networkidle"});
+  await page.getByRole("button",{name:"Create test passkey",exact:true}).click();
+  await page.getByRole("button",{name:"Verify on Monad",exact:true}).waitFor({timeout:20000});
+  const otherCredential=await page.evaluate(()=>JSON.parse(localStorage.getItem("veyra.metropolis.public-credential.v1")!)) as typeof credential;
+  const secondRegistration=await page.evaluate(()=>(window as unknown as {registrationDiagnostics:Record<string,string>[]}).registrationDiagnostics[0]);
   assert.notEqual(otherCredential.id,credential.id);
+  for(const request of [firstRegistration,secondRegistration]) {
+    assert.match(request.userHandle,/^[0-9a-f]{64}$/);assert.match(request.challenge,/^[0-9a-f]{64}$/);
+    assert.equal(request.rpId,new URL(METROPOLIS_ORIGIN).hostname);
+    assert.equal(request.residentKey,"required");assert.equal(request.userVerification,"required");
+  }
+  assert.notEqual(firstRegistration.userHandle,secondRegistration.userHandle);
+  assert.notEqual(firstRegistration.challenge,secondRegistration.challenge);
+  assert.notEqual(firstRegistration.name,secondRegistration.name);
+  assert.notEqual(firstRegistration.displayName,secondRegistration.displayName);
+  // CDP returns private material too: retain only public IDs in memory/output.
+  const residentIds=(await cdp.send("WebAuthn.getCredentials",{authenticatorId})).credentials
+    .map(item=>Buffer.from(item.credentialId,"base64").toString("base64url"));
+  assert.deepEqual(residentIds.sort(),[credential.id,otherCredential.id].sort(),"Actual repeated app registration retains both resident keys");
   await page.goto(`${METROPOLIS_ORIGIN}/metropolis?account=${account}`,{waitUntil:"networkidle"});
   await page.getByRole("button",{name:"Check existing account",exact:true}).waitFor();
   assert.equal(await page.getByLabel("Existing V2 account address").inputValue(),account);
@@ -436,6 +459,8 @@ try {
     nativeP256AccountExecution:true,amountUsdc:"0.012",receiptVerified:true,replayRejected:true,
     accountVersion:2,paymentEncoding:"original browser client-data JSON; V2 required prefix and native P256",ownerApprovalPrompts:1,
     existingPasskeySelected:true,wrongPasskeySelectionRejected:true,undeployedAccountSelectionRejected:true,
+    repeatedActualAppRegistrationRetainsOriginalKey:true,distinctRegistrationUserHandles:true,
+    distinctRegistrationLabels:true,freshRegistrationChallenges:true,
     requestedAccountCannotUseUnrelatedVerification:true,wrongAccountExportBlocked:true,
     selectionFailureShownSeparately:true,editedAccountInvalidatesSelection:true,explicitSelectionExitRequired:true,
     matchingPasskeyStorageFailureReported:true,

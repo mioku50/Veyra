@@ -170,3 +170,55 @@ assertions. Root, `/arc`, `/console` and `/metropolis` returned HTTP 200 before
 and after promotion. The owner must still retry selection on their device;
 the exact cause of their previously unsuccessful switch is not established.
 See [current publication evidence](metropolis-existing-passkey-publication.json).
+
+## Resident-key registration correction — 2026-10-12
+
+The owner's later screenshot showed a genuine key mismatch for the requested
+funded account. They reported that Apple Passwords offers only one Veyra key.
+Inspection found an application registration bug: every call used the fixed
+name `Veyra Metropolis Testnet` without an explicit WebAuthn `user.id`. The
+installed viem/Ox implementation derives the default user handle from that
+name, so every independent immutable account reused the same handle.
+
+[WebAuthn's user-handle rule](https://www.w3.org/TR/webauthn-3/#user-handle)
+allows a discoverable credential to replace an existing credential for the
+same relying party and user handle. This explains a possible loss of the
+earlier key; it does not establish what happened inside the owner's iCloud
+store. The previous selection test missed this registration bug because it
+created the second key manually with a random user handle.
+
+New registrations now supply a cryptographically random 32-byte user handle,
+a distinct password-manager label and a fresh 32-byte challenge. Generation
+remains synchronous before the browser prompt. Registration does not deploy an
+account, authorize a payment or change the public key of an existing account.
+The UI explains that a new key opens a separate account and offers lost-key
+guidance after a verified mismatch.
+
+The regression test creates **both keys through the actual application**,
+losing only the browser's public pointer between registrations. It checks
+distinct handles, challenges and labels, retention of both resident keys,
+rejection of the wrong key and successful original-key selection before the
+existing payment/receipt/replay checks. The browser performs real cryptography;
+no private credential data is printed or persisted by the test.
+
+This correction cannot restore a replaced private key. The immutable prototype
+has no key rotation, recovery or operator escape. Recovery requires the actual
+original passkey to remain available on an authenticator or in the owner's
+password-manager recovery facility. Deleted-item recovery is a possibility to
+check, not a guarantee for overwritten credentials. No new live deployment,
+funding, transfer or account migration is authorized by this fix.
+
+The former name-derived handle was reproduced with two real registrations on
+an isolated Chromium virtual authenticator: only the second resident credential
+remained. Reproduce with
+`node --experimental-transform-types --no-warnings scripts/metropolis/passkey-registration-replacement.mts`.
+This establishes the old options' replacement behavior on that authenticator,
+not the owner's iCloud history. The complete corrected application browser/fork
+test, production build, project/scoped TypeScript and scoped ESLint passed
+locally. All blockchain writes remained on the disposable localhost fork.
+
+A finalized live read at block `70498753`, hash
+`0xc535350f68854be240998ab67281e36c30d6fce4c4993893e0352227bbeba89b`,
+verified the original V2 account configuration, 20 test USDC and payment nonce
+`0`. The native P256 control accepted a known signature and rejected an altered
+message at the same block. This is a read-only control, not an owner signature.

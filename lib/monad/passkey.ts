@@ -33,7 +33,14 @@ export function base64Url(challenge:Hex) {
 /** Use viem's browser credential parsing and DER decoding, rather than hand-rolling either. */
 export async function createMetropolisPasskey(origin:string):Promise<MetropolisCredential> {
   const rpId = requirePasskeyOrigin(origin);
-  const credential = await createWebAuthnCredential({name:"Veyra Metropolis Testnet",
+  // Each immutable account needs its own resident credential. Reusing a user
+  // handle lets an authenticator replace its earlier key for this RP. Do not
+  // use viem/Ox's name-derived default or a handle from browser storage.
+  const userId=crypto.getRandomValues(new Uint8Array(32));
+  const label=`Veyra Testnet ${toHex(userId).slice(2,14)}`;
+  const credential = await createWebAuthnCredential({name:label,
+    user:{id:userId,name:label,displayName:label},
+    challenge:crypto.getRandomValues(new Uint8Array(32)),
     rp:{id:rpId,name:"Veyra Metropolis"},
     authenticatorSelection:{authenticatorAttachment:"platform",residentKey:"required",requireResidentKey:true,userVerification:"required"},
   });
