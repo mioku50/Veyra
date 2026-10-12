@@ -27,6 +27,13 @@ export function MetropolisPrototype() {
   const [selectionOpen,setSelectionOpen] = useState(false);
   const [selecting,setSelecting] = useState(false);
   const [existingSetup,setExistingSetup] = useState<MetropolisAccountSetup|null>(null);
+  const [selectionNotice,setSelectionNotice] = useState("");
+  const [selectionFailed,setSelectionFailed] = useState(false);
+  const requestedAddress=existingAddress.trim();
+  const returningToAccount=!!requestedAddress;
+  const activeSetup=setup&&(!returningToAccount||setup.accountAddress.toLowerCase()===requestedAddress.toLowerCase())?setup:null;
+  const selectedAccount=returningToAccount&&verified&&!!activeSetup;
+  const displayedExistingSetup=activeSetup??existingSetup;
   useEffect(() => {
     try {
       requirePasskeyOrigin(window.location.origin);
@@ -45,6 +52,7 @@ export function MetropolisPrototype() {
   },[]);
 
   async function register() {
+    if(returningToAccount)return;
     setBusy(true);setNotice("");setVerified(false);
     try {
       const created = await createMetropolisPasskey(window.location.origin);
@@ -55,7 +63,7 @@ export function MetropolisPrototype() {
     finally {setBusy(false);}
   }
   async function verify() {
-    if (!credential) return;
+    if (!credential||returningToAccount) return;
     setBusy(true);setNotice("");setVerified(false);setSetup(null);setSetupNotice("");
     try {
       // A domain-separated diagnostic challenge, never a payment authorization.
@@ -76,10 +84,13 @@ export function MetropolisPrototype() {
     finally {setBusy(false);}
   }
   async function prepareAccount() {
-    if (!credential || !verified) return;
+    if (!credential || !verified || (returningToAccount&&!selectedAccount)) return;
     setSetupBusy(true);setSetup(null);setSetupNotice("");
     try {
       const result = await readAccountSetup(credential.publicKey,window.location.origin,undefined,undefined,METROPOLIS_V2_DEPLOYMENT.factory);
+      if(returningToAccount&&result.accountAddress.toLowerCase()!==requestedAddress.toLowerCase()) {
+        throw new AccountSetupError("The saved passkey does not match the requested V2 account. Select its original passkey above.");
+      }
       setSetup(result);
       setSetupNotice(result.accountDeployed?"Your V2 account and balance were checked in a finalized Monad block.":"Public V2 account details are ready. Deployment requires a separate approval.");
     } catch (error) {
@@ -87,38 +98,53 @@ export function MetropolisPrototype() {
     } finally {setSetupBusy(false);}
   }
   async function copySetup() {
-    if (!setup) return;
+    if (!activeSetup) return;
     try {
-      await navigator.clipboard.writeText(JSON.stringify(setup,null,2));
-      setSetupNotice(setup.accountDeployed?"Public V2 account details copied. These details do not authorize a payment.":"Public V2 account details copied. Send these details to prepare the deployment.");
+      await navigator.clipboard.writeText(JSON.stringify(activeSetup,null,2));
+      setSetupNotice(activeSetup.accountDeployed?"Public V2 account details copied. These details do not authorize a payment.":"Public V2 account details copied. Send these details to prepare the deployment.");
     } catch {setSetupNotice("Copy is unavailable here. Open Public setup details below and copy the text manually.");}
   }
   async function selectExisting() {
     if(!existingSetup)return;
-    setSelecting(true);setNotice("");setVerified(false);setSetup(null);setSetupNotice("");
+    setSelecting(true);setSelectionNotice("");setSelectionFailed(false);setNotice("");setVerified(false);setSetup(null);setSetupNotice("");
     try {
       const selected=await selectExistingAccountPasskey(existingSetup,window.location.origin);
       // Keep the previous public pointer; never persist assertions or private keys.
-      const previous=localStorage.getItem(STORAGE_KEY);
-      if(previous&&previous!==JSON.stringify(selected.credential))localStorage.setItem(PREVIOUS_STORAGE_KEY,previous);
-      localStorage.setItem(STORAGE_KEY,JSON.stringify(selected.credential));
+      try {
+        const previous=localStorage.getItem(STORAGE_KEY);
+        if(previous&&previous!==JSON.stringify(selected.credential))localStorage.setItem(PREVIOUS_STORAGE_KEY,previous);
+        localStorage.setItem(STORAGE_KEY,JSON.stringify(selected.credential));
+      } catch {
+        throw new PasskeySelectionError("The passkey matched this account, but this browser could not save its public details. Allow site storage and select the key again.");
+      }
       setCredential(selected.credential);setSetup(selected.setup);setVerified(true);
-      setNotice("The existing passkey matches this V2 account. Monad verified its signature without a transaction.");
+      setSelectionNotice("The existing passkey matches this V2 account. Monad verified its signature without a transaction.");
       setSetupNotice("Your existing V2 account and balance were checked in a finalized Monad block.");
     } catch(error) {
-      setNotice(error instanceof PasskeySelectionError||error instanceof AccountSetupError?error.message:
+      setSelectionFailed(true);
+      setSelectionNotice(error instanceof PasskeySelectionError||error instanceof AccountSetupError?error.message:
         "Selection did not complete. Choose the account's original passkey from your password manager and try again. Your saved key was not changed.");
     } finally {setSelecting(false);}
   }
   async function checkExisting() {
-    setSelecting(true);setNotice("");setExistingSetup(null);setVerified(false);setSetup(null);setSetupNotice("");
+    setSelecting(true);setSelectionNotice("");setSelectionFailed(false);setNotice("");setExistingSetup(null);setVerified(false);setSetup(null);setSetupNotice("");
     try {
       setExistingSetup(await prepareExistingAccountPasskey(existingAddress.trim(),window.location.origin));
-      setNotice("Existing V2 account checked. Select its original passkey to use it.");
+      setSelectionNotice("Existing V2 account checked. Access is not confirmed yet. Select its original passkey to use it.");
     } catch(error) {
-      setNotice(error instanceof PasskeySelectionError||error instanceof AccountSetupError?error.message:
+      setSelectionFailed(true);
+      setSelectionNotice(error instanceof PasskeySelectionError||error instanceof AccountSetupError?error.message:
         "The existing account could not be checked. Try again when the Monad RPC is available.");
     } finally {setSelecting(false);}
+  }
+  function changeExistingAddress(address:string) {
+    setExistingAddress(address);setExistingSetup(null);setSelectionNotice("");setSelectionFailed(false);
+    setNotice("");setVerified(false);setSetup(null);setSetupNotice("");
+  }
+  function useSavedPasskey() {
+    changeExistingAddress("");
+    const url=new URL(window.location.href);url.searchParams.delete("account");
+    window.history.replaceState(null,"",url);
   }
 
   return <main className="mx-auto max-w-3xl px-5 py-10 sm:py-16">
@@ -130,49 +156,56 @@ export function MetropolisPrototype() {
     <h1 className="mt-3 text-4xl font-semibold tracking-tight sm:text-5xl">Veyra checks the spend.<br />You hold the final say.</h1>
     <p className="mt-5 text-lg text-muted-foreground">The Monad integration pairs Veyra&apos;s trust policy with an owner&apos;s passkey approval for an exact USDC payment.</p>
     <section className="mt-8 rounded-2xl border border-white/15 bg-white/5 p-5 sm:p-7" aria-labelledby="passkey-title">
-      <h2 id="passkey-title" className="text-xl font-semibold">Test your passkey on Monad</h2>
-      <p className="mt-3 text-muted-foreground">Create a browser passkey and verify a diagnostic signature using Monad&apos;s native P256 verifier. This check sends no transaction and authorizes no payment.</p>
-      <div className="mt-6 flex flex-wrap gap-3">
+      <h2 id="passkey-title" className="text-xl font-semibold">{returningToAccount?"Return to your existing V2 account":"Test your passkey on Monad"}</h2>
+      <p className="mt-3 text-muted-foreground">{returningToAccount?"Check the requested account, then select its original passkey. Access is confirmed only when that key's signature matches the account on Monad.":"Create a browser passkey and verify a diagnostic signature using Monad's native P256 verifier."} This check sends no transaction and authorizes no payment.</p>
+      {!returningToAccount?<div className="mt-6 flex flex-wrap gap-3">
         {!credential ? <button onClick={register} disabled={!ready||busy||selecting} className="rounded-xl bg-violet-500 px-5 py-3 font-semibold disabled:opacity-50">{busy?"Creating…":"Create test passkey"}</button>
           : <button onClick={verify} disabled={!ready||busy||setupBusy||selecting} className="rounded-xl bg-violet-500 px-5 py-3 font-semibold disabled:opacity-50">{busy?"Verifying…":"Verify on Monad"}</button>}
-      </div>
+      </div>:null}
       <details className="mt-5 border-t border-white/15 pt-4" open={selectionOpen} onToggle={event=>setSelectionOpen(event.currentTarget.open)}>
         <summary className="cursor-pointer py-2 text-sm font-semibold text-violet-300">Use an existing passkey</summary>
         <p className="mt-2 text-sm text-muted-foreground">Enter your deployed V2 account address, then choose the original passkey in your device&apos;s password manager. This selects the account you already have.</p>
         <form className="mt-4 space-y-3" onSubmit={event=>{event.preventDefault();void (existingSetup?selectExisting():checkExisting());}}>
           <label className="block text-sm" htmlFor="existing-account-address">Existing V2 account address</label>
-          <input id="existing-account-address" value={existingAddress} onChange={event=>{setExistingAddress(event.target.value);setExistingSetup(null);}}
+          <input id="existing-account-address" value={existingAddress} onChange={event=>changeExistingAddress(event.target.value)}
             maxLength={42} required autoComplete="off" spellCheck={false} disabled={!ready||busy||setupBusy||selecting}
             placeholder="0x…" className="w-full rounded-lg border border-white/20 bg-black/20 p-3 font-mono text-sm" />
           <button type="submit" disabled={!ready||busy||setupBusy||selecting||!existingAddress.trim()}
-            className="rounded-xl border border-violet-400/40 px-5 py-3 font-semibold disabled:opacity-50">{existingSetup?(selecting?"Checking your passkey…":"Select existing passkey"):(selecting?"Checking account…":"Check existing account")}</button>
+            className="rounded-xl bg-violet-500 px-5 py-3 font-semibold disabled:opacity-50">{existingSetup?(selecting?"Checking your passkey…":"Select existing passkey"):(selecting?"Checking account…":"Check existing account")}</button>
         </form>
       </details>
-      <p className={`mt-4 text-sm ${verified?"text-emerald-300":"text-muted-foreground"}`} role="status" aria-live="polite">{notice || "Face ID, Touch ID or your device's user-verification method will confirm the request."}</p>
-      {credential ? <p className="mt-4 text-xs text-muted-foreground">Public credential metadata is saved in this browser. Prepare your account below to check its deployment and balance.</p>:null}
+      {returningToAccount?<div className="mt-5 space-y-3 rounded-xl border border-violet-400/30 p-4">
+        <p className="text-sm font-semibold">{selectedAccount?"Selected V2 account":"Requested V2 account"}</p>
+        <p className="break-all font-mono text-sm" data-testid="requested-account-address">{existingSetup?.accountAddress??requestedAddress}</p>
+        {displayedExistingSetup?<p className="text-sm text-muted-foreground">{formatUnits(BigInt(displayedExistingSetup.usdcBalanceUnits),6)} test USDC at finalized block {displayedExistingSetup.observedBlock}. {selectedAccount?"Access confirmed by your passkey.":"Balance checked; passkey selection still required."}</p>:null}
+        <p className={`text-sm ${selectionFailed?"text-amber-300":selectedAccount?"text-emerald-300":"text-muted-foreground"}`} role={selectionFailed?"alert":"status"} aria-live="polite">{selectionNotice||"First check this account, then select its original passkey."}</p>
+        {selectionFailed?<p className="text-sm text-muted-foreground">No account switch was completed. Your saved key is unchanged. Select the original key again; checking a different saved key will not open this account.</p>:null}
+        {!selectedAccount&&credential?<button onClick={useSavedPasskey} disabled={!ready||busy||setupBusy||selecting} className="text-sm text-muted-foreground underline disabled:opacity-50">Cancel account selection and use the saved passkey</button>:null}
+      </div>:<p className={`mt-4 text-sm ${verified?"text-emerald-300":"text-muted-foreground"}`} role="status" aria-live="polite">{notice || "Face ID, Touch ID or your device's user-verification method will confirm the request."}</p>}
+      {credential&&!returningToAccount ? <p className="mt-4 text-xs text-muted-foreground">Public credential metadata is saved in this browser. Prepare your account below to check its deployment and balance.</p>:null}
       {!ready ? <a className="mt-4 inline-block break-all text-sm text-cyan-300 underline" href={`${METROPOLIS_ORIGIN}/metropolis`}>Open the canonical Veyra address</a>:null}
     </section>
-    {credential ? <section className="mt-6 rounded-2xl border border-white/15 p-5 sm:p-7" aria-labelledby="account-title">
+    {credential&&(!returningToAccount||selectedAccount) ? <section className="mt-6 rounded-2xl border border-white/15 p-5 sm:p-7" aria-labelledby="account-title">
       <h2 id="account-title" className="text-xl font-semibold">Your personal V2 account</h2>
       <p className="mt-3 text-sm text-muted-foreground">Check the account for the passkey saved in this browser. Veyra verifies the V2 factory, account configuration and Testnet USDC balance.</p>
       <p className="mt-2 text-xs text-muted-foreground">V2 has its own address. Funds and historical receipts in a V1 account stay with that account.</p>
       <button onClick={prepareAccount} disabled={!ready||!verified||busy||setupBusy||selecting} className="mt-5 rounded-xl border border-violet-400/40 px-5 py-3 font-semibold disabled:opacity-50">{setupBusy?"Checking Monad…":"Prepare account"}</button>
       {!verified ? <p className="mt-3 text-sm text-muted-foreground">Verify your saved passkey above first.</p>:null}
       <p className="mt-4 text-sm text-muted-foreground" role="status" aria-live="polite">{setupNotice}</p>
-      {setup ? <div className="mt-5 space-y-4">
+      {activeSetup ? <div className="mt-5 space-y-4">
         <dl className="space-y-3 text-sm">
-          <div><dt className="text-muted-foreground">Account address</dt><dd className="mt-1 break-all font-mono" data-testid="account-address">{setup.accountAddress}</dd></div>
-          <div><dt className="text-muted-foreground">Status at finalized block {setup.observedBlock}</dt><dd>{setup.accountDeployed?"Deployed":"Not deployed"}</dd></div>
-          <div><dt className="text-muted-foreground">Testnet USDC balance</dt><dd>{formatUnits(BigInt(setup.usdcBalanceUnits),6)} USDC</dd></div>
+          <div><dt className="text-muted-foreground">Account address</dt><dd className="mt-1 break-all font-mono" data-testid="account-address">{activeSetup.accountAddress}</dd></div>
+          <div><dt className="text-muted-foreground">Status at finalized block {activeSetup.observedBlock}</dt><dd>{activeSetup.accountDeployed?"Deployed":"Not deployed"}</dd></div>
+          <div><dt className="text-muted-foreground">Testnet USDC balance</dt><dd>{formatUnits(BigInt(activeSetup.usdcBalanceUnits),6)} USDC</dd></div>
         </dl>
         <p className="text-sm text-muted-foreground">The setup details contain your public key and account configuration. Your private passkey stays with your authenticator.</p>
         <button onClick={copySetup} className="rounded-xl bg-violet-500 px-5 py-3 font-semibold">Copy public account details</button>
         <details className="text-sm"><summary className="cursor-pointer py-2 text-violet-300">Public setup details</summary>
-          <textarea aria-label="Public account setup JSON" readOnly value={JSON.stringify(setup,null,2)} onFocus={event=>event.currentTarget.select()} className="mt-3 h-64 w-full rounded-lg border border-white/15 bg-black/20 p-3 font-mono text-xs" />
+          <textarea aria-label="Public account setup JSON" readOnly value={JSON.stringify(activeSetup,null,2)} onFocus={event=>event.currentTarget.select()} className="mt-3 h-64 w-full rounded-lg border border-white/15 bg-black/20 p-3 font-mono text-xs" />
         </details>
       </div>:null}
     </section>:null}
-    {credential&&setup?.accountDeployed?<MetropolisPurchase key={setup.accountAddress} credential={credential} factory={setup.factory} enabled={ready&&verified&&!busy&&!setupBusy&&!selecting} />:null}
+    {credential&&activeSetup?.accountDeployed?<MetropolisPurchase key={activeSetup.accountAddress} credential={credential} factory={activeSetup.factory} enabled={ready&&verified&&!busy&&!setupBusy&&!selecting} />:null}
     <section className="mt-6 rounded-2xl border border-white/15 p-5 sm:p-7">
       <h2 className="text-xl font-semibold">Integration status</h2>
       <ul className="mt-4 space-y-3 text-sm text-muted-foreground">

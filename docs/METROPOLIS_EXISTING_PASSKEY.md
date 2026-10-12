@@ -94,6 +94,44 @@ Source: [WebAuthn discoverable credentials](https://www.w3.org/TR/webauthn-3/#sc
 Owner-device selection remains pending. The live balance check is a read-only
 snapshot; it does not establish a new owner assertion or payment receipt.
 
+## Requested-account interface correction — 2026-10-12
+
+The owner reported selecting the original key, while the next exported setup
+still described another, undeployed account. The screenshot's green status was
+the generic saved-key diagnostic message, rather than the existing-account
+selection result. The screenshots do not establish which step failed.
+
+The requested-account flow now keeps those results separate:
+
+- Entering an address or opening a prefilled URL hides saved-key verification,
+  new-key creation and account preparation/export until selection of the
+  requested account succeeds. Action handlers also enforce the target binding.
+- A finalized balance read displays **Requested V2 account** and explicitly
+  says that passkey selection is still required. It does not establish access.
+- Selection failures remain visible as alerts alongside the full target address;
+  a generic green verification cannot replace them. Browser storage failures
+  after a matching assertion have their own explanation.
+- Successful selection displays **Selected V2 account**, the matching setup and
+  its refreshed finalized balance. Editing the target clears verification,
+  displayed setup and purchase controls. Reloading again requires verification.
+- Returning to ordinary saved-key verification requires clearing the target or
+  explicitly cancelling account selection; cancellation also removes the URL
+  target and retains the saved public credential.
+
+The browser/fork test covers pending selection, wrong-key rejection, blocked
+exports, a matching assertion followed by a simulated browser storage failure,
+target edits, reload and explicit cancellation before the existing
+payment/receipt/replay checks. Native signature verification and all deployed
+contracts are unchanged. The owner's actual key selection remains unconfirmed.
+
+A separate finalized live snapshot at block `70480943`, hash
+`0xb0b2687dfb7a0ad1c4a0e8c377d39581f309d18b13c6a60379486dcfd1a5079b`,
+confirmed the requested account still has 20 test USDC and payment nonce `0`.
+
+The production build, project/scoped TypeScript, scoped ESLint and the complete
+browser/fork test passed locally with the correction. All test writes were on
+localhost; no external transaction was sent.
+
 ## Publication — 2026-10-12
 
 The canonical `/metropolis` page now serves source commit

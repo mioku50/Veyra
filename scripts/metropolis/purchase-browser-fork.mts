@@ -184,11 +184,22 @@ try {
   await page.goto(`${METROPOLIS_ORIGIN}/metropolis?account=${account}`,{waitUntil:"networkidle"});
   await page.getByRole("button",{name:"Check existing account",exact:true}).waitFor();
   assert.equal(await page.getByLabel("Existing V2 account address").inputValue(),account);
+  async function assertRequestedAccountPending() {
+    assert.equal(await page.getByRole("button",{name:"Verify on Monad",exact:true}).count(),0,
+      "A saved-key verification cannot bypass selection of the requested account");
+    assert.equal(await page.getByRole("button",{name:"Create test passkey",exact:true}).count(),0);
+    assert.equal(await page.getByRole("button",{name:"Prepare account",exact:true}).count(),0);
+    assert.equal(await page.getByRole("button",{name:"Copy public account details",exact:true}).count(),0);
+    assert.equal(await page.getByLabel("Public account setup JSON").count(),0);
+    assert.equal(await page.getByTestId("account-address").count(),0);
+    assert.equal(await page.getByTestId("requested-account-address").textContent(),account);
+  }
+  await assertRequestedAccountPending();
   assert.deepEqual(await page.evaluate(()=>(window as unknown as {assertionDiagnostics:unknown[]}).assertionDiagnostics),[],
     "An account URL only prefills the form; it never prompts or signs automatically");
   await page.getByLabel("Existing V2 account address").fill(publicTestAttester.address);
   await page.getByRole("button",{name:"Check existing account",exact:true}).click();
-  await page.getByRole("status").filter({hasText:"does not have a deployed V2 account"}).waitFor({timeout:45000});
+  await page.getByRole("alert").filter({hasText:"does not have a deployed V2 account"}).waitFor({timeout:45000});
   assert.deepEqual(await page.evaluate(()=>(window as unknown as {assertionDiagnostics:unknown[]}).assertionDiagnostics),[],
     "An undeployed address is rejected before the browser asks for a passkey");
   await page.getByLabel("Existing V2 account address").fill(account);
@@ -199,13 +210,31 @@ try {
   assert.ok(Date.now()-preparationStarted>=11000,"Preparation intentionally outlasts WebKit's documented fetch gesture window");
   assert.deepEqual(await page.evaluate(()=>(window as unknown as {assertionDiagnostics:unknown[]}).assertionDiagnostics),[],
     "Account preparation does not prompt for a passkey");
+  await assertRequestedAccountPending();
+  await page.getByText("Balance checked; passkey selection still required.",{exact:false}).waitFor();
   await page.evaluate(id=>{(window as unknown as {forcedCredentialId:string}).forcedCredentialId=id;},otherCredential.id);
   await page.getByRole("button",{name:"Select existing passkey",exact:true}).click();
-  await page.getByRole("status").filter({hasText:"The selected passkey does not belong to this account"}).waitFor({timeout:45000});
+  await page.getByRole("alert").filter({hasText:"The selected passkey does not belong to this account"}).waitFor({timeout:45000});
   assert.deepEqual(await page.evaluate(()=>JSON.parse(localStorage.getItem("veyra.metropolis.public-credential.v1")!)),otherCredential,
     "A real signature from the wrong key cannot replace the saved credential");
-  assert.equal(await page.getByTestId("account-address").count(),0);
+  await assertRequestedAccountPending();
+  await page.getByText("No account switch was completed.",{exact:false}).waitFor();
   await page.evaluate(id=>{(window as unknown as {forcedCredentialId:string}).forcedCredentialId=id;},credential.id);
+  // A matching real assertion is insufficient if saving its public pointer
+  // fails. Report storage failure distinctly and keep the original pointer.
+  await page.evaluate(()=>{
+    const original=Storage.prototype.setItem;
+    (window as unknown as {originalSetItem:typeof original}).originalSetItem=original;
+    Storage.prototype.setItem=function(key,value) {
+      if(key==="veyra.metropolis.public-credential.v1")throw new DOMException("Test storage failure","QuotaExceededError");
+      original.call(this,key,value);
+    };
+  });
+  await page.getByRole("button",{name:"Select existing passkey",exact:true}).click();
+  await page.getByRole("alert").filter({hasText:"browser could not save its public details"}).waitFor({timeout:45000});
+  assert.deepEqual(await page.evaluate(()=>JSON.parse(localStorage.getItem("veyra.metropolis.public-credential.v1")!)),otherCredential);
+  await assertRequestedAccountPending();
+  await page.evaluate(()=>{Storage.prototype.setItem=(window as unknown as {originalSetItem:typeof Storage.prototype.setItem}).originalSetItem;});
   await page.getByRole("button",{name:"Select existing passkey",exact:true}).click();
   await page.getByRole("status").filter({hasText:"The existing passkey matches this V2 account"}).waitFor({timeout:45000});
   assert.equal(await page.getByTestId("account-address").textContent(),account);
@@ -215,13 +244,26 @@ try {
     assertions:(window as unknown as {assertionDiagnostics:{allowedCredentials:number;rpId:string;userVerification:string;userActivation:boolean}[]}).assertionDiagnostics,
   }));
   assert.deepEqual(selectedState.current,credential);assert.deepEqual(selectedState.previous,otherCredential);
-  assert.equal(selectedState.assertions.length,2);
+  assert.equal(selectedState.assertions.length,3);
   for(const request of selectedState.assertions){assert.equal(request.allowedCredentials,0);
     assert.equal(request.rpId,new URL(METROPOLIS_ORIGIN).hostname);assert.equal(request.userVerification,"required");
     assert.equal(request.userActivation,true,"The browser prompt starts in a fresh user gesture after slow preparation");}
   assert.equal(await fork.readContract({address:account,abi:parseAbi(["function nonce() view returns(uint256)"]),functionName:"nonce"}),0n);
   assert.equal(await fork.readContract({address:MONAD_CONTRACTS[10143].usdc,abi:erc20Abi,functionName:"balanceOf",args:[account]}),1_000_000n);
+  // Editing the target revokes the selected display and payment controls. Even
+  // a previously verified account cannot leak into an export for a new target.
+  await page.getByLabel("Existing V2 account address").fill(publicTestAttester.address);
+  assert.equal(await page.getByTestId("account-address").count(),0);
+  assert.equal(await page.getByRole("button",{name:"Copy public account details",exact:true}).count(),0);
+  assert.equal(await page.getByLabel("Public account setup JSON").count(),0);
   await page.reload({waitUntil:"networkidle"});
+  assert.deepEqual(await page.evaluate(()=>JSON.parse(localStorage.getItem("veyra.metropolis.public-credential.v1")!)),credential);
+  await page.getByRole("button",{name:"Check existing account",exact:true}).waitFor();
+  await assertRequestedAccountPending();
+  // Leaving the requested-account flow is explicit and clears its URL target;
+  // verifying the saved credential is then a separate, fresh user action.
+  await page.getByRole("button",{name:"Cancel account selection and use the saved passkey",exact:true}).click();
+  assert.equal(new URL(page.url()).searchParams.get("account"),null);
   assert.deepEqual(await page.evaluate(()=>JSON.parse(localStorage.getItem("veyra.metropolis.public-credential.v1")!)),credential);
   await page.getByRole("button",{name:"Verify on Monad",exact:true}).click();
   try {await page.getByRole("status").filter({hasText:"Monad verified its P256 signature"}).waitFor({timeout:45000});}
@@ -387,6 +429,9 @@ try {
     nativeP256AccountExecution:true,amountUsdc:"0.012",receiptVerified:true,replayRejected:true,
     accountVersion:2,paymentEncoding:"original browser client-data JSON; V2 required prefix and native P256",ownerApprovalPrompts:1,
     existingPasskeySelected:true,wrongPasskeySelectionRejected:true,undeployedAccountSelectionRejected:true,
+    requestedAccountCannotUseUnrelatedVerification:true,wrongAccountExportBlocked:true,
+    selectionFailureShownSeparately:true,editedAccountInvalidatesSelection:true,explicitSelectionExitRequired:true,
+    matchingPasskeyStorageFailureReported:true,
     slowAccountPreparationMs:11000,selectionPromptInFreshUserGesture:true,
     credentialSelectionPersistedAfterReload:true,selectionMovedFunds:false,selectionConsumedPaymentNonce:false,
     universalBrowserPaymentCompatibility:false,
