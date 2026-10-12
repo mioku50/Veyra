@@ -4,7 +4,7 @@
 
 Use a separate Testnet-only account and CREATE2 factory. Keep the deployed V1
 contracts and deployment pins; verify archived V1 approvals against their
-original account. The local browser selects V2 for new purchases. Arc behavior stays intact.
+original account. The published browser selects V2 for new purchases. Arc behavior stays intact.
 Autonomous spending remains frozen. Deployment, funding and publishing each
 require their specific approval; this document authorizes none of them.
 
@@ -199,7 +199,8 @@ The separately approved `createAccount` transaction finalized at block **7021061
 Evidence: [finalized personal-account record](metropolis-testnet-account-v2-deployment.json).
 The account reuses the existing passkey public key and canonical domain; no new
 credential was registered. Creation does not prove an actual-device payment or
-service delivery. The published browser path still uses V1.
+service delivery. At this creation snapshot, the published browser still used V1;
+the later V2 publication is recorded below.
 
 The snapshot above records the balance immediately after creation. Subsequent
 funding and local activation are recorded below; it is not a current balance.
@@ -230,8 +231,9 @@ Reproduce the live configuration and negative adapter checks without a signer:
 node --experimental-transform-types --no-warnings scripts/metropolis/v2-activation-tests.mts
 ```
 
-The actual owner passkey payment and publication are still separate actions.
-No V1 funds move automatically; autonomous spending remains frozen.
+At this local verification stage, publication and the actual owner passkey
+payment were pending. Publication is recorded below; no V1 funds move
+automatically and autonomous spending remains frozen.
 
 The complete V2 frontend/issuer/relay/receipt/readiness-delivery flow passed on
 the disposable fork of block **70357792**, using a Chromium virtual authenticator
@@ -240,6 +242,29 @@ nonce/clearance replay refusal, refusal of identity-only evidence, tampered-task
 and report rejection, result restoration and receipt verification after reload.
 The browser sent only read RPC methods; every write remained on localhost.
 Production build, root/scoped TypeScript, scoped ESLint and adapter/package tests
-passed. This is neither an actual iPhone payment nor a published frontend.
+passed. This local run establishes no actual iPhone payment or publication;
+the separate published-frontend verification is recorded below.
 
 Evidence: [V2 browser verification](metropolis-v2-browser-verification.json).
+
+## Verified frontend publication — 2026-10-12
+
+Commit `7efa187c03c42df840e214704ddd2a22c2e75c38` was pushed to
+`metropolis-monad`, built with production configuration and published at the
+existing `https://agent-commerce-six.vercel.app/metropolis`. The RP and saved
+credential storage key did not change. New account preparation selects V2.
+
+The canonical domain maps to the verified READY deployment. Staged and public
+HTTP checks passed for `/metropolis`, `/`, `/arc` and `/console`. The full browser
+test also passed against the published frontend using a virtual authenticator
+and disposable Monad fork of block **70357792**, including the exact transfer,
+receipt, replay refusal and separate readiness result checks. Every blockchain
+write stayed on localhost. A fresh finalized Testnet read at block **70363301**
+confirmed the actual V2 account still held 20 test USDC with nonce 0.
+
+The actual owner's passkey payment remains pending. Publication created no
+clearance, payment authorization or live blockchain transaction. No private
+plan, credential file or operator secret was uploaded; main and Arc source
+behavior remain unchanged. Autonomous spending remains frozen.
+
+Evidence: [V2 publication record](metropolis-v2-publication.json).

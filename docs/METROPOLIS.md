@@ -6,8 +6,8 @@ approved TrustGate and account factory deployments on Monad Testnet are complete
 The owner-approved V1 personal account has been created and funded. A separate
 V2 factory and personal account were subsequently approved, deployed and source
 verified on 2026-10-11. On 2026-10-12 finalized reads confirmed 20 test USDC
-in the V2 account. The local browser now selects V2; publication and an actual
-owner passkey payment remain pending. See
+in the V2 account. The V2 browser and current Monad policy were published on the
+canonical domain on 2026-10-12; an actual owner passkey payment remains pending. See
 [the V2 deployment records](METROPOLIS_PASSKEY_V2.md). The readiness
 demonstration identity #2083 is registered on Testnet with a verified receipt.
 One separately approved manual EOA trial paid 0.012 Testnet USDC to agent #2083
@@ -16,14 +16,16 @@ the buyer signature is now verified and entered scoring. The historical v1
 reevaluation returned REVIEW_REQUIRED because it used history age as freshness.
 The local v2 policy separates the clocks: a read-only reevaluation on 2026-10-10
 returned ALLOW, trust 90, with the same payment/result/80-point signature and no
-new transfer. This policy/frontend increment is not published. See
+new transfer. This policy/frontend increment is now published. See
 [freshness design](METROPOLIS_FRESHNESS.md). A live passkey payment remains pending. See
 [manual trial evidence](metropolis-testnet-manual-trial.json).
 The human-approved purchase interface is
 published on the canonical domain; see [the purchase runbook](METROPOLIS_PURCHASE.md)
 and [publication evidence](metropolis-purchase-publication.json). Its browser flow
 was verified with a virtual authenticator and disposable Monad fork, separately
-from the earlier account-setup publication below.
+from the earlier account-setup publication below. The current V2 publication,
+finalized funding check and published-browser fork test are recorded in
+[V2 publication evidence](metropolis-v2-publication.json).
 Starting commit: `3b0a29e780b83246509d54638567c3c2dc6c6cbb`.
 Branch: `metropolis-monad`. Network for the demo: Monad Testnet, chain ID 10143.
 

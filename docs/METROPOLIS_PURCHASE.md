@@ -44,25 +44,26 @@ nonce and deadline. Changing a task, amount, recipient or context invalidates th
 proposal or its signatures. Approval authorizes one execution before expiry;
 copying it does not itself broadcast or revoke that authorization.
 
-The local policy identifier is now `veyra-trust-policy-v1:metropolis-evidence-v2`.
+The published policy identifier is now `veyra-trust-policy-v1:metropolis-evidence-v2`.
 Current security state expires after 300 seconds; original positive payment and
 delivery history stays eligible for 30 days. A decision cannot extend the source
 snapshot's expiry. See [the freshness design](METROPOLIS_FRESHNESS.md).
-The published browser still uses the earlier policy: publish the reviewed frontend
-before issuing a live proposal with this policy version. This policy identifier
+The reviewed frontend was published on 2026-10-12; see
+[V2 publication evidence](metropolis-v2-publication.json). This policy identifier
 is separate from the passkey account version. Packages signed under the old policy
 are not relabelled as current-policy packages; retain their original artifacts.
 Within the current policy, both pinned account factories are supported. V1
-approvals retain their strict parser and original account. The local browser uses
+approvals retain their strict parser and original account. The published browser uses
 V2 for new purchases and can load saved V1 approvals to verify their own receipts.
 
-The deployed immutable passkey account accepts one exact compact JSON encoding.
-Chromium sometimes appends a legitimate extra member. The local read-only probe
-accepts that format and verifies its actual signed bytes, but payment approval
-fails closed with an explicit compatibility message. No signed JSON is rewritten.
-A new contract/factory and a separately approved migration are needed to support
-that encoding for payments. Local tests of the supported format do not establish
-universal browser compatibility.
+The deployed immutable V1 account accepts one exact compact JSON encoding.
+Chromium sometimes appends a legitimate extra member, which V1 rejects. The
+separately deployed V2 account checks the WebAuthn required prefix and the entire
+original signature, and accepts additional signed fields. Unsupported encodings
+still fail closed with an explicit compatibility message. No signed JSON is
+rewritten. See [V2 compatibility and deployment](METROPOLIS_PASSKEY_V2.md).
+The published-browser fork test does not establish universal browser
+compatibility or a live owner payment.
 
 ## Public-input commands
 
@@ -128,7 +129,10 @@ the passkey purchase. Its initial policy history now comes from actual localhost
 transfer/result evidence and a declared test buyer score. This updated flow
 passed at fork block **69357158**; see
 [manual trial verification](metropolis-manual-trial-local-verification.json).
-It has not been published and establishes no live paid interaction.
+That paragraph records the earlier local run. The updated V2 flow was published
+and retested against the canonical frontend at fork block **70357792** on
+2026-10-12; see [V2 publication evidence](metropolis-v2-publication.json).
+Neither fork test establishes a live paid interaction.
 
 Run packet tests and the existing account authorization suite:
 

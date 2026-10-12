@@ -165,7 +165,11 @@ production build passed. The complete browser/service fork test passed, includin
 expanded structured-request rendering at a 390×844 viewport. The native path ran
 on official Foundry 1.8.5 with Monad execution enabled. Evidence and source hashes
 are recorded in [metropolis-readiness-local-verification.json](metropolis-readiness-local-verification.json).
-This increment is local and has not been published.
+Those results record the earlier local build. The reviewed code was published
+on 2026-10-12 and retested against the canonical frontend with a disposable
+Monad fork; see [V2 publication evidence](metropolis-v2-publication.json).
+Delivery remains an operator CLI workflow; publication adds no public signing,
+broadcast or delivery endpoint and does not establish a live passkey purchase.
 
 ```bash
 node --experimental-transform-types --no-warnings scripts/metropolis/readiness-tests.mts

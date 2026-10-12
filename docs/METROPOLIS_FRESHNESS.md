@@ -38,9 +38,12 @@ not an exhaustive scan for intermediate NFT transfers.
 ## Issuance and audit trail
 
 The Monad policy identifier is `veyra-trust-policy-v1:metropolis-evidence-v2`.
-Old v1 purchase packages are rejected by the new parser. The published browser
-must be updated before consuming a newly issued v2 package. The USDC transfer,
-TrustGate clearance format, per-passkey account and contract code are unchanged.
+Old v1 policy purchase packages are rejected by the new parser. The reviewed
+frontend was published on 2026-10-12; see
+[V2 publication evidence](metropolis-v2-publication.json). Policy version and
+passkey account version are separate. This policy change preserves the USDC
+transfer and TrustGate clearance format; the separate account V2 compatibility
+change is described in [its runbook](METROPOLIS_PASSKEY_V2.md).
 
 Each server-verified evidence bundle binds the finalized block hash/time,
 original payment anchor, assessment digest and actual source timestamps in its

@@ -223,7 +223,8 @@ no new clearance signature, passkey approval or transaction was produced.
 The personal account still had 20 test USDC and nonce 0.
 
 See [METROPOLIS_FRESHNESS.md](METROPOLIS_FRESHNESS.md) for policy boundaries and
-verification. The local policy/frontend change is not published. Shared scoring
+verification. The reviewed policy/frontend change was published on 2026-10-12;
+see [V2 publication evidence](metropolis-v2-publication.json). Shared scoring
 thresholds and Arc behavior are unchanged. Do not make another payment solely to
 refresh the clock, relabel a free report as paid delivery, or replay the expired
 manual order. Live passkey execution remains a separately approved next action.
