@@ -238,3 +238,22 @@ access to the original account are still unconfirmed. They also reported that
 no other owner device is available. No live transaction,
 new account deployment or funding was sent. Existing Arc source and `main`
 remain unchanged. See [registration publication evidence](metropolis-passkey-registration-publication.json).
+
+## Separate account for the available key — 2026-10-12
+
+After the historical publication above, the owner supplied public setup for the
+available passkey and approved one deployment. Account
+`0x8A683d781368a765F252E53F8d1683f24623535e` is now deployed on Monad Testnet,
+with its exact source and account configuration verified. It had 0 test USDC at
+the subsequent finalized adapter read. This is a separate account, not recovery
+of `0x88f7aAe6050C842A5D2FB9e39B625102f5D54bB6`; the earlier 20 test USDC
+remain at that address and no transfer was performed.
+
+On the [canonical page](https://agent-commerce-six.vercel.app/metropolis), use
+the saved available passkey, click **Verify on Monad**, then **Prepare account**
+to refresh the deployment and balance. Clear or cancel an earlier requested
+account selection before using the saved-key flow. Do not register another key
+to refresh an existing account. Funding and an owner-approved payment are
+separate steps still pending.
+
+Evidence: [finalized current-passkey deployment](metropolis-testnet-current-passkey-v2-deployment.json).

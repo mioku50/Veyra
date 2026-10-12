@@ -268,3 +268,36 @@ plan, credential file or operator secret was uploaded; main and Arc source
 behavior remain unchanged. Autonomous spending remains frozen.
 
 Evidence: [V2 publication record](metropolis-v2-publication.json).
+
+## Current available passkey account — 2026-10-12
+
+Following the resident-key registration correction, the owner supplied the
+public setup for their currently available passkey and separately approved one
+account-creation transaction. This creates another personal V2 account; it does
+not recover or migrate the earlier account.
+
+- Account: `0x8A683d781368a765F252E53F8d1683f24623535e`.
+- Transaction: `0x73d2f1cfcad108008637825f67338be11bcad1ca68b16548b2508ad51e9d0ec7`.
+- Successful creation at block **70504915**, verified against finalized block
+  **70505343**. Sender nonce 6; native value and USDC spent both 0.
+- Charged fee **0.228062106 MON**, below the approved **0.272780166 MON** cap.
+- Runtime hash: `0xc45b71a0dcdfba76b33cd0dde01fcf3d238af4fb0c78d1d45f4150d2f27f1877`.
+  The complete runtime matched the constructor simulation; the runtime template,
+  immutable getters, version, RP/origin, both public-key coordinates, CREATE2
+  derivation and factory event matched the reviewed setup.
+- Monad Sourcify confirmed `exact_match` for creation and runtime bytecode.
+  Its input contained only 29 contract/dependency sources, and local compilation
+  reproduced the account creation bytecode exactly.
+- The application account-setup adapter also confirmed **Deployed** at finalized
+  block **70505988**, with **0 test USDC**. The published page reads deployment
+  and balance dynamically; this account creation requires no frontend rebuild.
+- The earlier V2 account `0x88f7aAe6050C842A5D2FB9e39B625102f5D54bB6`
+  still held **20 test USDC** with payment nonce 0 at block 70505343. Its runtime,
+  the factory and TrustGate were unchanged. No USDC event was emitted by the new
+  creation transaction.
+
+Evidence: [current-passkey account deployment](metropolis-testnet-current-passkey-v2-deployment.json).
+Funding the new address and an actual owner-approved payment remain pending.
+Creation verifies the account's binding to the supplied public key, not an owner
+payment assertion or service delivery. Existing receipts remain bound to their
+original accounts. Autonomous spending remains frozen.
