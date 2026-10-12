@@ -7,7 +7,7 @@ import { encodeAbiParameters, encodePacked, formatUnits, keccak256, toHex } from
 import { AccountSetupError, METROPOLIS_V2_DEPLOYMENT, readAccountSetup, type MetropolisAccountSetup } from "@/lib/monad/account";
 import { getMonadReadClient } from "@/lib/monad/erc8004";
 import { MONAD_P256_PRECOMPILE } from "@/lib/monad/config";
-import { PasskeySelectionError, selectExistingAccountPasskey } from "@/lib/monad/passkey-selection";
+import { PasskeySelectionError, prepareExistingAccountPasskey, selectExistingAccountPasskey } from "@/lib/monad/passkey-selection";
 import { createMetropolisPasskey, METROPOLIS_ORIGIN, passkeyCoordinates, requirePasskeyOrigin,
   signMetropolisDiagnosticChallenge, webAuthnSignedHash, type MetropolisCredential } from "@/lib/monad/passkey";
 
@@ -26,6 +26,7 @@ export function MetropolisPrototype() {
   const [existingAddress,setExistingAddress] = useState("");
   const [selectionOpen,setSelectionOpen] = useState(false);
   const [selecting,setSelecting] = useState(false);
+  const [existingSetup,setExistingSetup] = useState<MetropolisAccountSetup|null>(null);
   useEffect(() => {
     try {
       requirePasskeyOrigin(window.location.origin);
@@ -93,9 +94,10 @@ export function MetropolisPrototype() {
     } catch {setSetupNotice("Copy is unavailable here. Open Public setup details below and copy the text manually.");}
   }
   async function selectExisting() {
+    if(!existingSetup)return;
     setSelecting(true);setNotice("");setVerified(false);setSetup(null);setSetupNotice("");
     try {
-      const selected=await selectExistingAccountPasskey(existingAddress.trim(),window.location.origin);
+      const selected=await selectExistingAccountPasskey(existingSetup,window.location.origin);
       // Keep the previous public pointer; never persist assertions or private keys.
       const previous=localStorage.getItem(STORAGE_KEY);
       if(previous&&previous!==JSON.stringify(selected.credential))localStorage.setItem(PREVIOUS_STORAGE_KEY,previous);
@@ -106,6 +108,16 @@ export function MetropolisPrototype() {
     } catch(error) {
       setNotice(error instanceof PasskeySelectionError||error instanceof AccountSetupError?error.message:
         "Selection did not complete. Choose the account's original passkey from your password manager and try again. Your saved key was not changed.");
+    } finally {setSelecting(false);}
+  }
+  async function checkExisting() {
+    setSelecting(true);setNotice("");setExistingSetup(null);setVerified(false);setSetup(null);setSetupNotice("");
+    try {
+      setExistingSetup(await prepareExistingAccountPasskey(existingAddress.trim(),window.location.origin));
+      setNotice("Existing V2 account checked. Select its original passkey to use it.");
+    } catch(error) {
+      setNotice(error instanceof PasskeySelectionError||error instanceof AccountSetupError?error.message:
+        "The existing account could not be checked. Try again when the Monad RPC is available.");
     } finally {setSelecting(false);}
   }
 
@@ -127,13 +139,13 @@ export function MetropolisPrototype() {
       <details className="mt-5 border-t border-white/15 pt-4" open={selectionOpen} onToggle={event=>setSelectionOpen(event.currentTarget.open)}>
         <summary className="cursor-pointer py-2 text-sm font-semibold text-violet-300">Use an existing passkey</summary>
         <p className="mt-2 text-sm text-muted-foreground">Enter your deployed V2 account address, then choose the original passkey in your device&apos;s password manager. This selects the account you already have.</p>
-        <form className="mt-4 space-y-3" onSubmit={event=>{event.preventDefault();void selectExisting();}}>
+        <form className="mt-4 space-y-3" onSubmit={event=>{event.preventDefault();void (existingSetup?selectExisting():checkExisting());}}>
           <label className="block text-sm" htmlFor="existing-account-address">Existing V2 account address</label>
-          <input id="existing-account-address" value={existingAddress} onChange={event=>setExistingAddress(event.target.value)}
+          <input id="existing-account-address" value={existingAddress} onChange={event=>{setExistingAddress(event.target.value);setExistingSetup(null);}}
             maxLength={42} required autoComplete="off" spellCheck={false} disabled={!ready||busy||setupBusy||selecting}
             placeholder="0x…" className="w-full rounded-lg border border-white/20 bg-black/20 p-3 font-mono text-sm" />
           <button type="submit" disabled={!ready||busy||setupBusy||selecting||!existingAddress.trim()}
-            className="rounded-xl border border-violet-400/40 px-5 py-3 font-semibold disabled:opacity-50">{selecting?"Checking your passkey…":"Select existing passkey"}</button>
+            className="rounded-xl border border-violet-400/40 px-5 py-3 font-semibold disabled:opacity-50">{existingSetup?(selecting?"Checking your passkey…":"Select existing passkey"):(selecting?"Checking account…":"Check existing account")}</button>
         </form>
       </details>
       <p className={`mt-4 text-sm ${verified?"text-emerald-300":"text-muted-foreground"}`} role="status" aria-live="polite">{notice || "Face ID, Touch ID or your device's user-verification method will confirm the request."}</p>

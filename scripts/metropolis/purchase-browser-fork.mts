@@ -110,7 +110,8 @@ try {
       // Record the real application's request. Select a real virtual credential
       // for each test case without replacing its signature or the native verifier.
       const request={allowedCredentials:options?.publicKey?.allowCredentials?.length??0,
-        rpId:options?.publicKey?.rpId,userVerification:options?.publicKey?.userVerification};
+        rpId:options?.publicKey?.rpId,userVerification:options?.publicKey?.userVerification,
+        userActivation:navigator.userActivation.isActive};
       let actualOptions=options;
       if(testWindow.forcedCredentialId&&options?.publicKey) {
         const id=Uint8Array.from(atob(testWindow.forcedCredentialId.replaceAll("-","+").replaceAll("_","/")),char=>char.charCodeAt(0));
@@ -127,12 +128,17 @@ try {
     };
   });
   const page=await context.newPage(),errors:string[]=[],rpcErrors:string[]=[],nativeResults:unknown[]=[],methods=new Set<string>();
+  let selectionPreflightDelay=0;
   page.on("pageerror",error=>errors.push(error.message));
   await context.route(`${METROPOLIS_ORIGIN}/**`,async route=>{
     const response=await route.fetch({url:route.request().url().replace(METROPOLIS_ORIGIN,localOrigin)});await route.fulfill({response});
   });
   await context.route("https://testnet-rpc.monad.xyz/**",async route=>{
     const payload=route.request().postDataJSON();
+    if(selectionPreflightDelay&&(Array.isArray(payload)?payload:[payload]).some(item=>item.method==="eth_chainId")) {
+      const delay=selectionPreflightDelay;selectionPreflightDelay=0;
+      await new Promise(resolve=>setTimeout(resolve,delay));
+    }
     for(const item of Array.isArray(payload)?payload:[payload])methods.add(item.method);
     const response=await fetch(rpc,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(payload)});
     const body=await response.text();
@@ -175,16 +181,23 @@ try {
   });
   assert.notEqual(otherCredential.id,credential.id);
   await page.goto(`${METROPOLIS_ORIGIN}/metropolis?account=${account}`,{waitUntil:"networkidle"});
-  await page.getByRole("button",{name:"Select existing passkey",exact:true}).waitFor();
+  await page.getByRole("button",{name:"Check existing account",exact:true}).waitFor();
   assert.equal(await page.getByLabel("Existing V2 account address").inputValue(),account);
   assert.deepEqual(await page.evaluate(()=>(window as unknown as {assertionDiagnostics:unknown[]}).assertionDiagnostics),[],
     "An account URL only prefills the form; it never prompts or signs automatically");
   await page.getByLabel("Existing V2 account address").fill(publicTestAttester.address);
-  await page.getByRole("button",{name:"Select existing passkey",exact:true}).click();
+  await page.getByRole("button",{name:"Check existing account",exact:true}).click();
   await page.getByRole("status").filter({hasText:"does not have a deployed V2 account"}).waitFor({timeout:45000});
   assert.deepEqual(await page.evaluate(()=>(window as unknown as {assertionDiagnostics:unknown[]}).assertionDiagnostics),[],
     "An undeployed address is rejected before the browser asks for a passkey");
   await page.getByLabel("Existing V2 account address").fill(account);
+  selectionPreflightDelay=11000;
+  const preparationStarted=Date.now();
+  await page.getByRole("button",{name:"Check existing account",exact:true}).click();
+  await page.getByRole("status").filter({hasText:"Existing V2 account checked"}).waitFor({timeout:45000});
+  assert.ok(Date.now()-preparationStarted>=11000,"Preparation intentionally outlasts WebKit's documented fetch gesture window");
+  assert.deepEqual(await page.evaluate(()=>(window as unknown as {assertionDiagnostics:unknown[]}).assertionDiagnostics),[],
+    "Account preparation does not prompt for a passkey");
   await page.evaluate(id=>{(window as unknown as {forcedCredentialId:string}).forcedCredentialId=id;},otherCredential.id);
   await page.getByRole("button",{name:"Select existing passkey",exact:true}).click();
   await page.getByRole("status").filter({hasText:"The selected passkey does not belong to this account"}).waitFor({timeout:45000});
@@ -198,12 +211,13 @@ try {
   const selectedState=await page.evaluate(()=>({
     current:JSON.parse(localStorage.getItem("veyra.metropolis.public-credential.v1")!),
     previous:JSON.parse(localStorage.getItem("veyra.metropolis.previous-public-credential.v1")!),
-    assertions:(window as unknown as {assertionDiagnostics:{allowedCredentials:number;rpId:string;userVerification:string}[]}).assertionDiagnostics,
+    assertions:(window as unknown as {assertionDiagnostics:{allowedCredentials:number;rpId:string;userVerification:string;userActivation:boolean}[]}).assertionDiagnostics,
   }));
   assert.deepEqual(selectedState.current,credential);assert.deepEqual(selectedState.previous,otherCredential);
   assert.equal(selectedState.assertions.length,2);
   for(const request of selectedState.assertions){assert.equal(request.allowedCredentials,0);
-    assert.equal(request.rpId,new URL(METROPOLIS_ORIGIN).hostname);assert.equal(request.userVerification,"required");}
+    assert.equal(request.rpId,new URL(METROPOLIS_ORIGIN).hostname);assert.equal(request.userVerification,"required");
+    assert.equal(request.userActivation,true,"The browser prompt starts in a fresh user gesture after slow preparation");}
   assert.equal(await fork.readContract({address:account,abi:parseAbi(["function nonce() view returns(uint256)"]),functionName:"nonce"}),0n);
   assert.equal(await fork.readContract({address:MONAD_CONTRACTS[10143].usdc,abi:erc20Abi,functionName:"balanceOf",args:[account]}),1_000_000n);
   await page.reload({waitUntil:"networkidle"});
@@ -372,6 +386,7 @@ try {
     nativeP256AccountExecution:true,amountUsdc:"0.012",receiptVerified:true,replayRejected:true,
     accountVersion:2,paymentEncoding:"original browser client-data JSON; V2 required prefix and native P256",ownerApprovalPrompts:1,
     existingPasskeySelected:true,wrongPasskeySelectionRejected:true,undeployedAccountSelectionRejected:true,
+    slowAccountPreparationMs:11000,selectionPromptInFreshUserGesture:true,
     credentialSelectionPersistedAfterReload:true,selectionMovedFunds:false,selectionConsumedPaymentNonce:false,
     universalBrowserPaymentCompatibility:false,
     tamperedTaskRejected:true,identityOnlyBlocked:true,receiptRestoredAfterReload:true,externalTransactionsSent:0,

@@ -7,7 +7,8 @@ already deployed and funded V2 account. Its derived account address then differs
 The owner requested returning to the existing account, rather than deploying
 and funding another account.
 
-The `/metropolis` interface now provides **Use an existing passkey**. An optional
+The `/metropolis` interface now provides **Use an existing passkey**. First click
+**Check existing account**, then **Select existing passkey**. An optional
 `?account=<full address>` URL prefills this form. Opening the URL never starts
 a WebAuthn prompt or signs automatically.
 
@@ -24,7 +25,11 @@ in the owner's authenticator/password manager on the canonical Veyra domain.
    V2 factory and TrustGate code, factory configuration, account version,
    CREATE2 derivation, RP/origin and account configuration through the existing
    `readAccountSetup` path. Reject an address outside this factory/key binding.
-3. Generate a random, domain-separated diagnostic challenge bound to this
+3. Keep the verified setup immutable in memory; it cannot be supplied from a URL
+   or restored directly from JSON. The next explicit click invokes WebAuthn
+   before awaiting any further RPC. This preserves the user gesture when network
+   reads are slow; [WebKit documents the gesture requirement and expiry](https://webkit.org/blog/11312/meet-face-id-and-touch-id-for-the-web/).
+   Generate a random, domain-separated diagnostic challenge bound to this
    account, factory, chain, origin, finalized block hash and a two-minute expiry.
    It is distinct from the contract's payment approval challenge.
 4. Request a discoverable credential with user verification required and no
@@ -59,6 +64,8 @@ Required checks:
   persists after reload and the previous pointer remains available locally.
 - The application's selection request has no allowed-credential restriction
   and requires user verification on the canonical RP ID.
+- An intentionally delayed 11-second RPC preflight does not start a prompt.
+  Both subsequent credential-selection prompts start with fresh user activation.
 - Selection does not change the USDC balance or consume a payment nonce.
 - The subsequent exact-payment, receipt, delivery and replay-protection flow
   continues to work with the selected original credential.
@@ -74,7 +81,7 @@ Source: [WebAuthn discoverable credentials](https://www.w3.org/TR/webauthn-3/#sc
 
 - Production build, project TypeScript, scoped Metropolis TypeScript and scoped
   ESLint passed.
-- Account setup/selection guards: 58 checks. Signed purchase guards: 65 checks.
+- Account setup/selection guards: 59 checks. Signed purchase guards: 65 checks.
   Existing authorization/provenance guards: 73 checks.
 - The full browser/fork script passed at upstream block `70357792`, including
   the selection checks above and the subsequent 0.012-USDC local payment,
