@@ -234,6 +234,7 @@ frontend. Root, `/arc`, `/console` and `/metropolis` returned HTTP 200; the
 bounded ten-minute runtime-error query found no errors.
 
 The owner could not locate a Deleted section in Apple Passwords. Recovery and
-access to the original account are still unconfirmed. No live transaction,
+access to the original account are still unconfirmed. They also reported that
+no other owner device is available. No live transaction,
 new account deployment or funding was sent. Existing Arc source and `main`
 remain unchanged. See [registration publication evidence](metropolis-passkey-registration-publication.json).

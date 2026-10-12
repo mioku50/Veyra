@@ -134,7 +134,8 @@
     "passwordManager": "Apple Passwords",
     "deletedItemsSectionLocated": false,
     "originalPrivateKeyReplacedConfirmed": false,
-    "originalPrivateKeyRecovered": false
+    "originalPrivateKeyRecovered": false,
+    "anotherOwnerDeviceAvailable": false
   },
   "ownerPaymentApproved": false,
   "clearanceIssued": false,
