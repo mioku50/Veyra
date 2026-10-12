@@ -7,10 +7,12 @@ import { encodeAbiParameters, encodePacked, formatUnits, keccak256, toHex } from
 import { AccountSetupError, METROPOLIS_V2_DEPLOYMENT, readAccountSetup, type MetropolisAccountSetup } from "@/lib/monad/account";
 import { getMonadReadClient } from "@/lib/monad/erc8004";
 import { MONAD_P256_PRECOMPILE } from "@/lib/monad/config";
+import { PasskeySelectionError, selectExistingAccountPasskey } from "@/lib/monad/passkey-selection";
 import { createMetropolisPasskey, METROPOLIS_ORIGIN, passkeyCoordinates, requirePasskeyOrigin,
   signMetropolisDiagnosticChallenge, webAuthnSignedHash, type MetropolisCredential } from "@/lib/monad/passkey";
 
 const STORAGE_KEY = "veyra.metropolis.public-credential.v1";
+const PREVIOUS_STORAGE_KEY = "veyra.metropolis.previous-public-credential.v1";
 const MetropolisPurchase=dynamic(()=>import("./purchase").then(module=>module.MetropolisPurchase));
 export function MetropolisPrototype() {
   const [credential,setCredential] = useState<MetropolisCredential|null>(null);
@@ -21,10 +23,15 @@ export function MetropolisPrototype() {
   const [setup,setSetup] = useState<MetropolisAccountSetup|null>(null);
   const [setupBusy,setSetupBusy] = useState(false);
   const [setupNotice,setSetupNotice] = useState("");
+  const [existingAddress,setExistingAddress] = useState("");
+  const [selectionOpen,setSelectionOpen] = useState(false);
+  const [selecting,setSelecting] = useState(false);
   useEffect(() => {
     try {
       requirePasskeyOrigin(window.location.origin);
       setReady(window.isSecureContext && "PublicKeyCredential" in window && !!navigator.credentials);
+      const requested=new URL(window.location.href).searchParams.get("account");
+      if(requested){setExistingAddress(requested.slice(0,42));setSelectionOpen(true);}
       const saved = localStorage.getItem(STORAGE_KEY);
       if (saved) {
         const parsed = JSON.parse(saved) as MetropolisCredential;
@@ -85,6 +92,22 @@ export function MetropolisPrototype() {
       setSetupNotice(setup.accountDeployed?"Public V2 account details copied. These details do not authorize a payment.":"Public V2 account details copied. Send these details to prepare the deployment.");
     } catch {setSetupNotice("Copy is unavailable here. Open Public setup details below and copy the text manually.");}
   }
+  async function selectExisting() {
+    setSelecting(true);setNotice("");setVerified(false);setSetup(null);setSetupNotice("");
+    try {
+      const selected=await selectExistingAccountPasskey(existingAddress.trim(),window.location.origin);
+      // Keep the previous public pointer; never persist assertions or private keys.
+      const previous=localStorage.getItem(STORAGE_KEY);
+      if(previous&&previous!==JSON.stringify(selected.credential))localStorage.setItem(PREVIOUS_STORAGE_KEY,previous);
+      localStorage.setItem(STORAGE_KEY,JSON.stringify(selected.credential));
+      setCredential(selected.credential);setSetup(selected.setup);setVerified(true);
+      setNotice("The existing passkey matches this V2 account. Monad verified its signature without a transaction.");
+      setSetupNotice("Your existing V2 account and balance were checked in a finalized Monad block.");
+    } catch(error) {
+      setNotice(error instanceof PasskeySelectionError||error instanceof AccountSetupError?error.message:
+        "Selection did not complete. Choose the account's original passkey from your password manager and try again. Your saved key was not changed.");
+    } finally {setSelecting(false);}
+  }
 
   return <main className="mx-auto max-w-3xl px-5 py-10 sm:py-16">
     <div className="mb-8 flex flex-wrap items-center justify-between gap-3">
@@ -98,9 +121,21 @@ export function MetropolisPrototype() {
       <h2 id="passkey-title" className="text-xl font-semibold">Test your passkey on Monad</h2>
       <p className="mt-3 text-muted-foreground">Create a browser passkey and verify a diagnostic signature using Monad&apos;s native P256 verifier. This check sends no transaction and authorizes no payment.</p>
       <div className="mt-6 flex flex-wrap gap-3">
-        {!credential ? <button onClick={register} disabled={!ready||busy} className="rounded-xl bg-violet-500 px-5 py-3 font-semibold disabled:opacity-50">{busy?"Creating…":"Create test passkey"}</button>
-          : <button onClick={verify} disabled={!ready||busy||setupBusy} className="rounded-xl bg-violet-500 px-5 py-3 font-semibold disabled:opacity-50">{busy?"Verifying…":"Verify on Monad"}</button>}
+        {!credential ? <button onClick={register} disabled={!ready||busy||selecting} className="rounded-xl bg-violet-500 px-5 py-3 font-semibold disabled:opacity-50">{busy?"Creating…":"Create test passkey"}</button>
+          : <button onClick={verify} disabled={!ready||busy||setupBusy||selecting} className="rounded-xl bg-violet-500 px-5 py-3 font-semibold disabled:opacity-50">{busy?"Verifying…":"Verify on Monad"}</button>}
       </div>
+      <details className="mt-5 border-t border-white/15 pt-4" open={selectionOpen} onToggle={event=>setSelectionOpen(event.currentTarget.open)}>
+        <summary className="cursor-pointer py-2 text-sm font-semibold text-violet-300">Use an existing passkey</summary>
+        <p className="mt-2 text-sm text-muted-foreground">Enter your deployed V2 account address, then choose the original passkey in your device&apos;s password manager. This selects the account you already have.</p>
+        <form className="mt-4 space-y-3" onSubmit={event=>{event.preventDefault();void selectExisting();}}>
+          <label className="block text-sm" htmlFor="existing-account-address">Existing V2 account address</label>
+          <input id="existing-account-address" value={existingAddress} onChange={event=>setExistingAddress(event.target.value)}
+            maxLength={42} required autoComplete="off" spellCheck={false} disabled={!ready||busy||setupBusy||selecting}
+            placeholder="0x…" className="w-full rounded-lg border border-white/20 bg-black/20 p-3 font-mono text-sm" />
+          <button type="submit" disabled={!ready||busy||setupBusy||selecting||!existingAddress.trim()}
+            className="rounded-xl border border-violet-400/40 px-5 py-3 font-semibold disabled:opacity-50">{selecting?"Checking your passkey…":"Select existing passkey"}</button>
+        </form>
+      </details>
       <p className={`mt-4 text-sm ${verified?"text-emerald-300":"text-muted-foreground"}`} role="status" aria-live="polite">{notice || "Face ID, Touch ID or your device's user-verification method will confirm the request."}</p>
       {credential ? <p className="mt-4 text-xs text-muted-foreground">Public credential metadata is saved in this browser. Prepare your account below to check its deployment and balance.</p>:null}
       {!ready ? <a className="mt-4 inline-block break-all text-sm text-cyan-300 underline" href={`${METROPOLIS_ORIGIN}/metropolis`}>Open the canonical Veyra address</a>:null}
@@ -109,7 +144,7 @@ export function MetropolisPrototype() {
       <h2 id="account-title" className="text-xl font-semibold">Your personal V2 account</h2>
       <p className="mt-3 text-sm text-muted-foreground">Check the account for the passkey saved in this browser. Veyra verifies the V2 factory, account configuration and Testnet USDC balance.</p>
       <p className="mt-2 text-xs text-muted-foreground">V2 has its own address. Funds and historical receipts in a V1 account stay with that account.</p>
-      <button onClick={prepareAccount} disabled={!ready||!verified||busy||setupBusy} className="mt-5 rounded-xl border border-violet-400/40 px-5 py-3 font-semibold disabled:opacity-50">{setupBusy?"Checking Monad…":"Prepare account"}</button>
+      <button onClick={prepareAccount} disabled={!ready||!verified||busy||setupBusy||selecting} className="mt-5 rounded-xl border border-violet-400/40 px-5 py-3 font-semibold disabled:opacity-50">{setupBusy?"Checking Monad…":"Prepare account"}</button>
       {!verified ? <p className="mt-3 text-sm text-muted-foreground">Verify your saved passkey above first.</p>:null}
       <p className="mt-4 text-sm text-muted-foreground" role="status" aria-live="polite">{setupNotice}</p>
       {setup ? <div className="mt-5 space-y-4">
@@ -125,7 +160,7 @@ export function MetropolisPrototype() {
         </details>
       </div>:null}
     </section>:null}
-    {credential&&setup?.accountDeployed?<MetropolisPurchase key={setup.accountAddress} credential={credential} factory={setup.factory} enabled={ready&&verified&&!busy&&!setupBusy} />:null}
+    {credential&&setup?.accountDeployed?<MetropolisPurchase key={setup.accountAddress} credential={credential} factory={setup.factory} enabled={ready&&verified&&!busy&&!setupBusy&&!selecting} />:null}
     <section className="mt-6 rounded-2xl border border-white/15 p-5 sm:p-7">
       <h2 className="text-xl font-semibold">Integration status</h2>
       <ul className="mt-4 space-y-3 text-sm text-muted-foreground">

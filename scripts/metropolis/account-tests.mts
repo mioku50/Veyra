@@ -6,6 +6,7 @@ import { METROPOLIS_ACCOUNT_SALT, METROPOLIS_DEPLOYMENT, METROPOLIS_V2_ACCOUNT_S
 import { MONAD_CONTRACTS, monadDemoTestnet } from "../../lib/monad/config.ts";
 import { getMonadReadClient } from "../../lib/monad/erc8004.ts";
 import { METROPOLIS_ORIGIN } from "../../lib/monad/passkey.ts";
+import { selectExistingAccountPasskey } from "../../lib/monad/passkey-selection.ts";
 import { parseAccountPlanArguments, planAccountCreation } from "./account-plan.mts";
 
 // Generated software fixture, not the user's iPhone key. No transaction is sent.
@@ -58,6 +59,13 @@ await assert.rejects(readAccountSetup(publicKey, METROPOLIS_ORIGIN, getMonadRead
 const wrongChain = createPublicClient({ chain: monadDemoTestnet,
   transport: custom({ request: async () => "0x8f" }) }) as unknown as ReturnType<typeof getMonadReadClient>;
 await assert.rejects(readAccountSetup(publicKey, METROPOLIS_ORIGIN, wrongChain), /Testnet/); checks++;
+// Selection must reject domain, address and chain failures before any prompt.
+for(const address of ["", "0x88f7…4bB6", zeroAddress, "0x12"]) {
+  await assert.rejects(selectExistingAccountPasskey(address,METROPOLIS_ORIGIN),/full address/);checks++;
+}
+await assert.rejects(selectExistingAccountPasskey(sender,"https://preview.vercel.app"),/canonical/);checks++;
+await assert.rejects(selectExistingAccountPasskey(sender,METROPOLIS_ORIGIN,getMonadReadClient(143)),/Testnet/);checks++;
+await assert.rejects(selectExistingAccountPasskey(sender,METROPOLIS_ORIGIN,wrongChain),/Testnet/);checks++;
 await assert.rejects(planAccountCreation(synthetic, zeroAddress, "0x01")); checks++;
 await assert.rejects(planAccountCreation(synthetic, sender, "0x"), /Compile/); checks++;
 

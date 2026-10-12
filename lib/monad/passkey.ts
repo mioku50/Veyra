@@ -95,6 +95,20 @@ export async function signMetropolisDiagnosticChallenge(credential:MetropolisCre
   const result=await toWebAuthnAccount({credential,rpId}).sign({hash:challenge});
   return toDiagnosticAssertion(result.signature,result.webauthn,challenge,origin);
 }
+/** An empty credential ID asks the authenticator to choose a resident passkey.
+ * The caller must verify this assertion against the account key before saving it.
+ */
+export async function selectMetropolisPasskey(publicKey:Hex,challenge:Hex,origin:string) {
+  const rpId=requirePasskeyOrigin(origin);
+  passkeyCoordinates(publicKey);
+  if(!/^0x[0-9a-fA-F]{64}$/.test(challenge))throw new Error("Invalid selection challenge");
+  const result=await toWebAuthnAccount({credential:{id:"",publicKey},rpId}).sign({hash:challenge});
+  const id=result.raw.id;
+  if(result.raw.type!=="public-key"||!id||! /^[A-Za-z0-9_-]{1,2048}$/.test(id)
+    ||id!==base64Url(toHex(new Uint8Array(result.raw.rawId))))throw new Error("Invalid selected credential");
+  return {credential:{id,publicKey,origin} satisfies MetropolisCredential,
+    assertion:toDiagnosticAssertion(result.signature,result.webauthn,challenge,origin)};
+}
 export function webAuthnSignedHash(assertion:Pick<AssertionMetadata,"authenticatorData"|"clientDataJSON">) {
   return sha256(concatHex([assertion.authenticatorData,sha256(toHex(assertion.clientDataJSON))]));
 }

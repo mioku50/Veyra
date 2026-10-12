@@ -103,13 +103,23 @@ try {
   const context=await browser.newContext({viewport:{width:390,height:844}});
   await context.addInitScript(()=>{
     const originalGet=navigator.credentials.get.bind(navigator.credentials);
-    (window as unknown as {assertionDiagnostics:unknown[]}).assertionDiagnostics=[];
+    const testWindow=window as unknown as {assertionDiagnostics:unknown[];forcedCredentialId?:string};
+    testWindow.assertionDiagnostics=[];
     navigator.credentials.get=async options=>{
-      const diagnostics=(window as unknown as {assertionDiagnostics:unknown[]}).assertionDiagnostics;
+      const diagnostics=testWindow.assertionDiagnostics;
+      // Record the real application's request. Select a real virtual credential
+      // for each test case without replacing its signature or the native verifier.
+      const request={allowedCredentials:options?.publicKey?.allowCredentials?.length??0,
+        rpId:options?.publicKey?.rpId,userVerification:options?.publicKey?.userVerification};
+      let actualOptions=options;
+      if(testWindow.forcedCredentialId&&options?.publicKey) {
+        const id=Uint8Array.from(atob(testWindow.forcedCredentialId.replaceAll("-","+").replaceAll("_","/")),char=>char.charCodeAt(0));
+        actualOptions={...options,publicKey:{...options.publicKey,allowCredentials:[{type:"public-key",id}]}};
+      }
       try {
-        const result=await originalGet(options);
+        const result=await originalGet(actualOptions);
         if(result instanceof PublicKeyCredential&&result.response instanceof AuthenticatorAssertionResponse) {
-          diagnostics.push({clientDataJSON:new TextDecoder().decode(result.response.clientDataJSON),
+          diagnostics.push({...request,credentialId:result.id,clientDataJSON:new TextDecoder().decode(result.response.clientDataJSON),
             flags:new Uint8Array(result.response.authenticatorData)[32],signatureLength:result.response.signature.byteLength});
         }
         return result;
@@ -141,7 +151,7 @@ try {
   }
   await page.getByRole("button",{name:"Create test passkey"}).click();
   await page.getByRole("button",{name:"Verify on Monad",exact:true}).waitFor({timeout:20000});
-  const credential=await page.evaluate(()=>JSON.parse(localStorage.getItem("veyra.metropolis.public-credential.v1")!)) as {publicKey:Hex};
+  const credential=await page.evaluate(()=>JSON.parse(localStorage.getItem("veyra.metropolis.public-credential.v1")!)) as {id:string;publicKey:Hex;origin:string};
   const qx=`0x${credential.publicKey.slice(2,66)}` as Hex,qy=`0x${credential.publicKey.slice(66)}` as Hex;
   const createHash=await wallet.writeContract({address:METROPOLIS_V2_DEPLOYMENT.factory,abi:METROPOLIS_FACTORY_ABI,functionName:"createAccount",args:[qx,qy,METROPOLIS_V2_ACCOUNT_SALT]});
   await finalizeLocal((await fork.waitForTransactionReceipt({hash:createHash})).blockNumber);
@@ -150,6 +160,54 @@ try {
   const fundingWallet=createWalletClient({account:fundingSource,chain:monadDemoTestnet,transport:http(rpc)});
   const fundingHash=await fundingWallet.writeContract({address:MONAD_CONTRACTS[10143].usdc,abi:erc20Abi,functionName:"transfer",args:[account,1_000_000n]});
   await finalizeLocal((await fork.waitForTransactionReceipt({hash:fundingHash})).blockNumber);
+  // Reproduce the user's other-browser metadata: a second resident credential
+  // is currently saved, while the first credential owns the funded V2 account.
+  const otherCredential=await page.evaluate(async()=>{
+    const raw=await navigator.credentials.create({publicKey:{rp:{id:location.hostname,name:"Veyra existing-key fork test"},
+      user:{id:crypto.getRandomValues(new Uint8Array(32)),name:"other-local-key",displayName:"Other local key"},
+      challenge:crypto.getRandomValues(new Uint8Array(32)),pubKeyCredParams:[{type:"public-key",alg:-7}],
+      authenticatorSelection:{authenticatorAttachment:"platform",residentKey:"required",userVerification:"required"}}}) as PublicKeyCredential;
+    const spki=(raw.response as AuthenticatorAttestationResponse).getPublicKey();if(!spki)throw new Error("No public key");
+    const key=await crypto.subtle.importKey("spki",spki,{name:"ECDSA",namedCurve:"P-256"},true,["verify"]);
+    const bytes=new Uint8Array(await crypto.subtle.exportKey("raw",key));
+    const saved={id:raw.id,publicKey:`0x${Array.from(bytes.slice(1),x=>x.toString(16).padStart(2,"0")).join("")}`,origin:location.origin};
+    localStorage.setItem("veyra.metropolis.public-credential.v1",JSON.stringify(saved));return saved;
+  });
+  assert.notEqual(otherCredential.id,credential.id);
+  await page.goto(`${METROPOLIS_ORIGIN}/metropolis?account=${account}`,{waitUntil:"networkidle"});
+  await page.getByRole("button",{name:"Select existing passkey",exact:true}).waitFor();
+  assert.equal(await page.getByLabel("Existing V2 account address").inputValue(),account);
+  assert.deepEqual(await page.evaluate(()=>(window as unknown as {assertionDiagnostics:unknown[]}).assertionDiagnostics),[],
+    "An account URL only prefills the form; it never prompts or signs automatically");
+  await page.getByLabel("Existing V2 account address").fill(publicTestAttester.address);
+  await page.getByRole("button",{name:"Select existing passkey",exact:true}).click();
+  await page.getByRole("status").filter({hasText:"does not have a deployed V2 account"}).waitFor({timeout:45000});
+  assert.deepEqual(await page.evaluate(()=>(window as unknown as {assertionDiagnostics:unknown[]}).assertionDiagnostics),[],
+    "An undeployed address is rejected before the browser asks for a passkey");
+  await page.getByLabel("Existing V2 account address").fill(account);
+  await page.evaluate(id=>{(window as unknown as {forcedCredentialId:string}).forcedCredentialId=id;},otherCredential.id);
+  await page.getByRole("button",{name:"Select existing passkey",exact:true}).click();
+  await page.getByRole("status").filter({hasText:"The selected passkey does not belong to this account"}).waitFor({timeout:45000});
+  assert.deepEqual(await page.evaluate(()=>JSON.parse(localStorage.getItem("veyra.metropolis.public-credential.v1")!)),otherCredential,
+    "A real signature from the wrong key cannot replace the saved credential");
+  assert.equal(await page.getByTestId("account-address").count(),0);
+  await page.evaluate(id=>{(window as unknown as {forcedCredentialId:string}).forcedCredentialId=id;},credential.id);
+  await page.getByRole("button",{name:"Select existing passkey",exact:true}).click();
+  await page.getByRole("status").filter({hasText:"The existing passkey matches this V2 account"}).waitFor({timeout:45000});
+  assert.equal(await page.getByTestId("account-address").textContent(),account);
+  const selectedState=await page.evaluate(()=>({
+    current:JSON.parse(localStorage.getItem("veyra.metropolis.public-credential.v1")!),
+    previous:JSON.parse(localStorage.getItem("veyra.metropolis.previous-public-credential.v1")!),
+    assertions:(window as unknown as {assertionDiagnostics:{allowedCredentials:number;rpId:string;userVerification:string}[]}).assertionDiagnostics,
+  }));
+  assert.deepEqual(selectedState.current,credential);assert.deepEqual(selectedState.previous,otherCredential);
+  assert.equal(selectedState.assertions.length,2);
+  for(const request of selectedState.assertions){assert.equal(request.allowedCredentials,0);
+    assert.equal(request.rpId,new URL(METROPOLIS_ORIGIN).hostname);assert.equal(request.userVerification,"required");}
+  assert.equal(await fork.readContract({address:account,abi:parseAbi(["function nonce() view returns(uint256)"]),functionName:"nonce"}),0n);
+  assert.equal(await fork.readContract({address:MONAD_CONTRACTS[10143].usdc,abi:erc20Abi,functionName:"balanceOf",args:[account]}),1_000_000n);
+  await page.reload({waitUntil:"networkidle"});
+  assert.deepEqual(await page.evaluate(()=>JSON.parse(localStorage.getItem("veyra.metropolis.public-credential.v1")!)),credential);
   await page.getByRole("button",{name:"Verify on Monad",exact:true}).click();
   try {await page.getByRole("status").filter({hasText:"Monad verified its P256 signature"}).waitFor({timeout:45000});}
   catch(error){console.log(JSON.stringify({browserErrors:errors,rpcErrors,nativeResults,methods:[...methods],status:await page.getByRole("status").allTextContents(),assertions:await page.evaluate(()=>(window as unknown as {assertionDiagnostics:unknown[]}).assertionDiagnostics)}));throw error;}
@@ -313,6 +371,8 @@ try {
   console.log(JSON.stringify({result:"PASS",scope:"disposable localhost Monad fork only",frontendOrigin:localOrigin,forkBlock,virtualWebAuthn:true,
     nativeP256AccountExecution:true,amountUsdc:"0.012",receiptVerified:true,replayRejected:true,
     accountVersion:2,paymentEncoding:"original browser client-data JSON; V2 required prefix and native P256",ownerApprovalPrompts:1,
+    existingPasskeySelected:true,wrongPasskeySelectionRejected:true,undeployedAccountSelectionRejected:true,
+    credentialSelectionPersistedAfterReload:true,selectionMovedFunds:false,selectionConsumedPaymentNonce:false,
     universalBrowserPaymentCompatibility:false,
     tamperedTaskRejected:true,identityOnlyBlocked:true,receiptRestoredAfterReload:true,externalTransactionsSent:0,
     readinessDemoRegistrationVerified:true,readinessReportVerified:true,persistedResultRestored:true,prepaymentPreviewRejected:true,

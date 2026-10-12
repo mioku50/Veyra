@@ -26,6 +26,9 @@ was verified with a virtual authenticator and disposable Monad fork, separately
 from the earlier account-setup publication below. The current V2 publication,
 finalized funding check and published-browser fork test are recorded in
 [V2 publication evidence](metropolis-v2-publication.json).
+The owner requested returning to an existing funded V2 account when a different
+browser passkey was saved. The read-only credential selection increment and its
+acceptance criteria are described in [existing passkey selection](METROPOLIS_EXISTING_PASSKEY.md).
 Starting commit: `3b0a29e780b83246509d54638567c3c2dc6c6cbb`.
 Branch: `metropolis-monad`. Network for the demo: Monad Testnet, chain ID 10143.
 
