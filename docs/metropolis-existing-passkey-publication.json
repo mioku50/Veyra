@@ -1,20 +1,20 @@
 {
   "kind": "veyra.metropolis.existing-passkey-publication",
   "version": 1,
-  "verifiedAt": "2026-10-12T11:32:37.638468+00:00",
+  "verifiedAt": "2026-10-12T19:46:23.531865+00:00",
   "chainId": 10143,
   "network": "Monad Testnet",
   "branch": "metropolis-monad",
-  "sourceCommit": "a019fc5e4900f685ad0c36ef19a0ad30032fe77c",
+  "sourceCommit": "858e17a417bcd2de5596e8ede24be635ddf9cb09",
   "gitCommitShaVerified": true,
-  "deploymentId": "dpl_FKpc3DMyvj7LiLtxWX4wq7mg9kWm",
+  "deploymentId": "dpl_8kBKR53E88sRwC7gDJjsua2QDau5",
   "projectId": "prj_3q07glzEBDBBFGgtabGdiPTi1uWp",
   "target": "production",
   "readyState": "READY",
   "canonicalDeploymentIdVerified": true,
   "url": "https://agent-commerce-six.vercel.app/metropolis?account=0x88f7aAe6050C842A5D2FB9e39B625102f5D54bB6",
-  "buildUrl": "https://veyra-hcwqys98r-mioku50s-projects.vercel.app",
-  "rollbackDeploymentId": "dpl_A4YYez4hj72oYarurDaKW7cnqcJG",
+  "buildUrl": "https://veyra-2yvg0akra-mioku50s-projects.vercel.app",
+  "rollbackDeploymentId": "dpl_FKpc3DMyvj7LiLtxWX4wq7mg9kWm",
   "stagedHttpChecks": {
     "/metropolis": 200,
     "/": 200,
@@ -32,8 +32,7 @@
     "rootTypescript": "passed",
     "metropolisTypescript": "passed",
     "scopedEslint": "passed",
-    "accountSetupAndSelectionGuards": 59,
-    "purchasePackages": 65,
+    "localBrowserFork": "passed",
     "authorizationAndProvenance": 73
   },
   "browserForkTest": {
@@ -52,6 +51,12 @@
     "existingPasskeySelected": true,
     "wrongPasskeySelectionRejected": true,
     "undeployedAccountSelectionRejected": true,
+    "requestedAccountCannotUseUnrelatedVerification": true,
+    "wrongAccountExportBlocked": true,
+    "selectionFailureShownSeparately": true,
+    "editedAccountInvalidatesSelection": true,
+    "explicitSelectionExitRequired": true,
+    "matchingPasskeyStorageFailureReported": true,
     "slowAccountPreparationMs": 11000,
     "selectionPromptInFreshUserGesture": true,
     "credentialSelectionPersistedAfterReload": true,
@@ -75,17 +80,21 @@
     "serviceDelivery": "local operator readiness result on a disposable fork; no live paid service or real human assessment"
   },
   "uploadReview": {
-    "verifiedTrackedUploads": 1011,
-    "totalSize": 8890476,
-    "reviewedCodeChanges": 5,
+    "verifiedTrackedUploads": 1012,
+    "totalSize": 8905271,
+    "changedTrackedPaths": [
+      "app/metropolis/prototype.tsx",
+      "scripts/metropolis/purchase-browser-fork.mts",
+      "docs/METROPOLIS_EXISTING_PASSKEY.md"
+    ],
     "sourceEqualsPublicCommit": true,
     "privateInputsIncluded": false
   },
   "fundedAccountSnapshot": {
     "address": "0x88f7aAe6050C842A5D2FB9e39B625102f5D54bB6",
     "accountDeployed": true,
-    "observedBlock": "70380162",
-    "observedBlockHash": "0x2bcd6e97594840a7050407c0904cf9fd5dc6ff980bdf3b040b30add4bb3bdc75",
+    "observedBlock": "70480943",
+    "observedBlockHash": "0xb0b2687dfb7a0ad1c4a0e8c377d39581f309d18b13c6a60379486dcfd1a5079b",
     "commitment": "finalized",
     "usdcBalanceUnits": "20000000",
     "paymentNonce": "0"
@@ -103,5 +112,19 @@
   "clearanceIssued": false,
   "externalBlockchainTransactionsSent": 0,
   "reproducePublishedBrowser": "METROPOLIS_E2E_ORIGIN=https://agent-commerce-six.vercel.app METROPOLIS_TEST_FUNDING_SOURCE=0x9b57b2aCf3242db458B5EadD5e2026eaccB33dAD METROPOLIS_TEST_FORK_BLOCK=70357792 node --experimental-transform-types --no-warnings scripts/metropolis/purchase-browser-fork.mts",
-  "disclosure": "The published frontend selected a resident passkey, rejected a different real key and completed payment/result/replay checks with a virtual authenticator on a disposable localhost Monad fork. The owner must select their original passkey on their own device. No new live blockchain transaction, key recovery or owner passkey payment is claimed."
+  "disclosure": "The published frontend blocks saved-key verification and unrelated exports while a requested account is pending. It rejected a different real key, reported a matching-assertion storage failure separately and completed selection/payment/result/replay checks with a virtual authenticator on a disposable localhost Monad fork. The owner must retry selection on their device; the cause of their prior unsuccessful switch is not established. No new live blockchain transaction, key recovery or owner passkey payment is claimed.",
+  "previousPublication": {
+    "verifiedAt": "2026-10-12T11:32:37.638468+00:00",
+    "sourceCommit": "a019fc5e4900f685ad0c36ef19a0ad30032fe77c",
+    "deploymentId": "dpl_FKpc3DMyvj7LiLtxWX4wq7mg9kWm",
+    "buildUrl": "https://veyra-hcwqys98r-mioku50s-projects.vercel.app"
+  },
+  "browserScriptSha256": "d999eca641fb719af95a47bcf394c4962bc2fe840c469eedb776d8ed58a72808",
+  "testHarnessCorrection": "The first published run stopped at the latency assertion. The delay now targets the awaited eth_getCode for the requested account and is measured with a monotonic clock. The corrected complete published run passed; cryptographic checks are unchanged.",
+  "ownerDeviceAttempt": {
+    "selectionReported": true,
+    "requestedAccountSelectedConfirmed": false,
+    "latestExportAddress": "0x8A683d781368a765F252E53F8d1683f24623535e",
+    "failureStageKnown": false
+  }
 }

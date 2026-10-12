@@ -134,13 +134,14 @@ localhost; no external transaction was sent.
 
 ## Publication — 2026-10-12
 
-The canonical `/metropolis` page now serves source commit
+The initial selection release served source commit
 `a019fc5e4900f685ad0c36ef19a0ad30032fe77c`. Its production deployment was
 staged, checked against that Git commit, then promoted without rebuilding.
 The full selection/payment browser test passed against the published frontend,
 with all blockchain writes still restricted to the disposable local fork.
-The delayed-preflight test targets the first actual RPC so a cached chain-ID
-lookup cannot bypass its timing check.
+The initial delayed-preflight test targeted the first actual RPC to avoid a
+cached chain-ID lookup. The correction below binds the delay more specifically
+to the awaited code read of the requested account.
 
 The root page, `/arc`, `/console` and `/metropolis` returned HTTP 200 before and
 after promotion. Existing Arc source and `main` were unchanged.
@@ -151,3 +152,21 @@ To return to the existing funded account, open
 click **Check existing account**, then **Select existing passkey** and select
 its original passkey in the device's password manager. Owner-device selection
 and any actual payment remain separate, pending actions.
+
+### Corrected interface publication
+
+The canonical page now serves source commit
+`858e17a417bcd2de5596e8ede24be635ddf9cb09` from deployment
+`dpl_8kBKR53E88sRwC7gDJjsua2QDau5`. The same complete browser/fork test passed
+against that published frontend. The first published run stopped at a latency
+assertion: an arbitrary in-flight RPC could consume the injected delay. The
+test now delays the awaited `eth_getCode` for the requested account, verifies
+that the delay occurred and measures elapsed time with a monotonic clock.
+Native WebAuthn/P256 verification and the production frontend are unchanged by
+this test correction. No rebuild is needed for the evidence-only commit.
+
+Pending, failed and successful selection are checked with real browser
+assertions. Root, `/arc`, `/console` and `/metropolis` returned HTTP 200 before
+and after promotion. The owner must still retry selection on their device;
+the exact cause of their previously unsuccessful switch is not established.
+See [current publication evidence](metropolis-existing-passkey-publication.json).

@@ -129,21 +129,26 @@ try {
   });
   const page=await context.newPage(),errors:string[]=[],rpcErrors:string[]=[],nativeResults:unknown[]=[],methods=new Set<string>();
   let selectionPreflightDelay=0;
+  let selectionPreflightAccount:Address|undefined;
+  let selectionPreflightDelayed=false;
   page.on("pageerror",error=>errors.push(error.message));
   await context.route(`${METROPOLIS_ORIGIN}/**`,async route=>{
     const response=await route.fetch({url:route.request().url().replace(METROPOLIS_ORIGIN,localOrigin)});await route.fulfill({response});
   });
   await context.route("https://testnet-rpc.monad.xyz/**",async route=>{
     const payload=route.request().postDataJSON();
-    // getChainId may be cached; delay the first actual preflight RPC instead.
-    if(selectionPreflightDelay) {
+    const calls=Array.isArray(payload)?payload:[payload];
+    // Delay the awaited read of this specific account, rather than a cached
+    // chain-ID lookup or an unrelated in-flight/background request.
+    if(selectionPreflightDelay&&calls.some(item=>item.method==="eth_getCode"
+      &&item.params?.[0]?.toLowerCase()===selectionPreflightAccount?.toLowerCase())) {
       const delay=selectionPreflightDelay;selectionPreflightDelay=0;
       await new Promise(resolve=>setTimeout(resolve,delay));
+      selectionPreflightDelayed=true;
     }
     for(const item of Array.isArray(payload)?payload:[payload])methods.add(item.method);
     const response=await fetch(rpc,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(payload)});
     const body=await response.text();
-    const calls=Array.isArray(payload)?payload:[payload];
     if(calls.some(item=>item.method==="eth_call"&&item.params?.[0]?.to?.toLowerCase().endsWith("0100")))nativeResults.push(JSON.parse(body));
     for(const result of Array.isArray(JSON.parse(body))?JSON.parse(body):[JSON.parse(body)])if(result.error)rpcErrors.push(result.error.message);
     await route.fulfill({status:response.status,contentType:"application/json",body});
@@ -204,10 +209,12 @@ try {
     "An undeployed address is rejected before the browser asks for a passkey");
   await page.getByLabel("Existing V2 account address").fill(account);
   selectionPreflightDelay=11000;
-  const preparationStarted=Date.now();
+  selectionPreflightAccount=account;
+  const preparationStarted=performance.now();
   await page.getByRole("button",{name:"Check existing account",exact:true}).click();
   await page.getByRole("status").filter({hasText:"Existing V2 account checked"}).waitFor({timeout:45000});
-  assert.ok(Date.now()-preparationStarted>=11000,"Preparation intentionally outlasts WebKit's documented fetch gesture window");
+  assert.equal(selectionPreflightDelayed,true,"The target-account code read actually received the injected delay");
+  assert.ok(performance.now()-preparationStarted>=11000,"Preparation intentionally outlasts WebKit's documented fetch gesture window");
   assert.deepEqual(await page.evaluate(()=>(window as unknown as {assertionDiagnostics:unknown[]}).assertionDiagnostics),[],
     "Account preparation does not prompt for a passkey");
   await assertRequestedAccountPending();
