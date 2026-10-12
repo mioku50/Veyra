@@ -2,10 +2,13 @@
 pragma solidity ^0.8.25;
 
 import {WebAuthn} from "@openzeppelin/contracts/utils/cryptography/WebAuthn.sol";
+import {P256} from "@openzeppelin/contracts/utils/cryptography/P256.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {VeyraTrustGate} from "veyra/VeyraTrustGate.sol";
 import {VeyraPasskeyAccount} from "veyra/monad/VeyraPasskeyAccount.sol";
 import {VeyraPasskeyAccountFactory} from "veyra/monad/VeyraPasskeyAccountFactory.sol";
+import {VeyraPasskeyAccountV2} from "veyra/monad/VeyraPasskeyAccountV2.sol";
+import {VeyraPasskeyAccountFactoryV2} from "veyra/monad/VeyraPasskeyAccountFactoryV2.sol";
 
 interface VmMetropolis {
     function addr(uint256) external pure returns (address);
@@ -60,7 +63,7 @@ contract VeyraPasskeyAccountTest {
         TestUsdc deployedToken = new TestUsdc();
         vm.etch(TOKEN, address(deployedToken).code);
         token = TestUsdc(TOKEN);
-        VeyraPasskeyAccount deployedAccount = new VeyraPasskeyAccount(
+        VeyraPasskeyAccount deployedAccount = _deployAccountImplementation(
             gate, IERC20(TOKEN), vm.parseJsonBytes32(fixtures,".qx"), vm.parseJsonBytes32(fixtures,".qy"),
             sha256(bytes("metropolis.example.test")), "https://metropolis.example.test"
         );
@@ -79,6 +82,19 @@ contract VeyraPasskeyAccountTest {
             evaluator:address(0), issuedAt:START, expiresAt:START+300
         });
         assert(account.approvalChallenge(clearance,0,DEADLINE) == vm.parseJsonBytes32(fixtures,".challenge"));
+    }
+
+    // Version hooks let both immutable implementations run the same authorization
+    // suite. Only test state is seeded; native P256 and contract checks are real.
+    function _deployAccountImplementation(VeyraTrustGate gate_, IERC20 token_, bytes32 qx_, bytes32 qy_, bytes32 rp_, string memory origin_)
+        internal virtual returns (VeyraPasskeyAccount)
+    {
+        return new VeyraPasskeyAccount(gate_,token_,qx_,qy_,rp_,origin_);
+    }
+    function _deployFactory(VeyraTrustGate gate_, IERC20 token_, bytes32 rp_, string memory origin_)
+        internal virtual returns (VeyraPasskeyAccountFactory)
+    {
+        return new VeyraPasskeyAccountFactory(gate_,token_,rp_,origin_);
     }
 
     function _seedGateRoles() internal {
@@ -128,6 +144,16 @@ contract VeyraPasskeyAccountTest {
     function testWrongOrigin() public { _rejected("wrongOrigin"); }
     function testWrongRpId() public { _rejected("wrongRpId"); }
     function testWrongType() public { _rejected("wrongType"); }
+    function testAdditionalClientDataCompatibility() public virtual {
+        WebAuthn.WebAuthnAuth memory auth = _auth("extraClientData");
+        bytes32 signedHash = sha256(abi.encodePacked(auth.authenticatorData,sha256(bytes(auth.clientDataJSON))));
+        assert(P256.verifyNative(signedHash,auth.r,auth.s,account.qx(),account.qy()));
+        assert(WebAuthn.verify(abi.encodePacked(account.approvalChallenge(clearance,0,DEADLINE)),auth,account.qx(),account.qy(),true));
+        bytes memory sig = _signature();
+        vm.expectRevert(VeyraPasskeyAccount.InvalidAssertion.selector);
+        account.executePayment(clearance,sig,0,DEADLINE,auth);
+        _assertUnchanged();
+    }
     function testWrongChallengeIndices() public {
         WebAuthn.WebAuthnAuth memory auth = _auth("valid"); auth.challengeIndex++;
         bytes memory sig = _signature();
@@ -193,14 +219,14 @@ contract VeyraPasskeyAccountTest {
     function testRevokedAttester() public { gate.setAttester(vm.addr(ATTESTER_TEST_KEY),false); _rejected("valid"); }
     function testTransferFailureRollsBackClearanceAndNonce() public { token.setFail(true); _rejected("valid"); }
     function testOtherAccountCannotReuseAssertion() public {
-        VeyraPasskeyAccount other = new VeyraPasskeyAccount(gate,IERC20(TOKEN),account.qx(),account.qy(),account.rpIdHash(),account.origin());
+        VeyraPasskeyAccount other = _deployAccountImplementation(gate,IERC20(TOKEN),account.qx(),account.qy(),account.rpIdHash(),account.origin());
         clearance.executor = address(other);
         bytes memory sig = _signature();
         WebAuthn.WebAuthnAuth memory auth = _auth("valid");
         vm.expectRevert(); other.executePayment(clearance,sig,0,DEADLINE,auth); _assertUnchanged();
     }
     function testFactoryPredictsSeparateAccountsAndIsIdempotent() public {
-        VeyraPasskeyAccountFactory factory = new VeyraPasskeyAccountFactory(gate,IERC20(TOKEN),account.rpIdHash(),account.origin());
+        VeyraPasskeyAccountFactory factory = _deployFactory(gate,IERC20(TOKEN),account.rpIdHash(),account.origin());
         address predicted = factory.accountAddress(account.qx(),account.qy(),bytes32(uint256(1)));
         VeyraPasskeyAccount first = factory.createAccount(account.qx(),account.qy(),bytes32(uint256(1)));
         assert(address(first) == predicted);
@@ -213,7 +239,7 @@ contract VeyraPasskeyAccountTest {
         bytes32 rp = account.rpIdHash();
         string memory allowedOrigin = account.origin();
         vm.expectRevert(VeyraPasskeyAccount.InvalidConfiguration.selector);
-        new VeyraPasskeyAccount(gate,IERC20(TOKEN),bytes32(0),bytes32(0),rp,allowedOrigin);
+        _deployAccountImplementation(gate,IERC20(TOKEN),bytes32(0),bytes32(0),rp,allowedOrigin);
     }
 
     /// @dev Real backend builder and cryptographic signatures, synthetic evidence/token state.
@@ -228,7 +254,7 @@ contract VeyraPasskeyAccountTest {
         vm.etch(usdc,address(mockToken).code);
         token = TestUsdc(usdc);
         string memory allowedOrigin = "https://agent-commerce-six.vercel.app";
-        VeyraPasskeyAccount deployed = new VeyraPasskeyAccount(gate,IERC20(usdc),
+        VeyraPasskeyAccount deployed = _deployAccountImplementation(gate,IERC20(usdc),
             vm.parseJsonBytes32(fixture,".qx"),vm.parseJsonBytes32(fixture,".qy"),
             sha256(bytes("agent-commerce-six.vercel.app")),allowedOrigin);
         AccountOriginSetup setup = new AccountOriginSetup(gate,IERC20(usdc),deployed.qx(),deployed.qy(),deployed.rpIdHash(),allowedOrigin);
@@ -289,4 +315,68 @@ contract AccountOriginSetup is VeyraPasskeyAccount {
     constructor(VeyraTrustGate gate_,IERC20 usdc_,bytes32 qx_,bytes32 qy_,bytes32 rp_,string memory origin_)
         VeyraPasskeyAccount(gate_,usdc_,qx_,qy_,rp_,origin_) {}
     function initializeTestOrigin(string memory origin_) external { origin = origin_; }
+}
+
+/// @dev Inherit every V1 policy, amount, attester and replay test against V2.
+contract VeyraPasskeyAccountV2Test is VeyraPasskeyAccountTest {
+    function _deployAccountImplementation(VeyraTrustGate gate_, IERC20 token_, bytes32 qx_, bytes32 qy_, bytes32 rp_, string memory origin_)
+        internal override returns (VeyraPasskeyAccount)
+    {
+        return VeyraPasskeyAccount(address(new VeyraPasskeyAccountV2(gate_,token_,qx_,qy_,rp_,origin_)));
+    }
+    function _deployFactory(VeyraTrustGate gate_, IERC20 token_, bytes32 rp_, string memory origin_)
+        internal override returns (VeyraPasskeyAccountFactory)
+    {
+        return VeyraPasskeyAccountFactory(address(new VeyraPasskeyAccountFactoryV2(gate_,token_,rp_,origin_)));
+    }
+
+    function testAdditionalClientDataCompatibility() public override {
+        WebAuthn.WebAuthnAuth memory auth = _auth("extraClientData");
+        bytes32 signedHash = sha256(abi.encodePacked(auth.authenticatorData,sha256(bytes(auth.clientDataJSON))));
+        assert(P256.verifyNative(signedHash,auth.r,auth.s,account.qx(),account.qy()));
+        _execute("extraClientData");
+        assert(account.nonce() == 1);
+        assert(gate.consumedClearances(gate.hashClearance(clearance)));
+        assert(token.balanceOf(SELLER) == 12_000);
+        assert(token.balanceOf(ACCOUNT) == 988_000);
+    }
+    function testNestedOpaqueExtrasKeepRequiredPrefixAndFullSignature() public {
+        _execute("nestedExtra"); assert(account.nonce() == 1); assert(token.balanceOf(SELLER) == 12_000);
+    }
+    function testSignedCrossOriginRejected() public { _rejected("crossOrigin"); }
+    function testSignedReorderedFieldsRejected() public { _rejected("reordered"); }
+    function testSignedNestedRequiredFieldsRejected() public { _rejected("nestedRequired"); }
+    function testSignedBadDelimiterRejected() public { _rejected("badDelimiter"); }
+    function testSignedMissingBoundaryRejected() public { _rejected("missingBoundary"); }
+    function testSignedTrailingDataRejected() public { _rejected("trailingData"); }
+    function testSignedOversizedDataRejected() public { _rejected("oversized"); }
+    function testSignedMissingClosingBraceRejected() public { _rejected("missingClosingBrace"); }
+    function testWrongTypeIndexRejected() public {
+        WebAuthn.WebAuthnAuth memory auth = _auth("extraClientData"); auth.typeIndex++;
+        bytes memory sig = _signature();
+        vm.expectRevert(VeyraPasskeyAccountV2.InvalidAssertion.selector);
+        account.executePayment(clearance,sig,0,DEADLINE,auth); _assertUnchanged();
+    }
+    function testTamperingOnlyExtraFieldsInvalidatesOriginalSignature() public {
+        WebAuthn.WebAuthnAuth memory auth = _auth("extraClientData");
+        bytes memory json = bytes(auth.clientDataJSON);
+        json[json.length-4] = bytes1('X'); auth.clientDataJSON = string(json);
+        bytes memory sig = _signature();
+        vm.expectRevert(VeyraPasskeyAccountV2.InvalidAssertion.selector);
+        account.executePayment(clearance,sig,0,DEADLINE,auth); _assertUnchanged();
+    }
+    function testDeadlineEqualityRejected() public { vm.warp(DEADLINE); _rejected("valid"); }
+    function testVersionIsExplicit() public view {
+        assert(VeyraPasskeyAccountV2(ACCOUNT).ACCOUNT_VERSION() == 2);
+    }
+    function testV1AndV2FactoryAddressesCannotAliasForSamePublicKeyAndSalt() public {
+        VeyraPasskeyAccountFactory oldFactory = new VeyraPasskeyAccountFactory(gate,IERC20(TOKEN),account.rpIdHash(),account.origin());
+        VeyraPasskeyAccountFactoryV2 factory = new VeyraPasskeyAccountFactoryV2(gate,IERC20(TOKEN),account.rpIdHash(),account.origin());
+        bytes32 salt = keccak256("same user salt");
+        address oldAddress = oldFactory.accountAddress(account.qx(),account.qy(),salt);
+        address newAddress = factory.accountAddress(account.qx(),account.qy(),salt);
+        assert(oldAddress != newAddress);
+        assert(factory.ACCOUNT_VERSION() == 2);
+        assert(factory.createAccount(account.qx(),account.qy(),salt).ACCOUNT_VERSION() == 2);
+    }
 }

@@ -1,0 +1,30 @@
+{
+  "kind": "veyra.metropolis.v2-activation-verification",
+  "version": 1,
+  "verifiedAt": "2026-10-12T09:08:37.742Z",
+  "chainId": 10143,
+  "accountVersion": 2,
+  "account": "0x88f7aAe6050C842A5D2FB9e39B625102f5D54bB6",
+  "factory": "0x0624d4C7fcB61d178BFA2b675ec25B111C0E4c7a",
+  "trustGate": "0x4a8f26B1d376c9924aAE80877261E0c635eb54Bb",
+  "observedBlock": "70357792",
+  "observedBlockHash": "0xa53c9cd0e58aef30021667f1b25c753416470107fff452a1bf6eb3e4e1d2d6fc",
+  "commitment": "finalized",
+  "runtimeCodeHash": "0x1ac8e3344da21ca1fbb98769e53232ebb0ab1fff4e84c28cf41705da860ac6c1",
+  "nonce": "0",
+  "usdcBalanceUnits": "20000000",
+  "origin": "https://agent-commerce-six.vercel.app",
+  "deploymentAndPublicKeyVerified": true,
+  "legacyAccount": {
+    "address": "0xc4867c6ae80563D9216a1b16D289b26Fa266bDc3",
+    "usdcBalanceUnits": "20000000"
+  },
+  "negativeAdapterChecks": 4,
+  "fundingTransferredByAgent": false,
+  "clearanceIssued": false,
+  "ownerPaymentApproved": false,
+  "transactionSent": false,
+  "frontendPublished": false,
+  "autonomousSpending": false,
+  "disclosure": "Finalized read-only Testnet configuration and balance check. No live owner passkey payment or service delivery is established."
+}

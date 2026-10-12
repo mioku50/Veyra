@@ -3,8 +3,23 @@
 Status: local implementation and publication of the read-only `/metropolis`
 diagnostic on the existing Veyra domain authorized on 2026-10-08. Separately
 approved TrustGate and account factory deployments on Monad Testnet are complete.
-One owner-approved personal account has also been created and funded. Real purchase
-execution and delivery are still pending. The human-approved purchase interface is
+The owner-approved V1 personal account has been created and funded. A separate
+V2 factory and personal account were subsequently approved, deployed and source
+verified on 2026-10-11. On 2026-10-12 finalized reads confirmed 20 test USDC
+in the V2 account. The local browser now selects V2; publication and an actual
+owner passkey payment remain pending. See
+[the V2 deployment records](METROPOLIS_PASSKEY_V2.md). The readiness
+demonstration identity #2083 is registered on Testnet with a verified receipt.
+One separately approved manual EOA trial paid 0.012 Testnet USDC to agent #2083
+and delivered a reproducible readiness report. Its buyer chose usefulness 80/100;
+the buyer signature is now verified and entered scoring. The historical v1
+reevaluation returned REVIEW_REQUIRED because it used history age as freshness.
+The local v2 policy separates the clocks: a read-only reevaluation on 2026-10-10
+returned ALLOW, trust 90, with the same payment/result/80-point signature and no
+new transfer. This policy/frontend increment is not published. See
+[freshness design](METROPOLIS_FRESHNESS.md). A live passkey payment remains pending. See
+[manual trial evidence](metropolis-testnet-manual-trial.json).
+The human-approved purchase interface is
 published on the canonical domain; see [the purchase runbook](METROPOLIS_PURCHASE.md)
 and [publication evidence](metropolis-purchase-publication.json). Its browser flow
 was verified with a virtual authenticator and disposable Monad fork, separately
@@ -55,6 +70,13 @@ flowchart TD
 - The first prototype accepts the compact browser client-data JSON format with
   `crossOrigin:false`. Other encodings fail closed and need explicit compatibility
   tests before being supported. Do not write a permissive custom JSON parser.
+  Chromium can append a legitimate extra field: the local diagnostic accepts
+  that encoding without changing signed bytes, but the immutable V1 account
+  rejects it. The published payment UI explains this limitation. The separate V2
+  factory and personal account support the required prefix plus additional signed
+  members; local compatibility tests passed and the deployments are verified.
+  V2 is funded and locally wired into the browser. Publishing the reviewed
+  increment and an actual-device payment remain pending.
 - The relayer submits EVM transactions and pays MON. USDC resides in the user's
   account. Estimate MON gas with Monad semantics; fees are charged on the gas limit.
 - No recovery, key rotation or general-purpose wallet claims in this prototype.
@@ -111,11 +133,13 @@ with at least two confirmations measured against the finalized height. The
 historical block hash, recipient, payer, exact amount and log index are checked.
 Provider self-transfers and provider-controlled feedback addresses are excluded.
 
-ERC-8004 feedback enters scoring only for explicit operator-selected clients and
+ERC-8004 feedback is collected only for explicit operator-selected clients and
 the local convention `tag1=veyra.delivery`, `tag2=score100`, decimals zero, value
 0..100. This is a Veyra convention, not an ERC-8004 requirement. Raw registry
 values, review count and distinct addresses do not establish independent ownership
-or verified delivery. Missing/unconfigured feedback stays missing.
+or verified delivery. Aggregate feedback has no verified event timestamp; v2
+excludes positive aggregates from history scoring and retains negative facts.
+Missing/unconfigured feedback stays missing.
 
 Delivery assessments carry an EIP-712 signature from an operator-configured
 non-provider reporter. They bind agent, buyer, seller, payment transaction and
@@ -135,7 +159,12 @@ those dimensions are not two independent evaluators.
 Additional Monad execution checks require corroborated payment and passed delivery
 history, no failed delivery assessment, a fresh collection, a matching canonical
 payee, an executable trust tier and an amount within both owner budget and tier cap.
-Old source timestamps cannot be refreshed by rereading identity. Amounts are exact
+Current finalized security state expires after 300 seconds. Positive history
+uses an inclusive 30-day lookback anchored to the actual payment; negative delivery
+assessments remain blocking. Owner/payee at the payment block must match the
+current identity. This compares the two observations, not every intermediate
+ownership transfer. Old source timestamps cannot be refreshed by rereading identity.
+Amounts are exact
 decimal strings with at most six places and become atomic integer USDC units.
 The first account cannot execute `REQUIRE_EVALUATOR`; these cases require review.
 
@@ -159,6 +188,19 @@ persistence are not enabled. The published browser can approve a signed exact
 purchase and verify its receipt, while transaction relay remains a separate
 operator action. No first-time purchase override or autonomous wallet has been
 introduced.
+
+The next local increment provides a free readiness diagnostic, a clearly labelled
+operator-run demonstration identity registration plan, reproducible result hashes
+and unsigned delivery assessment preparation. See [the readiness runbook](METROPOLIS_READINESS.md).
+The separately approved live registration of readiness agent #2083 is complete;
+see [registration evidence](metropolis-testnet-readiness-agent.json). A real manual
+trial, delivered report and verified buyer-signed assessment are now recorded.
+The current decision is REVIEW_REQUIRED due to old evidence; collecting identity
+again does not rejuvenate the original history. Registration alone cannot unlock
+the first purchase.
+An unsigned, separately reviewed EOA trial can now be prepared and verified;
+see [the manual trial runbook](METROPOLIS_MANUAL_TRIAL.md). It issues no clearance
+and leaves the deployed passkey account's authorization unchanged.
 
 ## Milestones and acceptance
 
@@ -543,3 +585,26 @@ are still required. Milestone 4 now has a verified backend foundation and local
 contract integration; live service evidence, endpoint wiring, delivery persistence
 and client feedback remain separate implementation steps. Existing scripts that send signed onchain
 transactions are not acceptance checks for this local phase.
+
+### Passkey V2 compatibility — 2026-10-11
+
+The deployed immutable V1 account rejects Chromium assertions with additional
+signed client-data fields. A separate V2 account/factory now supports the WebAuthn
+limited-verification prefix while preserving the original signature, exact USDC
+amount, TrustGate authorization and replay protections. It passed 90 versioned
+contract tests and a genuine Chromium/native-P256 payment on a disposable Monad
+fork. The separately approved V2 factory deployment finalized on Testnet at
+block 70207992, transaction
+`0xfec4f59f529250e3bbdf34121d63c8e46653d9ed4539bf8d1095bd71f9c69a11`.
+Its runtime and configuration matched the reviewed proposal; Monad Sourcify
+confirmed exact creation/runtime matches. The separately approved personal V2
+account creation finalized at block 70210612, transaction
+`0xb825cb51ba11c7f0500d59454d38ca7f091027616568f290275472157ef12f2e`.
+Its event, public key, runtime and configuration matched the proposal; Sourcify
+also confirmed exact creation/runtime matches. At the verification snapshot,
+the new account had nonce 0 and 0 USDC, while the V1 account retained its 20 test
+USDC with nonce 0. V2 funding and live activation remain separate steps.
+
+See [V2 scope, evidence and personal-account proposal](METROPOLIS_PASSKEY_V2.md)
+and [finalized V2 factory receipt](metropolis-testnet-factory-v2-deployment.json)
+and [personal-account receipt](metropolis-testnet-account-v2-deployment.json).

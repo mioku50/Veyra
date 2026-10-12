@@ -1,0 +1,74 @@
+{
+  "verifiedAt": "2026-10-11T20:36:01.313Z",
+  "network": "Monad Testnet",
+  "chainId": 10143,
+  "contract": "VeyraPasskeyAccountFactoryV2",
+  "accountVersion": 2,
+  "address": "0x0624d4C7fcB61d178BFA2b675ec25B111C0E4c7a",
+  "deployer": "0x861FBe92678Bd6421aCee2dC37b50FDe1Dc01A1E",
+  "trustGate": "0x4a8f26B1d376c9924aAE80877261E0c635eb54Bb",
+  "usdc": "0x534b2f3A21130d7a60830c2Df862319e593943A3",
+  "origin": "https://agent-commerce-six.vercel.app",
+  "rpIdHash": "0x7c889c49472504031aaf422df587c2f3927d208eb218a4b14356788c267a6d6e",
+  "transactionHash": "0xfec4f59f529250e3bbdf34121d63c8e46653d9ed4539bf8d1095bd71f9c69a11",
+  "blockNumber": "70207992",
+  "blockHash": "0x628d816d6657078e59f69692bfe97e890e333499d71012250dc411149396fad5",
+  "finalizedBlock": "70208252",
+  "finalizedBlockHash": "0xb65025963da6c920bf23c90bd9627d6bb40b982a2b7c493e3f811626068b0b78",
+  "status": "success",
+  "nonce": 4,
+  "gasLimit": "2934137",
+  "gasUsed": "2934137",
+  "effectiveGasPriceWei": "102000000000",
+  "chargedFeeMon": "0.299281974",
+  "feeAccounting": "Monad charges the transaction gas limit",
+  "maximumAuthorizedFeeMon": "0.357964714",
+  "nativeValueMon": "0",
+  "usdcSpent": "0",
+  "runtimeCodeHash": "0x2b55104da9e31a77ef1cd4ec74d3ab1fcdb99b5ef4a46792502f6100d4e5fe3d",
+  "deploymentDataHash": "0x25e584f0695b54ac6a5016395c2b034bed9237fb1e89c2791a9ad989f6858c26",
+  "configurationVerified": true,
+  "create2Predictions": [
+    {
+      "name": "syntheticFixture",
+      "address": "0xD4Fe599B4aa625C71a29dECa2D9B40313568744c",
+      "localAndOnchainPredictionMatch": true
+    },
+    {
+      "name": "existingPublicPasskey",
+      "address": "0x88f7aAe6050C842A5D2FB9e39B625102f5D54bB6",
+      "localAndOnchainPredictionMatch": true
+    }
+  ],
+  "oldAccount": {
+    "address": "0xc4867c6ae80563D9216a1b16D289b26Fa266bDc3",
+    "nonce": "0",
+    "usdcBalanceUnits": "20000000",
+    "runtimeCodeHash": "0x5d289af547c527505b87dc5480d4d2eba3e6f594b725f8d8cc4d4ff76354b84b",
+    "fundsMoved": false
+  },
+  "personalV2Account": {
+    "address": "0x88f7aAe6050C842A5D2FB9e39B625102f5D54bB6",
+    "deployed": false,
+    "usdcBalanceUnits": "0",
+    "accountCreationAuthorized": false
+  },
+  "existingTrustGateAndV1FactoryRuntimeUnchanged": true,
+  "existingAttesterRoleActive": true,
+  "roleChanges": 0,
+  "liveBrowserPaymentPathChanged": false,
+  "mainnetReady": false,
+  "autonomousSpendingEnabled": false,
+  "sourceVerification": {
+    "provider": "Monad Sourcify",
+    "status": "exact_match",
+    "creationMatch": "exact_match",
+    "runtimeMatch": "exact_match",
+    "jobId": "16bea4e3-cadf-4618-8be5-3362872eb623",
+    "verifiedAt": "2026-10-11T20:38:52Z",
+    "sourceCount": 32,
+    "creationBytecodeReproducedExactly": true,
+    "embeddedAccountCreationBytecodeReproducedExactly": true,
+    "jobUrl": "https://sourcify-api-monad.blockvision.org/verify-ui/jobs/16bea4e3-cadf-4618-8be5-3362872eb623"
+  }
+}

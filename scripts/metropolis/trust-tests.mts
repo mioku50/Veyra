@@ -8,6 +8,7 @@ import { monadDemoTestnet, MONAD_CONTRACTS } from "../../lib/monad/config.ts";
 import { getMonadReadClient, MONAD_IDENTITY_ABI, MONAD_REPUTATION_ABI } from "../../lib/monad/erc8004.ts";
 import { collectMonadEvidence, MONAD_ASSESSMENT_TYPES, monadAssessmentDomain,
   type MonadDeliveryAssessment, type MonadEvidencePolicy } from "../../lib/monad/evidence.ts";
+import { MONAD_HISTORY_LOOKBACK_SECONDS, MONAD_SECURITY_STATE_TTL_SECONDS } from "../../lib/monad/freshness.ts";
 import { buildMonadClearance, evaluateMonadPurchase, monadApprovalChallenge, parseMonadUsdc, selectMonadPurchase, signMonadClearance } from "../../lib/monad/trust.ts";
 import { verifyTrustClearanceOffchain } from "../../lib/trust-gate/verify.ts";
 import { METROPOLIS_ORIGIN } from "../../lib/monad/passkey.ts";
@@ -33,7 +34,8 @@ function check(condition: unknown, message: string) { assert.ok(condition, messa
 
 type Scenario = { chainId?: number; code?: Hex; wallet?: Address; owner?: Address; decimals?: number; registry?: Address;
   feedback?: bigint; feedbackDecimals?: number; failedReceipt?: boolean; reorg?: boolean;
-  token?: Address; payer?: Address; recipient?: Address; confirmations?: number; age?: number; clock?: number; finalizedBlock?: number };
+  token?: Address; payer?: Address; recipient?: Address; confirmations?: number; age?: number; clock?: number; finalizedBlock?: number;
+  snapshotAge?: number; snapshotNumber?: number; snapshotHash?: Hex | null; historicalOwner?: Address; historicalWallet?: Address };
 export function mockClient(options: Scenario = {}) {
   const client = createPublicClient({ chain: monadDemoTestnet, transport: custom({
     async request({ method, params }) {
@@ -42,11 +44,12 @@ export function mockClient(options: Scenario = {}) {
       if (method === "eth_getCode") return options.code ?? "0x6000";
       if (method === "eth_call") {
         const data = (params as [{ data: Hex }])[0].data;
+        const historical = (params as unknown as [unknown, string])[1] === "0x3e7";
         const { functionName } = decodeFunctionData({ abi, data });
         const value = functionName === "decimals" ? options.decimals ?? 6
           : functionName === "getIdentityRegistry" ? options.registry ?? MONAD_CONTRACTS[10143].identityRegistry
-          : functionName === "ownerOf" ? options.owner ?? owner
-          : functionName === "getAgentWallet" ? options.wallet ?? seller
+          : functionName === "ownerOf" ? historical ? options.historicalOwner ?? options.owner ?? owner : options.owner ?? owner
+          : functionName === "getAgentWallet" ? historical ? options.historicalWallet ?? options.wallet ?? seller : options.wallet ?? seller
           : functionName === "tokenURI" ? "https://metadata.invalid/test-only"
           : [options.feedback === undefined ? 0n : 6n, options.feedback ?? 0n, options.feedbackDecimals ?? 0];
         return encodeFunctionResult({ abi, functionName, result: value } as Parameters<typeof encodeFunctionResult>[0]);
@@ -61,16 +64,20 @@ export function mockClient(options: Scenario = {}) {
           topics: encodeEventTopics({ abi: erc20Abi, eventName: "Transfer", args: { from: options.payer ?? buyer, to: options.recipient ?? seller } }),
           data: encodeAbiParameters([{ type: "uint256" }], [12_000n]) }],
       };
-      if (method === "eth_getBlockByNumber") return {
-        number: (params as string[])[0] === "finalized" ? `0x${(options.finalizedBlock ?? 1000).toString(16)}` : "0x3e7",
-        hash: options.reorg ? hash("other-block") : blockHash,
-        timestamp: `0x${((options.clock ?? 1_800_000_000) - (options.age ?? 60)).toString(16)}`, transactions: [],
+      if (method === "eth_getBlockByNumber") {
+        const target = (params as string[])[0];
+        const snapshot = target === "finalized" || target === `0x${(options.finalizedBlock ?? 1000).toString(16)}`;
+        return {
+        number: snapshot ? `0x${(target === "finalized" ? options.finalizedBlock ?? 1000 : options.snapshotNumber ?? options.finalizedBlock ?? 1000).toString(16)}` : "0x3e7",
+        hash: snapshot && options.snapshotHash !== undefined ? options.snapshotHash : options.reorg ? hash("other-block") : blockHash,
+        timestamp: `0x${((options.clock ?? 1_800_000_000) - (snapshot ? options.snapshotAge ?? 0 : options.age ?? 60)).toString(16)}`, transactions: [],
         gasLimit: "0x1", gasUsed: "0x1", size: "0x1", difficulty: "0x0", totalDifficulty: "0x0",
-      };
+        };
+      }
       throw new Error(`Unexpected mock RPC method ${method}`);
     },
   }, { retryCount: 0 }) });
-  return client as ReturnType<typeof getMonadReadClient>;
+  return client as unknown as ReturnType<typeof getMonadReadClient>;
 }
 export async function assessment(overrides: Partial<MonadDeliveryAssessment> = {}, signer = reporter) {
   const message: MonadDeliveryAssessment = { agentId: 1n, buyer, seller, amount: 12_000n, paymentTx: tx,
@@ -108,7 +115,45 @@ check(limited.executable && limited.decision.decision === "ALLOW_WITH_LIMITS" &&
 const failed = await collectMonadEvidence(1n, { ...policy, assessments: [await assessment({ delivered: false })] }, mockClient(), now);
 check(evaluateMonadPurchase(failed, intent, now).decision.decision === "DENY", "Failed delivery cannot pass because money moved");
 const stale = await collectMonadEvidence(1n, { ...policy, assessments: [await assessment({ assessedAt: 1_799_999_980n - 20_000n })] }, mockClient({ age: 20_060 }), now);
-check(!evaluateMonadPurchase(stale, intent, now).executable, "Refreshing identity cannot rejuvenate stale delivery evidence");
+const overnight = evaluateMonadPurchase(stale, intent, now);
+check(overnight.executable && overnight.decision.decision === "ALLOW", "Reverified overnight history remains useful without an additional payment");
+check(overnight.decision.trust.snapshotAgeSeconds === 0 && overnight.history.oldestEventAgeSeconds === 20_060,
+  "Security snapshot age and original interaction age are separate");
+check(stale.evidence.filter(item => item.type !== "usdc_payment_success").every(item => item.historyAnchorAt === new Date(now.getTime() - 20_060_000).toISOString()),
+  "Assessment history retains its original payment anchor");
+const recollected = await collectMonadEvidence(1n, { ...policy, assessments: [await assessment({ assessedAt: 1_799_999_980n - 20_000n })] }, mockClient({ age: 20_061, clock: 1_800_000_001 }), new Date(now.getTime() + 1000));
+check(stale.evidence.every(item => recollected.evidence.some(other => other.canonicalHash === item.canonicalHash)),
+  "Recollection cannot rewrite source timestamps or manufacture fresh interactions");
+const atLookback = await collectMonadEvidence(1n, policy, mockClient({ age: MONAD_HISTORY_LOOKBACK_SECONDS }), now);
+check(evaluateMonadPurchase(atLookback, intent, now).executable, "A verified payment exactly at the declared 30-day boundary remains eligible");
+const beyondLookback = await collectMonadEvidence(1n, policy, mockClient({ age: MONAD_HISTORY_LOOKBACK_SECONDS + 1 }), now);
+const expiredHistory = evaluateMonadPurchase(beyondLookback, intent, now);
+check(!expiredHistory.executable && expiredHistory.history.excludedPositiveEvidence.length === 3,
+  "A newly signed positive assessment cannot rejuvenate a payment outside the lookback");
+check(expiredHistory.reasons.includes("NO_VERIFIED_DELIVERY_HISTORY"), "Expired positive delivery history cannot open a purchase");
+const oldFailure = await collectMonadEvidence(1n, { ...policy, assessments: [await assessment({ delivered: false })] }, mockClient({ age: MONAD_HISTORY_LOOKBACK_SECONDS + 1 }), now);
+check(evaluateMonadPurchase(oldFailure, intent, now).decision.decision === "DENY"
+  && evaluateMonadPurchase(oldFailure, intent, now).history.retainedNegativeCount === 2,
+  "An old negative delivery assessment remains blocking after its positive payment ages out");
+const oldSnapshot = await collectMonadEvidence(1n, policy, mockClient({ snapshotAge: MONAD_SECURITY_STATE_TTL_SECONDS + 1, age: 400 }), now);
+check(evaluateMonadPurchase(oldSnapshot, intent, now).decision.decision === "DENY"
+  && evaluateMonadPurchase(oldSnapshot, intent, now).reasons.includes("SECURITY_STATE_EXPIRED"),
+  "A just-collected stale finalized block cannot issue a clearance");
+const nearExpiry = await collectMonadEvidence(1n, policy, mockClient({ snapshotAge: 299, age: 400 }), now);
+const shortDecision = evaluateMonadPurchase(nearExpiry, intent, now);
+check(new Date(shortDecision.decision.expiresAt).getTime() === now.getTime() + 1000,
+  "Reissuing a decision cannot extend the original security snapshot deadline");
+assert.throws(() => buildMonadClearance(shortDecision, gate, new Date(now.getTime() + 2000)), /valid/); checks++;
+assert.throws(() => buildMonadClearance(shortDecision, gate, new Date(now.getTime() + 1000)), /valid/); checks++;
+const atStateExpiry = await collectMonadEvidence(1n, policy, mockClient({ snapshotAge: MONAD_SECURITY_STATE_TTL_SECONDS, age: 400 }), now);
+check(!evaluateMonadPurchase(atStateExpiry, intent, now).executable, "The exact security-state expiry cannot issue a zero-lifetime clearance");
+check(!evaluateMonadPurchase(full, intent, new Date(now.getTime() + 300_000)).executable,
+  "The exact collection expiry blocks authorization renewal");
+const undatedFeedback = await collectMonadEvidence(1n, { feedbackClients: [feedbackClient] }, mockClient({ feedback: 100n }), now);
+const undatedDecision = evaluateMonadPurchase(undatedFeedback, intent, now);
+check(!undatedDecision.executable && undatedDecision.history.scoredEvidenceCount === 0
+  && undatedDecision.history.excludedPositiveEvidence[0].reason === "UNKNOWN_EVENT_TIME",
+  "A current positive feedback aggregate does not invent a fresh historical event date");
 const self = await collectMonadEvidence(1n, { payments: policy.payments, feedbackClients: [owner, seller] }, mockClient({ payer: owner }), now);
 check(self.evidence.length === 0 && self.excluded.length === 3, "Provider feedback and self-transfers are excluded");
 const duplicate = await collectMonadEvidence(1n, { ...policy, payments: [...policy.payments!, ...policy.payments!], assessments: [validAssessment, validAssessment] }, mockClient(), now);
@@ -118,9 +163,11 @@ check(malformedFeedback.evidence.length === 0, "Arbitrary ERC-8004 metrics are n
 
 for (const scenario of [ { chainId: 143 }, { code: "0x" as Hex }, { decimals: 18 },
   { registry: seller }, { wallet: "0x0000000000000000000000000000000000000000" as Address },
-  { failedReceipt: true }, { reorg: true }, { token: seller }, { recipient: buyer }, { confirmations: 1 }, { finalizedBlock: 998 } ]) {
+  { failedReceipt: true }, { reorg: true }, { token: seller }, { recipient: buyer }, { confirmations: 1 }, { finalizedBlock: 998 },
+  { snapshotAge: -1 }, { snapshotHash: null }, { snapshotNumber: 999 }, { historicalOwner: buyer }, { historicalWallet: owner } ]) {
   await assert.rejects(() => collectMonadEvidence(1n, policy, mockClient(scenario), now)); checks++;
 }
+await assert.rejects(() => collectMonadEvidence(1n, policy, mockClient({ age: -1 }), now), /historical block/); checks++;
 await assert.rejects(() => collectMonadEvidence(1n, { feedbackClients: [feedbackClient, feedbackClient] }, mockClient(), now)); checks++;
 await assert.rejects(() => collectMonadEvidence(1n, { ...policy, assessmentReporters: [] }, mockClient(), now), /signer/); checks++;
 await assert.rejects(() => collectMonadEvidence(1n, policy, mockClient({ owner: reporter.address }), now), /signer/); checks++;

@@ -16,6 +16,9 @@ proposal/approval exchange; it is not a hosted signing or broadcast service.
    attester. Copied decisions, review/deny results, task/provider/budget mismatches
    and an undeployed account are rejected. This library accepts an injected signer;
    it never loads an environment file or broadcasts.
+   Select the setup's verified factory explicitly for V2; the issuer's default
+   remains V1 for historical callers. The plan and clearance executor must match
+   the account derived from that factory and passkey.
 4. On the canonical `/metropolis` page, verify the saved passkey and prepare the
    deployed account. Paste the signed proposal and select **Check proposal**.
    The browser checks both signatures, account/key configuration, current provider
@@ -41,6 +44,26 @@ nonce and deadline. Changing a task, amount, recipient or context invalidates th
 proposal or its signatures. Approval authorizes one execution before expiry;
 copying it does not itself broadcast or revoke that authorization.
 
+The local policy identifier is now `veyra-trust-policy-v1:metropolis-evidence-v2`.
+Current security state expires after 300 seconds; original positive payment and
+delivery history stays eligible for 30 days. A decision cannot extend the source
+snapshot's expiry. See [the freshness design](METROPOLIS_FRESHNESS.md).
+The published browser still uses the earlier policy: publish the reviewed frontend
+before issuing a live proposal with this policy version. This policy identifier
+is separate from the passkey account version. Packages signed under the old policy
+are not relabelled as current-policy packages; retain their original artifacts.
+Within the current policy, both pinned account factories are supported. V1
+approvals retain their strict parser and original account. The local browser uses
+V2 for new purchases and can load saved V1 approvals to verify their own receipts.
+
+The deployed immutable passkey account accepts one exact compact JSON encoding.
+Chromium sometimes appends a legitimate extra member. The local read-only probe
+accepts that format and verifies its actual signed bytes, but payment approval
+fails closed with an explicit compatibility message. No signed JSON is rewritten.
+A new contract/factory and a separately approved migration are needed to support
+that encoding for payments. Local tests of the supported format do not establish
+universal browser compatibility.
+
 ## Public-input commands
 
 Keep actual setup, proposal and approval files in an ignored directory. Never
@@ -64,10 +87,19 @@ first-time override, fabricated reviews or synthetic live evidence is supported.
 
 ## Scope remaining for a useful purchase
 
-A real provider/service must be selected and integrated. Useful output, persistence
-of request/response hashes, an actual delivery assessment and client ERC-8004
-feedback remain separate work. A manual operator flow or a successful local fork
-does not prove a live end-to-end service. Direct transfer provides no escrow.
+An operator-run readiness service, free preview, unsigned identity-registration
+plan and reproducible report/delivery verification are now implemented locally;
+see [the readiness runbook](METROPOLIS_READINESS.md). Readiness demo agent #2083
+now has a verified live Testnet registration; see
+[registration evidence](metropolis-testnet-readiness-agent.json). Honest
+provider history, an actual owner-approved payment, signed assessment and client
+ERC-8004 feedback still require separate work. A manual operator flow or a
+successful local fork does not prove a live end-to-end service. Direct transfer
+provides no escrow.
+
+[The separate manual trial](METROPOLIS_MANUAL_TRIAL.md) prepares an unsigned EOA
+order for a new provider, then verifies a real payment and reproducible result.
+It never produces a Veyra clearance or bypasses the passkey account's policy.
 
 ## Verification
 
@@ -91,6 +123,13 @@ recorded in [metropolis-purchase-publication.json](metropolis-purchase-publicati
 For that check, add `METROPOLIS_E2E_ORIGIN=https://agent-commerce-six.vercel.app`
 to the fork-test command below. It still sends no live blockchain transaction.
 
+The current local test additionally performs a manual readiness trial before
+the passkey purchase. Its initial policy history now comes from actual localhost
+transfer/result evidence and a declared test buyer score. This updated flow
+passed at fork block **69357158**; see
+[manual trial verification](metropolis-manual-trial-local-verification.json).
+It has not been published and establishes no live paid interaction.
+
 Run packet tests and the existing account authorization suite:
 
 ```bash
@@ -102,14 +141,19 @@ forge test --root contracts/monad --network monad --no-match-contract MonadPreco
 For the browser/relay/receipt test, build and start Next.js on port 3126, then run:
 
 ```bash
-METROPOLIS_TEST_FUNDING_SOURCE=PUBLIC_TESTNET_ADDRESS_WITH_AT_LEAST_ONE_USDC \
+METROPOLIS_TEST_FUNDING_SOURCE=PUBLIC_TESTNET_ADDRESS_WITH_AT_LEAST_1_1_USDC \
 METROPOLIS_TEST_FORK_BLOCK=FINALIZED_BLOCK_WITH_THAT_BALANCE \
   node --experimental-transform-types --no-warnings scripts/metropolis/purchase-browser-fork.mts
 ```
 
+The current V2 browser test requires a fork at or after factory deployment block
+70207992. Earlier verification paragraphs above describe historical V1 runs.
+
 The test launches official Foundry 1.8+ Anvil with Monad execution at localhost.
-It impersonates addresses and uses synthetic history **only on that disposable
-fork**. Chromium's virtual authenticator performs real WebAuthn cryptography;
+It impersonates addresses and uses an actual trial/result with a declared test
+buyer score **only on that disposable fork**. The funding source supplies 1 USDC
+to the virtual passkey account and 0.1 USDC to the EOA test buyer. Chromium's
+virtual authenticator performs real WebAuthn cryptography;
 the deployed account executes native P256 verification on the fork. The upstream
 proxy allows only read RPC methods. It never spends the live funding address's
 USDC or grants a live attester role. It does not call or assess a real service.

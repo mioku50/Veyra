@@ -4,11 +4,12 @@ import { computeAgentReputation } from "../reputation/engine.ts";
 import { computeCanonicalDecisionHash } from "../trust-gate/canonical.ts";
 import { resolvePolicy } from "../trust-gate/policy.ts";
 import { EIP712_CLEARANCE_TYPES, getTrustGateEip712Domain } from "../trust-gate/sign.ts";
-import { TRUST_DECISION_EXPIRY_SECONDS, TRUST_POLICY_VERSION, type TrustDecision, type TrustRiskCode } from "../trust-gate/types.ts";
+import { TRUST_DECISION_EXPIRY_SECONDS, type TrustDecision, type TrustRiskCode } from "../trust-gate/types.ts";
 import { MONAD_CONTRACTS } from "./config.ts";
 import { assertVerifiedMonadEvidence, canonicalMonadHash, deepFreeze, type MonadEvidenceBundle } from "./evidence.ts";
+import { METROPOLIS_TRUST_VERSION, MONAD_SECURITY_STATE_TTL_SECONDS, selectMonadHistory, type MonadHistorySummary } from "./freshness.ts";
 
-export const METROPOLIS_TRUST_VERSION = `${TRUST_POLICY_VERSION}:metropolis-evidence-v1`;
+export { METROPOLIS_TRUST_VERSION } from "./freshness.ts";
 export const MONAD_APPROVAL_TYPEHASH = keccak256(toBytes(
   "VeyraPasskeyPayment(uint256 chainId,address account,address trustGate,bytes32 clearanceDigest,bytes32 actionHash,uint256 nonce,uint64 deadline)",
 ));
@@ -25,6 +26,7 @@ export type MonadTrustDecision = {
   requestHash: Hex;
   actionHash: Hex;
   evidenceHash: Hex;
+  history: MonadHistorySummary;
   executable: boolean;
   reasons: readonly string[];
   disclosures: readonly string[];
@@ -56,44 +58,52 @@ export function evaluateMonadPurchase(bundle: MonadEvidenceBundle, intent: Monad
   const budget = parseMonadUsdc(intent.budgetUsdc);
   const collectedAtMs = new Date(bundle.collectedAt).getTime();
   if (!Number.isFinite(now.getTime()) || now.getTime() < collectedAtMs) throw new Error("Invalid decision time");
-  const explanation = computeAgentReputation(bundle.identity, [...bundle.evidence], now);
+  const history = selectMonadHistory(bundle.evidence, now);
+  const evidence = history.evidence;
+  const explanation = computeAgentReputation(bundle.identity, evidence, now);
   const confidence = explanation.confidence === "Very High" || explanation.confidence === "High" ? 0.9
     : explanation.confidence === "Medium" ? 0.6 : 0.3;
   const coverage = explanation.coverage / 100;
-  // A fresh identity RPC read cannot rejuvenate old economic/delivery evidence.
-  const sourceTimes = [collectedAtMs, ...bundle.evidence.map(item => new Date(item.observedAt).getTime())];
-  const freshnessSeconds = Math.floor((now.getTime() - Math.min(...sourceTimes)) / 1000);
+  // This clock describes reverified security state, not the age of a historical interaction.
+  const securityBlockMs = new Date(bundle.securitySnapshot.observedAt).getTime();
+  const stateObservedAtMs = Math.min(collectedAtMs, securityBlockMs);
+  const freshnessSeconds = Math.floor((now.getTime() - stateObservedAtMs) / 1000);
   const riskSignals: TrustRiskCode[] = [];
   if (confidence < 0.5) riskSignals.push("LOW_CONFIDENCE");
   if (coverage < 0.5) riskSignals.push("INSUFFICIENT_COVERAGE");
-  if (!bundle.evidence.length) riskSignals.push("NO_REPUTATION_DATA");
-  if (freshnessSeconds > 3600) riskSignals.push("STALE_REPUTATION");
+  if (!evidence.length) riskSignals.push("NO_REPUTATION_DATA");
+  if (now.getTime() - stateObservedAtMs >= MONAD_SECURITY_STATE_TTL_SECONDS * 1000
+    || history.summary.excludedPositiveEvidence.length > 0 && !evidence.some(item => item.type === "service_delivery" && item.positive)) {
+    riskSignals.push("STALE_REPUTATION");
+  }
   const { tier } = resolvePolicy(explanation.trustScore, confidence, coverage, freshnessSeconds, riskSignals);
   const tierLimit = parseUnits(tier.maxValueUsdc.toString(), 6);
   const maxAmount = tierLimit < budget ? tierLimit : budget;
   const reasons: string[] = [...riskSignals];
   if (tier.level !== "ALLOW" && tier.level !== "ALLOW_WITH_LIMITS") reasons.push("TRUST_TIER_REQUIRES_REVIEW");
-  if (!bundle.evidence.some(item => item.type === "usdc_payment_success")) reasons.push("NO_CORROBORATED_PAYMENT_HISTORY");
-  if (!bundle.evidence.some(item => item.type === "service_delivery" && item.positive)) reasons.push("NO_VERIFIED_DELIVERY_HISTORY");
-  if (bundle.evidence.some(item => item.type === "service_delivery" && !item.positive)) reasons.push("DELIVERY_ASSESSMENT_FAILED");
+  if (!evidence.some(item => item.type === "usdc_payment_success")) reasons.push("NO_CORROBORATED_PAYMENT_HISTORY");
+  if (!evidence.some(item => item.type === "service_delivery" && item.positive)) reasons.push("NO_VERIFIED_DELIVERY_HISTORY");
+  if (evidence.some(item => item.type === "service_delivery" && !item.positive)) reasons.push("DELIVERY_ASSESSMENT_FAILED");
   if (intent.expectedPayee && intent.expectedPayee.toLowerCase() !== bundle.identity.paymentWallet.toLowerCase()) reasons.push("PAYEE_BINDING_MISMATCH");
   if (intent.executor.toLowerCase() === bundle.identity.paymentWallet.toLowerCase()) reasons.push("SELF_PAYMENT_NOT_ALLOWED");
   if (requestedAmount > budget || (["ALLOW", "ALLOW_WITH_LIMITS"].includes(tier.level) && requestedAmount > maxAmount)) {
     reasons.push("VALUE_EXCEEDS_TRUST_LIMIT"); riskSignals.push("VALUE_EXCEEDS_TRUST_LIMIT");
   }
-  if (now.getTime() - collectedAtMs > TRUST_DECISION_EXPIRY_SECONDS * 1000) reasons.push("EVIDENCE_COLLECTION_EXPIRED");
+  if (now.getTime() - collectedAtMs >= TRUST_DECISION_EXPIRY_SECONDS * 1000) reasons.push("EVIDENCE_COLLECTION_EXPIRED");
+  if (now.getTime() - securityBlockMs >= MONAD_SECURITY_STATE_TTL_SECONDS * 1000) reasons.push("SECURITY_STATE_EXPIRED");
   // Informational low-confidence/staleness risks remain visible; tier thresholds decide their permitted range.
   const blocking = reasons.filter(reason => !["LOW_CONFIDENCE", "INSUFFICIENT_COVERAGE", "STALE_REPUTATION"].includes(reason));
   const executable = blocking.length === 0;
   const issuedAt = new Date(Math.floor(now.getTime() / 1000) * 1000).toISOString();
   const expiresAt = new Date(Math.min(now.getTime() + TRUST_DECISION_EXPIRY_SECONDS * 1000,
-    collectedAtMs + TRUST_DECISION_EXPIRY_SECONDS * 1000)).toISOString();
+    collectedAtMs + TRUST_DECISION_EXPIRY_SECONDS * 1000,
+    securityBlockMs + MONAD_SECURITY_STATE_TTL_SECONDS * 1000)).toISOString();
   const binding = { chainId: 10143, executor: intent.executor.toLowerCase(), payee: bundle.identity.paymentWallet.toLowerCase(),
     requestedAmount, maxAmount, ownerBudgetUnits: budget, serviceId: intent.serviceId, requestHash: intent.requestHash, evidenceHash: bundle.evidenceHash,
-    policyVersion: METROPOLIS_TRUST_VERSION, issuedAt, expiresAt };
+    history: history.summary, policyVersion: METROPOLIS_TRUST_VERSION, issuedAt, expiresAt };
   const decision: TrustDecision = {
     decisionId: `vmd_${canonicalMonadHash(binding).slice(2)}`,
-    decision: executable ? tier.level : blocking.some(reason => ["PAYEE_BINDING_MISMATCH", "SELF_PAYMENT_NOT_ALLOWED", "DELIVERY_ASSESSMENT_FAILED", "VALUE_EXCEEDS_TRUST_LIMIT", "EVIDENCE_COLLECTION_EXPIRED"].includes(reason)) ? "DENY" : "REVIEW_REQUIRED",
+    decision: executable ? tier.level : blocking.some(reason => ["PAYEE_BINDING_MISMATCH", "SELF_PAYMENT_NOT_ALLOWED", "DELIVERY_ASSESSMENT_FAILED", "VALUE_EXCEEDS_TRUST_LIMIT", "EVIDENCE_COLLECTION_EXPIRED", "SECURITY_STATE_EXPIRED"].includes(reason)) ? "DENY" : "REVIEW_REQUIRED",
     subject: { agentId: bundle.identity.agentId, wallet: bundle.identity.paymentWallet },
     trust: { score: explanation.trustScore, confidence, coverage,
       snapshotHash: bundle.evidenceHash, snapshotAgeSeconds: freshnessSeconds },
@@ -107,8 +117,11 @@ export function evaluateMonadPurchase(bundle: MonadEvidenceBundle, intent: Monad
   decision.canonicalHash = computeCanonicalDecisionHash(decision);
   const output = deepFreeze({ chainId: 10143 as const, decision, requestedAmount, maxAmount: executable ? maxAmount : BigInt(0), ownerBudgetUnits: budget,
     requestHash: intent.requestHash, actionHash: monadPaymentActionHash(bundle.identity.paymentWallet, requestedAmount),
-    evidenceHash: bundle.evidenceHash, executable, reasons: [...new Set(reasons)],
+    evidenceHash: bundle.evidenceHash, history: history.summary, executable, reasons: [...new Set(reasons)],
     disclosures: [...bundle.disclosures, ...bundle.excluded,
+      `Positive history uses a ${history.summary.lookbackSeconds}-second lookback anchored to the original payment; negative delivery assessments remain blocking.`,
+      `Security state expires after ${MONAD_SECURITY_STATE_TTL_SECONDS} seconds; reissuing a decision cannot extend its source snapshot.`,
+      "Positive aggregate feedback with unknown event time does not enter history scoring.",
       ...explanation.topPositiveEvidence.map(reason => reason.replace("independent counterparties", "distinct client addresses (ownership independence unverified)"))],
     canonicalHash: canonicalMonadHash({ binding, decision, reasons: [...new Set(reasons)], executable }),
   });
@@ -124,7 +137,7 @@ export function buildMonadClearance(result: MonadTrustDecision, trustGate: Addre
   if (!isAddress(trustGate) || trustGate === zeroAddress || !Number.isFinite(now.getTime())) throw new Error("Invalid TrustGate or clearance time");
   const current = BigInt(Math.floor(now.getTime() / 1000));
   const issuedAt = BigInt(Math.floor(new Date(result.decision.issuedAt).getTime() / 1000));
-  if (current < issuedAt || current > provenance.expiresAt) throw new Error("Monad decision is not currently valid");
+  if (current < issuedAt || current >= provenance.expiresAt) throw new Error("Monad decision is not currently valid");
   const message = {
     decisionId: keccak256(toBytes(result.decision.decisionId)),
     subject: result.decision.subject.wallet as Address, executor: result.decision.request.executor as Address,

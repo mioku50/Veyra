@@ -1,5 +1,5 @@
 import { type Hex, type LocalAccount } from "viem";
-import { METROPOLIS_DEPLOYMENT, readAccountSetup } from "./account.ts";
+import { METROPOLIS_DEPLOYMENT, metropolisAccountProfile, readAccountSetup } from "./account.ts";
 import { MONAD_CONTRACTS } from "./config.ts";
 import { getMonadReadClient } from "./erc8004.ts";
 import { METROPOLIS_ORIGIN } from "./passkey.ts";
@@ -9,21 +9,22 @@ import { parseMonadUsdc, signMonadClearance, type MonadTrustDecision } from "./t
 
 /** Operator-side only: result must retain the existing trust engine's issuance provenance. */
 export async function issuePurchaseQuote(result:MonadTrustDecision,
-  input:{publicKey:Hex;task:PurchaseTask;budgetUsdc:string;agentId:string;demonstration:boolean},
+  input:{publicKey:Hex;task:PurchaseTask;budgetUsdc:string;agentId:string;demonstration:boolean;factory?:SignedPurchase["factory"]},
   signer:LocalAccount,client=getMonadReadClient(),now=new Date()):Promise<SignedPurchase> {
   const task=parsePurchaseTask(input.task);
+  const deployment=metropolisAccountProfile(input.factory??METROPOLIS_DEPLOYMENT.factory);
   const agent=`eip155:10143:${MONAD_CONTRACTS[10143].identityRegistry.toLowerCase()}:${input.agentId}`;
   if(result.requestHash!==purchaseRequestHash(task)||result.decision.request.serviceId!==task.serviceId
     ||result.decision.subject.agentId!==agent)throw new PaymentError("The task and provider do not match the server's trust decision.");
   if(parseMonadUsdc(input.budgetUsdc)!==result.ownerBudgetUnits)throw new PaymentError("The displayed budget does not match the server's trust decision.");
   // This function rejects copied/serialized results and REVIEW_REQUIRED/DENY at the signing boundary.
   const signed=await signMonadClearance(result,METROPOLIS_DEPLOYMENT.trustGate,signer,now);
-  const setup=await readAccountSetup(input.publicKey,METROPOLIS_ORIGIN,client);
+  const setup=await readAccountSetup(input.publicKey,METROPOLIS_ORIGIN,client,undefined,deployment.factory);
   if(!setup.accountDeployed||setup.accountAddress!==signed.message.executor)throw new PaymentError("The issued clearance does not match this deployed account.");
   const nonce=await client.readContract({address:setup.accountAddress,abi:PAYMENT_ACCOUNT_ABI,functionName:"nonce",blockNumber:BigInt(setup.observedBlock)});
   const m=signed.message;
   const quote=parseSignedPurchase({kind:"veyra.metropolis.purchase",version:1,chainId:10143,origin:METROPOLIS_ORIGIN,
-    factory:METROPOLIS_DEPLOYMENT.factory,trustGate:METROPOLIS_DEPLOYMENT.trustGate,usdc:MONAD_CONTRACTS[10143].usdc,
+    factory:deployment.factory,trustGate:deployment.trustGate,usdc:MONAD_CONTRACTS[10143].usdc,
     accountAddress:setup.accountAddress,publicKey:input.publicKey,task,budgetUsdc:input.budgetUsdc,
     provider:{agentId:input.agentId,payee:m.counterparty,demonstration:input.demonstration},
     policy:{decision:result.decision.decision,score:result.decision.trust.score,confidence:result.decision.trust.confidence,

@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
-import { createHash,generateKeyPairSync,sign } from "node:crypto";
+import { createHash,generateKeyPairSync,sign,verify } from "node:crypto";
 import { hashTypedData,keccak256,toHex,type Hex } from "viem";
-import { METROPOLIS_DEPLOYMENT } from "../../lib/monad/account.ts";
+import { METROPOLIS_DEPLOYMENT,METROPOLIS_V2_DEPLOYMENT } from "../../lib/monad/account.ts";
 import { MONAD_CONTRACTS } from "../../lib/monad/config.ts";
 import { collectMonadEvidence } from "../../lib/monad/evidence.ts";
-import { METROPOLIS_ORIGIN,base64Url,toContractAssertion } from "../../lib/monad/passkey.ts";
+import { METROPOLIS_ORIGIN,PasskeyCompatibilityError,base64Url,toContractAssertion,toDiagnosticAssertion } from "../../lib/monad/passkey.ts";
 import { parseSignedPurchase,verifyPurchaseSignatures,purchaseContext,purchaseRequestHash,parsePurchaseTask,
   parsePaymentApproval,contractAssertion } from "../../lib/monad/payment.ts";
 import { issuePurchaseQuote } from "../../lib/monad/purchase-issuer.ts";
@@ -47,10 +47,12 @@ for(const changed of [
   {...quote,budgetUsdc:"0.03"},
   {...quote,nonce:"1"},
   {...quote,deadline:(BigInt(quote.deadline)-BigInt(1)).toString()},
+  {...quote,factory:METROPOLIS_V2_DEPLOYMENT.factory},
   {...quote,contextSignature:quote.clearanceSignature},
   {...quote,attester:"0x0000000000000000000000000000000000000444"},
 ]){await assert.rejects(verifyPurchaseSignatures(changed));checks++;}
 for(const changed of [null,[],{...quote,privateKey:"forbidden"},{...quote,chainId:143},
+  {...quote,factory:"0x0000000000000000000000000000000000000444"},
   {...quote,origin:"https://preview.vercel.app"},{...quote,usdc:MONAD_CONTRACTS[143].usdc},
   {...quote,policy:{...quote.policy,decision:"REVIEW_REQUIRED"}},
   {...quote,clearance:{...quote.clearance,requestedAmount:"12001"}},
@@ -60,6 +62,7 @@ for(const changed of [null,[],{...quote,privateKey:"forbidden"},{...quote,chainI
   {...quote,clearance:{...quote.clearance,requestedAmount:"01"}},
   {...quote,clearance:{...quote.clearance,evaluator:quote.attester}},
   {...quote,clearance:{...quote.clearance,policyVersion:keccak256(toHex("old-policy"))}},
+  {...quote,clearance:{...quote.clearance,policyVersion:keccak256(toHex("veyra-trust-policy-v1:metropolis-evidence-v1"))}},
   {...quote,clearance:{...quote.clearance,expiresAt:(m.issuedAt+BigInt(301)).toString()}},
   {...quote,deadline:(m.expiresAt+BigInt(1)).toString()},
   {...quote,nonce:(BigInt(1)<<BigInt(256)).toString()},
@@ -89,4 +92,36 @@ for(const changed of [
 for(const changed of [{...approval,assertion:{...approval.assertion,typeIndex:"-1"}},
   {...approval,assertion:{...approval.assertion,authenticatorData:"0x12"}},
   {...approval,credentialId:"not accepted"}]){assert.throws(()=>parsePaymentApproval(changed));checks++;}
+const extendedJSON=JSON.stringify({...JSON.parse(json),other_keys_can_be_added_here:"do not compare clientDataJSON against a template"});
+const extendedPayload=Buffer.concat([authenticatorData,createHash("sha256").update(extendedJSON).digest()]);
+const extendedSignature=sign("sha256",extendedPayload,{key:publicKeyPair.privateKey,dsaEncoding:"ieee-p1363"});
+const extendedMetadata={authenticatorData:`0x${authenticatorData.toString("hex")}` as Hex,clientDataJSON:extendedJSON,
+  challengeIndex:extendedJSON.indexOf('"challenge"'),typeIndex:extendedJSON.indexOf('"type"')};
+assert.equal(verify("sha256",extendedPayload,{key:publicKeyPair.publicKey,dsaEncoding:"ieee-p1363"},extendedSignature),true);checks++;
+assert.equal(toDiagnosticAssertion(`0x${extendedSignature.toString("hex")}`,extendedMetadata,challenge,METROPOLIS_ORIGIN).clientDataJSON,extendedJSON);checks++;
+assert.throws(()=>toContractAssertion(`0x${extendedSignature.toString("hex")}`,extendedMetadata,challenge,METROPOLIS_ORIGIN),PasskeyCompatibilityError);checks++;
+const v2Draft=parseSignedPurchase({...quote,factory:METROPOLIS_V2_DEPLOYMENT.factory});
+const v2Quote=parseSignedPurchase({...v2Draft,contextSignature:await publicTestAttester.signTypedData(purchaseContext(v2Draft))});
+assert.equal((await verifyPurchaseSignatures(v2Quote)).quote.factory,METROPOLIS_V2_DEPLOYMENT.factory);checks++;
+const v2Auth=toDiagnosticAssertion(`0x${extendedSignature.toString("hex")}`,extendedMetadata,challenge,METROPOLIS_ORIGIN);
+const v2Approval=parsePaymentApproval({...approval,quote:v2Quote,assertion:{...v2Auth,challengeIndex:v2Auth.challengeIndex.toString(),typeIndex:v2Auth.typeIndex.toString()}});
+assert.equal(contractAssertion(v2Approval,challenge).clientDataJSON,extendedJSON);checks++;
+assert.throws(()=>contractAssertion({...v2Approval,quote},challenge),PasskeyCompatibilityError);checks++;
+for(const invalid of [extendedJSON.replace('"crossOrigin":false','"crossOrigin":true'),
+  extendedJSON.replace(METROPOLIS_ORIGIN,"https://evil.invalid"),
+  `${json.slice(0,-1)},"challenge":"${base64Url(challenge)}"}`]) {
+  assert.throws(()=>contractAssertion({...v2Approval,assertion:{...v2Approval.assertion,clientDataJSON:invalid}},challenge));checks++;
+}
+assert.equal(verify("sha256",Buffer.concat([authenticatorData,createHash("sha256").update(json).digest()]),
+  {key:publicKeyPair.publicKey,dsaEncoding:"ieee-p1363"},extendedSignature),false,"Removing browser fields invalidates the actual signature");checks++;
+for(const invalid of [
+  extendedJSON.replace('"crossOrigin":false','"crossOrigin":true'),
+  extendedJSON.replace(METROPOLIS_ORIGIN,"https://evil.invalid"),
+  extendedJSON.replace(base64Url(challenge),base64Url(`0x${"00".repeat(32)}`)),
+  `${json.slice(0,-1)},"challenge":"${base64Url(challenge)}"}`,
+  `${json.slice(0,-1)},"type":"webauthn.get"}`,
+  JSON.stringify({nested:JSON.parse(json)}),
+  `${extendedJSON} `,
+  "null",
+]) {assert.throws(()=>toDiagnosticAssertion(`0x${extendedSignature.toString("hex")}`,{...extendedMetadata,clientDataJSON:invalid},challenge,METROPOLIS_ORIGIN));checks++;}
 console.log(`Purchase package PASS: ${checks} signed-context, exact amount, provenance, domain and WebAuthn checks. Synthetic fixtures only.`);

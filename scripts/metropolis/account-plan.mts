@@ -3,7 +3,7 @@ import { fileURLToPath } from "node:url";
 import { resolve } from "node:path";
 import { encodeAbiParameters, encodeDeployData, encodeFunctionData, formatEther, getAddress,
   getContractAddress, isAddress, keccak256, parseEther, zeroAddress, type Address, type Hex } from "viem";
-import { METROPOLIS_FACTORY_ABI, parseAccountSetup, readAccountSetup } from "../../lib/monad/account.ts";
+import { METROPOLIS_FACTORY_ABI, metropolisAccountProfile, parseAccountSetup, readAccountSetup } from "../../lib/monad/account.ts";
 import { getMonadReadClient } from "../../lib/monad/erc8004.ts";
 
 const accountConstructor = [{ type: "constructor", inputs: [
@@ -33,7 +33,7 @@ export async function planAccountCreation(setupValue: unknown, sender: Address, 
   if (!isAddress(sender, { strict: true }) || getAddress(sender) === zeroAddress) throw new Error("Invalid deployment sender.");
   const setup = await parseAccountSetup(setupValue);
   if (!/^0x(?:[0-9a-fA-F]{2})+$/.test(bytecode)) throw new Error("Compile the passkey account before preparing its deployment.");
-  const fresh = await readAccountSetup(`0x${setup.qx.slice(2)}${setup.qy.slice(2)}`, setup.origin, client);
+  const fresh = await readAccountSetup(`0x${setup.qx.slice(2)}${setup.qy.slice(2)}`, setup.origin, client, undefined, setup.factory);
   const initCode = encodeDeployData({ abi: accountConstructor, bytecode,
     args: [setup.trustGate, setup.usdc, setup.qx, setup.qy, setup.rpIdHash, setup.origin] });
   const salt = keccak256(encodeAbiParameters([{ type: "bytes32" }, { type: "bytes32" }, { type: "bytes32" }],
@@ -85,7 +85,9 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
     let setup: unknown;
     try { setup = JSON.parse(readFileSync(setupPath, "utf8")); }
     catch { throw new Error("The public setup file must be valid JSON."); }
-    const artifact = JSON.parse(readFileSync(new URL("../../contracts/monad/out/VeyraPasskeyAccount.sol/VeyraPasskeyAccount.json", import.meta.url), "utf8")) as { bytecode: { object: Hex } };
+    const parsed = await parseAccountSetup(setup);
+    const name = metropolisAccountProfile(parsed.factory).accountVersion === 2 ? "VeyraPasskeyAccountV2" : "VeyraPasskeyAccount";
+    const artifact = JSON.parse(readFileSync(new URL(`../../contracts/monad/out/${name}.sol/${name}.json`, import.meta.url), "utf8")) as { bytecode: { object: Hex } };
     console.log(JSON.stringify(await planAccountCreation(setup, sender, artifact.bytecode.object), null, 2));
   } catch (error) {
     console.error(error instanceof Error ? error.message : "Account deployment planning failed.");

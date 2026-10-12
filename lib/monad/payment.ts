@@ -2,11 +2,13 @@ import { z } from "zod";
 import { encodeAbiParameters, encodeFunctionData, erc20Abi, getAddress, hashTypedData, isAddress, keccak256,
   parseAbi, recoverTypedDataAddress, toHex, zeroAddress, type Hex } from "viem";
 import { EIP712_CLEARANCE_TYPES, getTrustGateEip712Domain } from "../trust-gate/sign.ts";
-import { TRUST_DECISION_EXPIRY_SECONDS, TRUST_POLICY_VERSION } from "../trust-gate/types.ts";
-import { METROPOLIS_DEPLOYMENT, readAccountSetup } from "./account.ts";
+import { TRUST_DECISION_EXPIRY_SECONDS } from "../trust-gate/types.ts";
+import { METROPOLIS_TRUST_VERSION } from "./freshness.ts";
+import { METROPOLIS_DEPLOYMENT, METROPOLIS_V2_DEPLOYMENT, metropolisAccountProfile, readAccountSetup } from "./account.ts";
 import { MONAD_CONTRACTS } from "./config.ts";
 import { getMonadReadClient, MONAD_IDENTITY_ABI, readMonadAgentIdentity } from "./erc8004.ts";
 import { METROPOLIS_ORIGIN, toContractAssertion } from "./passkey.ts";
+import { toPasskeyV2Assertion } from "./passkey-v2.ts";
 
 const hash = z.string().regex(/^0x[0-9a-fA-F]{64}$/).transform(value => value.toLowerCase() as Hex);
 const signature = z.string().regex(/^0x[0-9a-fA-F]{130}$/).transform(value => value.toLowerCase() as Hex);
@@ -25,7 +27,7 @@ const clearanceSchema = z.object({
 }).strict();
 const quoteSchema = z.object({
   kind:z.literal("veyra.metropolis.purchase"), version:z.literal(1), chainId:z.literal(10143),
-  origin:z.literal(METROPOLIS_ORIGIN), factory:z.literal(METROPOLIS_DEPLOYMENT.factory),
+  origin:z.literal(METROPOLIS_ORIGIN), factory:z.enum([METROPOLIS_DEPLOYMENT.factory,METROPOLIS_V2_DEPLOYMENT.factory]),
   trustGate:z.literal(METROPOLIS_DEPLOYMENT.trustGate), usdc:z.literal(MONAD_CONTRACTS[10143].usdc),
   accountAddress:address, publicKey, task:taskSchema, budgetUsdc:amount,
   provider:z.object({agentId:uint.refine(value => BigInt(value)>BigInt(0)), payee:address, demonstration:z.boolean()}).strict(),
@@ -95,7 +97,7 @@ export function parseSignedPurchase(value:unknown):SignedPurchase {
     ||c.counterparty===quote.accountAddress||c.requestedAmount<=BigInt(0)||c.requestedAmount>c.maxAmount
     ||c.requestedAmount>amountUnits(quote.budgetUsdc)||c.maxAmount>amountUnits(quote.budgetUsdc)
     ||BigInt(c.decisionId)===BigInt(0)||BigInt(c.snapshotHash)===BigInt(0)||c.actionHash!==action
-    ||c.policyVersion!==keccak256(toHex(`${TRUST_POLICY_VERSION}:metropolis-evidence-v1`))
+    ||c.policyVersion!==keccak256(toHex(METROPOLIS_TRUST_VERSION))
     ||c.expiresAt<=c.issuedAt||c.expiresAt-c.issuedAt>BigInt(TRUST_DECISION_EXPIRY_SECONDS)
     ||BigInt(quote.deadline)<=c.issuedAt||BigInt(quote.deadline)>c.expiresAt) {
     throw new PaymentError("The purchase does not bind a valid exact USDC payment and spending limit.");
@@ -119,7 +121,7 @@ export async function verifyPurchaseSignatures(value:unknown) {
 export async function verifyPurchaseState(value:unknown,credentialKey?:Hex,client=getMonadReadClient()) {
   const verified=await verifyPurchaseSignatures(value), {quote,clearance}=verified;
   if(credentialKey&&credentialKey.toLowerCase()!==quote.publicKey)throw new PaymentError("This purchase belongs to a different saved passkey.");
-  const setup=await readAccountSetup(quote.publicKey,quote.origin,client);
+  const setup=await readAccountSetup(quote.publicKey,quote.origin,client,undefined,quote.factory);
   if(!setup.accountDeployed||setup.accountAddress!==quote.accountAddress)throw new PaymentError("The personal account is not deployed for this passkey.");
   const blockNumber=BigInt(setup.observedBlock);
   const [latest,identity,currentPayee,currentOwner,nonce,onchainDigest,gateCheck,challenge]=await Promise.all([
@@ -164,7 +166,8 @@ export function parsePaymentApproval(value:unknown):PaymentApproval {
 export function contractAssertion(approval:PaymentApproval,challenge:Hex) {
   const a=approval.assertion;
   if(BigInt(a.challengeIndex)>BigInt(4096)||BigInt(a.typeIndex)>BigInt(4096))throw new PaymentError("Invalid assertion indices.");
-  return toContractAssertion(`0x${a.r.slice(2)}${a.s.slice(2)}`,{authenticatorData:a.authenticatorData,clientDataJSON:a.clientDataJSON,
+  const parseAssertion=metropolisAccountProfile(approval.quote.factory).accountVersion===2?toPasskeyV2Assertion:toContractAssertion;
+  return parseAssertion(`0x${a.r.slice(2)}${a.s.slice(2)}`,{authenticatorData:a.authenticatorData,clientDataJSON:a.clientDataJSON,
     challengeIndex:Number(a.challengeIndex),typeIndex:Number(a.typeIndex)},challenge,approval.quote.origin);
 }
 /** Actual account execution by eth_call, with both signatures and real USDC balance. No overrides. */

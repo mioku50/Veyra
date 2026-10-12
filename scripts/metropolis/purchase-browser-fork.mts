@@ -3,8 +3,9 @@ import { spawn } from "node:child_process";
 import { createServer } from "node:http";
 import { appendFileSync,writeFileSync } from "node:fs";
 import { chromium } from "playwright";
-import { createPublicClient,createWalletClient,erc20Abi,http,parseAbi,parseEther,toHex,type Address,type Hex } from "viem";
-import { METROPOLIS_DEPLOYMENT,METROPOLIS_FACTORY_ABI } from "../../lib/monad/account.ts";
+import { createPublicClient,createWalletClient,encodeAbiParameters,erc20Abi,http,keccak256,parseAbi,parseEther,toHex,type Address,type Hex } from "viem";
+import { generatePrivateKey,privateKeyToAccount } from "viem/accounts";
+import { METROPOLIS_DEPLOYMENT,METROPOLIS_V2_DEPLOYMENT,METROPOLIS_V2_ACCOUNT_SALT,METROPOLIS_FACTORY_ABI } from "../../lib/monad/account.ts";
 import { getMonadReadClient,readMonadAgentIdentity } from "../../lib/monad/erc8004.ts";
 import { collectMonadEvidence } from "../../lib/monad/evidence.ts";
 import { monadDemoTestnet,MONAD_CONTRACTS } from "../../lib/monad/config.ts";
@@ -12,11 +13,17 @@ import { METROPOLIS_ORIGIN } from "../../lib/monad/passkey.ts";
 import { issuePurchaseQuote } from "../../lib/monad/purchase-issuer.ts";
 import { parsePaymentApproval,purchaseRequestHash,simulatePaymentApproval,verifyPurchaseState } from "../../lib/monad/payment.ts";
 import { verifyPaymentReceipt } from "../../lib/monad/payment-receipt.ts";
-import { evaluateMonadPurchase } from "../../lib/monad/trust.ts";
+import { generateReadinessReport,readinessTask,readinessResponseHash } from "../../lib/monad/readiness.ts";
+import { planReadinessRegistration,verifyReadinessRegistrationReceipt } from "../../lib/monad/readiness-registration.ts";
+import { fulfillReadinessPurchase,planReadinessAssessment,verifyReadinessDelivery } from "../../lib/monad/readiness-delivery.ts";
+import { checkReadinessTrialOrder,fulfillReadinessTrial,planReadinessTrial,planReadinessTrialAssessment,readinessTrialOrder,
+  verifyReadinessTrialDelivery,verifyReadinessTrialReceipt } from "../../lib/monad/readiness-trial.ts";
+import { buildMonadClearance,evaluateMonadPurchase } from "../../lib/monad/trust.ts";
 import { planApprovedPayment } from "./relay-plan.mts";
-import { mockClient,policy,assessment,publicTestAttester } from "./trust-tests.mts";
+import { assessment,publicTestAttester } from "./trust-tests.mts";
 
-// All writes are to a disposable localhost fork. History is explicitly synthetic.
+// All writes are to a disposable localhost fork. Initial history comes from an
+// actual local trial/result, with a test buyer score, never from fabricated receipts.
 // The virtual browser authenticator performs real WebAuthn/P256 cryptography.
 const localOrigin=process.env.METROPOLIS_E2E_ORIGIN??"http://127.0.0.1:3126";
 assert.ok(["localhost","127.0.0.1"].includes(new URL(localOrigin).hostname)||localOrigin===METROPOLIS_ORIGIN,
@@ -27,6 +34,7 @@ assert.ok(/^0x[0-9a-fA-F]{40}$/.test(fundingSource??""),"Provide a public funded
 const live=getMonadReadClient();
 const forkBlock=process.env.METROPOLIS_TEST_FORK_BLOCK??(await live.getBlock({blockTag:"finalized"})).number.toString();
 assert.ok(/^\d+$/.test(forkBlock));
+assert.ok(BigInt(forkBlock)>=70207992n,"The V2 browser test needs a fork at or after its verified factory deployment.");
 const upstreamErrors:string[]=[],upstreamMethods=new Set<string>();
 writeFileSync(".local-tools/purchase-fork-rpc.log","");
 const readMethods=new Set(["eth_chainId","eth_blockNumber","eth_getBlockByNumber","eth_getBlockByHash","eth_getBalance",
@@ -93,6 +101,21 @@ try {
   await finalizeLocal((await fork.waitForTransactionReceipt({hash:roleHash})).blockNumber);
   browser=await chromium.launch({headless:true});
   const context=await browser.newContext({viewport:{width:390,height:844}});
+  await context.addInitScript(()=>{
+    const originalGet=navigator.credentials.get.bind(navigator.credentials);
+    (window as unknown as {assertionDiagnostics:unknown[]}).assertionDiagnostics=[];
+    navigator.credentials.get=async options=>{
+      const diagnostics=(window as unknown as {assertionDiagnostics:unknown[]}).assertionDiagnostics;
+      try {
+        const result=await originalGet(options);
+        if(result instanceof PublicKeyCredential&&result.response instanceof AuthenticatorAssertionResponse) {
+          diagnostics.push({clientDataJSON:new TextDecoder().decode(result.response.clientDataJSON),
+            flags:new Uint8Array(result.response.authenticatorData)[32],signatureLength:result.response.signature.byteLength});
+        }
+        return result;
+      }catch(error){diagnostics.push({error:error instanceof Error?error.message:String(error)});throw error;}
+    };
+  });
   const page=await context.newPage(),errors:string[]=[],rpcErrors:string[]=[],nativeResults:unknown[]=[],methods=new Set<string>();
   page.on("pageerror",error=>errors.push(error.message));
   await context.route(`${METROPOLIS_ORIGIN}/**`,async route=>{
@@ -120,33 +143,94 @@ try {
   await page.getByRole("button",{name:"Verify on Monad",exact:true}).waitFor({timeout:20000});
   const credential=await page.evaluate(()=>JSON.parse(localStorage.getItem("veyra.metropolis.public-credential.v1")!)) as {publicKey:Hex};
   const qx=`0x${credential.publicKey.slice(2,66)}` as Hex,qy=`0x${credential.publicKey.slice(66)}` as Hex;
-  const {METROPOLIS_ACCOUNT_SALT}=await import("../../lib/monad/account.ts");
-  const createHash=await wallet.writeContract({address:METROPOLIS_DEPLOYMENT.factory,abi:METROPOLIS_FACTORY_ABI,functionName:"createAccount",args:[qx,qy,METROPOLIS_ACCOUNT_SALT]});
+  const createHash=await wallet.writeContract({address:METROPOLIS_V2_DEPLOYMENT.factory,abi:METROPOLIS_FACTORY_ABI,functionName:"createAccount",args:[qx,qy,METROPOLIS_V2_ACCOUNT_SALT]});
   await finalizeLocal((await fork.waitForTransactionReceipt({hash:createHash})).blockNumber);
-  const account=await fork.readContract({address:METROPOLIS_DEPLOYMENT.factory,abi:METROPOLIS_FACTORY_ABI,functionName:"accountAddress",args:[qx,qy,METROPOLIS_ACCOUNT_SALT]});
+  const account=await fork.readContract({address:METROPOLIS_V2_DEPLOYMENT.factory,abi:METROPOLIS_FACTORY_ABI,functionName:"accountAddress",args:[qx,qy,METROPOLIS_V2_ACCOUNT_SALT]});
   await localRpc("anvil_impersonateAccount",[fundingSource]);await localRpc("anvil_setBalance",[fundingSource,toHex(parseEther("100"))]);
   const fundingWallet=createWalletClient({account:fundingSource,chain:monadDemoTestnet,transport:http(rpc)});
   const fundingHash=await fundingWallet.writeContract({address:MONAD_CONTRACTS[10143].usdc,abi:erc20Abi,functionName:"transfer",args:[account,1_000_000n]});
   await finalizeLocal((await fork.waitForTransactionReceipt({hash:fundingHash})).blockNumber);
   await page.getByRole("button",{name:"Verify on Monad",exact:true}).click();
   try {await page.getByRole("status").filter({hasText:"Monad verified its P256 signature"}).waitFor({timeout:45000});}
-  catch(error){console.log(JSON.stringify({browserErrors:errors,rpcErrors,nativeResults,methods:[...methods],status:await page.getByRole("status").allTextContents()}));throw error;}
+  catch(error){console.log(JSON.stringify({browserErrors:errors,rpcErrors,nativeResults,methods:[...methods],status:await page.getByRole("status").allTextContents(),assertions:await page.evaluate(()=>(window as unknown as {assertionDiagnostics:unknown[]}).assertionDiagnostics)}));throw error;}
   await page.getByRole("button",{name:"Prepare account",exact:true}).click();
   await page.getByTestId("account-address").waitFor({timeout:45000});
   assert.equal(await page.getByTestId("account-address").textContent(),account);
-  const agent=await readMonadAgentIdentity(1n,fork,"finalized");
+  // Own clearly labelled demonstration identity, minted only on the disposable fork.
+  const provider=privateKeyToAccount(generatePrivateKey());
+  await localRpc("anvil_setBalance",[provider.address,toHex(parseEther("100"))]);
+  const providerWallet=createWalletClient({account:provider,chain:monadDemoTestnet,transport:http(rpc,{timeout:120000,retryCount:0})});
+  const registrationPlan=await planReadinessRegistration(provider.address,fork),registrationTx=registrationPlan.transaction;
+  const registrationHash=await providerWallet.sendTransaction({to:registrationTx.to,data:registrationTx.data,nonce:registrationTx.nonce,
+    value:0n,gas:BigInt(registrationTx.gas),maxFeePerGas:BigInt(registrationTx.maxFeePerGas),maxPriorityFeePerGas:BigInt(registrationTx.maxPriorityFeePerGas)});
+  await finalizeLocal((await fork.waitForTransactionReceipt({hash:registrationHash})).blockNumber);
+  const registration=await verifyReadinessRegistrationReceipt(registrationPlan,registrationHash,fork);
+  const agentId=BigInt(registration.agentId),agent=await readMonadAgentIdentity(agentId,fork,"finalized");
+  assert.equal(registration.paymentWallet,provider.address);assert.equal(registration.reputationEstablished,false);
+  await assert.rejects(verifyReadinessRegistrationReceipt(registrationPlan,fundingHash,fork));
+  const originalRegistrationReceipt=await fork.getTransactionReceipt({hash:registrationHash});
+  await assert.rejects(verifyReadinessRegistrationReceipt(registrationPlan,registrationHash,{...fork,
+    getTransactionReceipt:async()=>({...originalRegistrationReceipt,logs:[...originalRegistrationReceipt.logs,...originalRegistrationReceipt.logs]})}));
+  await assert.rejects(verifyReadinessRegistrationReceipt(registrationPlan,registrationHash,{...fork,
+    getTransactionReceipt:async()=>({...originalRegistrationReceipt,logs:originalRegistrationReceipt.logs.map(log=>({...log,removed:true}))})}));
   await localRpc("evm_setNextBlockTimestamp",[Math.floor(Date.now()/1000)+1]);await localRpc("evm_mine");
-  const now=new Date(Number((await fork.getBlock({blockTag:"latest"})).timestamp)*1000),clock=Math.floor(now.getTime()/1000);
-  const task={serviceId:"local-fork-fixture",request:"Local fork test of an exact purchase",deliverable:"Synthetic test output; no external service is called"};
+  let now=new Date(Number((await fork.getBlock({blockTag:"latest"})).timestamp)*1000);
+  const task=readinessTask({publicKey:credential.publicKey,budgetUsdc:"0.02",accountVersion:2});
+  const preview=await generateReadinessReport(task,fork);
+  console.log("Readiness fork: real registry registration and free preview verified; preparing owner approval.");
   const intent={executor:account,amountUsdc:"0.012",budgetUsdc:"0.02",serviceId:task.serviceId,requestHash:purchaseRequestHash(task)};
-  const identityOnly=await collectMonadEvidence(1n,{},fork,now);
+  const identityOnly=await collectMonadEvidence(agentId,{},fork,now);
   const blocked=evaluateMonadPurchase(identityOnly,intent,now);
   assert.equal(blocked.executable,false);
-  await assert.rejects(issuePurchaseQuote(blocked,{publicKey:credential.publicKey,task,budgetUsdc:"0.02",agentId:"1",demonstration:true},publicTestAttester,fork,now),/server-issued/);
-  const bundle=await collectMonadEvidence(1n,{...policy,assessments:[await assessment({seller:agent.paymentWallet,assessedAt:BigInt(clock-20)})]},
-    mockClient({clock,owner:agent.owner,wallet:agent.paymentWallet,recipient:agent.paymentWallet}),now);
+  await assert.rejects(issuePurchaseQuote(blocked,{publicKey:credential.publicKey,task,budgetUsdc:"0.02",agentId:agentId.toString(),demonstration:true},publicTestAttester,fork,now),/server-issued/);
+  // An explicit EOA trial supplies actual transfer and delivered-result evidence
+  // on the local fork. This is not a passkey approval or Veyra spending override.
+  await fork.readContract({address:MONAD_CONTRACTS[10143].usdc,abi:erc20Abi,functionName:"balanceOf",args:[publicTestAttester.address]});
+  const trialFunding=await fundingWallet.writeContract({address:MONAD_CONTRACTS[10143].usdc,abi:erc20Abi,functionName:"transfer",args:[publicTestAttester.address,100000n]});
+  await finalizeLocal((await fork.waitForTransactionReceipt({hash:trialFunding})).blockNumber);
+  await assert.rejects(planReadinessTrial({buyer:provider.address,agentId,task,amountUsdc:"0.012"},fork),/distinct/);
+  await assert.rejects(planReadinessTrial({buyer:account,agentId,task,amountUsdc:"0.012"},fork),/EOA/);
+  const trialPacket=await planReadinessTrial({buyer:publicTestAttester.address,agentId,task,amountUsdc:"0.012"},fork);
+  assert.equal(trialPacket.plan.clearanceIssued,false);assert.equal(trialPacket.plan.policyDecision,"REVIEW_REQUIRED");
+  const trialSignature=await publicTestAttester.signTypedData(readinessTrialOrder(trialPacket.plan));
+  assert.equal((await checkReadinessTrialOrder(trialPacket.plan,trialSignature,fork)).transactionSent,false);
+  const trialTransaction=trialPacket.plan.transaction;
+  const trialHash=await wallet.sendTransaction({to:trialTransaction.to,data:trialTransaction.data,nonce:trialTransaction.nonce,value:0n,
+    gas:BigInt(trialTransaction.gas),maxFeePerGas:BigInt(trialTransaction.maxFeePerGas),maxPriorityFeePerGas:BigInt(trialTransaction.maxPriorityFeePerGas)});
+  await finalizeLocal((await fork.waitForTransactionReceipt({hash:trialHash})).blockNumber);
+  const trialReceipt=await verifyReadinessTrialReceipt(trialPacket.plan,trialSignature,trialHash,fork);
+  await assert.rejects(checkReadinessTrialOrder(trialPacket.plan,trialSignature,fork),/nonce/);
+  assert.equal(trialReceipt.payment,"confirmed");assert.equal(trialReceipt.passkeyApproval,false);
+  await assert.rejects(verifyReadinessTrialReceipt(trialPacket.plan,trialSignature,trialFunding,fork));
+  await assert.rejects(verifyReadinessTrialReceipt(trialPacket.plan,await provider.signTypedData(readinessTrialOrder(trialPacket.plan)),trialHash,fork),/buyer must sign/);
+  const trialDelivery=await fulfillReadinessTrial(trialPacket.plan,trialSignature,trialHash,fork);
+  const savedTrial=JSON.parse(JSON.stringify(trialDelivery));
+  await localRpc("anvil_mine",["0x2"]);
+  const restoredTrial=await verifyReadinessTrialDelivery(savedTrial,trialPacket.plan,trialSignature,trialHash,fork);
+  assert.equal(restoredTrial.responseHash,trialDelivery.responseHash);
+  await assert.rejects(verifyReadinessTrialDelivery({...savedTrial,report:preview,responseHash:readinessResponseHash(preview)},trialPacket.plan,trialSignature,trialHash,fork),/prepayment/);
+  const fabricatedTrialReport={...trialDelivery.report,account:{...trialDelivery.report.account,usdcBalanceUnits:"9000000"}};
+  await assert.rejects(verifyReadinessTrialDelivery({...savedTrial,report:fabricatedTrialReport,responseHash:readinessResponseHash(fabricatedTrialReport)},trialPacket.plan,trialSignature,trialHash,fork),/canonical/);
+  assert.throws(()=>planReadinessTrialAssessment(savedTrial,95),/Reverify/);
+  for(const score of [-1,101,0.5])assert.throws(()=>planReadinessTrialAssessment(restoredTrial,score));
+  now=new Date(Math.max(Date.now(),Number((await fork.getBlock({blockTag:"latest"})).timestamp)*1000));
+  const trialAssessmentPlan=planReadinessTrialAssessment(restoredTrial,95,now); // Declared test score, not a real user's review.
+  const trialMessage=trialAssessmentPlan.typedData.message;
+  const signedTrialReport=await assessment({...trialMessage,agentId,amount:BigInt(trialMessage.amount),assessedAt:BigInt(trialMessage.assessedAt)},publicTestAttester);
+  const bundle=await collectMonadEvidence(agentId,{payments:[trialAssessmentPlan.paymentReference],assessmentReporters:[publicTestAttester.address],assessments:[signedTrialReport]},fork,now);
+  assert.ok(bundle.evidence.some(item=>item.type==="usdc_payment_success"));
+  assert.ok(bundle.evidence.some(item=>item.type==="service_delivery"));
+  console.log("Readiness fork: manual trial, actual result and signed test buyer assessment verified; evaluating the ordinary policy.");
   const decision=evaluateMonadPurchase(bundle,intent,now);
-  const quote=await issuePurchaseQuote(decision,{publicKey:credential.publicKey,task,budgetUsdc:"0.02",agentId:"1",demonstration:true},publicTestAttester,fork,now);
+  // Warm the newly derived replay slot with an ordinary raw storage read before
+  // concurrent EVM calls. Slot 3 is from the verified TrustGate storage layout.
+  // This reads the actual fork state; it does not clear or override replay data.
+  const unsignedClearance=buildMonadClearance(decision,METROPOLIS_DEPLOYMENT.trustGate,now);
+  const replaySlot=keccak256(encodeAbiParameters([{type:"bytes32"},{type:"uint256"}],[unsignedClearance.digest,3n]));
+  await fork.getStorageAt({address:METROPOLIS_DEPLOYMENT.trustGate,slot:replaySlot});
+  await fork.readContract({address:MONAD_CONTRACTS[10143].usdc,abi:erc20Abi,functionName:"balanceOf",args:[agent.paymentWallet]});
+  const quote=await issuePurchaseQuote(decision,{publicKey:credential.publicKey,task,budgetUsdc:"0.02",agentId:agentId.toString(),demonstration:true,
+    factory:METROPOLIS_V2_DEPLOYMENT.factory},publicTestAttester,fork,now);
   const proposal=page.getByLabel("Signed purchase proposal or saved payment approval");
   await proposal.fill(JSON.stringify({...quote,task:{...task,request:"Tampered task"}}));
   await page.getByRole("button",{name:"Check proposal",exact:true}).click();
@@ -154,8 +238,15 @@ try {
   assert.equal(await page.getByTestId("validated-purchase").count(),0);
   await proposal.fill(JSON.stringify(quote));await page.getByRole("button",{name:"Check proposal",exact:true}).click();
   await page.getByTestId("validated-purchase").waitFor({timeout:45000});
+  await page.getByText("Check my Monad Testnet account, infrastructure and funding, and identify what still blocks a purchase.",{exact:true}).waitFor();
+  await page.getByText("Exact signed request",{exact:true}).click();
+  assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth),true,"Expanded structured request must fit the mobile viewport");
+  await page.getByText("Exact signed request",{exact:true}).click();
+  // One genuine browser prompt. V2 preserves the entire assertion, including
+  // optional JSON members; the product never retries or rewrites signed bytes.
   await page.getByRole("button",{name:"Approve 0.012 USDC with passkey",exact:true}).click();
-  await page.getByLabel("Approved payment JSON").waitFor({state:"attached",timeout:45000});
+  try {await page.getByLabel("Approved payment JSON").waitFor({state:"attached",timeout:45000});}
+  catch(error){console.log(JSON.stringify({stage:"owner approval",browserErrors:errors,rpcErrors,nativeResults,methods:[...methods],status:await page.getByRole("status").allTextContents()}));throw error;}
   const approval=parsePaymentApproval(JSON.parse(await page.getByLabel("Approved payment JSON").inputValue()));
   await context.grantPermissions(["clipboard-read","clipboard-write"],{origin:METROPOLIS_ORIGIN});
   await page.getByRole("button",{name:"Copy approved payment",exact:true}).click();
@@ -166,13 +257,47 @@ try {
     maxFeePerGas:BigInt(tx.maxFeePerGas),maxPriorityFeePerGas:BigInt(tx.maxPriorityFeePerGas)});
   await finalizeLocal((await fork.waitForTransactionReceipt({hash:paid})).blockNumber);
   const receipt=await verifyPaymentReceipt(approval,paid,fork);assert.equal(receipt.payment,"confirmed");assert.equal(receipt.delivery,"not_assessed");
+  const delivery=await fulfillReadinessPurchase(approval,paid,fork);
+  assert.equal((await verifyReadinessTrialDelivery(savedTrial,trialPacket.plan,trialSignature,trialHash,fork)).responseHash,trialDelivery.responseHash);
+  assert.equal(delivery.report.account.usdcBalanceUnits,"988000");assert.equal(delivery.requestHash,purchaseRequestHash(task));
+  const persisted=JSON.parse(JSON.stringify(delivery));
+  await localRpc("anvil_mine",["0x2"]);
+  const restoredDelivery=await verifyReadinessDelivery(persisted,approval,paid,fork);
+  assert.equal(restoredDelivery.responseHash,delivery.responseHash);
+  await assert.rejects(verifyReadinessDelivery({...persisted,report:preview,responseHash:readinessResponseHash(preview)},approval,paid,fork),/before payment/);
+  const inventedReport={...delivery.report,account:{...delivery.report.account,usdcBalanceUnits:"1000000"}};
+  for(const changed of [
+    {...persisted,responseHash:`0x${"01".repeat(32)}`},
+    {...persisted,task:{...task,request:"Changed request"}},
+    {...persisted,report:{...delivery.report,productionReady:true}},
+    {...persisted,report:{...delivery.report,account:{...delivery.report.account,usdcBalanceUnits:"1000000"}}},
+    {...persisted,report:inventedReport,responseHash:readinessResponseHash(inventedReport)},
+    {...persisted,payment:{...delivery.payment,amountUnits:"12001"}},
+    {...persisted,providerOwner:publicTestAttester.address},
+    {...persisted,report:{...delivery.report,observation:{...delivery.report.observation,blockNumber:"9999999999"}}},
+  ])await assert.rejects(verifyReadinessDelivery(changed,approval,paid,fork));
+  assert.throws(()=>planReadinessAssessment(persisted,publicTestAttester.address,85),/Reverify/);
+  assert.throws(()=>planReadinessAssessment(restoredDelivery,provider.address,85),/non-provider/);
+  assert.throws(()=>planReadinessAssessment(restoredDelivery,publicTestAttester.address,101));
+  const evaluationTime=new Date(Math.max(Date.now(),Number(delivery.report.observation.timestamp)*1000+1000));
+  const assessmentPlan=planReadinessAssessment(restoredDelivery,publicTestAttester.address,85,evaluationTime);
+  assert.equal(assessmentPlan.unsigned,true);
+  const reportMessage=assessmentPlan.typedData.message;
+  const signedReport=await assessment({...reportMessage,agentId,amount:BigInt(reportMessage.amount),assessedAt:BigInt(reportMessage.assessedAt)},publicTestAttester);
+  const actualForkEvidence=await collectMonadEvidence(agentId,{payments:[assessmentPlan.paymentReference],
+    assessmentReporters:[publicTestAttester.address],assessments:[signedReport]},fork,evaluationTime);
+  assert.ok(actualForkEvidence.evidence.some(item=>item.type==="service_delivery"));
+  const deliveredDecision=evaluateMonadPurchase(actualForkEvidence,intent,evaluationTime);
+  if(!deliveredDecision.executable)console.log(JSON.stringify({stage:"delivery policy",trust:deliveredDecision.decision.trust,reasons:deliveredDecision.reasons,
+    evidence:actualForkEvidence.evidence.map(item=>({type:item.type,positive:item.positive,score:item.score,observedAt:item.observedAt}))}));
+  assert.equal(deliveredDecision.executable,true);
   await assert.rejects(simulatePaymentApproval(approval,fork),/nonce changed|already consumed/);
   await assert.rejects(verifyPaymentReceipt(approval,fundingHash,fork));
   await page.getByLabel("Transaction hash from the relayer").fill(paid);await page.getByRole("button",{name:"Verify payment receipt",exact:true}).click();
   await page.getByTestId("confirmed-purchase").waitFor({timeout:45000});
   await page.reload({waitUntil:"networkidle"});await page.getByRole("button",{name:"Verify on Monad",exact:true}).click();
   try {await page.getByRole("status").filter({hasText:"Monad verified its P256 signature"}).waitFor({timeout:45000});}
-  catch(error){console.log(JSON.stringify({stage:"reload",browserErrors:errors,rpcErrors,nativeResults,methods:[...methods],status:await page.getByRole("status").allTextContents()}));throw error;}
+  catch(error){console.log(JSON.stringify({stage:"reload",browserErrors:errors,rpcErrors,nativeResults,methods:[...methods],status:await page.getByRole("status").allTextContents(),assertions:await page.evaluate(()=>(window as unknown as {assertionDiagnostics:unknown[]}).assertionDiagnostics)}));throw error;}
   await page.getByRole("button",{name:"Prepare account",exact:true}).click();await page.getByTestId("account-address").waitFor({timeout:45000});
   await page.getByLabel("Signed purchase proposal or saved payment approval").fill(JSON.stringify(approval));
   await page.getByRole("button",{name:"Check proposal",exact:true}).click();
@@ -187,7 +312,14 @@ try {
   assert.equal(left,988_000n);
   console.log(JSON.stringify({result:"PASS",scope:"disposable localhost Monad fork only",frontendOrigin:localOrigin,forkBlock,virtualWebAuthn:true,
     nativeP256AccountExecution:true,amountUsdc:"0.012",receiptVerified:true,replayRejected:true,
-    tamperedTaskRejected:true,identityOnlyBlocked:true,receiptRestoredAfterReload:true,externalTransactionsSent:0,serviceDelivery:"not assessed"}));
+    accountVersion:2,paymentEncoding:"original browser client-data JSON; V2 required prefix and native P256",ownerApprovalPrompts:1,
+    universalBrowserPaymentCompatibility:false,
+    tamperedTaskRejected:true,identityOnlyBlocked:true,receiptRestoredAfterReload:true,externalTransactionsSent:0,
+    readinessDemoRegistrationVerified:true,readinessReportVerified:true,persistedResultRestored:true,prepaymentPreviewRejected:true,
+    tamperedResultsRejected:true,signedOperatorAssessmentCollected:true,
+    manualTrialReceiptVerified:true,manualTrialBuyerSignatureVerified:true,manualTrialResultVerified:true,
+    initialPolicyHistory:"actual localhost trial transfer/result with an explicitly declared test usefulness score",
+    serviceDelivery:"local operator readiness result on a disposable fork; no live paid service or real human assessment"}));
 }catch(error){
   console.log(JSON.stringify({upstreamErrors,upstreamMethods:[...upstreamMethods]}));throw error;
 }finally {

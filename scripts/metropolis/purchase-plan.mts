@@ -32,18 +32,20 @@ export async function preparePurchasePlan(input:{setup:unknown;task:unknown;agen
   if(!/^[1-9]\d{0,76}$/.test(input.agentId))throw new PaymentError("Provide an ERC-8004 agent ID.");
   const proposed=await parseAccountSetup(input.setup),task=parsePurchaseTask(input.task);
   const publicKey=`0x${proposed.qx.slice(2)}${proposed.qy.slice(2)}` as Hex;
-  const setup=await readAccountSetup(publicKey,proposed.origin,client);
+  const setup=await readAccountSetup(publicKey,proposed.origin,client,undefined,proposed.factory);
+  if(setup.accountAddress!==proposed.accountAddress)throw new PaymentError("The proposed account does not match its verified factory and passkey.");
   const amount=parseMonadUsdc(input.amountUsdc);parseMonadUsdc(input.budgetUsdc);
-  const now=new Date();
-  const bundle=await collectMonadEvidence(BigInt(input.agentId),input.policy??{},client,now);
+  const bundle=await collectMonadEvidence(BigInt(input.agentId),input.policy??{},client);
   const decision=evaluateMonadPurchase(bundle,{executor:setup.accountAddress,amountUsdc:input.amountUsdc,budgetUsdc:input.budgetUsdc,
-    serviceId:task.serviceId,requestHash:purchaseRequestHash(task)},now);
+    serviceId:task.serviceId,requestHash:purchaseRequestHash(task)});
   const reasons=[...decision.reasons];
   if(!setup.accountDeployed)reasons.push("ACCOUNT_NOT_DEPLOYED");
   if(BigInt(setup.usdcBalanceUnits)<amount)reasons.push("INSUFFICIENT_USDC_BALANCE");
   return {decision,plan:{kind:"veyra.metropolis.purchase-plan",version:1,chainId:10143,task,account:setup.accountAddress,
     accountDeployed:setup.accountDeployed,balanceUnits:setup.usdcBalanceUnits,provider:{agentId:input.agentId,payee:bundle.identity.paymentWallet},
     amountUsdc:input.amountUsdc,budgetUsdc:input.budgetUsdc,requestHash:decision.requestHash,evidenceHash:bundle.evidenceHash,
+    policyVersion:decision.decision.policy.version,stateAgeSeconds:decision.decision.trust.snapshotAgeSeconds,
+    securitySnapshot:{blockNumber:bundle.identity.blockNumber.toString(),...bundle.securitySnapshot},history:decision.history,
     decision:decision.decision.decision,score:decision.decision.trust.score,coverage:decision.decision.trust.coverage,
     eligible:decision.executable&&setup.accountDeployed&&BigInt(setup.usdcBalanceUnits)>=amount,reasons,disclosures:decision.disclosures,
     signed:false,broadcast:false,serviceDelivered:false}};

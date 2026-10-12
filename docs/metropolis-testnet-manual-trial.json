@@ -1,0 +1,274 @@
+{
+  "kind": "veyra.metropolis.manual-trial-evidence",
+  "version": 1,
+  "network": "Monad Testnet",
+  "chainId": 10143,
+  "verifiedAt": "2026-10-09T21:51:38.714Z",
+  "transaction": {
+    "hash": "0x4418a0eed4b3d4bd81a5d3a2088b05438d2c7f76ba2a465813cfd040cda59008",
+    "url": "https://testnet.monadscan.com/tx/0x4418a0eed4b3d4bd81a5d3a2088b05438d2c7f76ba2a465813cfd040cda59008",
+    "status": "success",
+    "blockNumber": "69650766",
+    "blockHash": "0xe3b83ae3ec2fea2c8e13f4a04c76d58faa8149e3d7ff26c5d2028ea57dfac93b",
+    "blockTime": "2026-10-09T21:50:00.000Z",
+    "finalizedBlock": "69651080",
+    "buyer": "0x9b57b2aCf3242db458B5EadD5e2026eaccB33dAD",
+    "payee": "0x861FBe92678Bd6421aCee2dC37b50FDe1Dc01A1E",
+    "agentId": "2083",
+    "amountUsdc": "0.012",
+    "token": "0x534b2f3A21130d7a60830c2Df862319e593943A3",
+    "nonce": 0,
+    "gasLimit": "105530",
+    "effectiveGasPriceWei": "102000000000",
+    "chargedFeeMon": "0.01076406",
+    "maximumAuthorizedFeeMon": "0.01287466",
+    "usdcTransferLogIndex": 3
+  },
+  "buyerOrder": {
+    "signatureVerified": true,
+    "orderHash": "0x3ad8ad8ffccac5dbaebc9fe78eee90f181f53fa9e75df0b5c57402327a8e2b02",
+    "requestHash": "0x8b4de4f5b0f77627774aa1ab16f723581a51ea1e8a24aef7b0f0a82cc96faa1f",
+    "binding": "Offchain buyer-signed EIP-712 order; USDC.transfer does not store or enforce the task hash."
+  },
+  "result": {
+    "reproducedFromRpc": true,
+    "originalSnapshotPreserved": true,
+    "blockNumber": "69650789",
+    "blockHash": "0x0b33f5980489a00f97e851622321bb51578146ddc2277cf2866434e97a84286d",
+    "requestHash": "0x8b4de4f5b0f77627774aa1ab16f723581a51ea1e8a24aef7b0f0a82cc96faa1f",
+    "responseHash": "0xfa0603e99cd9881d4cf2679f2ecfd98b75da788138843cbfe5183c55e4ef1d0f",
+    "checks": [
+      {
+        "id": "deployment",
+        "status": "passed"
+      },
+      {
+        "id": "registries",
+        "status": "passed"
+      },
+      {
+        "id": "native_p256",
+        "status": "passed"
+      },
+      {
+        "id": "personal_account",
+        "status": "passed"
+      },
+      {
+        "id": "budget_funding",
+        "status": "passed"
+      }
+    ],
+    "report": {
+      "kind": "veyra.metropolis.readiness-report",
+      "version": 1,
+      "chainId": 10143,
+      "serviceId": "veyra.monad.readiness.v1",
+      "task": {
+        "serviceId": "veyra.monad.readiness.v1",
+        "request": "{\"publicKey\":\"0x13066ba7e5adffc016aae241dca1b466c38088dcefc62a6a73959ee15665b2f8374624c1e91dea58ffd3920beab60f34701c81e165ff80a9310011895b03c3d4\",\"budgetUsdc\":\"0.02\"}",
+        "deliverable": "A finalized Monad Testnet readiness snapshot with reproducible checks, sources, blockers and next actions. No payment or production-readiness certification."
+      },
+      "requestHash": "0x8b4de4f5b0f77627774aa1ab16f723581a51ea1e8a24aef7b0f0a82cc96faa1f",
+      "observation": {
+        "blockNumber": "69650789",
+        "blockHash": "0x0b33f5980489a00f97e851622321bb51578146ddc2277cf2866434e97a84286d",
+        "commitment": "finalized",
+        "timestamp": "1791582607"
+      },
+      "account": {
+        "address": "0xc4867c6ae80563D9216a1b16D289b26Fa266bDc3",
+        "deployed": true,
+        "nonce": "0",
+        "usdcBalanceUnits": "20000000"
+      },
+      "contracts": {
+        "usdc": "0x534b2f3A21130d7a60830c2Df862319e593943A3",
+        "identityRegistry": "0x8004A818BFB912233c491871b3d84c89A494BD9e",
+        "reputationRegistry": "0x8004B663056A597Dffe9eCcC1965A193B7388713",
+        "factory": "0x8fbaAcB3390ba67F80db02434c024fF2F04ca94B",
+        "trustGate": "0x4a8f26B1d376c9924aAE80877261E0c635eb54Bb",
+        "p256": "0x0000000000000000000000000000000000000100"
+      },
+      "checks": [
+        {
+          "id": "deployment",
+          "status": "passed",
+          "finding": "TrustGate and factory runtime hashes, USDC decimals, canonical RP/origin and derived account configuration match the verified deployment.",
+          "nextAction": null
+        },
+        {
+          "id": "registries",
+          "status": "passed",
+          "finding": "Canonical Identity and Reputation registries have code and the expected linkage.",
+          "nextAction": null
+        },
+        {
+          "id": "native_p256",
+          "status": "passed",
+          "finding": "Native 0x0100 accepted a known P256 signature and rejected an altered message through eth_call.",
+          "nextAction": null
+        },
+        {
+          "id": "personal_account",
+          "status": "passed",
+          "finding": "Your per-passkey account is deployed; its nonce is 0.",
+          "nextAction": null
+        },
+        {
+          "id": "budget_funding",
+          "status": "passed",
+          "finding": "20 test USDC available for a 0.02-USDC budget. Balance is not policy authorization.",
+          "nextAction": null
+        }
+      ],
+      "status": "checks_passed",
+      "purchaseAuthorized": false,
+      "productionReady": false,
+      "transactionSent": false,
+      "nextActions": [
+        "Choose a real provider and collect current corroborated payment and delivery history. Identity alone remains REVIEW_REQUIRED.",
+        "Review a fresh Veyra clearance and exact task/amount with the owner, then obtain a passkey approval and review the relayer transaction.",
+        "After an actual payment, verify the receipt and the requested result separately. A free readiness snapshot does not create paid-delivery history."
+      ],
+      "limitations": [
+        "This free operator-run demonstration reports a Testnet snapshot; it is not an independent security audit or Mainnet certification.",
+        "The positive P256 probe uses a public software vector, not the owner's device assertion or a payment transaction.",
+        "No provider reputation, Veyra clearance, attester authority, relayer balance or service delivery was established by this report.",
+        "Official documentation links identify expected parameters; the service does not fetch or interpret their current text.",
+        "The immutable account prototype has no key recovery/rotation, general calls or escrow. Autonomous spending remains frozen."
+      ],
+      "sources": [
+        {
+          "title": "Monad current facts",
+          "url": "https://docs.monad.xyz/ai/current-facts"
+        },
+        {
+          "title": "Monad native P256",
+          "url": "https://docs.monad.xyz/developer-essentials/precompiles"
+        },
+        {
+          "title": "Monad finality commitments",
+          "url": "https://docs.monad.xyz/monad-arch/consensus/block-states"
+        },
+        {
+          "title": "ERC-8004 registry source and deployments",
+          "url": "https://github.com/erc-8004/erc-8004-contracts"
+        },
+        {
+          "title": "Circle USDC addresses",
+          "url": "https://developers.circle.com/stablecoins/usdc-contract-addresses"
+        }
+      ]
+    }
+  },
+  "assessment": {
+    "humanChosenScore": 80,
+    "buyerSignatureVerified": true,
+    "status": "verified_buyer_assessment",
+    "verifiedAt": "2026-10-10T08:27:49.115Z",
+    "reporter": "0x9b57b2aCf3242db458B5EadD5e2026eaccB33dAD",
+    "claimedAssessedAt": "2026-10-09T22:00:15.000Z",
+    "assessmentHash": "0xdf16d565557d8ea719290009b1951f1c1ef9b0195cc636a90352269f8239bef4",
+    "requestHash": "0x8b4de4f5b0f77627774aa1ab16f723581a51ea1e8a24aef7b0f0a82cc96faa1f",
+    "responseHash": "0xfa0603e99cd9881d4cf2679f2ecfd98b75da788138843cbfe5183c55e4ef1d0f",
+    "enteredTrustScoring": true,
+    "signatureStoredLocally": true,
+    "assessmentOnchain": false,
+    "erc8004FeedbackTransaction": false,
+    "disclosure": "One buyer-signed assessment describes delivery and usefulness. These are two evidence categories, not two independent validators. The signature is not an onchain ERC-8004 review."
+  },
+  "execution": {
+    "authorization": "manual_eoa_trial",
+    "clearanceIssued": false,
+    "passkeyApproval": false,
+    "autonomousSpending": false
+  },
+  "passkeyAccountAfterTrial": {
+    "address": "0xc4867c6ae80563D9216a1b16D289b26Fa266bDc3",
+    "usdc": "20",
+    "nonce": "0",
+    "observedBlock": "69782601",
+    "observedBlockHash": "0xaa21a6c47a29809c7c1e4db7fdc5650feacbad35288b5d9c5600cd659f13cebd"
+  },
+  "disclosures": [
+    "Veyra-created demonstration provider and human-selected trial. Distinct addresses do not establish independent organizational control.",
+    "A real Testnet payment and reproducible result; no commercial demand or independent security certification is established.",
+    "The native P256 report probes use public software fixtures. This manual EOA transfer is not deployed-account WebAuthn execution."
+  ],
+  "policyReevaluation": {
+    "evaluatedAt": "2026-10-10T08:27:49.115Z",
+    "scope": "Read-only evaluation of a possible next exact purchase; no new payment authorized or sent.",
+    "decisionBeforeAssessment": "REVIEW_REQUIRED",
+    "decisionAfterAssessment": "REVIEW_REQUIRED",
+    "trustScore": 90,
+    "confidence": 0.9,
+    "coverage": 0.67,
+    "oldestEvidenceAgeSeconds": 38269,
+    "evidenceHash": "0xcb27fb7e2adc839f93235208c21ad8e6d447cd9056a8c34f2d183f434e227308",
+    "decisionHash": "0x777f6e5e41095f5d766a36427c29de37f2c7c6721a2daa622f08c71b16909698",
+    "evidenceCategories": [
+      "usdc_payment_success",
+      "service_delivery",
+      "api_quality"
+    ],
+    "requestedAmountUsdc": "0.012",
+    "ownerBudgetUsdc": "0.02",
+    "maxAuthorizedAmountUsdc": "0",
+    "executable": false,
+    "reasons": [
+      "STALE_REPUTATION",
+      "TRUST_TIER_REQUIRES_REVIEW"
+    ],
+    "policyFreshnessWindowsSeconds": {
+      "ALLOW": 3600,
+      "ALLOW_WITH_LIMITS": 7200,
+      "REQUIRE_EVALUATOR": 14400
+    },
+    "disclosure": "The buyer usefulness score is 80; the engine trust score is 90. Confidence reflects category coverage, not a calibrated success probability. Fresh RPC reads preserve original payment and assessment timestamps.",
+    "policyVersion": "veyra-trust-policy-v1:metropolis-evidence-v1",
+    "historicalEvaluation": true
+  },
+  "freshnessReevaluation": {
+    "evaluatedAt": "2026-10-10T08:53:35.744Z",
+    "scope": "Local v2 policy, read-only reevaluation of the original payment, original report and actual buyer signature. Not published or a new spend authorization.",
+    "policyVersion": "veyra-trust-policy-v1:metropolis-evidence-v2",
+    "decisionBeforeAssessment": "REVIEW_REQUIRED",
+    "decisionAfterAssessment": "ALLOW",
+    "trustScore": 90,
+    "confidence": 0.9,
+    "coverage": 0.67,
+    "securitySnapshotAgeSeconds": 3,
+    "securityStateTtlSeconds": 300,
+    "securitySnapshot": {
+      "blockNumber": "69782572",
+      "blockHash": "0x90e4d01e7064225461114d4bf0463c8a7b1a5815265953c3a5ca3dc8cf2d0a37",
+      "observedAt": "2026-10-10T08:53:32.000Z"
+    },
+    "history": {
+      "lookbackSeconds": 2592000,
+      "verifiedEvidenceCount": 3,
+      "scoredEvidenceCount": 3,
+      "retainedNegativeCount": 0,
+      "oldestEventAgeSeconds": 39815,
+      "excludedPositiveEvidence": []
+    },
+    "assessmentHash": "0xdf16d565557d8ea719290009b1951f1c1ef9b0195cc636a90352269f8239bef4",
+    "humanChosenScore": 80,
+    "requestHash": "0x8b4de4f5b0f77627774aa1ab16f723581a51ea1e8a24aef7b0f0a82cc96faa1f",
+    "responseHash": "0xfa0603e99cd9881d4cf2679f2ecfd98b75da788138843cbfe5183c55e4ef1d0f",
+    "evidenceHash": "0x80d7a09ed375d45e4fdf6aa7d4b15ab8113f5e9878822765c13a49e38b53f142",
+    "decisionHash": "0xd09dbc15fdcc99908a4a8127acabbb575feafc2cf976bc9ec8b77bc80a870939",
+    "requestedAmountUsdc": "0.012",
+    "ownerBudgetUsdc": "0.02",
+    "maxAuthorizedAmountUsdc": "0.02",
+    "executablePolicyResult": true,
+    "unsignedReviewPlan": true,
+    "issuedAt": "2026-10-10T08:53:35.000Z",
+    "expiresAt": "2026-10-10T08:58:32.000Z",
+    "newTransactionSent": false,
+    "clearanceSigned": false,
+    "passkeyApproved": false,
+    "disclosure": "A historical, now-expired policy result. Recollect security state before a new proposal; do not rejuvenate the original history or reuse this decision."
+  }
+}

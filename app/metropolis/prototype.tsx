@@ -4,11 +4,11 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import dynamic from "next/dynamic";
 import { encodeAbiParameters, encodePacked, formatUnits, keccak256, toHex } from "viem";
-import { AccountSetupError, METROPOLIS_DEPLOYMENT, readAccountSetup, type MetropolisAccountSetup } from "@/lib/monad/account";
+import { AccountSetupError, METROPOLIS_V2_DEPLOYMENT, readAccountSetup, type MetropolisAccountSetup } from "@/lib/monad/account";
 import { getMonadReadClient } from "@/lib/monad/erc8004";
 import { MONAD_P256_PRECOMPILE } from "@/lib/monad/config";
 import { createMetropolisPasskey, METROPOLIS_ORIGIN, passkeyCoordinates, requirePasskeyOrigin,
-  signMetropolisChallenge, webAuthnSignedHash, type MetropolisCredential } from "@/lib/monad/passkey";
+  signMetropolisDiagnosticChallenge, webAuthnSignedHash, type MetropolisCredential } from "@/lib/monad/passkey";
 
 const STORAGE_KEY = "veyra.metropolis.public-credential.v1";
 const MetropolisPurchase=dynamic(()=>import("./purchase").then(module=>module.MetropolisPurchase));
@@ -54,7 +54,7 @@ export function MetropolisPrototype() {
       const challenge = keccak256(encodeAbiParameters([{type:"bytes32"},{type:"uint256"},{type:"string"},{type:"uint64"},{type:"bytes32"}],
         [keccak256(toHex("Veyra Metropolis read-only passkey probe v1")),BigInt(10143),window.location.origin,
           BigInt(Math.floor(Date.now()/1000)+120),toHex(crypto.getRandomValues(new Uint8Array(32)))]));
-      const assertion = await signMetropolisChallenge(credential,challenge,window.location.origin);
+      const assertion = await signMetropolisDiagnosticChallenge(credential,challenge,window.location.origin);
       const {qx,qy} = passkeyCoordinates(credential.publicKey);
       const client = getMonadReadClient();
       if (await client.getChainId() !== 10143) throw new Error("Unexpected chain");
@@ -71,9 +71,9 @@ export function MetropolisPrototype() {
     if (!credential || !verified) return;
     setSetupBusy(true);setSetup(null);setSetupNotice("");
     try {
-      const result = await readAccountSetup(credential.publicKey,window.location.origin);
+      const result = await readAccountSetup(credential.publicKey,window.location.origin,undefined,undefined,METROPOLIS_V2_DEPLOYMENT.factory);
       setSetup(result);
-      setSetupNotice("Public account details are ready. No account was created by this check.");
+      setSetupNotice(result.accountDeployed?"Your V2 account and balance were checked in a finalized Monad block.":"Public V2 account details are ready. Deployment requires a separate approval.");
     } catch (error) {
       setSetupNotice(error instanceof AccountSetupError ? error.message : "Account preparation did not complete. Try again when the Monad RPC is available.");
     } finally {setSetupBusy(false);}
@@ -82,7 +82,7 @@ export function MetropolisPrototype() {
     if (!setup) return;
     try {
       await navigator.clipboard.writeText(JSON.stringify(setup,null,2));
-      setSetupNotice("Public account details copied. Send these details to prepare the deployment.");
+      setSetupNotice(setup.accountDeployed?"Public V2 account details copied. These details do not authorize a payment.":"Public V2 account details copied. Send these details to prepare the deployment.");
     } catch {setSetupNotice("Copy is unavailable here. Open Public setup details below and copy the text manually.");}
   }
 
@@ -106,8 +106,9 @@ export function MetropolisPrototype() {
       {!ready ? <a className="mt-4 inline-block break-all text-sm text-cyan-300 underline" href={`${METROPOLIS_ORIGIN}/metropolis`}>Open the canonical Veyra address</a>:null}
     </section>
     {credential ? <section className="mt-6 rounded-2xl border border-white/15 p-5 sm:p-7" aria-labelledby="account-title">
-      <h2 id="account-title" className="text-xl font-semibold">Your personal account</h2>
-      <p className="mt-3 text-sm text-muted-foreground">Prepare an account for the passkey saved in this browser. Veyra reads the deployed factory to check its address and configuration. Deployment requires a separate approval.</p>
+      <h2 id="account-title" className="text-xl font-semibold">Your personal V2 account</h2>
+      <p className="mt-3 text-sm text-muted-foreground">Check the account for the passkey saved in this browser. Veyra verifies the V2 factory, account configuration and Testnet USDC balance.</p>
+      <p className="mt-2 text-xs text-muted-foreground">V2 has its own address. Funds and historical receipts in a V1 account stay with that account.</p>
       <button onClick={prepareAccount} disabled={!ready||!verified||busy||setupBusy} className="mt-5 rounded-xl border border-violet-400/40 px-5 py-3 font-semibold disabled:opacity-50">{setupBusy?"Checking Monad…":"Prepare account"}</button>
       {!verified ? <p className="mt-3 text-sm text-muted-foreground">Verify your saved passkey above first.</p>:null}
       <p className="mt-4 text-sm text-muted-foreground" role="status" aria-live="polite">{setupNotice}</p>
@@ -124,13 +125,13 @@ export function MetropolisPrototype() {
         </details>
       </div>:null}
     </section>:null}
-    {credential&&setup?.accountDeployed?<MetropolisPurchase credential={credential} enabled={ready&&verified&&!busy&&!setupBusy} />:null}
+    {credential&&setup?.accountDeployed?<MetropolisPurchase key={setup.accountAddress} credential={credential} factory={setup.factory} enabled={ready&&verified&&!busy&&!setupBusy} />:null}
     <section className="mt-6 rounded-2xl border border-white/15 p-5 sm:p-7">
       <h2 className="text-xl font-semibold">Integration status</h2>
       <ul className="mt-4 space-y-3 text-sm text-muted-foreground">
         <li>TrustGate and CREATE2 factory: deployed on Monad Testnet; source verification matched.</li>
-        <li><a className="break-all text-cyan-300 underline" href={`https://testnet.monadscan.com/address/${METROPOLIS_DEPLOYMENT.factory}`} target="_blank" rel="noreferrer">View the deployed factory</a></li>
-        <li>Passkey account contract: implemented and tested locally.</li>
+        <li><a className="break-all text-cyan-300 underline" href={`https://testnet.monadscan.com/address/${METROPOLIS_V2_DEPLOYMENT.factory}`} target="_blank" rel="noreferrer">View the deployed V2 factory</a></li>
+        <li>V2 passkey payment: tested on a disposable Monad fork with a real browser assertion.</li>
         <li>Native P256: verified through live RPC and a pinned Monad fork.</li>
         <li>Personal account: deployment and funding are shown above from finalized reads.</li>
         <li>Purchase approval: exact task and payment review, passkey signature and contract simulation.</li>

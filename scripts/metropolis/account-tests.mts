@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { createPublicClient, custom, getAddress, sha256, toHex, zeroAddress, type Hex } from "viem";
-import { METROPOLIS_ACCOUNT_SALT, METROPOLIS_DEPLOYMENT, parseAccountSetup,
+import { METROPOLIS_ACCOUNT_SALT, METROPOLIS_DEPLOYMENT, METROPOLIS_V2_ACCOUNT_SALT, METROPOLIS_V2_DEPLOYMENT, metropolisAccountProfile, parseAccountSetup,
   readAccountSetup, validateAccountKey, type MetropolisAccountSetup } from "../../lib/monad/account.ts";
 import { MONAD_CONTRACTS, monadDemoTestnet } from "../../lib/monad/config.ts";
 import { getMonadReadClient } from "../../lib/monad/erc8004.ts";
@@ -24,6 +24,14 @@ const synthetic: MetropolisAccountSetup = {
 let checks = 0;
 assert.deepEqual(await validateAccountKey(publicKey), {qx:fixture.qx,qy:fixture.qy}); checks++;
 assert.deepEqual(await parseAccountSetup(synthetic), synthetic); checks++;
+const syntheticV2 = { ...synthetic, factory: METROPOLIS_V2_DEPLOYMENT.factory, userSalt: METROPOLIS_V2_ACCOUNT_SALT };
+assert.deepEqual(await parseAccountSetup(syntheticV2), syntheticV2); checks++;
+assert.equal(metropolisAccountProfile(synthetic.factory).accountVersion, 1); checks++;
+assert.equal(metropolisAccountProfile(syntheticV2.factory).accountVersion, 2); checks++;
+for (const mixed of [{ ...syntheticV2, userSalt: METROPOLIS_ACCOUNT_SALT },
+  { ...synthetic, userSalt: METROPOLIS_V2_ACCOUNT_SALT }]) {
+  await assert.rejects(parseAccountSetup(mixed)); checks++;
+}
 for (const [field, value] of [
   ["kind", "other"], ["version", 2], ["chainId", 143], ["factory", sender], ["trustGate", sender],
   ["usdc", MONAD_CONTRACTS[143].usdc], ["origin", "https://preview.vercel.app"],
@@ -48,7 +56,7 @@ for (const args of [[], ["--setup", "a"], ["--sender", zeroAddress, "--setup", "
 await assert.rejects(readAccountSetup(publicKey, "http://localhost:3123")); checks++;
 await assert.rejects(readAccountSetup(publicKey, METROPOLIS_ORIGIN, getMonadReadClient(143)), /Testnet/); checks++;
 const wrongChain = createPublicClient({ chain: monadDemoTestnet,
-  transport: custom({ request: async () => "0x8f" }) });
+  transport: custom({ request: async () => "0x8f" }) }) as unknown as ReturnType<typeof getMonadReadClient>;
 await assert.rejects(readAccountSetup(publicKey, METROPOLIS_ORIGIN, wrongChain), /Testnet/); checks++;
 await assert.rejects(planAccountCreation(synthetic, zeroAddress, "0x01")); checks++;
 await assert.rejects(planAccountCreation(synthetic, sender, "0x"), /Compile/); checks++;
@@ -59,6 +67,9 @@ assert.equal(METROPOLIS_DEPLOYMENT.factory, factoryReceipt.address); checks++;
 assert.equal(METROPOLIS_DEPLOYMENT.factoryCodeHash, factoryReceipt.runtimeCodeHash); checks++;
 assert.equal(METROPOLIS_DEPLOYMENT.trustGate, gateReceipt.address); checks++;
 assert.equal(METROPOLIS_DEPLOYMENT.gateCodeHash, gateReceipt.runtimeCodeHash); checks++;
+const v2FactoryReceipt = JSON.parse(readFileSync(new URL("../../docs/metropolis-testnet-factory-v2-deployment.json", import.meta.url), "utf8"));
+assert.equal(METROPOLIS_V2_DEPLOYMENT.factory, v2FactoryReceipt.address); checks++;
+assert.equal(METROPOLIS_V2_DEPLOYMENT.factoryCodeHash, v2FactoryReceipt.runtimeCodeHash); checks++;
 console.log(`Account setup guards PASS: ${checks} checks.`);
 
 if (process.argv.includes("--live")) {
@@ -74,7 +85,7 @@ if (process.argv.includes("--live")) {
     const payload = await response.json();
     if (payload.error) throw new Error(payload.error.message);
     return payload.result;
-  } }) });
+  } }) }) as unknown as ReturnType<typeof getMonadReadClient>;
   const setup = await readAccountSetup(publicKey, METROPOLIS_ORIGIN, client);
   const artifact = JSON.parse(readFileSync(new URL("../../contracts/monad/out/VeyraPasskeyAccount.sol/VeyraPasskeyAccount.json", import.meta.url), "utf8"));
   const plan = await planAccountCreation(setup, sender, artifact.bytecode.object, client);

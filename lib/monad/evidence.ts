@@ -2,9 +2,10 @@ import {
   decodeEventLog, erc20Abi, formatUnits, hashTypedData, isAddress, keccak256,
   recoverTypedDataAddress, toBytes, zeroAddress, type Address, type Hex,
 } from "viem";
-import type { ReputationEvidence, ReputationScoringIdentity } from "../reputation/types.ts";
-import { getMonadReadClient, MONAD_REPUTATION_ABI, readMonadAgentIdentity } from "./erc8004.ts";
+import type { ReputationScoringIdentity } from "../reputation/types.ts";
+import { getMonadReadClient, MONAD_IDENTITY_ABI, MONAD_REPUTATION_ABI, readMonadAgentIdentity } from "./erc8004.ts";
 import { MONAD_CONTRACTS } from "./config.ts";
+import type { MonadHistoryEvidence } from "./freshness.ts";
 
 const ZERO_HASH = `0x${"0".repeat(64)}`;
 export const MONAD_ASSESSMENT_TYPES = {
@@ -44,7 +45,8 @@ export type MonadEvidencePolicy = {
 };
 export type MonadEvidenceBundle = {
   identity: ReputationScoringIdentity & { paymentWallet: Address; blockNumber: bigint; commitment: "finalized" };
-  evidence: readonly ReputationEvidence[];
+  securitySnapshot: { blockHash: Hex; observedAt: string };
+  evidence: readonly MonadHistoryEvidence[];
   excluded: readonly string[];
   disclosures: readonly string[];
   collectedAt: string;
@@ -80,16 +82,27 @@ export async function collectMonadEvidence(
   agentId: bigint,
   policy: MonadEvidencePolicy = {},
   client = getMonadReadClient(),
-  now = new Date(),
+  now?: Date,
 ): Promise<MonadEvidenceBundle> {
   if (client.chain.id !== 10143) throw new Error("Metropolis trust execution supports Monad Testnet only");
   if ([policy.feedbackClients, policy.assessmentReporters, policy.payments, policy.assessments].some(items => (items?.length ?? 0) > 32)) {
     throw new Error("An evidence collection supports at most 32 entries per source");
   }
-  const time = Math.floor(now.getTime() / 1000);
-  if (!Number.isSafeInteger(time) || time < 0) throw new Error("Invalid evidence collection time");
+  // Explicit clocks are for reproducible operator/fork tests. Live reads use the
+  // completion time, so RPC latency does not make a legitimate block future-dated.
+  const fixedTime = now === undefined ? undefined : new Date(now.getTime());
+  const readTime = () => fixedTime ?? new Date();
+  const seconds = () => Math.floor(readTime().getTime() / 1000);
+  if (!Number.isSafeInteger(seconds()) || seconds() < 0) throw new Error("Invalid evidence collection time");
   // Monad's "latest" is a proposed block, not a finality commitment.
   const record = await readMonadAgentIdentity(agentId, client, "finalized");
+  const securityBlock = await client.getBlock({ blockNumber: record.blockNumber });
+  if (securityBlock.number !== record.blockNumber || !securityBlock.hash || !validHash(securityBlock.hash)
+    || securityBlock.timestamp < BigInt(0) || securityBlock.timestamp > BigInt(seconds())) {
+    throw new Error("Invalid finalized security snapshot block or timestamp");
+  }
+  const securitySnapshot = { blockHash: securityBlock.hash,
+    observedAt: new Date(Number(securityBlock.timestamp) * 1000).toISOString() };
   const identity: MonadEvidenceBundle["identity"] = {
     agentId: `eip155:10143:${record.registry.toLowerCase()}:${agentId}`,
     chainId: 10143, identityRegistry: record.registry, owner: record.owner,
@@ -104,9 +117,10 @@ export async function collectMonadEvidence(
     "A successful USDC transfer does not prove successful delivery.",
     "Delivery assessments are signed operator judgments; they are not independent onchain verdicts.",
     "Veyra confidence reflects evidence-category coverage, not a calibrated probability of success.",
+    "Security snapshot freshness is separate from original payment and assessment event times.",
   ];
-  const evidence: ReputationEvidence[] = [];
-  const append = (item: Omit<ReputationEvidence, "agentId" | "evidenceId" | "canonicalHash" | "arcProofVerified">) => {
+  const evidence: MonadHistoryEvidence[] = [];
+  const append = (item: Omit<MonadHistoryEvidence, "agentId" | "evidenceId" | "canonicalHash" | "arcProofVerified">) => {
     const canonicalHash = canonicalMonadHash({ chainId: 10143, agentId: identity.agentId, ...item });
     evidence.push({ ...item, agentId: identity.agentId, evidenceId: `mve_${canonicalHash.slice(2, 18)}`,
       canonicalHash, arcProofVerified: false });
@@ -130,7 +144,8 @@ export async function collectMonadEvidence(
           sourceId: MONAD_CONTRACTS[10143].reputationRegistry,
           sourceHash: canonicalMonadHash({ blockNumber: record.blockNumber, clients, count, value, decimals }),
           score: Number(value), positive: value >= BigInt(80), confidence: 0.5,
-          verifiedOnchain: true, sybilRisk: "low", observedAt: now.toISOString(),
+          verifiedOnchain: true, sybilRisk: "low", observedAt: readTime().toISOString(),
+          historyAnchorAt: null,
           reason: "Registry aggregate from explicit operator-selected clients; ownership and feedback age are unverified.",
         });
       }
@@ -150,7 +165,18 @@ export async function collectMonadEvidence(
       throw new Error("Payment receipt failed or is not sufficiently confirmed");
     }
     const block = await client.getBlock({ blockNumber: receipt.blockNumber });
-    if (block.hash !== receipt.blockHash || block.timestamp > BigInt(time)) throw new Error("Payment receipt is not in the canonical historical block");
+    if (block.number !== receipt.blockNumber || block.hash !== receipt.blockHash || block.timestamp < BigInt(0)
+      || block.timestamp > securityBlock.timestamp) throw new Error("Payment receipt is not in the canonical historical block");
+    const [historicalOwner, historicalWallet] = await Promise.all([
+      client.readContract({ address: record.registry, abi: MONAD_IDENTITY_ABI, functionName: "ownerOf",
+        args: [agentId], blockNumber: receipt.blockNumber }),
+      client.readContract({ address: record.registry, abi: MONAD_IDENTITY_ABI, functionName: "getAgentWallet",
+        args: [agentId], blockNumber: receipt.blockNumber }),
+    ]);
+    if (historicalOwner.toLowerCase() !== record.owner.toLowerCase()
+      || historicalWallet.toLowerCase() !== record.paymentWallet.toLowerCase()) {
+      throw new Error("Payment history belongs to a different provider owner or payment wallet");
+    }
     const log = receipt.logs.find(item => item.logIndex === spec.logIndex);
     if (!log || log.removed || log.address.toLowerCase() !== MONAD_CONTRACTS[10143].usdc.toLowerCase()
       || log.blockHash !== receipt.blockHash || log.blockNumber !== receipt.blockNumber
@@ -174,6 +200,7 @@ export async function collectMonadEvidence(
     append({ type: "usdc_payment_success", tier: 3, sourceId: key, sourceHash: receipt.blockHash,
       score: 100, positive: true, confidence: 1, economicValueUsdc: Number(formatUnits(args.value, 6)),
       counterpartyAddress: args.from, verifiedOnchain: true, sybilRisk: "none", observedAt,
+      historyAnchorAt: observedAt,
       reason: "Confirmed canonical USDC transfer; delivery is assessed separately.",
     });
   }
@@ -186,7 +213,7 @@ export async function collectMonadEvidence(
     if (typeof message.delivered !== "boolean" || message.agentId !== agentId || message.seller.toLowerCase() !== record.paymentWallet.toLowerCase()
       || !validHash(message.paymentTx) || !validHash(message.requestHash) || !validHash(message.responseHash)
       || !Number.isInteger(message.score) || message.score < 0 || message.score > 100
-      || message.assessedAt < BigInt(0) || message.assessedAt > BigInt(time)) {
+      || message.assessedAt < BigInt(0) || message.assessedAt > BigInt(seconds())) {
       throw new Error("Invalid delivery assessment binding or timestamp");
     }
     const matching = [...payments.entries()].filter(([key, payment]) => key.startsWith(`${message.paymentTx.toLowerCase()}:`)
@@ -212,6 +239,7 @@ export async function collectMonadEvidence(
       score: passed ? message.score : Math.min(message.score, 49), positive: passed, confidence: 0.9,
       counterpartyAddress: payment.buyer, verifiedOnchain: false, sybilRisk: "none" as const,
       observedAt: new Date(Number(message.assessedAt) * 1000).toISOString(),
+      historyAnchorAt: payment.observedAt,
       reason: `Operator assessment signed by ${reporter}; payment ${paymentKey}; request ${message.requestHash}.`,
     };
     // One report describes two separate dimensions, not two independent validators.
@@ -220,8 +248,9 @@ export async function collectMonadEvidence(
   }
   if (!evidence.length) disclosures.push("No corroborated payment, delivery or configured feedback history is available.");
   evidence.sort((a, b) => a.canonicalHash.localeCompare(b.canonicalHash));
-  const bundle = deepFreeze({ identity, evidence, excluded, disclosures, collectedAt: now.toISOString(),
-    evidenceHash: canonicalMonadHash({ identity, evidence, excluded, disclosures, collectedAt: now.toISOString() }) });
+  const collectedAt = readTime().toISOString();
+  const bundle = deepFreeze({ identity, securitySnapshot, evidence, excluded, disclosures, collectedAt,
+    evidenceHash: canonicalMonadHash({ identity, securitySnapshot, evidence, excluded, disclosures, collectedAt }) });
   verifiedBundles.add(bundle);
   return bundle;
 }

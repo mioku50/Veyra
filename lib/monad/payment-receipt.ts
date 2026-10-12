@@ -10,7 +10,7 @@ import { encodeFunctionData } from "viem";
 export async function verifyPaymentReceipt(value:unknown,transactionHash:Hex,client=getMonadReadClient()) {
   if(!/^0x[0-9a-fA-F]{64}$/.test(transactionHash))throw new PaymentError("Provide a transaction hash.");
   const approval=parsePaymentApproval(value),{quote,clearance,context}=await verifyPurchaseSignatures(approval.quote);
-  const setup=await readAccountSetup(quote.publicKey,quote.origin,client);
+  const setup=await readAccountSetup(quote.publicKey,quote.origin,client,undefined,quote.factory);
   if(!setup.accountDeployed||setup.accountAddress!==quote.accountAddress)throw new PaymentError("The receipt account does not match this passkey.");
   const [receipt,tx,finalized]=await Promise.all([client.getTransactionReceipt({hash:transactionHash}),
     client.getTransaction({hash:transactionHash}),client.getBlock({blockTag:"finalized"})]);

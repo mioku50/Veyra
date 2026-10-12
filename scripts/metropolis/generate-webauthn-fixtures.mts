@@ -21,7 +21,7 @@ const actionHash = (recipient: Hex, amount: bigint) => keccak256(encodeAbiParame
   [token, 0n, encodeFunctionData({abi:erc20Abi,functionName:"transfer",args:[recipient,amount]})],
 ));
 const clearance = {
-  decisionId: hashText("metropolis-test-decision"), subject: seller, executor: account, counterparty: seller,
+  decisionId: hashText("metropolis-test-decision"), subject: seller as Hex, executor: account as Hex, counterparty: seller as Hex,
   actionHash: actionHash(seller,12_000n), requestedAmount:12_000n, maxAmount:20_000n,
   snapshotHash:hashText("metropolis-test-snapshot"), policyVersion:hashText("metropolis-test-policy"),
   evaluator:"0x0000000000000000000000000000000000000000" as Hex, issuedAt:timestamp, expiresAt:timestamp+300n,
@@ -44,9 +44,9 @@ const tuple = [{type:"tuple", components:[{name:"r",type:"bytes32"},{name:"s",ty
   {name:"challengeIndex",type:"uint256"},{name:"typeIndex",type:"uint256"},
   {name:"authenticatorData",type:"bytes"},{name:"clientDataJSON",type:"string"}]}] as const;
 
-function assertion(challenge: Hex, flags = 0x05, assertionOrigin = origin, assertionRpId = rpId, signer = privateKey, type = "webauthn.get") {
+function assertion(challenge: Hex, flags = 0x05, assertionOrigin = origin, assertionRpId = rpId, signer = privateKey, type = "webauthn.get", extraClientData:Record<string,unknown> = {}, transformClientData:(json:string)=>string = json=>json) {
   const authenticatorData = Buffer.concat([createHash("sha256").update(assertionRpId).digest(), Buffer.from([flags]), Buffer.alloc(4)]);
-  const clientDataJSON = JSON.stringify({type,challenge:Buffer.from(challenge.slice(2),"hex").toString("base64url"),origin:assertionOrigin,crossOrigin:false});
+  const clientDataJSON = transformClientData(JSON.stringify({type,challenge:Buffer.from(challenge.slice(2),"hex").toString("base64url"),origin:assertionOrigin,crossOrigin:false,...extraClientData}));
   const payload = Buffer.concat([authenticatorData,createHash("sha256").update(clientDataJSON).digest()]);
   const sig = sign("sha256",payload,{key:signer,dsaEncoding:"ieee-p1363"});
   const r = `0x${sig.subarray(0,32).toString("hex")}` as Hex;
@@ -62,6 +62,22 @@ const valid = assertion(challenge);
 const wrongKey = generateKeyPairSync("ec",{namedCurve:"prime256v1"}).privateKey;
 const variants = {
   valid:valid.encoded,
+  extraClientData:assertion(challenge,0x05,origin,rpId,privateKey,"webauthn.get",{
+    other_keys_can_be_added_here:"do not compare clientDataJSON against a template",
+  }).encoded,
+  nestedExtra:assertion(challenge,0x05,origin,rpId,privateKey,"webauthn.get",{
+    future:{message:"quotes \" and braces {}",nested:[true,3,{name:"unicode ☃"}]},
+  }).encoded,
+  crossOrigin:assertion(challenge,0x05,origin,rpId,privateKey,"webauthn.get",{crossOrigin:true,topOrigin:"https://other.example.test"}).encoded,
+  reordered:assertion(challenge,0x05,origin,rpId,privateKey,"webauthn.get",{},json=>{
+    const data=JSON.parse(json);return JSON.stringify({challenge:data.challenge,type:data.type,origin:data.origin,crossOrigin:false});
+  }).encoded,
+  nestedRequired:assertion(challenge,0x05,origin,rpId,privateKey,"webauthn.get",{},json=>`{"nested":${json}}`).encoded,
+  badDelimiter:assertion(challenge,0x05,origin,rpId,privateKey,"webauthn.get",{},json=>`${json.slice(0,-1)}x}`).encoded,
+  missingBoundary:assertion(challenge,0x05,origin,rpId,privateKey,"webauthn.get",{},json=>json.slice(0,-1)).encoded,
+  trailingData:assertion(challenge,0x05,origin,rpId,privateKey,"webauthn.get",{},json=>`${json} }`).encoded,
+  oversized:assertion(challenge,0x05,origin,rpId,privateKey,"webauthn.get",{future:"x".repeat(4096)}).encoded,
+  missingClosingBrace:assertion(challenge,0x05,origin,rpId,privateKey,"webauthn.get",{future:"value"},json=>json.slice(0,-1)).encoded,
   noUP:assertion(challenge,0x04).encoded,
   noUV:assertion(challenge,0x01).encoded,
   invalidBackup:assertion(challenge,0x15).encoded,

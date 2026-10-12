@@ -1,0 +1,96 @@
+{
+  "kind": "veyra.metropolis.readiness-registration-receipt",
+  "version": 1,
+  "network": "Monad Testnet",
+  "chainId": 10143,
+  "registry": "0x8004A818BFB912233c491871b3d84c89A494BD9e",
+  "registryRuntimeCodeHash": "0xd0e45b1d89fa9b6cc7e97c1f155d64180e5c232aaccf9900ef9d4fd738c02b41",
+  "agentId": "2083",
+  "owner": "0x861FBe92678Bd6421aCee2dC37b50FDe1Dc01A1E",
+  "paymentWallet": "0x861FBe92678Bd6421aCee2dC37b50FDe1Dc01A1E",
+  "function": "register(string)",
+  "metadata": {
+    "type": "https://eips.ethereum.org/EIPS/eip-8004#registration-v1",
+    "name": "Veyra Monad Readiness — demonstration",
+    "description": "Veyra-created, operator-run Monad Testnet diagnostic. Checks a personal passkey account, deployed infrastructure, native P256 and budget funding at a finalized block. Free preview; not an independent audit or a Mainnet certification.",
+    "services": [],
+    "active": false,
+    "x402Support": false,
+    "supportedTrust": [],
+    "registrations": [],
+    "veyra": {
+      "serviceId": "veyra.monad.readiness.v1",
+      "demonstration": true,
+      "controller": "Veyra development team",
+      "deliveryMode": "Local operator CLI; no hosted research or delivery API advertised.",
+      "commercialStatus": "Free readiness preview. A paid demonstration needs a separately approved actual interaction and result assessment.",
+      "policy": "Registration alone remains REVIEW_REQUIRED. No favorable feedback or prior delivery is claimed.",
+      "sources": [
+        {
+          "title": "Monad current facts",
+          "url": "https://docs.monad.xyz/ai/current-facts"
+        },
+        {
+          "title": "Monad native P256",
+          "url": "https://docs.monad.xyz/developer-essentials/precompiles"
+        },
+        {
+          "title": "Monad finality commitments",
+          "url": "https://docs.monad.xyz/monad-arch/consensus/block-states"
+        },
+        {
+          "title": "ERC-8004 registry source and deployments",
+          "url": "https://github.com/erc-8004/erc-8004-contracts"
+        },
+        {
+          "title": "Circle USDC addresses",
+          "url": "https://developers.circle.com/stablecoins/usdc-contract-addresses"
+        }
+      ]
+    }
+  },
+  "agentUriHash": "0x9f3d7ee5a33cb07c711dbc669cbad321e6cd85482784a3e5ad5da3cbe58aa702",
+  "callDataHash": "0x092e4ac59dbde042cd00507605d2eddd3d50d86723f9614bb3be00217012b2af",
+  "transactionHash": "0x97a119d22f0ef0d714316ad424a10d79b9140c0f477e267b8c7074dee5ffd309",
+  "blockNumber": "69357154",
+  "blockHash": "0x6a87b98964c4834a7a0ae7e781ae519721ea56e5a79144096698fd708ba4f7c7",
+  "blockTimestamp": "1791493389",
+  "finalizedBlock": "69357550",
+  "status": "success",
+  "nonce": 3,
+  "gasLimit": "1353732",
+  "gasUsed": "1353732",
+  "effectiveGasPriceWei": "102000000000",
+  "chargedFeeMon": "0.138080664",
+  "maximumAuthorizedFeeMon": "0.165155304",
+  "nativeValue": "0",
+  "usdcSpent": "0",
+  "receiptVerified": true,
+  "ownerWalletAndMetadataVerified": true,
+  "demonstration": true,
+  "policyStatus": "REVIEW_REQUIRED",
+  "reputationEstablished": false,
+  "serviceDelivered": false,
+  "policyProbe": {
+    "scope": "Read-only hypothetical purchase using canonical identity only; no payment history, assessments or feedback supplied.",
+    "blockNumber": "69357551",
+    "decision": "REVIEW_REQUIRED",
+    "executable": false,
+    "reasons": [
+      "LOW_CONFIDENCE",
+      "INSUFFICIENT_COVERAGE",
+      "NO_REPUTATION_DATA",
+      "TRUST_TIER_REQUIRES_REVIEW",
+      "NO_CORROBORATED_PAYMENT_HISTORY",
+      "NO_VERIFIED_DELIVERY_HISTORY"
+    ],
+    "clearanceIssued": false,
+    "transactionSent": false
+  },
+  "userAccountBalanceAndNonceUnchanged": true,
+  "evidenceScope": "One real Testnet identity registration; no provider payment, delivery or feedback.",
+  "source": "https://github.com/erc-8004/erc-8004-contracts",
+  "transactionUrl": "https://testnet.monadscan.com/tx/0x97a119d22f0ef0d714316ad424a10d79b9140c0f477e267b8c7074dee5ffd309",
+  "identityUrl": "https://testnet.monadscan.com/token/0x8004A818BFB912233c491871b3d84c89A494BD9e?a=2083",
+  "verifiedAt": "2026-10-08T21:05:09.189Z"
+}

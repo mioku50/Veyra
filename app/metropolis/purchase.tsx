@@ -1,12 +1,25 @@
 "use client";
 
 import { useEffect,useState } from "react";
-import { formatUnits,type Hex } from "viem";
+import { formatUnits,type Address,type Hex } from "viem";
+import { metropolisAccountProfile } from "@/lib/monad/account";
 import { PaymentError,parsePaymentApproval,simulatePaymentApproval,verifyPurchaseSignatures,verifyPurchaseState,type PaymentApproval,type SignedPurchase } from "@/lib/monad/payment";
 import { verifyPaymentReceipt } from "@/lib/monad/payment-receipt";
-import { signMetropolisChallenge,type MetropolisCredential } from "@/lib/monad/passkey";
+import { PasskeyCompatibilityError,signMetropolisChallenge,type MetropolisCredential } from "@/lib/monad/passkey";
+import { signMetropolisV2Challenge } from "@/lib/monad/passkey-v2";
+import { parseReadinessTask,READINESS_SERVICE_ID } from "@/lib/monad/readiness-task";
 
-export function MetropolisPurchase({credential,enabled}:{credential:MetropolisCredential;enabled:boolean}) {
+function readinessDescription(quote:SignedPurchase|null) {
+  if(!quote||quote.task.serviceId!==READINESS_SERVICE_ID)return null;
+  try {
+    const {request}=parseReadinessTask(quote.task);
+    return request.publicKey===quote.publicKey&&request.budgetUsdc===quote.budgetUsdc
+      &&(request.accountVersion??1)===metropolisAccountProfile(quote.factory).accountVersion
+      ?"Check my Monad Testnet account, infrastructure and funding, and identify what still blocks a purchase.":null;
+  }catch{return null;}
+}
+
+export function MetropolisPurchase({credential,enabled,factory}:{credential:MetropolisCredential;enabled:boolean;factory:Address}) {
   const [input,setInput]=useState("");
   const [quote,setQuote]=useState<SignedPurchase|null>(null);
   const [approval,setApproval]=useState<PaymentApproval|null>(null);
@@ -22,8 +35,9 @@ export function MetropolisPurchase({credential,enabled}:{credential:MetropolisCr
     const timer=setInterval(update,1000);return()=>clearInterval(timer);
   },[quote]);
   const expired=!!quote&&now>=Number(quote.deadline);
+  const readableRequest=readinessDescription(quote);
   function errorNotice(error:unknown) {
-    setNotice(error instanceof PaymentError?error.message:"The check did not complete. Check the proposal's expiry and Monad connection, then try again.");
+    setNotice(error instanceof PaymentError||error instanceof PasskeyCompatibilityError?error.message:"The check did not complete. Check the proposal's expiry and Monad connection, then try again.");
   }
   async function checkProposal() {
     setBusy(true);setQuote(null);setApproval(null);setReceipt(null);setHash("");setNotice("");setArchived(false);
@@ -37,6 +51,9 @@ export function MetropolisPurchase({credential,enabled}:{credential:MetropolisCr
         setArchived(true);setApproval(saved);
         setNotice("Saved approval loaded for receipt verification. Enter its transaction hash below.");return;
       }
+      if(!value||typeof value!=="object"||!("factory" in value)||value.factory!==factory) {
+        throw new PaymentError("Prepare a fresh proposal for the V2 account shown above. A V1 approval can still be loaded to verify its original receipt.");
+      }
       const state=await verifyPurchaseState(value,credential.publicKey);
       setQuote(state.quote);setNotice("Veyra's signatures and the current onchain payment details passed the checks.");
     }catch(error){errorNotice(error);}finally{setBusy(false);}
@@ -46,7 +63,8 @@ export function MetropolisPurchase({credential,enabled}:{credential:MetropolisCr
     setBusy(true);setApproval(null);setReceipt(null);setNotice("");
     try {
       const state=await verifyPurchaseState(quote,credential.publicKey);
-      const assertion=await signMetropolisChallenge(credential,state.challenge,window.location.origin);
+      const signChallenge=metropolisAccountProfile(state.quote.factory).accountVersion===2?signMetropolisV2Challenge:signMetropolisChallenge;
+      const assertion=await signChallenge(credential,state.challenge,window.location.origin);
       const value:PaymentApproval={kind:"veyra.metropolis.payment-approval",version:1,quote:state.quote,
         assertion:{...assertion,challengeIndex:assertion.challengeIndex.toString(),typeIndex:assertion.typeIndex.toString()}};
       const simulated=await simulatePaymentApproval(value);
@@ -67,7 +85,7 @@ export function MetropolisPurchase({credential,enabled}:{credential:MetropolisCr
       setReceipt(result);setQuote(approval.quote);setNotice("The payment is confirmed in a finalized block. The service result has not been assessed yet.");
     }catch(error){errorNotice(error);}finally{setBusy(false);}
   }
-  return <section className="mt-6 rounded-2xl border border-white/15 p-5 sm:p-7" aria-labelledby="purchase-title">
+  return <section className="mt-6 min-w-0 rounded-2xl border border-white/15 p-5 [overflow-wrap:anywhere] sm:p-7" aria-labelledby="purchase-title">
     <h2 id="purchase-title" className="text-xl font-semibold">Review an exact purchase</h2>
     <p className="mt-3 text-sm text-muted-foreground">Review the task, provider and price. Your passkey approval lets a relayer execute this payment once. A transfer does not guarantee delivery.</p>
     <label htmlFor="purchase-proposal" className="mt-5 block text-sm">Signed purchase proposal or saved payment approval</label>
@@ -77,7 +95,10 @@ export function MetropolisPurchase({credential,enabled}:{credential:MetropolisCr
     <button onClick={checkProposal} disabled={!enabled||busy||!input.trim()} className="mt-3 rounded-xl border border-violet-400/40 px-5 py-3 font-semibold disabled:opacity-50">{busy?"Checking…":"Check proposal"}</button>
     <p role="status" aria-live="polite" className="mt-4 text-sm text-muted-foreground">{notice}</p>
     {quote?<div className="mt-5 space-y-4" data-testid="validated-purchase">
-      <h3 className="font-semibold">{quote.task.request}</h3>
+      <h3 className="font-semibold">{readableRequest??quote.task.request}</h3>
+      {readableRequest?<details className="text-sm"><summary className="cursor-pointer py-2 text-violet-300">Exact signed request</summary>
+        <p className="mt-2 break-all font-mono text-xs">{quote.task.request}</p>
+      </details>:null}
       <p className="text-sm text-muted-foreground">Expected result: {quote.task.deliverable}</p>
       <dl className="space-y-3 text-sm">
         <div><dt className="text-muted-foreground">Provider</dt><dd>ERC-8004 #{quote.provider.agentId}{quote.provider.demonstration?" · Veyra demonstration agent":""}</dd></div>

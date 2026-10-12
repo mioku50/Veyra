@@ -1,0 +1,71 @@
+{
+  "kind": "veyra.metropolis.manual-trial-local-verification",
+  "version": 1,
+  "verifiedAt": "2026-10-08T21:39:01.212Z",
+  "branch": "metropolis-monad",
+  "baseCommit": "db76c1550ae1505425a0a660b41e4d639455318f",
+  "published": false,
+  "externalTransactionsSent": 0,
+  "liveManualTrialCompleted": false,
+  "autonomousSpending": "frozen",
+  "checks": {
+    "manualTrialBoundaryTests": 75,
+    "readinessBoundaryTests": 41,
+    "purchasePacketChecks": 44,
+    "existingTrustChecks": 53,
+    "applicationTypescript": "passed",
+    "operatorAndTestTypescript": "passed",
+    "scopedEslint": "passed",
+    "productionBuild": "passed",
+    "freshSignedOrderPreflight": "passed",
+    "usedNoncePreflightRejected": true
+  },
+  "fork": {
+    "result": "PASS",
+    "scope": "disposable localhost Monad fork only",
+    "frontendOrigin": "http://127.0.0.1:3126",
+    "forkBlock": "69357158",
+    "virtualWebAuthn": true,
+    "nativeP256AccountExecution": true,
+    "amountUsdc": "0.012",
+    "receiptVerified": true,
+    "replayRejected": true,
+    "tamperedTaskRejected": true,
+    "identityOnlyBlocked": true,
+    "receiptRestoredAfterReload": true,
+    "externalTransactionsSent": 0,
+    "readinessDemoRegistrationVerified": true,
+    "readinessReportVerified": true,
+    "persistedResultRestored": true,
+    "prepaymentPreviewRejected": true,
+    "tamperedResultsRejected": true,
+    "signedOperatorAssessmentCollected": true,
+    "manualTrialReceiptVerified": true,
+    "manualTrialBuyerSignatureVerified": true,
+    "manualTrialResultVerified": true,
+    "initialPolicyHistory": "actual localhost trial transfer/result with an explicitly declared test usefulness score",
+    "serviceDelivery": "local operator readiness result on a disposable fork; no live paid service or real human assessment"
+  },
+  "liveReadOnlyRecheck": {
+    "finalizedBlock": "69364054",
+    "blockHash": "0x837fab149f00477fddffe44d74ea1f541195e1ff7ab5fa2d1f78cfa1a17e6934",
+    "agentId": "2083",
+    "userAccountTestUsdc": "20",
+    "userAccountNonce": "0",
+    "senderNonce": 4
+  },
+  "sourceSha256": {
+    "lib/monad/readiness-trial.ts": "5f35e1dae195a31fae9713fcae66caaea08f5e84e94fce63c2c2ad893f396557",
+    "scripts/metropolis/readiness-trial.mts": "fa348529c5037fa92e7f561459f00d8a8851455887a08be2dc76e80ccf52889d",
+    "scripts/metropolis/readiness-trial-tests.mts": "dca48be52131c5d353f5c1b1d74451f1175203ee2eabc7c9dcf2338b3e234cad",
+    "scripts/metropolis/purchase-browser-fork.mts": "7d6ab3d86b479dc814c1225588c249b2e737ba1d4f825d006ad117ecc6cf4161",
+    "scripts/metropolis/trust-tests.mts": "e8b1bc8d2bfd3da4c8af907ec650643f221d3bb11eca62d5b469b5af625ef57f"
+  },
+  "limitations": [
+    "A separate real EOA buyer and specific spend approval are still required.",
+    "Fork transfers and results are actual localhost execution, not live customer history.",
+    "The usefulness score is explicitly a test value, not a real human review.",
+    "The manual EOA trial does not issue a Veyra clearance or execute the deployed passkey account.",
+    "No key, actual user setup, signature or private planning file is included."
+  ]
+}
