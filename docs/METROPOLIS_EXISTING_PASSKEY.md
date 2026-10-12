@@ -222,3 +222,18 @@ A finalized live read at block `70498753`, hash
 verified the original V2 account configuration, 20 test USDC and payment nonce
 `0`. The native P256 control accepted a known signature and rejected an altered
 message at the same block. This is a read-only control, not an owner signature.
+
+### Registration correction publication
+
+The canonical Metropolis page serves source commit
+`e9ad82196053d6f4c266eefd4902feef807ce76d` from production deployment
+`dpl_5SQuJv8fjcYoxESTYZBCGabaX8yY`. Its uploaded source was checked against
+the public Git commit, then the READY build was promoted without rebuilding.
+The complete corrected browser/fork test also passed through that published
+frontend. Root, `/arc`, `/console` and `/metropolis` returned HTTP 200; the
+bounded ten-minute runtime-error query found no errors.
+
+The owner could not locate a Deleted section in Apple Passwords. Recovery and
+access to the original account are still unconfirmed. No live transaction,
+new account deployment or funding was sent. Existing Arc source and `main`
+remain unchanged. See [registration publication evidence](metropolis-passkey-registration-publication.json).
