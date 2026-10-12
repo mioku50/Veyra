@@ -135,7 +135,8 @@ try {
   });
   await context.route("https://testnet-rpc.monad.xyz/**",async route=>{
     const payload=route.request().postDataJSON();
-    if(selectionPreflightDelay&&(Array.isArray(payload)?payload:[payload]).some(item=>item.method==="eth_chainId")) {
+    // getChainId may be cached; delay the first actual preflight RPC instead.
+    if(selectionPreflightDelay) {
       const delay=selectionPreflightDelay;selectionPreflightDelay=0;
       await new Promise(resolve=>setTimeout(resolve,delay));
     }

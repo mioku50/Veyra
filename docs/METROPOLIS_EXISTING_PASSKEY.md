@@ -93,3 +93,23 @@ Source: [WebAuthn discoverable credentials](https://www.w3.org/TR/webauthn-3/#sc
 
 Owner-device selection remains pending. The live balance check is a read-only
 snapshot; it does not establish a new owner assertion or payment receipt.
+
+## Publication — 2026-10-12
+
+The canonical `/metropolis` page now serves source commit
+`a019fc5e4900f685ad0c36ef19a0ad30032fe77c`. Its production deployment was
+staged, checked against that Git commit, then promoted without rebuilding.
+The full selection/payment browser test passed against the published frontend,
+with all blockchain writes still restricted to the disposable local fork.
+The delayed-preflight test targets the first actual RPC so a cached chain-ID
+lookup cannot bypass its timing check.
+
+The root page, `/arc`, `/console` and `/metropolis` returned HTTP 200 before and
+after promotion. Existing Arc source and `main` were unchanged.
+See [publication evidence](metropolis-existing-passkey-publication.json).
+
+To return to the existing funded account, open
+[the prefilled account page](https://agent-commerce-six.vercel.app/metropolis?account=0x88f7aAe6050C842A5D2FB9e39B625102f5D54bB6),
+click **Check existing account**, then **Select existing passkey** and select
+its original passkey in the device's password manager. Owner-device selection
+and any actual payment remain separate, pending actions.
