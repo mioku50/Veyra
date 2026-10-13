@@ -144,6 +144,7 @@ try {
   let selectionPreflightDelay=0;
   let selectionPreflightAccount:Address|undefined;
   let selectionPreflightDelayed=false;
+  let approvalReadDelay=0,approvalReadDelayed=false,assertionsBeforeApproval=0;
   page.on("pageerror",error=>errors.push(error.message));
   await context.route(`${METROPOLIS_ORIGIN}/**`,async route=>{
     const response=await route.fetch({url:route.request().url().replace(METROPOLIS_ORIGIN,localOrigin)});await route.fulfill({response});
@@ -151,6 +152,18 @@ try {
   await context.route("https://testnet-rpc.monad.xyz/**",async route=>{
     const payload=route.request().postDataJSON();
     const calls=Array.isArray(payload)?payload:[payload];
+    if(approvalReadDelay) {
+      const delay=approvalReadDelay;approvalReadDelay=0;
+      const assertions=await page.evaluate(()=>(window as unknown as {
+        assertionDiagnostics:{userActivation:boolean}[]
+      }).assertionDiagnostics);
+      assert.equal(assertions.length,assertionsBeforeApproval+1,
+        "Approve must request the real owner assertion before any awaited RPC");
+      assert.equal(assertions.at(-1)?.userActivation,true,
+        "The payment passkey prompt must start in the owner's fresh click gesture");
+      await new Promise(resolve=>setTimeout(resolve,delay));
+      approvalReadDelayed=true;
+    }
     // Delay the awaited read of this specific account, rather than a cached
     // chain-ID lookup or an unrelated in-flight/background request.
     if(selectionPreflightDelay&&calls.some(item=>item.method==="eth_getCode"
@@ -389,10 +402,17 @@ try {
   await page.getByText("Exact signed request",{exact:true}).click();
   // One genuine browser prompt. V2 preserves the entire assertion, including
   // optional JSON members; the product never retries or rewrites signed bytes.
+  assertionsBeforeApproval=await page.evaluate(()=>(window as unknown as {assertionDiagnostics:unknown[]}).assertionDiagnostics.length);
+  approvalReadDelay=11000;
   await page.getByRole("button",{name:"Approve 0.012 USDC with passkey",exact:true}).click();
+  await page.getByTestId("approval-status").filter({hasText:"Passkey approval received"}).waitFor();
+  assert.equal(await page.getByLabel("Approved payment JSON").count(),0,
+    "No approval can be exported while current contract checks are still pending");
+  assert.equal(await page.getByRole("button",{name:"Copy approved payment",exact:true}).count(),0);
   try {await page.getByLabel("Approved payment JSON").waitFor({state:"attached",timeout:45000});}
   catch(error){console.log(JSON.stringify({stage:"owner approval",browserErrors:errors,rpcErrors,nativeResults,methods:[...methods],status:await page.getByRole("status").allTextContents()}));throw error;}
   const approval=parsePaymentApproval(JSON.parse(await page.getByLabel("Approved payment JSON").inputValue()));
+  assert.equal(approvalReadDelayed,true,"The post-assertion RPC really received the slow-network delay");
   await context.grantPermissions(["clipboard-read","clipboard-write"],{origin:METROPOLIS_ORIGIN});
   await page.getByRole("button",{name:"Copy approved payment",exact:true}).click();
   assert.deepEqual(JSON.parse(await page.evaluate(()=>navigator.clipboard.readText())),approval);
@@ -465,6 +485,8 @@ try {
     selectionFailureShownSeparately:true,editedAccountInvalidatesSelection:true,explicitSelectionExitRequired:true,
     matchingPasskeyStorageFailureReported:true,
     slowAccountPreparationMs:11000,selectionPromptInFreshUserGesture:true,
+    slowApprovalVerificationMs:11000,paymentPromptInFreshUserGesture:true,
+    ownerAssertionBeforeRpc:true,approvalExportAfterFullSimulation:true,
     credentialSelectionPersistedAfterReload:true,selectionMovedFunds:false,selectionConsumedPaymentNonce:false,
     universalBrowserPaymentCompatibility:false,
     tamperedTaskRejected:true,identityOnlyBlocked:true,receiptRestoredAfterReload:true,externalTransactionsSent:0,

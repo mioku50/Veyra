@@ -22,7 +22,9 @@ function readinessDescription(quote:SignedPurchase|null) {
 export function MetropolisPurchase({credential,enabled,factory}:{credential:MetropolisCredential;enabled:boolean;factory:Address}) {
   const [input,setInput]=useState("");
   const [quote,setQuote]=useState<SignedPurchase|null>(null);
+  const [challenge,setChallenge]=useState<Hex|null>(null);
   const [approval,setApproval]=useState<PaymentApproval|null>(null);
+  const [approvalNotice,setApprovalNotice]=useState("");
   const [busy,setBusy]=useState(false);
   const [notice,setNotice]=useState("");
   const [now,setNow]=useState(0);
@@ -40,7 +42,7 @@ export function MetropolisPurchase({credential,enabled,factory}:{credential:Metr
     setNotice(error instanceof PaymentError||error instanceof PasskeyCompatibilityError?error.message:"The check did not complete. Check the proposal's expiry and Monad connection, then try again.");
   }
   async function checkProposal() {
-    setBusy(true);setQuote(null);setApproval(null);setReceipt(null);setHash("");setNotice("");setArchived(false);
+    setBusy(true);setQuote(null);setChallenge(null);setApproval(null);setApprovalNotice("");setReceipt(null);setHash("");setNotice("");setArchived(false);
     try {
       if(input.length>65536)throw new PaymentError("The proposal is too large.");
       let value:unknown;try{value=JSON.parse(input);}catch{throw new PaymentError("Paste a valid signed purchase proposal.");}
@@ -55,22 +57,37 @@ export function MetropolisPurchase({credential,enabled,factory}:{credential:Metr
         throw new PaymentError("Prepare a fresh proposal for the V2 account shown above. A V1 approval can still be loaded to verify its original receipt.");
       }
       const state=await verifyPurchaseState(value,credential.publicKey);
-      setQuote(state.quote);setNotice("Veyra's signatures and the current onchain payment details passed the checks.");
+      setQuote(state.quote);setChallenge(state.challenge);
+      setNotice("Veyra's signatures and the current onchain payment details passed the checks.");
     }catch(error){errorNotice(error);}finally{setBusy(false);}
   }
   async function approve() {
-    if(!quote)return;
+    if(!quote||!challenge||busy||!enabled)return;
+    if(Math.floor(Date.now()/1000)>=Number(quote.deadline)) {
+      setApprovalNotice("This proposal has expired. Prepare a fresh proposal before approving.");return;
+    }
     setBusy(true);setApproval(null);setReceipt(null);setNotice("");
+    setApprovalNotice("Confirm this exact payment with your passkey.");
+    let signed=false;
     try {
-      const state=await verifyPurchaseState(quote,credential.publicKey);
-      const signChallenge=metropolisAccountProfile(state.quote.factory).accountVersion===2?signMetropolisV2Challenge:signMetropolisChallenge;
-      const assertion=await signChallenge(credential,state.challenge,window.location.origin);
-      const value:PaymentApproval={kind:"veyra.metropolis.payment-approval",version:1,quote:state.quote,
+      // Check proposal prepared this exact onchain challenge. Start WebAuthn in
+      // the click gesture; awaited RPC here can prevent Safari's passkey prompt.
+      const signChallenge=metropolisAccountProfile(quote.factory).accountVersion===2?signMetropolisV2Challenge:signMetropolisChallenge;
+      const assertion=await signChallenge(credential,challenge,window.location.origin);
+      signed=true;
+      setApprovalNotice("Passkey approval received. Checking the current account and simulating the payment…");
+      const value:PaymentApproval={kind:"veyra.metropolis.payment-approval",version:1,quote,
         assertion:{...assertion,challengeIndex:assertion.challengeIndex.toString(),typeIndex:assertion.typeIndex.toString()}};
+      // Re-read authority, payee, nonce and expiry after the owner's prompt.
+      // Export only after all fresh checks and the full execution simulation.
       const simulated=await simulatePaymentApproval(value);
       setApproval(simulated.approval);
-      setNotice("Your approval passed a full contract simulation. No transaction has been sent. Copy it to the relayer before it expires.");
-    }catch(error){errorNotice(error);}finally{setBusy(false);}
+      setApprovalNotice("Your approval passed a full contract simulation. No transaction has been sent. Copy it to the relayer before it expires.");
+    }catch(error){
+      setApprovalNotice(error instanceof PaymentError||error instanceof PasskeyCompatibilityError?error.message:
+        signed?"Your passkey answered, but the current Monad checks did not complete. Check the connection and try again before the displayed expiry.":
+          "Passkey confirmation did not complete. Allow the browser's passkey prompt and try again before the displayed expiry.");
+    }finally{setBusy(false);}
   }
   async function copyApproval() {
     if(!approval||expired)return;
@@ -90,7 +107,7 @@ export function MetropolisPurchase({credential,enabled,factory}:{credential:Metr
     <p className="mt-3 text-sm text-muted-foreground">Review the task, provider and price. Your passkey approval lets a relayer execute this payment once. A transfer does not guarantee delivery.</p>
     <label htmlFor="purchase-proposal" className="mt-5 block text-sm">Signed purchase proposal or saved payment approval</label>
     <textarea id="purchase-proposal" value={input} disabled={busy} maxLength={65536} spellCheck={false}
-      onChange={event=>{setInput(event.target.value);setQuote(null);setApproval(null);setReceipt(null);setNotice("");setArchived(false);}}
+      onChange={event=>{setInput(event.target.value);setQuote(null);setChallenge(null);setApproval(null);setApprovalNotice("");setReceipt(null);setNotice("");setArchived(false);}}
       className="mt-2 h-36 w-full rounded-lg border border-white/15 bg-black/20 p-3 font-mono text-xs" />
     <button onClick={checkProposal} disabled={!enabled||busy||!input.trim()} className="mt-3 rounded-xl border border-violet-400/40 px-5 py-3 font-semibold disabled:opacity-50">{busy?"Checking…":"Check proposal"}</button>
     <p role="status" aria-live="polite" className="mt-4 text-sm text-muted-foreground">{notice}</p>
@@ -113,7 +130,8 @@ export function MetropolisPurchase({credential,enabled,factory}:{credential:Metr
       <details className="text-sm"><summary className="cursor-pointer py-2 text-violet-300">Evidence and limitations</summary>
         <ul className="mt-2 list-inside list-disc space-y-2">{quote.policy.disclosures.map((item,index)=><li key={`${index}:${item}`}>{item}</li>)}</ul>
       </details>
-      <button onClick={approve} disabled={!enabled||busy||expired||!!approval||!!receipt} className="rounded-xl bg-violet-500 px-5 py-3 font-semibold disabled:opacity-50">Approve {formatUnits(BigInt(quote.clearance.requestedAmount),6)} USDC with passkey</button>
+      <button onClick={approve} disabled={!enabled||busy||expired||!challenge||!!approval||!!receipt} className="rounded-xl bg-violet-500 px-5 py-3 font-semibold disabled:opacity-50">{busy?"Checking approval…":<>Approve {formatUnits(BigInt(quote.clearance.requestedAmount),6)} USDC with passkey</>}</button>
+      {approvalNotice?<p role="status" aria-live="polite" data-testid="approval-status" className="text-sm text-muted-foreground">{approvalNotice}</p>:null}
       {approval?<div className="space-y-3">
         <p className="text-sm">The relayer pays MON gas. Your account pays only the exact USDC amount above.</p>
         <button onClick={copyApproval} disabled={busy||expired||!!receipt||archived} className="rounded-xl border border-violet-400/40 px-5 py-3 font-semibold disabled:opacity-50">Copy approved payment</button>

@@ -117,7 +117,7 @@ export async function verifyPurchaseSignatures(value:unknown) {
   if(signer!==quote.attester||contextSigner!==quote.attester)throw new PaymentError("Veyra's signature does not match this task and payment.");
   return {quote,clearance,context};
 }
-/** Fresh finalized identity, account and authority reads before each device approval or relay. */
+/** Fresh identity, account and authority reads during proposal checks, post-assertion simulation and relay planning. */
 export async function verifyPurchaseState(value:unknown,credentialKey?:Hex,client=getMonadReadClient()) {
   const verified=await verifyPurchaseSignatures(value), {quote,clearance}=verified;
   if(credentialKey&&credentialKey.toLowerCase()!==quote.publicKey)throw new PaymentError("This purchase belongs to a different saved passkey.");
