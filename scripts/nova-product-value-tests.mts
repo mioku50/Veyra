@@ -40,7 +40,7 @@ assert.equal(await assessPublicMaterial({ goal, headline: "x", sources: [source]
 assert.equal(await assessPublicMaterial({ goal, headline: "x", sources: [source], now,
   generate: async () => ({ ok: true, provider: "p", protocol: "openai-compatible", model: "m", text: '{"significant":true}', attempts: 1 }),
   onFailure: (reason) => failures.push(reason) }), null);
-assert.deepEqual(failures, ["timeout", "ungrounded"], "No answer and a rejected answer are not the same event");
+assert.deepEqual(failures, ["timeout", "invalid_response"], "An incomplete JSON answer is not a citation failure");
 assert(READING_FAILURE_DETAIL.not_configured.includes("not configured"));
 assert.equal(Object.values(READING_FAILURE_DETAIL).some(text => !text.trim()), false, "Every cause has words of its own");
 assert.equal(normalizeGoal("  Build   Veyra  "), "Build Veyra");

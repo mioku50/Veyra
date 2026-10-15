@@ -498,7 +498,7 @@ const rateLimited = (async () => new Response("{}", {
 const blindRun = await observeRepositories({ interests: ["Arc"], now: NOW, fetchImpl: rateLimited });
 assert.deepEqual(blindRun.observations, []);
 assert.equal(blindRun.unavailable.length, 1);
-assert.match(blindRun.unavailable[0], /GitHub \(hourly request limit reached\)/);
+assert.match(blindRun.unavailable[0], /GitHub \(request limit reached\)/);
 
 /* Even a partial read is named when it was rate limiting that cut it short:
    repositories drop out one at a time as the budget runs down, and a shorter
@@ -507,7 +507,9 @@ let call = 0;
 const partial = (async (url: string) => {
   call += 1;
   if (call <= 3) {
-    return new Response(JSON.stringify({ pushed_at: NOW.toISOString(), stargazers_count: 5, description: "d" }), { status: 200 });
+    return String(url).includes("/commits?") ? Response.json([])
+      : String(url).endsWith("/releases/latest") ? new Response(null, { status: 404 })
+      : Response.json({ pushed_at: NOW.toISOString(), stargazers_count: 5, description: "d" });
   }
   return new Response("{}", { status: 403, headers: { "x-ratelimit-remaining": "0" } });
 }) as unknown as typeof fetch;
@@ -516,7 +518,9 @@ assert(partialRun.observations.length >= 1, "what was read is kept");
 assert.equal(partialRun.unavailable.length, 1, "and what could not be read is still named");
 
 // A source that answers everything is not flagged.
-const healthy = (async () => new Response(JSON.stringify({ pushed_at: NOW.toISOString(), stargazers_count: 1 }), { status: 200 })) as unknown as typeof fetch;
+const healthy = (async (url: string) => String(url).includes("/commits?") ? Response.json([])
+  : String(url).endsWith("/releases/latest") ? new Response(null, { status: 404 })
+  : Response.json({ pushed_at: NOW.toISOString(), stargazers_count: 1 })) as unknown as typeof fetch;
 assert.deepEqual((await observeRepositories({ interests: ["Arc"], now: NOW, fetchImpl: healthy })).unavailable, []);
 
 /* ---- a brief is a few lines, not a list ---- */

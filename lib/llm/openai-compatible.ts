@@ -276,21 +276,21 @@ async function boundedResponseText(response: Response, maxBytes: number) {
  * A router that refuses can answer 200 with an error object, and from the
  * client's side that is indistinguishable from a model with nothing to say:
  * both are `invalid_response`, and neither says which. This reports the
- * payload's top-level keys and the provider's own error message, bounded, and
- * never any model output.
+ * failure as a fixed diagnostic code. Provider error text and non-JSON bodies
+ * can contain request data or credentials and must never reach public errors.
  */
-function responseDiagnostic(payload: unknown, raw: string): string {
+function responseDiagnostic(payload: unknown): string {
   if (!payload || typeof payload !== "object") {
-    return `body was not JSON (${raw.trim().slice(0, 60) || "empty"})`;
+    return "body_not_json";
   }
-  const keys = Object.keys(payload as Record<string, unknown>).slice(0, 8).join(",") || "no keys";
   const error = (payload as { error?: unknown }).error;
-  const message = typeof error === "string"
-    ? error
-    : typeof (error as { message?: unknown })?.message === "string"
-      ? (error as { message: string }).message
-      : null;
-  return message ? `${keys}; provider said: ${message.slice(0, 200)}` : `keys ${keys}`;
+  if (error) return "provider_error_envelope";
+  const choices = (payload as { choices?: unknown }).choices;
+  if (!Array.isArray(choices) || !choices.length) return "missing_choices";
+  const first = choices[0] as { finish_reason?: unknown; message?: { refusal?: unknown } } | null;
+  if (first?.finish_reason === "length") return "completion_limit";
+  if (first?.finish_reason === "content_filter" || first?.message?.refusal) return "provider_refusal";
+  return "empty_content";
 }
 
 function responseContent(payload: unknown) {
@@ -443,7 +443,7 @@ export async function generateOpenAiCompatibleText(input: {
           protocol: config.protocol,
           model: config.model,
           reason: "invalid_response",
-          detail: responseDiagnostic(payload, raw),
+          detail: responseDiagnostic(payload),
           attempted: true,
           attempts: attempt,
         };

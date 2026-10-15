@@ -14,6 +14,7 @@ import {
   type NovaProjectContext,
 } from "./project-context.ts";
 import { EVENT_SENTENCES_BEFORE_EDITION_7, READING_FAILURE_DETAIL, READING_RULES, assessPublicMaterial, readingCoverage, type ReadingFailure } from "./free-research.ts";
+import type { RefreshReliability } from "./reliability.ts";
 import { PUBLIC_FEEDS, observePublications, publicContext } from "./public-sources.ts";
 import { noteFrom, reasonFor, type NovaLearned } from "./verdict.ts";
 import { coverageOf, missUrl, publicationVariants, type NovaMiss } from "./misses.ts";
@@ -459,6 +460,7 @@ export async function runRefresh(input: {
   ]);
   const observations = [...publications.observations, ...repositories.observations, ...catalog.observations];
   const sourcesUnavailable = [...catalog.unavailable, ...repositories.unavailable, ...publications.unavailable];
+  const reliability: RefreshReliability = { version: 1, readings: [], github: repositories.githubRequests ?? [] };
   /* Fetched and not understood. Counted, and deliberately not added to the
      line above: the owner is told a source could not be reached, and this is
      not that. */
@@ -587,6 +589,7 @@ export async function runRefresh(input: {
      Relevance-rejected material is skipped outright -- the brief would drop
      it whatever the reading said. */
   type ReadingCandidate = {
+    signalId: string | null;
     headline: string;
     relevance: NovaRelevance;
     correction: boolean;
@@ -607,6 +610,9 @@ export async function runRefresh(input: {
     if (!entry.readable || !entry.material) continue;
     const material = entry.material;
     candidates.push({
+      // New rows receive their ID when saved. The public source ID identifies
+      // the event even if a concurrent refresh wins the upsert.
+      signalId: null,
       headline: String(entry.row.headline),
       relevance: entry.row.relevance as NovaRelevance,
       correction: false,
@@ -655,6 +661,7 @@ export async function runRefresh(input: {
       const relevance = (row.relevance ?? "low") as NovaRelevance;
       let evidence: Record<string, any> | null = null;
       candidates.push({
+        signalId: String(row.signal_id),
         headline: String(row.headline),
         relevance,
         /* It has a reading, and that reading answers a question about a goal
@@ -698,7 +705,9 @@ export async function runRefresh(input: {
     const context = await publicContext(material, input.fetchImpl);
     let readingFailure: ReadingFailure | null = null;
     let readingDetail: string | undefined;
-    const valueAssessment = await assessPublicMaterial({ goal, projectContext, headline: candidate.headline, sources: context.sources, now, onFailure: (reason, detail) => { readingFailure = reason; readingDetail = detail; } });
+    const valueAssessment = await assessPublicMaterial({ goal, projectContext, headline: candidate.headline, sources: context.sources, now,
+      onAttempt: attempt => reliability.readings.push({ ...attempt, signalId: candidate.signalId, sourceId: material.id, sourceIds: context.sources.map(s => s.id) }),
+      onFailure: (reason, detail) => { readingFailure = reason; readingDetail = detail; } });
     if (!valueAssessment) {
       /* Which reading failed and why, rather than one line that says a
          reading failed. A pass that lost three to a rate limit and a pass
@@ -757,6 +766,7 @@ export async function runRefresh(input: {
       articles_unreadable: articlesUnreadable,
       readings_attempted: assessments,
       reading_failures: readingFailures,
+      reliability,
       duration_ms: Date.now() - started,
       started_at: startedAt,
       finished_at: new Date().toISOString(),
@@ -1801,7 +1811,9 @@ export async function researchPublicSources(input: { publicId: string; ownerSecr
   const context = await publicContext(material);
   let failure: ReadingFailure | null = null;
   let failureDetail: string | undefined;
-  const assessment = await assessPublicMaterial({ goal: agent.goal, projectContext, headline: signal.headline, sources: context.sources, onFailure: (reason, detail) => { failure = reason; failureDetail = detail; } });
+  const assessment = await assessPublicMaterial({ goal: agent.goal, projectContext, headline: signal.headline, sources: context.sources,
+    onAttempt: attempt => console.info("nova_reading_attempt", { ...attempt, signalId: signal.signalId, sourceId: material.id, trigger: "reassess", at: new Date().toISOString() }),
+    onFailure: (reason, detail) => { failure = reason; failureDetail = detail; } });
   if (assessment) assessment.sourcesUnavailable = context.unavailable;
   /* Named, because the six ways this fails ask for six different things from
      the person reading the card, and "no paid tool was requested" is true of

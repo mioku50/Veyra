@@ -50,6 +50,13 @@ export function plain(claim: Claim): string {
 
 const figure = (value: string | number): ClaimPart => ({ figure: String(value) });
 
+/** A missing plan says what was established, never that no useful work exists. */
+export function noWorkEstablished(significant: boolean): string {
+  return significant
+    ? "No concrete action was established from the project facts supplied to this reading. That does not rule out useful work. Add relevant facts in My Agent, then reassess."
+    : "Held back: this material does not establish a significant change for your goal.";
+}
+
 /**
  * Where this agent stands with Arc, as one value with three cases.
  *
