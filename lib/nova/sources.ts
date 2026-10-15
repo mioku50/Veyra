@@ -17,6 +17,7 @@ import { ARC_FIRST } from "../discovery/offers.ts";
 import { loadArcRegistryView, type ArcRegistryView } from "../discovery/arc-registry.ts";
 import { repositoryDigest, x402Digest } from "./observation.ts";
 import type { SubjectDigest } from "./types.ts";
+import type { GithubRequest } from "./reliability.ts";
 import { buildRequestBody } from "../x402/request-body.ts";
 import type { JsonSchema } from "../seller/json-schema.ts";
 
@@ -42,6 +43,7 @@ export type SourceObservation = {
 };
 
 export type SourceResult = {
+  githubRequests?: GithubRequest[];
   observations: SourceObservation[];
   /** Human-readable names of sources that could not be read this time. */
   unavailable: string[];
@@ -310,28 +312,45 @@ export type GithubReadFailure = "rate_limited" | "unavailable" | null;
  * available. A brief that quietly drops its strongest source is worse than one
  * that says it could not look.
  */
+type GithubOutcome = { failure: GithubReadFailure; requests?: GithubRequest[] };
+
 async function githubJson<T>(
   path: string,
   fetchImpl: typeof fetch,
-  outcome: { failure: GithubReadFailure },
+  outcome: GithubOutcome,
+  request: Pick<GithubRequest, "repository" | "endpoint">,
 ): Promise<T | null> {
+  let status: number | null = null;
+  const record = (result: GithubRequest["outcome"]) => {
+    outcome.requests?.push({ ...request, status, outcome: result });
+    if (result === "rate_limited") outcome.failure = "rate_limited";
+    else if (result !== "ok" && result !== "no_release" && outcome.failure === null) outcome.failure = "unavailable";
+  };
   try {
     const response = await fetchImpl(`${GITHUB_API}${path}`, {
-      headers: githubHeaders(),
-      signal: AbortSignal.timeout(8_000),
+      headers: githubHeaders(), signal: AbortSignal.timeout(8_000),
     });
+    status = response.status;
     if (!response.ok) {
       const exhausted = response.headers.get("x-ratelimit-remaining") === "0";
-      if ((response.status === 403 || response.status === 429) && exhausted) {
-        outcome.failure = "rate_limited";
-      } else if (outcome.failure === null && response.status >= 500) {
-        outcome.failure = "unavailable";
-      }
+      const limited = status === 429 || (status === 403 && (exhausted || response.headers.has("retry-after")));
+      record(limited ? "rate_limited" : status === 404 && request.endpoint === "release" ? "no_release" : "http_error");
+      await response.body?.cancel().catch(() => undefined);
       return null;
     }
-    return await response.json() as T;
+    let data: unknown;
+    try { data = await response.json(); } catch { record("invalid_response"); return null; }
+    const object = data && typeof data === "object" && !Array.isArray(data) ? data as Record<string, unknown> : null;
+    const valid = request.endpoint === "commits"
+      ? Array.isArray(data) && data.every(item => item && typeof item === "object" && !Array.isArray(item))
+      : request.endpoint === "repository"
+        ? object && (typeof object.pushed_at === "string" || object.pushed_at === null) && typeof object.stargazers_count === "number"
+        : object && typeof object.tag_name === "string" && typeof object.html_url === "string";
+    if (!valid) { record("invalid_response"); return null; }
+    record("ok");
+    return data as T;
   } catch {
-    if (outcome.failure === null) outcome.failure = "unavailable";
+    record("transport_error");
     return null;
   }
 }
@@ -352,28 +371,30 @@ export async function observeRepositoryPulse(input: {
   interest: string;
   now: Date;
   fetchImpl?: typeof fetch;
-  outcome?: { failure: GithubReadFailure };
+  outcome?: GithubOutcome;
 }): Promise<SourceObservation | null> {
   const fetchImpl = input.fetchImpl ?? fetch;
-  const outcome = input.outcome ?? { failure: null as GithubReadFailure };
+  const outcome: GithubOutcome = { failure: null, requests: input.outcome?.requests };
   const [owner, name] = input.ref.split("/");
   if (!owner || !name) return null;
 
   const since = new Date(input.now.getTime() - PULSE_WINDOW_HOURS * 3_600_000).toISOString();
   const [repository, commits, release] = await Promise.all([
-    githubJson<Record<string, unknown>>(`/repos/${owner}/${name}`, fetchImpl, outcome),
+    githubJson<Record<string, unknown>>(`/repos/${owner}/${name}`, fetchImpl, outcome, { repository: input.ref, endpoint: "repository" }),
     githubJson<Array<Record<string, any>>>(
       `/repos/${owner}/${name}/commits?since=${encodeURIComponent(since)}&per_page=100`,
       fetchImpl,
-      outcome,
+      outcome, { repository: input.ref, endpoint: "commits" },
     ),
-    githubJson<Record<string, unknown>>(`/repos/${owner}/${name}/releases/latest`, fetchImpl, outcome),
+    githubJson<Record<string, unknown>>(`/repos/${owner}/${name}/releases/latest`, fetchImpl, outcome, { repository: input.ref, endpoint: "release" }),
   ]);
 
-  // The repository read is the one that cannot be missing: without it there is
-  // no evidence at all, and a digest built from two thirds of nothing would
-  // register as a change on the next refresh.
-  if (!repository) return null;
+  // A failed endpoint must not become zero commits or a vanished release in
+  // the saved digest. A genuine release 404 is the only expected absence.
+  if (input.outcome && outcome.failure) {
+    if (outcome.failure === "rate_limited" || input.outcome.failure === null) input.outcome.failure = outcome.failure;
+  }
+  if (outcome.failure || !repository || !commits) return null;
 
   const commitList = Array.isArray(commits) ? commits : [];
   /* One page is the cap, so a full page means "at least this many". Foundry
@@ -432,7 +453,7 @@ export async function observeRepositories(input: {
   const planned = planRepositorySubjects(input.interests);
   if (planned.length === 0) return { observations: [], unavailable: [] };
 
-  const outcome = { failure: null as GithubReadFailure };
+  const outcome: GithubOutcome = { failure: null, requests: [] };
   const results = await Promise.all(planned.map((subject) =>
     observeRepositoryPulse({
       ref: subject.ref,
@@ -452,9 +473,9 @@ export async function observeRepositories(input: {
      spot, and the person is told rather than shown a shorter list. */
   const unavailable: string[] = [];
   if (outcome.failure === "rate_limited") {
-    unavailable.push("GitHub (hourly request limit reached)");
-  } else if (observations.length === 0 && planned.length > 0) {
+    unavailable.push("GitHub (request limit reached)");
+  } else if (outcome.failure || (observations.length === 0 && planned.length > 0)) {
     unavailable.push("GitHub");
   }
-  return { observations, unavailable };
+  return { observations, unavailable, githubRequests: outcome.requests };
 }

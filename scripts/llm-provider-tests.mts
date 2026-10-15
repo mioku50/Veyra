@@ -160,14 +160,13 @@ const refusedAt200 = await generateOpenAiCompatibleText({
 });
 assert.equal(refusedAt200.ok, false);
 assert.equal(refusedAt200.ok === false && refusedAt200.reason, "invalid_response");
-assert(refusedAt200.ok === false && refusedAt200.detail?.includes("insufficient balance"), "the provider's own words reach the caller");
-assert(refusedAt200.ok === false && refusedAt200.detail?.includes("error"), "and which keys the body actually had");
+assert(refusedAt200.ok === false && refusedAt200.detail === "provider_error_envelope", "Only a safe error category reaches the caller");
 const emptyChoices = await generateOpenAiCompatibleText({
   config: { provider: "Router", protocol: "openai-compatible", baseUrl: "https://router.example.com/v1", apiKey: "k", model: "m", userAgent: null },
   systemPrompt: "x", userPrompt: "y", maxAttempts: 1,
   fetchImpl: async () => new Response(JSON.stringify({ id: "1", choices: [] }), { status: 200 }),
 });
-assert(emptyChoices.ok === false && emptyChoices.detail?.includes("keys id,choices"), "and a body with no error still says what it did have");
+assert(emptyChoices.ok === false && emptyChoices.detail === "missing_choices");
 
 /* Nova's judgement call may name its own provider, because measurement says
    no one model serves both it and the one-sentence rewrites. The invariant is

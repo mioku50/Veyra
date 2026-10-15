@@ -1,6 +1,7 @@
 /** Copyright 2026 Veyra. SPDX-License-Identifier: Apache-2.0 */
 import { generateOpenAiCompatibleText, resolveReadingLlmConfig } from "../llm/openai-compatible.ts";
 import type { LlmFailureReason } from "../llm/types.ts";
+import { READING_PARSER_VERSION, type ReadingAttempt, type ReadingRejection } from "./reliability.ts";
 import { READING_RULES, wasCut, type PublicMaterial, type ReadingCoverage, type ValueAssessment, type ValueWorkPlan } from "./value.ts";
 
 /** The edition of the rules written below. It is declared with the field that
@@ -95,31 +96,43 @@ function resolveWorkPlan(raw: unknown, projectContext: string[]): { ok: true; pl
   return { ok: true, plan: { relation, established, unverified, action } };
 }
 
+export type AssessmentParseResult = { ok: true; assessment: ValueAssessment }
+  | { ok: false; reason: "invalid_response" | "ungrounded"; code: ReadingRejection };
+const reject = (code: ReadingRejection): AssessmentParseResult => ({
+  ok: false, reason: code === "invalid_json" || code === "invalid_shape" ? "invalid_response" : "ungrounded", code,
+});
+
 /** Reject invented citations and quotes. This checks provenance, not semantic entailment. */
-export function parseValueAssessment(text: string, input: { goal: string; sources: PublicMaterial[]; now: Date; writtenBy: string; projectContext?: string[] }): ValueAssessment | null {
+export function parseValueAssessmentResult(text: string, input: { goal: string; sources: PublicMaterial[]; now: Date; writtenBy: string; projectContext?: string[] }): AssessmentParseResult {
+  let raw: Record<string, any>;
   try {
-    const raw = JSON.parse(text.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, ""));
+    raw = JSON.parse(text.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, ""));
+  } catch { return reject("invalid_json"); }
+  try {
+    if (!raw || typeof raw !== "object" || Array.isArray(raw) || !input.sources.length) return reject("invalid_shape");
     if (Array.isArray(raw.citationIds)) {
       const excerpts = sourceExcerpts(input.sources);
       raw.citations = raw.citationIds.map((id: unknown) => excerpts.find(e => e.id === id));
-      if (raw.citations.some((c: unknown) => !c)) return null;
+      if (raw.citations.some((c: unknown) => !c)) return reject("unknown_citation");
     }
-    if (typeof raw.significant !== "boolean" || !Array.isArray(raw.citations)) return null;
+    if (typeof raw.significant !== "boolean" || !Array.isArray(raw.citations)) return reject("invalid_shape");
     const citations: ValueAssessment["citations"] = [];
-    for (const cite of raw.citations.slice(0, 4)) {
+    for (const cite of raw.citations) {
+      if (!cite || typeof cite !== "object" || Array.isArray(cite)) return reject("invalid_shape");
       const source = input.sources.find(s => s.id === cite.sourceId);
       const quote = unwrappedQuote(cite.quote);
-      if (!source || quote.length < 15 || !normalized(source.text).includes(normalized(quote))) return null;
-      citations.push({ sourceId: source.id, quote });
+      if (!source) return reject("unknown_citation");
+      if (quote.length < 15 || !normalized(source.text).includes(normalized(quote))) return reject("invalid_quote");
+      if (citations.length < 4) citations.push({ sourceId: source.id, quote });
     }
-    if (!citations.length || !citations.some(c => c.sourceId === input.sources[0]?.id)) return null;
+    if (!citations.length || !citations.some(c => c.sourceId === input.sources[0]?.id)) return reject("missing_event_citation");
     const whatChanged = prose(raw.whatChanged, 400);
     const whyItMatters = prose(raw.whyItMatters, 400);
-    if (!whatChanged || !whyItMatters) return null;
+    if (!whatChanged || !whyItMatters) return reject("invalid_shape");
     const gap = raw.gap && typeof raw.gap === "object" ? {
       question: clean(raw.gap.question, 220), missing: clean(raw.gap.missing, 500), expectedResult: clean(raw.gap.expectedResult, 400),
     } : null;
-    if (gap && (!gap.question || !gap.missing || !gap.expectedResult)) return null;
+    if (gap && (!gap.question || !gap.missing || !gap.expectedResult)) return reject("invalid_shape");
     const projectContext = (input.projectContext ?? []).slice();
     /* Said against nothing, "this is new to you" is not a claim anybody can
        check. Without a supplied project state the field is dropped rather
@@ -133,18 +146,24 @@ export function parseValueAssessment(text: string, input: { goal: string; source
     } : null;
     const contextProposal = proposal && proposal.statement && proposal.why ? proposal : null;
     const work = resolveWorkPlan(raw.plan, projectContext);
-    if (!work.ok) return null;
+    if (!work.ok) return reject("invalid_project_basis");
     const plan = raw.significant ? work.plan : null;
     /* A gap is a question whose answer changes a decision. With no proposed
        work there is no decision of the owner's to change, so the one path
        that can end in spending stays shut -- which is also what the prompt
        has always said about missing owner context. */
-    return { version: 1, goal: input.goal, significant: raw.significant, whatChanged, whyItMatters, citations,
+    return { ok: true, assessment: { version: 1, goal: input.goal, significant: raw.significant, whatChanged, whyItMatters, citations,
       gap: plan ? gap : null, plan,
       projectContext, relativeToWork, contextProposal, rules: READING_RULES,
       sources: input.sources, coverage: readingCoverage(input.sources[0]),
-      generatedAt: input.now.toISOString(), writtenBy: input.writtenBy };
-  } catch { return null; }
+      generatedAt: input.now.toISOString(), writtenBy: input.writtenBy } };
+  } catch { return reject("invalid_shape"); }
+}
+
+/** Compatibility for callers that only need accepted material. */
+export function parseValueAssessment(text: string, input: Parameters<typeof parseValueAssessmentResult>[1]): ValueAssessment | null {
+  const result = parseValueAssessmentResult(text, input);
+  return result.ok ? result.assessment : null;
 }
 
 /**
@@ -180,6 +199,7 @@ export async function assessPublicMaterial(input: {
   /** Told why, when there is no assessment. A diagnostic channel, not a
    *  result: a caller that does not care goes on reading null as before. */
   onFailure?: (reason: ReadingFailure, detail?: string) => void;
+  onAttempt?: (attempt: ReadingAttempt) => void;
   generate?: typeof generateOpenAiCompatibleText;
 }): Promise<ValueAssessment | null> {
   if (!input.goal || !input.sources.length) return null;
@@ -255,13 +275,19 @@ export async function assessPublicMaterial(input: {
       excerpts: sourceExcerpts(input.sources),
     }),
   }).catch(() => null);
+  const attempt = {
+    provider: result?.provider ?? (reading.configured ? reading.config.provider : null),
+    model: result?.model ?? (reading.configured ? reading.config.model : null),
+    rules: READING_RULES, parser: READING_PARSER_VERSION,
+    attempted: result ? (result.ok || result.attempted) : true, attempts: result?.attempts ?? 1,
+  };
   if (!result?.ok) {
+    input.onAttempt?.({ ...attempt, outcome: result?.reason ?? "upstream_error", code: result && !result.ok ? result.detail ?? null : "generator_error" });
     input.onFailure?.(result?.reason ?? "upstream_error", result && !result.ok ? result.detail : undefined);
     return null;
   }
-  const assessment = parseValueAssessment(result.text, { goal: input.goal, sources: input.sources, projectContext, now: input.now ?? new Date(), writtenBy: `${result.provider} · ${result.model}` });
-  /* An answer arrived and was thrown away. That is a different event from no
-     answer, and the one case where the model is the thing at fault. */
-  if (!assessment) input.onFailure?.("ungrounded");
-  return assessment;
+  const parsed = parseValueAssessmentResult(result.text, { goal: input.goal, sources: input.sources, projectContext, now: input.now ?? new Date(), writtenBy: `${result.provider} · ${result.model}` });
+  input.onAttempt?.({ ...attempt, outcome: parsed.ok ? "accepted" : parsed.reason, code: parsed.ok ? null : parsed.code });
+  if (!parsed.ok) input.onFailure?.(parsed.reason, parsed.code);
+  return parsed.ok ? parsed.assessment : null;
 }

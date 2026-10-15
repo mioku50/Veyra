@@ -31,7 +31,7 @@ import { priorWith } from "@/lib/nova/standing";
 /* The sentences that assert a state live next to the state they assert, so a
    heading cannot go stale against the panel under it. See the module header. */
 import {
-  agentAccessState, arcIdentityState, arcViewBlurb, briefSummary, identityExplanation,
+  agentAccessState, arcIdentityState, arcViewBlurb, briefSummary, identityExplanation, noWorkEstablished,
   identityHeadline, plain, purchaseStanding, purchaseSummary, transferWarning,
   autonomyStateClaim, previewOnlyWarning, shadowDeclineClaims, shadowNightClaim,
   shadowRemainingClaim, shadowSpendClaim, shadowVerdictClaim, publishedAtOf, sinceLastVisit, plainProse, listingSource,
@@ -2816,9 +2816,7 @@ function PublicReading({ signal, goal, context = [], unrefreshed = false }: {
       <p className="mt-2"><strong>Not established:</strong> {analysis.plan.unverified}</p>
       <p className="mt-2"><strong>Do this:</strong> {analysis.plan.action}</p>
       <p className="mt-2 text-xs text-muted-foreground">Proposed work, not a completed check. Nova reads public sources; it has not seen your code.</p>
-    </div> : <p className="text-muted-foreground">{analysis.significant
-      ? "Nothing here for you to do. It is a real change in what you track, and it does not bear on anything you have confirmed about your project — so Nova is reporting it, not proposing work."
-      : "Held back: this material does not establish a significant change for your goal."}</p>}
+    </div> : <p className="text-muted-foreground">{noWorkEstablished(analysis.significant)}</p>}
     {analysis.contextProposal ? <p className="text-muted-foreground">Nova thinks this changes your project context: “{analysis.contextProposal.statement}”. Confirm or reject it under My Agent; it is not treated as true until you do.</p> : null}
     {analysis.projectContext?.length ? <details><summary className="cursor-pointer text-xs text-muted-foreground">Read against {analysis.projectContext.length} project {analysis.projectContext.length === 1 ? "fact" : "facts"} you confirmed</summary><ul className="mt-2 space-y-1 text-xs text-muted-foreground">{analysis.projectContext.map((statement, index) => <li key={index}>{statement}</li>)}</ul></details> : null}
     {analysis.gap ? <div className="rounded-lg border p-3"><p><strong>Still unknown:</strong> {analysis.gap.missing}</p><p className="mt-2"><strong>Useful result to seek:</strong> {analysis.gap.expectedResult}</p><p className="mt-2 text-xs text-muted-foreground">An open question is not proof that a paid service is needed. Review the sources first.</p></div> : <p className="text-muted-foreground">No additional paid research need identified.</p>}
