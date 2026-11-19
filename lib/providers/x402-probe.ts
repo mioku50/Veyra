@@ -307,6 +307,7 @@ export async function probeX402Resource(
     fetchImpl?: (url: string, init: RequestInit) => Promise<Response>;
     now?: Date;
     timeoutMs?: number;
+    filterAccepts?: (accepts: Record<string, unknown>[]) => Record<string, unknown>[];
   } = {},
 ): Promise<X402ProbeResult> {
   const startedAtDate = options.now ?? new Date();
@@ -370,7 +371,10 @@ export async function probeX402Resource(
   const bodyChallenge = respondedWith402 && !headerChallenge
     ? parseChallengeAccepts(parsedBody)
     : null;
-  const accepts = headerChallenge ?? bodyChallenge;
+  const parsedAccepts = headerChallenge ?? bodyChallenge;
+  const accepts = parsedAccepts && options.filterAccepts
+    ? options.filterAccepts(parsedAccepts)
+    : parsedAccepts;
   const challengeTransport: ChallengeTransport = headerChallenge
     ? "payment_required_header"
     : bodyChallenge

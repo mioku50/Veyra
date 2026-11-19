@@ -22,7 +22,7 @@ export const ARC_TESTNET_CHAIN_ID = 5_042_002;
 export const ARC_TESTNET_CHAIN_ID_HEX = "0x4cef52";
 export const ARC_TESTNET_RPC_URL = "https://rpc.testnet.arc.network";
 export const ARC_TESTNET_WS_URL = "wss://rpc.testnet.arc.network";
-export const ARC_TESTNET_EXPLORER_URL = "https://testnet.arcscan.app";
+export const ARC_TESTNET_EXPLORER_URL = "https://explorer.testnet.arc.io";
 export const ARC_TESTNET_FAUCET_URL = "https://faucet.circle.com";
 export const ARC_TESTNET_USDC_ADDRESS =
   "0x3600000000000000000000000000000000000000";

@@ -12,7 +12,7 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { encodeFunctionData } from "viem";
 import { BRAND } from "@/lib/brand";
-import { INTEREST_CATALOG, MAX_INTERESTS } from "@/lib/nova/interests";
+import { INTEREST_CATALOG, MAX_INTERESTS, normalizeInterests } from "@/lib/nova/interests";
 import {
   PROJECT_CONTEXT_LIMITS,
   confirmedContext as confirmedProjectContext,
@@ -454,21 +454,6 @@ export function NovaClient({ view = "today" }: { view?: NovaView } = {}) {
     }
   };
 
-  const toggleInterest = (label: string) => {
-    setChosen((current) => current.includes(label)
-      ? current.filter((entry) => entry !== label)
-      : current.length >= MAX_INTERESTS ? current : [...current, label]);
-  };
-
-  const toggleDraftInterest = (label: string) => {
-    setDraftInterests((current) => {
-      const list = current ?? [];
-      return list.includes(label)
-        ? list.filter((entry) => entry !== label)
-        : list.length >= MAX_INTERESTS ? list : [...list, label];
-    });
-  };
-
   /**
    * Save what the agent should care about, then go and look for it.
    *
@@ -596,6 +581,7 @@ export function NovaClient({ view = "today" }: { view?: NovaView } = {}) {
   const create = async () => {
     setBusy(true);
     setError(null);
+    let createdAgent = false;
     try {
       const created = await call("/api/nova/v1/agents", {
         method: "POST",
@@ -603,6 +589,7 @@ export function NovaClient({ view = "today" }: { view?: NovaView } = {}) {
       }) as { agent: { publicId: string }; ownerSecret: string };
 
       const who = { publicId: created.agent.publicId, ownerSecret: created.ownerSecret };
+      createdAgent = true;
       try {
         window.localStorage.setItem(STORAGE.id, who.publicId);
         window.localStorage.setItem(STORAGE.key, who.ownerSecret);
@@ -621,7 +608,7 @@ export function NovaClient({ view = "today" }: { view?: NovaView } = {}) {
       await loadBrief(who);
     } catch (cause) {
       setError((cause as Error).message);
-      setStage("create");
+      setStage(createdAgent ? "unavailable" : "create");
     } finally {
       setBusy(false);
     }
@@ -792,8 +779,8 @@ export function NovaClient({ view = "today" }: { view?: NovaView } = {}) {
 
   /**
    * A question the owner asks Nova directly. The documentation is read for it
-   * first, for nothing; only when that does not answer it is a paid tool on Arc
-   * looked for, and that is priced, never paid, until the owner approves.
+   * first, at no charge. The owner can request a paid tool search from the
+   * question card after reading the answer.
    */
   const ask = async (text: string): Promise<boolean> => {
     if (!identity) return false;
@@ -811,7 +798,6 @@ export function NovaClient({ view = "today" }: { view?: NovaView } = {}) {
       }
       const asked = payload.question;
       setBrief((previous) => previous ? { ...previous, questions: [asked, ...(previous.questions ?? [])] } : previous);
-      if (!asked.docs.answered) void priceQuestion(asked.questionId);
       return true;
     } catch (cause) {
       setAskNote((cause as Error).message);
@@ -1054,7 +1040,7 @@ export function NovaClient({ view = "today" }: { view?: NovaView } = {}) {
   if (stage === "unavailable" && identity) {
     return <Shell>
       <h1 className="text-2xl font-semibold">Your agent could not be loaded</h1>
-      <p className="mt-3 text-sm text-muted-foreground">Your saved access is still in this browser. Retry when the connection returns, or restore another recovery key below.</p>
+      <p className="mt-3 text-sm text-muted-foreground">Retry to open this agent. You can also copy its recovery key or restore another agent below.</p>
       <Notice tone="error">{error ?? "Nova is unavailable."}</Notice>
       <button className="mt-4 rounded-lg border px-4 py-3" disabled={busy} onClick={async () => {
         setBusy(true); setError(null);
@@ -1104,26 +1090,7 @@ export function NovaClient({ view = "today" }: { view?: NovaView } = {}) {
             <p className="mt-2 text-xs text-muted-foreground">
               Pick up to <span className="font-mono">{MAX_INTERESTS}</span>.
             </p>
-            <div className="mt-4 flex flex-wrap gap-2">
-              {INTEREST_CATALOG.map((interest) => {
-                const active = chosen.includes(interest.label);
-                return (
-                  <button
-                    key={interest.id}
-                    type="button"
-                    onClick={() => toggleInterest(interest.label)}
-                    aria-pressed={active}
-                    className={`rounded-lg px-4 py-2 text-sm transition ${
-                      active
-                        ? "border border-primary bg-primary/25 text-foreground"
-                        : "field text-muted-foreground hover:text-foreground"
-                    }`}
-                  >
-                    {interest.label}
-                  </button>
-                );
-              })}
-            </div>
+            <InterestPicker selected={chosen} onChange={setChosen} />
           </div>
 
           <button
@@ -1640,26 +1607,7 @@ export function NovaClient({ view = "today" }: { view?: NovaView } = {}) {
                 Pick up to <span className="font-mono">{MAX_INTERESTS}</span>. {brief.agent.name} keeps
                 everything it has learned and everything it has paid for either way.
               </p>
-              <div className="mt-4 flex flex-wrap gap-2">
-                {INTEREST_CATALOG.map((interest) => {
-                  const active = draftInterests.includes(interest.label);
-                  return (
-                    <button
-                      key={interest.id}
-                      type="button"
-                      onClick={() => toggleDraftInterest(interest.label)}
-                      aria-pressed={active}
-                      className={`rounded-lg px-4 py-2 text-sm transition ${
-                        active
-                          ? "border border-primary bg-primary/25 text-foreground"
-                          : "field text-muted-foreground hover:text-foreground"
-                      }`}
-                    >
-                      {interest.label}
-                    </button>
-                  );
-                })}
-              </div>
+              <InterestPicker selected={draftInterests} onChange={setDraftInterests} />
 
               {/* Said before the button, not after it. Choosing Arc and being
                   shown Base is the question this product gets asked most, and
@@ -2969,6 +2917,65 @@ function AskTool({ label, onAsk }: { label: string; onAsk: (question: string) =>
   );
 }
 
+function InterestPicker({ selected, onChange }: {
+  selected: string[];
+  onChange: (interests: string[]) => void;
+}) {
+  const [draft, setDraft] = useState("");
+  const labels = [...new Set([...INTEREST_CATALOG.map(({ label }) => label), ...selected])];
+  const next = normalizeInterests([...selected, draft]);
+  const atLimit = selected.length >= MAX_INTERESTS;
+
+  return (
+    <div className="mt-4 space-y-3">
+      <div className="flex flex-wrap gap-2">
+        {labels.map((label) => {
+          const active = selected.includes(label);
+          return (
+            <button
+              key={label}
+              type="button"
+              aria-pressed={active}
+              disabled={atLimit && !active}
+              onClick={() => onChange(active
+                ? selected.filter((entry) => entry !== label)
+                : normalizeInterests([...selected, label]))}
+              className={`rounded-lg px-4 py-2 text-sm disabled:opacity-50 ${active
+                ? "border border-primary bg-primary/25 text-foreground"
+                : "field text-muted-foreground hover:text-foreground"}`}
+            >
+              {label}
+            </button>
+          );
+        })}
+      </div>
+      <form className="flex flex-wrap items-end gap-2" onSubmit={(event) => {
+        event.preventDefault();
+        if (next.length <= selected.length) return;
+        onChange(next);
+        setDraft("");
+      }}>
+        <label className="min-w-0 flex-1 text-sm">
+          Custom interest
+          <input
+            value={draft}
+            maxLength={40}
+            onChange={(event) => setDraft(event.target.value)}
+            className="field mt-1 block w-full rounded-lg px-3 py-2"
+          />
+        </label>
+        <button
+          type="submit"
+          disabled={next.length <= selected.length}
+          className="rounded-lg border px-4 py-2 text-sm disabled:opacity-50"
+        >
+          Add interest
+        </button>
+      </form>
+    </div>
+  );
+}
+
 /**
  * A question for Nova itself, rather than for a tool somebody already picked.
  * The documentation comes first and costs nothing; the text says so before
@@ -3003,9 +3010,8 @@ function AskNova({ agentName, asking, note, onAsk }: {
           className="w-full rounded-lg border bg-transparent px-3 py-2 text-sm"
         />
         <p className="text-xs text-muted-foreground">
-          {agentName} reads Arc&apos;s and Circle&apos;s documentation for it first, at no charge. If they do not
-          answer it, {BRAND.name} looks for a tool on Arc that fits and shows you the exact price. Nothing is
-          paid until you approve that price and sign it in your own wallet.
+          {agentName} reads Arc&apos;s and Circle&apos;s documentation at no charge. After reading the result,
+          you can ask {BRAND.name} to look for a paid tool on Arc.
         </p>
         <div className="flex flex-wrap items-center gap-3">
           <button type="submit" disabled={trimmed.length < 8 || asking} className="rounded-lg border px-4 py-2 text-sm disabled:opacity-50">

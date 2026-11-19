@@ -111,13 +111,14 @@ export async function recordEndpointObservation(input: {
 export async function loadEndpointObservations(
   resourceKey: string,
   limit = ENDPOINT_HISTORY_LIMIT,
+  paymentOption?: { network: string; asset: string },
 ): Promise<EndpointObservationRow[]> {
   try {
-    const { data, error } = await getByoaClient()
-      .from(OBSERVATION_TABLE)
-      .select("*")
-      .eq("resource_key", resourceKey)
-      .order("probed_at", { ascending: false })
+    const query = getByoaClient().from(OBSERVATION_TABLE).select("*").eq("resource_key", resourceKey);
+    if (paymentOption) {
+      query.eq("network", paymentOption.network).eq("observed_asset", paymentOption.asset);
+    }
+    const { data, error } = await query.order("probed_at", { ascending: false })
       .limit(Math.max(1, Math.min(limit, ENDPOINT_HISTORY_LIMIT)));
     if (error) {
       console.warn("x402_observation_read_failed", { code: error.code });

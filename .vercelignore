@@ -7,3 +7,6 @@ AGENTS.md
 contracts/cache/
 contracts/out/
 contracts/broadcast/
+.local-tools/
+docs/audits/
+передачадел.md

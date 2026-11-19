@@ -52,7 +52,7 @@ export function Topbar({
                 {isConsole ? BRAND.developerConsole : BRAND.name}
               </span>
               <span className="text-[10px] text-sky-300">
-                {isConsole ? "Developer tools" : "Identity on Arc Testnet"}
+                {isConsole ? "Developer tools" : "Trust API on Arc"}
               </span>
             </span>
           </Link>

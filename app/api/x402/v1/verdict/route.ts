@@ -15,10 +15,8 @@ export const dynamic = "force-dynamic";
  * Free. One endpoint in, one answer out: should an agent pay this counterparty.
  *
  * No account, no key, no payment — an agent that has never heard of Veyra can
- * ask this on its first call. The verdict is the identical computation the paid
- * clearance endpoint runs; what money buys there is the signature, not a better
- * opinion. Keeping the opinion free is the point: an unsafe payment prevented
- * for a stranger is worth more to this network than a cent of revenue.
+ * ask this on its first call. It reads the live Arc mainnet USDC offer and
+ * returns evidence and a verdict without issuing a signed clearance.
  */
 export async function POST(request: NextRequest) {
   const limit = consumeFreeCall(callerKey(request));
@@ -38,6 +36,7 @@ export async function POST(request: NextRequest) {
     const body = await readJsonBody(request);
     const verdict = await computeTrustApiVerdict({
       resource: body.resource,
+      publicArc: true,
       method: body.method,
       capability: typeof body.capability === "string" ? body.capability : undefined,
       budgetUsdc: Number(body.budgetUsdc ?? 1),

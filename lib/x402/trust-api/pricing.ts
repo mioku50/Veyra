@@ -57,12 +57,35 @@ export const TRUST_API_PRICING = {
   verdict: {
     path: "/api/x402/v1/verdict",
     priceUsdc: 0,
-    description: "Pay or do not pay: one verdict on one x402 endpoint, with the evidence behind it.",
+    description: "Check the live Arc mainnet USDC offer of an x402 endpoint before paying.",
+    schema: {
+      input: {
+        ...RESOURCE_QUERY,
+        properties: {
+          resource: { type: "string", description: "The HTTPS x402 resource URL to assess." },
+          method: {
+            type: "string", enum: ["GET", "POST"],
+            description: "Method used by the seller. Omit to let Veyra discover it.",
+          },
+          budgetUsdc: { type: "number", description: "Maximum spend in USDC. Defaults to 1." },
+          capability: { type: "string", description: "Capability the caller is evaluating." },
+        },
+      },
+      output: {
+        ...VERDICT_RESPONSE,
+        properties: {
+          ...VERDICT_RESPONSE.properties,
+          method: { type: "string", enum: ["GET", "POST"] },
+          network: { type: "string", enum: ["eip155:5042"] },
+        },
+        required: [...VERDICT_RESPONSE.required, "method", "network"],
+      },
+    },
   },
   clearance: {
     path: "/api/x402/v1/clearance",
     priceUsdc: 0.01,
-    description: "The same verdict, plus an EIP-712 clearance signed by Veyra's attester and verified on Arc.",
+    description: "A verdict and, when policy permits, an EIP-712 clearance signed by Veyra's attester for its Arc Testnet verifier.",
     schema: {
       input: {
         type: "object",

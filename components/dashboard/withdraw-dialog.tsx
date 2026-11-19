@@ -21,6 +21,7 @@
 import { useState } from "react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { ARC_TESTNET_EXPLORER_URL } from "@/lib/wallet/arc";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -41,7 +42,7 @@ import { BanknoteArrowDown, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
 const CHAIN_EXPLORERS: Record<string, string> = {
-  arcTestnet: "https://testnet.arcscan.io/tx/",
+  arcTestnet: `${ARC_TESTNET_EXPLORER_URL}/tx/`,
   baseSepolia: "https://sepolia.basescan.org/tx/",
   sepolia: "https://sepolia.etherscan.io/tx/",
   arbitrumSepolia: "https://sepolia.arbiscan.io/tx/",

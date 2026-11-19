@@ -266,13 +266,15 @@ Open [http://localhost:3000](http://localhost:3000).
 ### Ask Veyra before paying an endpoint — no account, no key
 
 ```bash
-curl -s -X POST "$VEYRA_BASE_URL/api/x402/v1/verdict" \
+curl -sS -X POST "https://agent-commerce-six.vercel.app/api/x402/v1/verdict" \
   -H "content-type: application/json" \
-  -d '{"resource":"https://api.example.com/search","budgetUsdc":0.01}'
+  -d '{"resource":"https://agent-commerce-six.vercel.app/api/x402/v1/arc/history","method":"GET","budgetUsdc":0.01}'
 ```
 
-`granted: false` means do not pay. `maxExposureUsdc` is the ceiling for the call,
-and a clearance is bound to one resource — it is not transferable to another.
+The example checks the published Arc mainnet quote for Veyra's history API. It
+does not pay. The response reports the method checked and the live amount in
+USDC. Omit `method` to let Veyra discover it. Check `decision` and
+`postCallVerificationRequired` before acting on a verdict.
 
 ### TypeScript SDK
 

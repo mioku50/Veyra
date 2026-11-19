@@ -42,6 +42,9 @@ export function normalizeResourceUrl(raw: unknown): string {
   if (url.protocol !== "https:" && url.protocol !== "http:") {
     throw new TrustApiError("resource_scheme_unsupported");
   }
+  if (url.username || url.password) {
+    throw new TrustApiError("resource_credentials_unsupported");
+  }
   url.hash = "";
   url.hostname = url.hostname.toLowerCase();
   if ((url.protocol === "https:" && url.port === "443")

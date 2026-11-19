@@ -489,7 +489,7 @@ export function withTrustApiPayment(
       });
       return NextResponse.json({
         error: "payment_processing_failed",
-        message: "The payment could not be processed. Nothing was charged.",
+        message: "The payment outcome could not be confirmed. Reconcile the original payment before retrying.",
       }, { status: 502, headers: { "X-Veyra-Request-Id": requestId } });
     }
   };

@@ -61,11 +61,11 @@ function recentReceiptsWithTimeout() {
 export default async function ProofsPage() {
   await connection();
   let receipts: CommerceReceipt[] = [];
-  let warning: string | null = null;
+  let unavailable = false;
   try {
     receipts = await recentReceiptsWithTimeout();
-  } catch (error) {
-    warning = error instanceof Error ? error.message : String(error);
+  } catch {
+    unavailable = true;
   }
   const proofReceipts = receipts.filter((receipt) => receipt.onchainProof);
   const counts = {
@@ -112,11 +112,11 @@ export default async function ProofsPage() {
       </section>
 
       <section className="mx-auto grid w-full max-w-7xl grid-cols-[minmax(0,1fr)] gap-4 px-4 py-8 sm:px-6">
-        {warning ? (
+        {unavailable ? (
           <Card className="rounded-lg">
             <CardContent className="flex gap-3 p-5 text-sm text-muted-foreground">
               <CircleAlert className="size-5 shrink-0 text-amber-400" />
-              Proof index is temporarily unavailable: {warning}
+              Proof index is temporarily unavailable.
             </CardContent>
           </Card>
         ) : proofReceipts.length === 0 ? (

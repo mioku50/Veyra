@@ -51,6 +51,7 @@ export function veyraRegistrationFile(
     image: `${VEYRA_ORIGIN}/icon.svg`,
     services: [
       { name: "web", endpoint: `${VEYRA_ORIGIN}/` },
+      { name: "mcp", endpoint: `${VEYRA_ORIGIN}/api/mcp` },
       ...(selling
         ? [
           { name: "x402", endpoint: `${VEYRA_ORIGIN}/.well-known/x402` },

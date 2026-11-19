@@ -4,6 +4,8 @@
  */
 
 import assert from "node:assert/strict";
+import { setByoaClientForTesting } from "../lib/byoa/service.ts";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import {
   isCreditTokenShaped,
   hashCreditToken,
@@ -21,6 +23,9 @@ import {
   selectBaselineAccept,
   TrustApiError,
 } from "../lib/x402/trust-api/resource.ts";
+import { readPublicArcChallenge } from "../lib/x402/trust-api/public-probe.ts";
+import { computeTrustApiVerdict } from "../lib/x402/trust-api/verdict.ts";
+import { ARC_MAINNET_NETWORK, ARC_MAINNET_USDC_ADDRESS } from "../lib/wallet/arc.ts";
 import { TRUST_API_PRICING } from "../lib/x402/trust-api/pricing.ts";
 import { consumeFreeCall } from "../lib/x402/trust-api/rate-limit.ts";
 import { historyAnswer } from "../lib/x402/trust-api/answers.ts";
@@ -54,6 +59,8 @@ assert.throws(() => normalizeResourceUrl("ftp://x.dev/a"), (e: unknown) =>
   e instanceof TrustApiError && e.code === "resource_scheme_unsupported");
 assert.throws(() => normalizeResourceUrl(""), (e: unknown) =>
   e instanceof TrustApiError && e.code === "resource_required");
+assert.throws(() => normalizeResourceUrl("https://example-user:example-password@api.example.com/search"), (e: unknown) =>
+  e instanceof TrustApiError && e.code === "resource_credentials_unsupported");
 assert.throws(() => parseProbeMethod("DELETE"), (e: unknown) =>
   e instanceof TrustApiError && e.code === "method_unsupported");
 assert.equal(parseProbeMethod(undefined), "POST");
@@ -80,6 +87,129 @@ const baseline = selectBaselineAccept([
   readAccept({ scheme: "exact", network: "eip155:8453", asset: "0xa", payTo: "0x6d6E695b09861467c7d462f5AAF31cF3540B9192", amount: "1000" }),
 ]);
 assert.equal(baseline?.priceUsdc, 0.001);
+
+/* ---- the public verdict checks the Arc option on the working method ---- */
+
+type ObservationInput = Record<string, unknown>;
+const stored: ObservationInput[] = [];
+function mockObservations(history: EndpointObservationRow[]): SupabaseClient {
+  return {
+    from: () => ({
+      select: () => {
+        let rows = history;
+        const query = {
+          eq(field: keyof EndpointObservationRow, value: string) {
+            rows = rows.filter((item) => item[field] === value);
+            return query;
+          },
+          order: () => query,
+          limit: async (limit: number) => ({ data: rows.slice(0, limit), error: null }),
+        };
+        return query;
+      },
+      insert: async (value: ObservationInput) => {
+        stored.push(value);
+        return { error: null };
+      },
+    }),
+  } as unknown as SupabaseClient;
+}
+setByoaClientForTesting(mockObservations([]));
+
+const arcQuote = {
+  scheme: "exact",
+  network: ARC_MAINNET_NETWORK,
+  asset: ARC_MAINNET_USDC_ADDRESS,
+  payTo: "0x1111111111111111111111111111111111111111",
+  amount: "1234",
+  maxTimeoutSeconds: 60,
+};
+const otherNetwork = { ...arcQuote, network: "eip155:84532", amount: "1" };
+const otherAsset = { ...arcQuote, asset: "0x2222222222222222222222222222222222222222", amount: "1" };
+const anOlderAccept = { ...arcQuote, amount: "1500" };
+const input = { resource: canonical, publicArc: true, budgetUsdc: 0.01 };
+const methods: string[] = [];
+const options = [otherNetwork, otherAsset, anOlderAccept, arcQuote];
+const fetchVerdict = async (_: string, init: RequestInit): Promise<Response> => {
+  methods.push(String(init.method));
+  assert.equal(new Headers(init.headers).has("payment-signature"), false);
+  if (init.method === "POST") {
+    // A lookalike response with accepts is not a successful challenge.
+    return Response.json({ accepts: options }, { status: 405 });
+  }
+  assert.equal(init.body, undefined);
+  const challenge = Buffer.from(JSON.stringify({ x402Version: 2, accepts: options })).toString("base64");
+  return new Response(null, { status: 402, headers: { "payment-required": challenge } });
+};
+
+const publicVerdict = await computeTrustApiVerdict({
+  ...input, catalogueMethod: async () => null, probeFetchImpl: fetchVerdict,
+});
+assert.deepEqual(methods, ["POST", "GET", "GET"]);
+assert.equal(publicVerdict.method, "GET");
+assert.equal(publicVerdict.network, ARC_MAINNET_NETWORK);
+assert.equal(publicVerdict.priceUsdc, 0.001234);
+assert.equal(publicVerdict.resourceKey, resourceKeyFor("GET", canonical));
+assert.equal(publicVerdict.payTo, arcQuote.payTo);
+assert.deepEqual(publicVerdict.probe.catalogDrift, []);
+
+methods.length = 0;
+const listed = await readPublicArcChallenge({
+  resource: canonical, lookupMethod: async (resource) => {
+    assert.equal(resource, canonical);
+    return "GET";
+  }, fetchImpl: fetchVerdict,
+});
+assert.equal(listed.accept.amountAtomic, arcQuote.amount);
+assert.deepEqual(methods, ["GET"]);
+
+methods.length = 0;
+const originalFetch = globalThis.fetch;
+try {
+  globalThis.fetch = async (input) => {
+    const url = new URL(String(input));
+    assert.equal(url.hostname, "api.circle.com");
+    const metadata = { method: "GET" };
+    const accepts = [arcQuote];
+    return Response.json({ items: [{ resource: "https://", metadata, accepts },
+      { resource: canonical, metadata, accepts }] });
+  };
+  const withMalformedListing = await readPublicArcChallenge({
+    resource: canonical, fetchImpl: fetchVerdict,
+  });
+  assert.equal(withMalformedListing.method, "GET");
+  assert.deepEqual(methods, ["GET"]);
+} finally {
+  globalThis.fetch = originalFetch;
+}
+
+await assert.rejects(readPublicArcChallenge({
+  resource: "http://api.example.com/search", method: "GET",
+  fetchImpl: async () => { throw new Error("non-HTTPS URL reached the transport"); },
+}), (e: unknown) => e instanceof TrustApiError && e.code === "resource_scheme_unsupported");
+
+
+methods.length = 0;
+await assert.rejects(readPublicArcChallenge({
+  resource: canonical, method: "POST",
+  lookupMethod: async () => { throw new Error("explicit methods skip catalogue lookup"); },
+  fetchImpl: fetchVerdict,
+}), (e: unknown) => e instanceof TrustApiError && e.code === "no_payable_challenge");
+assert.deepEqual(methods, ["POST"]);
+
+await assert.rejects(readPublicArcChallenge({
+  resource: canonical, method: "GET",
+  fetchImpl: async () => Response.json({ accepts: [otherNetwork, otherAsset] }, { status: 402 }),
+}), (e: unknown) => e instanceof TrustApiError && e.code === "arc_mainnet_not_offered");
+
+let repeat = false;
+await assert.rejects(computeTrustApiVerdict({
+  ...input, method: "GET", probeFetchImpl: async () => {
+    const accepts = repeat ? [otherNetwork, otherAsset] : [arcQuote];
+    repeat = true;
+    return Response.json({ accepts }, { status: 402 });
+  },
+}), (e: unknown) => e instanceof TrustApiError && e.code === "arc_quote_unavailable");
 
 /* ---- history and the alert the product is built on ---- */
 
@@ -110,6 +240,35 @@ function row(over: Partial<EndpointObservationRow>): EndpointObservationRow {
     ...over,
   };
 }
+
+const resourceKey = resourceKeyFor("GET", canonical);
+setByoaClientForTesting(mockObservations([
+  row({ resource_key: resourceKey, method: "GET", network: "eip155:84532", observed_price_usdc: 1 }),
+  row({ resource_key: resourceKey, method: "GET", network: ARC_MAINNET_NETWORK,
+    observed_asset: ARC_MAINNET_USDC_ADDRESS, observed_price_usdc: 0.001234,
+    observed_pay_to: "0x3333333333333333333333333333333333333333",
+  }),
+]));
+const driftVerdict = await computeTrustApiVerdict({
+  ...input, method: "GET", probeFetchImpl: fetchVerdict,
+});
+assert.equal(driftVerdict.baseline, "veyra_history");
+assert.equal(driftVerdict.priceUsdc, 0.001234);
+assert.equal(driftVerdict.granted, false);
+assert.ok(driftVerdict.alerts.some((alert) => alert.code === "pay_to_changed"
+  && alert.detail.includes("0x3333333333333333333333333333333333333333")));
+assert.equal(stored.at(-1)?.network, ARC_MAINNET_NETWORK);
+assert.equal(stored.at(-1)?.resource_key, resourceKey);
+
+setByoaClientForTesting(mockObservations([]));
+const zeroVerdict = await computeTrustApiVerdict({
+  ...input, method: "GET",
+  probeFetchImpl: async () => Response.json({ accepts: [{ ...arcQuote, amount: "0" }] }, { status: 402 }),
+});
+assert.equal(zeroVerdict.granted, false);
+assert.equal(zeroVerdict.maxExposureUsdc, 0);
+assert.ok(zeroVerdict.alerts.some((alert) => alert.code === "price_not_quoted"));
+setByoaClientForTesting(null);
 
 const changed = summariseEndpointHistory("a".repeat(64), [
   row({ probed_at: "2026-09-01T00:00:00.000Z" }),

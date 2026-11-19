@@ -1,3 +1,4 @@
+import { ARC_TESTNET_EXPLORER_URL } from "../wallet/arc.ts";
 import type { PublicExecutionView } from "./public-view.ts";
 import type { ExecutionState } from "./types.ts";
 
@@ -14,7 +15,7 @@ export function formatUsdc(value: number | null | undefined): string {
 
 const CHAINS: Record<number, { label: string; explorer: string }> = {
   5042: { label: "Arc", explorer: "https://explorer.arc.io" },
-  5042002: { label: "Arc Testnet", explorer: "https://testnet.arcscan.app" },
+  5042002: { label: "Arc Testnet", explorer: ARC_TESTNET_EXPLORER_URL },
   8453: { label: "Base", explorer: "https://basescan.org" },
   84532: { label: "Base Sepolia", explorer: "https://sepolia.basescan.org" },
   1: { label: "Ethereum", explorer: "https://etherscan.io" },

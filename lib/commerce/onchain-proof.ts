@@ -903,7 +903,10 @@ export function onchainProofMetadataFromRow(row: {
     verifiedAt: row.onchain_verified_at ?? null,
     lastAttemptAt: row.onchain_last_attempt_at ?? null,
     attemptCount: Math.max(row.onchain_attempt_count ?? 0, 0),
-    error: row.onchain_error ?? null,
+    // Historical RPC errors can contain transaction request data.
+    error: row.onchain_error
+      ? isTransientArcRpcError(row.onchain_error) ? "proof_rpc_unavailable" : "proof_failed"
+      : null,
   };
 }
 

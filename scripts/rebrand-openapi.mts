@@ -5,6 +5,7 @@
 
 import { readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
+import { arcTrustApiOpenApi } from "../lib/x402/trust-api/arc-openapi.ts";
 
 const root = resolve(import.meta.dirname, "..");
 const originalPath = resolve(root, "public/openapi/agent-commerce-v1.json");
@@ -14,9 +15,9 @@ const spec = JSON.parse(readFileSync(originalPath, "utf8"));
 
 spec.info = {
   title: "Veyra Agent API",
-  version: "0.1.0-beta.2",
+  version: "0.3.0-beta.1",
   description:
-    "Machine API for Veyra on Arc Testnet — verified workflows, evidence-weighted agent reputation, Trust Gate policy decisions, counterparty selection, ERC-8183 independent evaluation, continuous trust monitoring, and Project 360.",
+    "Veyra Trust API on Arc mainnet and developer APIs for verified workflows, reputation, trust policy and evaluator contracts on Arc Testnet.",
   contact: {
     name: "Veyra Team",
     url: "https://github.com/mioku50/Veyra",
@@ -30,7 +31,7 @@ spec.info = {
 spec.servers = [
   {
     url: "https://agent-commerce-six.vercel.app",
-    description: "Arc Testnet Live Production Server",
+    description: "Veyra production server",
   },
   {
     url: "http://localhost:3000",
@@ -42,7 +43,7 @@ spec.servers = [
 spec.paths["/api/status"] = {
   get: {
     summary: "Public Health & Network Status",
-    description: "Returns sanitized operational health, active Arc Testnet chain ID, and current public beta version.",
+    description: "Reports the Arc mainnet Trust API and its prices, alongside the Arc Testnet contracts.",
     operationId: "getPublicStatus",
     security: [],
     responses: {
@@ -54,9 +55,37 @@ spec.paths["/api/status"] = {
               type: "object",
               properties: {
                 status: { type: "string", example: "operational" },
-                network: { type: "string", example: "arc-testnet" },
-                chainId: { type: "integer", example: 5042002 },
-                version: { type: "string", example: "0.1.0-beta.1" },
+                network: { type: "string", example: "eip155:5042" },
+                chainId: { type: "integer", example: 5042 },
+                trustApi: {
+                  type: "object",
+                  properties: {
+                    network: { type: "string", example: "eip155:5042" },
+                    chainId: { type: "integer", example: 5042 },
+                    agentId: { type: "integer", nullable: true, example: 298 },
+                    registration: { type: "string", format: "uri" },
+                    openapi: { type: "string", example: "/openapi/veyra-arc-trust-api.json" },
+                    products: {
+                      type: "array",
+                      items: {
+                        type: "object",
+                        properties: {
+                          path: { type: "string" },
+                          priceUsdc: { type: "number" },
+                        },
+                      },
+                    },
+                  },
+                },
+                testnet: {
+                  type: "object",
+                  properties: {
+                    network: { type: "string", example: "arc-testnet" },
+                    chainId: { type: "integer", example: 5042002 },
+                    services: { type: "array", items: { type: "string" } },
+                  },
+                },
+                version: { type: "string", example: "0.3.0-beta.1" },
                 timestamp: { type: "string", format: "date-time" },
               },
             },
@@ -371,6 +400,12 @@ spec.paths["/api/execution/v1/autopilot"] = {
     },
   },
 };
+
+// These Path Items are defined in the canonical Arc Trust API document.
+for (const path of Object.keys(arcTrustApiOpenApi().paths)) {
+  const pointer = path.replaceAll("~", "~0").replaceAll("/", "~1");
+  spec.paths[path] = { $ref: `/openapi/veyra-arc-trust-api.json#/paths/${pointer}` };
+}
 
 const formatted = JSON.stringify(spec, null, 2) + "\n";
 

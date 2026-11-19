@@ -6,6 +6,7 @@ import { ARC_OPENAPI_PATH, ARC_TRUST_API, VEYRA_ARC_PAY_TO } from "../lib/x402/t
 import { arcTrustApiOpenApi } from "../lib/x402/trust-api/arc-openapi.ts";
 import { checkHistoryRequest, checkSelectRequest } from "../lib/x402/trust-api/answers.ts";
 import { buildTrustApiCatalog } from "../lib/x402/trust-api/catalog.ts";
+import { trustApiError } from "../lib/x402/trust-api/http.ts";
 import { TrustApiError } from "../lib/x402/trust-api/resource.ts";
 import { requirementsFromKinds, withTrustApiChallenge, withTrustApiPayment, type SupportedKind } from "../lib/x402/trust-api/seller.ts";
 import { TRUST_API_PRICING } from "../lib/x402/trust-api/pricing.ts";
@@ -55,6 +56,7 @@ const TESTNET_KINDS: SupportedKind[] = ([
 }));
 
 const facilitatorCalls: string[] = [];
+let settleStubbedPayment = false;
 globalThis.fetch = (async (input: string | URL | Request) => {
   const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
   facilitatorCalls.push(url);
@@ -64,7 +66,12 @@ globalThis.fetch = (async (input: string | URL | Request) => {
       ? TESTNET_KINDS.map((kind) => ({ scheme: "exact", ...kind }))
       : [{ scheme: "exact", ...ARC_KIND }, { scheme: "exact", ...BASE_KIND }] });
   }
-  if (url.endsWith("/v1/x402/verify")) return json({ isValid: false, invalidReason: "stubbed" });
+  if (url.endsWith("/v1/x402/verify")) {
+    return json(settleStubbedPayment ? { isValid: true } : { isValid: false, invalidReason: "stubbed" });
+  }
+  if (url.endsWith("/v1/x402/settle") && settleStubbedPayment) {
+    return json({ success: true, transaction: "test-settlement", network: "eip155:5042" });
+  }
   return new Response("not stubbed", { status: 599 });
 }) as typeof fetch;
 
@@ -277,7 +284,7 @@ if (VEYRA_ARC_PAY_TO) assert.ok(isVeyraItself({ resource: "https://elsewhere.exa
 {
   const selling = veyraRegistrationFile(null, "0x2222222222222222222222222222222222222222");
   assert.equal(selling.x402Support, true);
-  assert.deepEqual(selling.services.map((service) => service.name), ["web", "x402", "OpenAPI"]);
+  assert.deepEqual(selling.services.map((service) => service.name), ["web", "mcp", "x402", "OpenAPI"]);
   assert.ok(selling.services.every((service) => service.endpoint.startsWith(`${VEYRA_ORIGIN}/`)));
   assert.ok(selling.services.some((service) => service.endpoint === `${VEYRA_ORIGIN}${ARC_OPENAPI_PATH}`));
   assert.match(selling.description, /0\.005 USDC/);
@@ -293,13 +300,51 @@ if (VEYRA_ARC_PAY_TO) assert.ok(isVeyraItself({ resource: "https://elsewhere.exa
   assert.equal(document.openapi, "3.1.0");
   assert.deepEqual(Object.keys(document.paths).sort(), Object.values(ARC_TRUST_API).map((entry) => entry.path).sort());
   for (const entry of Object.values(ARC_TRUST_API)) {
-    const operation = (document.paths as Record<string, { post: Record<string, any> }>)[entry.path].post;
+    const { get, post: operation } = document.paths[entry.path];
+    assert.ok("PAYMENT-REQUIRED" in get.responses[402].headers);
+    assert.equal(get.responses[405].headers.Allow.schema.const, "POST");
+    assert.equal(operation.parameters[0].name, "PAYMENT-SIGNATURE");
     assert.deepEqual(operation.requestBody.content["application/json"].schema, entry.schema.input, "The request it documents is the one the route checks");
     assert.deepEqual(operation.responses[200].content["application/json"].schema, entry.schema.output);
     assert.equal(operation["x-payment-info"].network, "eip155:5042");
     assert.equal(operation["x-payment-info"].priceUsdc, entry.priceUsdc);
+    assert.match(operation.responses[502].description, /uncertain outcome/);
+    const serviceUnavailable = operation.responses[503];
+    assert.ok("PAYMENT-RESPONSE" in serviceUnavailable.headers);
+    const cases = serviceUnavailable.content["application/json"].examples;
+    assert.deepEqual(cases.beforeSettlement.value, get.responses[503].content["application/json"].example);
+    assert.equal(cases.beforeSettlement.value.error, "payments_unavailable");
+    assert.equal(cases.afterSettlement.value.error.code, "unavailable");
   }
+  assert.match(document.info.description, /no idempotency key/);
   assert.ok(!("requesterWallet" in ARC_TRUST_API.select.schema.input.properties), "No clearance, so no wallet to name for one");
+}
+
+/* A failed answer still carries the receipt when the facilitator already
+   accepted the payment. All facilitator responses here come from the stub. */
+if (VEYRA_ARC_PAY_TO !== null) {
+  const entry = ARC_TRUST_API.history;
+  const route = withTrustApiPayment(async () => trustApiError(new Error("test answer failure")), {
+    endpoint: entry.path,
+    priceUsdc: entry.priceUsdc,
+    description: entry.description,
+    validate: checkHistoryRequest,
+    rail: "arc",
+  });
+  settleStubbedPayment = true;
+  try {
+    const response = await route(post(entry.path, { resource: "https://api.example.com/x" }, {
+      "PAYMENT-SIGNATURE": paymentHeader("eip155:5042"),
+    }));
+    const documented = arcTrustApiOpenApi().paths[entry.path].post.responses[503];
+    assert.equal(response.status, 503);
+    assert.deepEqual(await response.json(), documented.content["application/json"].examples.afterSettlement.value);
+    assert.equal(response.headers.get("X-Veyra-Paid-With"), "usdc");
+    const receipt = Buffer.from(response.headers.get("PAYMENT-RESPONSE") ?? "", "base64");
+    assert.equal(JSON.parse(receipt.toString("utf8")).transaction, "test-settlement");
+  } finally {
+    settleStubbedPayment = false;
+  }
 }
 
 console.log("arc trust api: all assertions passed");

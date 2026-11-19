@@ -2,8 +2,8 @@
   "openapi": "3.0.3",
   "info": {
     "title": "Veyra Agent API",
-    "version": "0.1.0-beta.2",
-    "description": "Machine API for Veyra on Arc Testnet \u2014 verified workflows, evidence-weighted agent reputation, Trust Gate policy decisions, counterparty selection, ERC-8183 independent evaluation, continuous trust monitoring, and Project 360.",
+    "version": "0.3.0-beta.1",
+    "description": "Veyra Trust API on Arc mainnet and developer APIs for verified workflows, reputation, trust policy and evaluator contracts on Arc Testnet.",
     "contact": {
       "name": "Veyra Team",
       "url": "https://github.com/mioku50/Veyra"
@@ -16,7 +16,7 @@
   "servers": [
     {
       "url": "https://agent-commerce-six.vercel.app",
-      "description": "Arc Testnet Live Production Server"
+      "description": "Veyra production server"
     },
     {
       "url": "http://localhost:3000",
@@ -1275,7 +1275,7 @@
     "/api/status": {
       "get": {
         "summary": "Public Health & Network Status",
-        "description": "Returns sanitized operational health, active Arc Testnet chain ID, and current public beta version.",
+        "description": "Reports the Arc mainnet Trust API and its prices, alongside the Arc Testnet contracts.",
         "operationId": "getPublicStatus",
         "security": [],
         "responses": {
@@ -1292,15 +1292,74 @@
                     },
                     "network": {
                       "type": "string",
-                      "example": "arc-testnet"
+                      "example": "eip155:5042"
                     },
                     "chainId": {
                       "type": "integer",
-                      "example": 5042002
+                      "example": 5042
+                    },
+                    "trustApi": {
+                      "type": "object",
+                      "properties": {
+                        "network": {
+                          "type": "string",
+                          "example": "eip155:5042"
+                        },
+                        "chainId": {
+                          "type": "integer",
+                          "example": 5042
+                        },
+                        "agentId": {
+                          "type": "integer",
+                          "nullable": true,
+                          "example": 298
+                        },
+                        "registration": {
+                          "type": "string",
+                          "format": "uri"
+                        },
+                        "openapi": {
+                          "type": "string",
+                          "example": "/openapi/veyra-arc-trust-api.json"
+                        },
+                        "products": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "path": {
+                                "type": "string"
+                              },
+                              "priceUsdc": {
+                                "type": "number"
+                              }
+                            }
+                          }
+                        }
+                      }
+                    },
+                    "testnet": {
+                      "type": "object",
+                      "properties": {
+                        "network": {
+                          "type": "string",
+                          "example": "arc-testnet"
+                        },
+                        "chainId": {
+                          "type": "integer",
+                          "example": 5042002
+                        },
+                        "services": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        }
+                      }
                     },
                     "version": {
                       "type": "string",
-                      "example": "0.1.0-beta.1"
+                      "example": "0.3.0-beta.1"
                     },
                     "timestamp": {
                       "type": "string",
@@ -1766,8 +1825,8 @@
               }
             }
           },
-          "401": {
-            "description": "Machine credential or owner session required.",
+          "400": {
+            "description": "Invalid capability, budget, price ceiling, or unsupported network.",
             "content": {
               "application/json": {
                 "schema": {
@@ -1776,8 +1835,8 @@
               }
             }
           },
-          "400": {
-            "description": "Invalid capability, budget, price ceiling, or unsupported network.",
+          "401": {
+            "description": "Machine credential or owner session required.",
             "content": {
               "application/json": {
                 "schema": {
@@ -1971,6 +2030,12 @@
           }
         }
       }
+    },
+    "/api/x402/v1/arc/history": {
+      "$ref": "/openapi/veyra-arc-trust-api.json#/paths/~1api~1x402~1v1~1arc~1history"
+    },
+    "/api/x402/v1/arc/select": {
+      "$ref": "/openapi/veyra-arc-trust-api.json#/paths/~1api~1x402~1v1~1arc~1select"
     }
   },
   "components": {

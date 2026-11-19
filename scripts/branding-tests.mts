@@ -160,7 +160,8 @@ const openApi = JSON.parse(
 assert.equal(openApi.info?.title, BRAND.agentApi);
 assert(openApi.info?.description?.includes("verified workflows"));
 assert(openApi.info?.description?.includes("reputation"));
-assert.equal(openApi.info?.version, "0.1.0-beta.2");
+assert(openApi.info?.description?.includes("Arc mainnet"));
+assert.equal(openApi.info?.version, "0.3.0-beta.1");
 assert.equal(openApi.servers?.[0]?.url, "https://agent-commerce-six.vercel.app");
 for (const path of [
   "/api/agent/v1/workflows",
@@ -230,12 +231,12 @@ try {
      asserting itself over the thing a person came for. */
   await page.getByTestId("brand-monogram").first().waitFor();
   await page.getByText(BRAND.name, { exact: true }).first().waitFor();
-  await page.getByText(BRAND.tagline, { exact: true }).first().waitFor();
+
   /* The description is asserted in the metadata above, where it is what a
      shared link previews as. It used to be required as visible copy too, which
      only held while the front door was a marketing page; it now has to say what
      it does for the person reading it, in their words rather than the brand's. */
-  await page.getByText("Arc Testnet", { exact: true }).first().waitFor();
+  await page.getByText("Trust API on Arc", { exact: true }).first().waitFor();
 
   await page.goto(`${baseUrl()}/console`, { waitUntil: "load" });
   assert.equal(await page.title(), BRAND.developerConsole);

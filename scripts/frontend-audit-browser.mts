@@ -15,6 +15,12 @@ const page = await context.newPage();
 const errors: string[] = [];
 page.on("pageerror", (error) => errors.push(error.message));
 let offlineNova = false;
+let simulateOnboarding = false;
+const onboardingRequests: string[] = [];
+const createPath = "/api/nova/v1/agents";
+const novaPublicId = "nva_frontend_fixture";
+const fixtureKey = "frontend-fixture-secret";
+const novaPath = createPath + "/" + novaPublicId;
 let failedLog = false;
 let lastLogUrl = "";
 const hash = `0x${"a".repeat(64)}`;
@@ -66,6 +72,8 @@ const brief = {
     observedAt: "2026-09-19T00:00:00Z",
     headline: `Foundry: update ${index}`,
     interest: "onchain data",
+    kind: "repository_activity",
+    evidence: {},
     settlesOn: null,
   })),
   memory: [],
@@ -93,6 +101,52 @@ const brief = {
 const mutations: string[] = [];
 await context.route("**/api/**", async (route) => {
   const url = new URL(route.request().url());
+  if (simulateOnboarding && route.request().method() === "POST") {
+    if (url.pathname === createPath) {
+      onboardingRequests.push("create");
+      const { interests } = route.request().postDataJSON();
+      assert.deepEqual(interests, ["Arc", "Release notes"]);
+      brief.agent.interests = interests;
+      return route.fulfill({
+        status: 201,
+        json: { agent: brief.agent, ownerSecret: fixtureKey },
+      });
+    }
+    if (url.pathname === novaPath + "/refresh") {
+      onboardingRequests.push("refresh");
+      return route.fulfill({ status: 503, json: { error: "fixture offline" } });
+    }
+    if (url.pathname === novaPath + "/questions") {
+      onboardingRequests.push("ask");
+      return route.fulfill({
+        json: {
+          ok: true,
+          question: {
+            questionId: "frontend-question-fixture",
+            question: route.request().postDataJSON().question,
+            searchTerms: [],
+            docs: {
+              checked: [],
+              unavailable: [],
+              answered: false,
+              answer: null,
+              citations: [],
+              missing: "The documentation does not name this tool.",
+              failure: null,
+              writtenBy: null,
+              checkedAt: "2026-09-19T12:00:00Z",
+            },
+            refusal: null,
+            createdAt: "2026-09-19T12:00:00Z",
+          },
+        },
+      });
+    }
+    if (url.pathname === novaPath + "/questions/frontend-question-fixture/research") {
+      onboardingRequests.push("price");
+      return route.fulfill({ json: { ok: false, detail: "No matching tool in the fixture." } });
+    }
+  }
   if (route.request().method() !== "GET") {
     mutations.push(url.pathname);
     return route.abort();
@@ -199,6 +253,46 @@ try {
   await page.waitForURL(`${base}/memory`);
   await drawer.waitFor({ state: "detached" });
 
+  // Recover a newly created profile after a failed first refresh.
+  simulateOnboarding = true;
+  await page.goto(base);
+  await page.getByRole("button", { name: "Arc", exact: true }).click();
+  const customInterest = page.getByLabel("Custom interest", { exact: true });
+  const addInterest = page.getByRole("button", { name: "Add interest", exact: true });
+  await customInterest.fill("  Release   notes ");
+  await addInterest.click();
+  assert.equal(
+    await page.getByRole("button", { name: "Release notes", exact: true }).getAttribute("aria-pressed"),
+    "true",
+  );
+  await customInterest.fill("release notes");
+  assert(await addInterest.isDisabled());
+  await page.getByRole("button", { name: "Create Nova", exact: true }).click();
+  await page.getByRole("heading", { name: "Your agent could not be loaded" }).waitFor();
+  await page.getByText("nva_frontend_fixture.frontend-fixture-secret", { exact: true }).waitFor();
+  assert.equal(await page.getByLabel("Agent name", { exact: true }).count(), 0);
+  await page.getByRole("button", { name: "Retry", exact: true }).click();
+  await page.getByLabel("Your question for Nova", { exact: true }).fill("Which tool can retrieve release notes?");
+  assert.deepEqual(onboardingRequests, ["create", "refresh"]);
+
+  // The free answer yields a choice to look for a paid tool.
+  await page.getByRole("button", { name: "Ask", exact: true }).click();
+  const lookForTool = page.getByRole("button", { name: "Find a tool on Arc for this", exact: true });
+  await lookForTool.waitFor();
+  assert.deepEqual(onboardingRequests, ["create", "refresh", "ask"]);
+  await lookForTool.click();
+  await page.getByText("No matching tool in the fixture.", { exact: false }).waitFor();
+  assert.deepEqual(onboardingRequests, ["create", "refresh", "ask", "price"]);
+
+  await page.goto(base + "/agent");
+  await page.getByRole("button", { name: /Change goal and sources/ }).click();
+  const savedInterest = page.getByRole("button", { name: "Release notes", exact: true });
+  assert.equal(await savedInterest.getAttribute("aria-pressed"), "true");
+  await savedInterest.click();
+  await savedInterest.waitFor({ state: "detached" });
+  simulateOnboarding = false;
+
+  await page.goto(base + "/memory");
   // Brief request fails after the browser has remembered a real-shaped identity.
   await page.evaluate(() => {
     localStorage.setItem("veyra.nova.id", "nva_frontend_fixture");
@@ -441,7 +535,7 @@ try {
   assert.equal(mutations.length, 0, "no live writes, signatures or payments");
   assert.deepEqual(errors, []);
   console.log(
-    "frontend browser: navigation at six widths, modal keyboard behavior, offline key preservation/retry, payment precision/networks/filters/pagination, stale/error history, shared wallet connect/change/disconnect, mobile wallet-app links and invalid API cursors passed",
+    "frontend browser: navigation at six widths, modal keyboard behavior, onboarding retry, custom interests, explicit paid-tool search, offline key preservation/retry, payment precision/networks/filters/pagination, stale/error history, shared wallet connect/change/disconnect, mobile wallet-app links and invalid API cursors passed",
   );
 } finally {
   await context.close();

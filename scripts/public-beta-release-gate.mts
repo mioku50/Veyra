@@ -258,6 +258,10 @@ runStep("Veyra's Trust API History (payee and price changes, per-request prices,
   execSync("npm run x402-trust-api:test", { cwd: root, stdio: "inherit" });
 });
 
+runStep("Veyra MCP Tool Contracts", () => {
+  execSync("npm run mcp:test", { cwd: root, stdio: "inherit" });
+});
+
 runStep("Nova Calibration Report", () => {
   execSync("npm run nova-calibration:test", { cwd: root, stdio: "inherit" });
 });

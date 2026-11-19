@@ -4,6 +4,8 @@
  */
 
 import { randomBytes } from "node:crypto";
+import { ARC_MAINNET_NETWORK, ARC_MAINNET_USDC_ADDRESS } from "../../wallet/arc.ts";
+import { arcPaymentOptions, readPublicArcChallenge } from "./public-probe.ts";
 import { getAddress, isAddress, zeroAddress, type Hex } from "viem";
 import { BRAND } from "../../brand.ts";
 import { hashCanonical } from "../../counterparty-selection/canonical.ts";
@@ -22,6 +24,7 @@ import type { TrustDecision } from "../../trust-gate/types.ts";
 import { TRUST_DECISION_EXPIRY_SECONDS, TRUST_POLICY_VERSION } from "../../trust-gate/types.ts";
 import {
   buildEvidenceWithHistory,
+  ENDPOINT_HISTORY_LIMIT,
   loadEndpointObservations,
   recordEndpointObservation,
   summariseEndpointHistory,
@@ -31,7 +34,6 @@ import {
   expectationFromAccept,
   normalizeResourceUrl,
   parseProbeMethod,
-  readAccept,
   readX402Challenge,
   resourceKeyFor,
   selectBaselineAccept,
@@ -228,12 +230,9 @@ function alertsFrom(input: {
 }
 
 /**
- * The verdict itself, identical whether it was paid for or not.
- *
- * Selling a *different* answer to paying callers would make the free one a
- * demo, and a trust product whose free verdict is a demo is not trustworthy.
- * What money buys is the signature underneath it, which is the only part
- * nobody else can produce.
+ * Score the observed payment option with the same policy. The public route
+ * checks the Arc mainnet offer; the signed clearance has its own legacy
+ * method and settlement contract.
  */
 export async function computeTrustApiVerdict(input: {
   resource: unknown;
@@ -242,10 +241,11 @@ export async function computeTrustApiVerdict(input: {
   capability?: string;
   requesterWallet?: string;
   now?: Date;
+  publicArc?: boolean;
+  catalogueMethod?: (resource: string) => Promise<ProbeMethod | null>;
   probeFetchImpl?: (url: string, init: RequestInit) => Promise<Response>;
 }): Promise<TrustApiVerdict> {
   const resource = normalizeResourceUrl(input.resource);
-  const method = parseProbeMethod(input.method);
   const capability = typeof input.capability === "string" && input.capability.trim()
     ? input.capability.trim().slice(0, 64)
     : "unspecified";
@@ -259,17 +259,25 @@ export async function computeTrustApiVerdict(input: {
   const now = input.now ?? new Date();
   const issuedAt = now.toISOString();
   const expiresAt = new Date(now.getTime() + TRUST_API_VERDICT_TTL_SECONDS * 1000).toISOString();
+  const publicChallenge = input.publicArc ? await readPublicArcChallenge({
+    resource, method: input.method, lookupMethod: input.catalogueMethod, fetchImpl: input.probeFetchImpl,
+  }) : null;
+  const method = publicChallenge?.method ?? parseProbeMethod(input.method);
   const resourceKey = resourceKeyFor(method, resource);
 
-  const history = await loadEndpointObservations(resourceKey);
-  const lastObservation = history[0] ?? null;
+  const history = await loadEndpointObservations(resourceKey, ENDPOINT_HISTORY_LIMIT, publicChallenge ? {
+    network: ARC_MAINNET_NETWORK, asset: ARC_MAINNET_USDC_ADDRESS,
+  } : undefined);
+  const lastObservation = (publicChallenge
+    ? history.find((row) => row.observed_pay_to && isAddress(row.observed_pay_to) && row.observed_price_usdc !== null)
+    : history[0]) ?? null;
 
   /* The yardstick. With history, drift means "changed since Veyra last looked",
      which is the question an agent actually has. Without it, Veyra reads the
      challenge once to learn what this endpoint claims, and reports that it had
      nothing to compare against. */
   let baseline: ExpectationBaseline;
-  let bootstrapDocsUrl: string | null = null;
+  let bootstrapDocsUrl = publicChallenge?.docsUrl ?? null;
   let baselineAccept: ObservedAccept | null = null;
   if (lastObservation?.observed_pay_to && lastObservation.observed_price_usdc !== null) {
     baseline = "veyra_history";
@@ -285,9 +293,13 @@ export async function computeTrustApiVerdict(input: {
     };
   } else {
     baseline = "first_sighting";
-    const bootstrap = await readX402Challenge(resource, method, input.probeFetchImpl);
-    baselineAccept = selectBaselineAccept(bootstrap.accepts);
-    bootstrapDocsUrl = bootstrap.docsUrl;
+    if (publicChallenge) {
+      baselineAccept = publicChallenge.accept;
+    } else {
+      const bootstrap = await readX402Challenge(resource, method, input.probeFetchImpl);
+      baselineAccept = selectBaselineAccept(bootstrap.accepts);
+      bootstrapDocsUrl = bootstrap.docsUrl;
+    }
   }
 
   if (!baselineAccept || !isAddress(baselineAccept.payTo)) {
@@ -326,16 +338,25 @@ export async function computeTrustApiVerdict(input: {
     accept: baselineAccept,
     docsUrl: bootstrapDocsUrl,
   });
-  const probe = await probeX402Resource(expectation, { fetchImpl: input.probeFetchImpl, now });
+  const probe = await probeX402Resource(expectation, {
+    fetchImpl: input.probeFetchImpl,
+    now,
+    filterAccepts: publicChallenge ? arcPaymentOptions : undefined,
+  });
 
   void recordEndpointObservation({
     resourceKey,
     resourceUrl: resource,
     method,
-    network: baselineAccept.network,
+    network: publicChallenge ? ARC_MAINNET_NETWORK : baselineAccept.network,
     probe,
-    asset: baselineAccept.asset,
+    asset: publicChallenge ? ARC_MAINNET_USDC_ADDRESS : baselineAccept.asset,
   });
+
+  if (publicChallenge && (!probe.observedPayTo || probe.observedPriceUsdc === null)) {
+    throw new TrustApiError(probe.reachable ? "arc_quote_unavailable" : "endpoint_unreachable",
+      probe.reachable ? 422 : 502, "The live Arc mainnet offer could not be confirmed.");
+  }
 
   const evidence = history.length > 0
     ? buildEvidenceWithHistory(probe, history)
@@ -403,12 +424,13 @@ export async function computeTrustApiVerdict(input: {
     quotedZero: probe.quotedZero,
   });
 
-  const maxExposureUsdc = Math.min(
+  const priceUnknown = Boolean(publicChallenge && probe.quotedZero);
+  const maxExposureUsdc = priceUnknown ? 0 : Math.min(
     input.budgetUsdc,
     trustDecision.policy.maxValueUsdc,
     requestedValueUsdc > 0 ? requestedValueUsdc : input.budgetUsdc,
   );
-  const granted = trustDecision.decision !== "DENY"
+  const granted = !priceUnknown && trustDecision.decision !== "DENY"
     && trustDecision.decision !== "REVIEW_REQUIRED"
     && requestedValueUsdc <= input.budgetUsdc
     && alerts.every((alert) => alert.severity !== "critical");
@@ -418,7 +440,9 @@ export async function computeTrustApiVerdict(input: {
       + `with ${summary.observations} observation(s) on record and ${Math.round(coverage.coverage * 100)}% evidence coverage. `
       + `${BRAND.name} would pay up to ${maxExposureUsdc.toFixed(6)} USDC here.`
     : alerts.find((alert) => alert.severity === "critical")?.detail
-      ?? (requestedValueUsdc > input.budgetUsdc
+      ?? (priceUnknown
+        ? "The empty probe returned a zero quote. Check the actual request for its price before paying."
+        : requestedValueUsdc > input.budgetUsdc
         ? `The endpoint asks ${requestedValueUsdc.toFixed(6)} USDC, above the ${input.budgetUsdc.toFixed(6)} USDC budget.`
         : `Evidence does not support paying this counterparty: ${trustDecision.reasons.join(", ")}.`);
 
@@ -433,7 +457,7 @@ export async function computeTrustApiVerdict(input: {
     decision: trustDecision.decision,
     granted,
     payTo: liveAccept.payTo,
-    network: liveAccept.network,
+    network: publicChallenge ? ARC_MAINNET_NETWORK : liveAccept.network,
     priceUsdc: requestedValueUsdc,
     maxExposureUsdc,
     postCallVerificationRequired: trustDecision.policy.evaluatorRequired,
