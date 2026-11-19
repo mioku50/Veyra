@@ -3,6 +3,10 @@
     "circle": {
       "type": "http",
       "url": "https://api.circle.com/v1/codegen/mcp"
+    },
+    "arc-docs": {
+      "type": "http",
+      "url": "https://docs.arc.io/mcp"
     }
   }
 }
