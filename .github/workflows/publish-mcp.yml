@@ -1,0 +1,58 @@
+name: Publish Veyra Trust to MCP Registry
+
+on:
+  workflow_dispatch:
+
+jobs:
+  publish:
+    if: github.ref == 'refs/heads/main' && github.repository == 'mioku50/Veyra'
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      MCP_PUBLISHER_VERSION: v1.8.9
+    steps:
+      - name: Checkout server manifest
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+
+      - name: Check the public MCP endpoint
+        run: |
+          set -euo pipefail
+          url=$(jq -er '.remotes[0].url' server.json)
+          test "$url" = https://agent-commerce-six.vercel.app/api/mcp
+          response=$(curl --fail-with-body --silent --show-error --max-time 25 "$url" \
+            --header 'Accept: application/json, text/event-stream' \
+            --header 'Content-Type: application/json' \
+            --header 'MCP-Protocol-Version: 2025-06-18' \
+            --data '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}')
+          if [[ "$response" == *'data: '* ]]; then
+            response=$(printf '%s\n' "$response" | sed -n 's/^data: //p')
+          fi
+          jq -e '([.result.tools[].name] | sort) == ["veyra_check_endpoint","veyra_endpoint_history","veyra_list_resources"]' <<< "$response"
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+
+      - name: Verify and install the official registry publisher
+        run: |
+          set -euo pipefail
+          archive=mcp-publisher_linux_amd64.tar.gz
+          base_url="https://github.com/modelcontextprotocol/registry/releases/download/${MCP_PUBLISHER_VERSION}"
+          curl --fail --location --silent --show-error --output "$RUNNER_TEMP/$archive" "$base_url/$archive"
+          curl --fail --location --silent --show-error --output "$RUNNER_TEMP/$archive.sigstore.json" "$base_url/$archive.sigstore.json"
+          cosign verify-blob \
+            --bundle "$RUNNER_TEMP/$archive.sigstore.json" \
+            --certificate-identity "https://github.com/modelcontextprotocol/registry/.github/workflows/release.yml@refs/tags/${MCP_PUBLISHER_VERSION}" \
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+            "$RUNNER_TEMP/$archive"
+          tar -xzf "$RUNNER_TEMP/$archive" -C "$RUNNER_TEMP" mcp-publisher
+
+      - name: Publish the remote server listing
+        run: |
+          set -euo pipefail
+          "$RUNNER_TEMP/mcp-publisher" login github-oidc
+          "$RUNNER_TEMP/mcp-publisher" publish

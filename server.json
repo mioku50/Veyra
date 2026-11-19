@@ -1,0 +1,18 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.mioku50/veyra-trust",
+  "title": "Veyra Trust",
+  "description": "Check x402 payment terms and preview observed endpoint history on Arc mainnet.",
+  "websiteUrl": "https://agent-commerce-six.vercel.app",
+  "repository": {
+    "url": "https://github.com/mioku50/Veyra",
+    "source": "github"
+  },
+  "version": "1.0.0",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://agent-commerce-six.vercel.app/api/mcp"
+    }
+  ]
+}
