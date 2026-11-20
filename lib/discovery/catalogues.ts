@@ -3,6 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import timers from "node:timers/promises";
 import {
   ARC_FIRST,
   normalizeOfferAccept,
@@ -31,6 +32,9 @@ export const CATALOGUE_LIMITS = {
   circlePageSize: 200,
   circleMaxPages: 5,
   circleIndexMaxPages: 20,
+  circleIndexRetries: 2,
+  circleIndexRetryWaitMs: 65_000,
+  circleIndexBackoffMs: 10_000,
   bazaarPageSize: 1_000,
   bazaarMaxPages: 20,
   bazaarIndexMaxPages: 60,
@@ -44,6 +48,7 @@ export class CatalogueUnavailableError extends Error {
     readonly source: OfferSource,
     readonly status: number | null,
     readonly reason: CatalogueFailureReason = status === null ? "network" : "http",
+    readonly retryAfterMs: number | null = null,
   ) {
     super(`${source}_catalogue_unavailable${status ? `_${status}` : ""}`);
     this.name = "CatalogueUnavailableError";
@@ -59,12 +64,28 @@ type CirclePageFailure = {
 
 type Fetch = typeof fetch;
 
+function retryAfterMs(header: string | null): number | null {
+  const value = header?.trim();
+  if (!value) return null;
+  if (/^\d+$/.test(value)) return Number(value) * 1_000;
+  // Date.parse also accepts numeric strings that are neither Retry-After format.
+  if (!/^(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)(?:[a-z]*,| )/i.test(value)) return null;
+  const timestamp = Date.parse(value);
+  return Number.isFinite(timestamp) ? Math.max(0, timestamp - Date.now()) : null;
+}
+
 async function getJson(url: string, source: OfferSource, fetchImpl: Fetch): Promise<Record<string, unknown>> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(new Error("catalogue_timeout")), CATALOGUE_LIMITS.timeoutMs);
   try {
     const response = await fetchImpl(url, { headers: { accept: "application/json" }, signal: controller.signal });
-    if (!response.ok) throw new CatalogueUnavailableError(source, response.status);
+    if (!response.ok) {
+      const delay = source === "circle" && response.status === 429
+        ? retryAfterMs(response.headers.get("retry-after"))
+        : null;
+      void response.body?.cancel().catch(() => {});
+      throw new CatalogueUnavailableError(source, response.status, "http", delay);
+    }
     const body = await response.json();
     if (!body || typeof body !== "object" || !Array.isArray(body.items)) {
       throw new CatalogueUnavailableError(source, null, "invalid_response");
@@ -150,11 +171,13 @@ export async function readCircleCatalogue(input: {
   fetchImpl?: Fetch;
   maxPages?: number;
   inventory?: boolean;
+  signal?: AbortSignal;
 }): Promise<{
   offers: OfferInput[];
   listed: Record<string, number>;
   complete: boolean;
   pageFailures: CirclePageFailure[];
+  retries: number;
 }> {
   const networks = input.networks ?? ARC_FIRST;
   const fetchImpl = input.fetchImpl ?? fetch;
@@ -163,6 +186,30 @@ export async function readCircleCatalogue(input: {
   const offers: OfferInput[] = [];
   const listed: Record<string, number> = {};
   const pageFailures: CirclePageFailure[] = [];
+  let retries = 0;
+  let waitedMs = 0;
+
+  async function readPage(url: string) {
+    for (;;) {
+      try {
+        return await getJson(url, "circle", fetchImpl);
+      } catch (error) {
+        if (!input.inventory || !(error instanceof CatalogueUnavailableError) || error.status !== 429
+          || retries >= CATALOGUE_LIMITS.circleIndexRetries || input.signal?.aborted) throw error;
+
+        const delay = error.retryAfterMs ?? CATALOGUE_LIMITS.circleIndexBackoffMs * 2 ** retries;
+        if (waitedMs + delay > CATALOGUE_LIMITS.circleIndexRetryWaitMs) throw error;
+        if (delay > 0) {
+          // Keep the original 429 in the partial result if the job deadline cuts the wait short.
+          await timers.setTimeout(delay, undefined, { signal: input.signal }).catch(() => { throw error; });
+        }
+        if (input.signal?.aborted) throw error;
+        waitedMs += delay;
+        retries += 1;
+      }
+    }
+  }
+
   let complete = true;
   for (const network of networks) {
     let networkComplete = false;
@@ -175,7 +222,7 @@ export async function readCircleCatalogue(input: {
       url.searchParams.set("limit", String(CATALOGUE_LIMITS.circlePageSize));
       const offset = page * CATALOGUE_LIMITS.circlePageSize;
       url.searchParams.set("offset", String(offset));
-      const body = await getJson(url.toString(), "circle", fetchImpl).catch((error) => {
+      const body = await readPage(url.toString()).catch((error) => {
         if (!input.inventory || page === 0 || !(error instanceof CatalogueUnavailableError)) throw error;
         pageFailures.push({ network, offset, status: error.status, reason: error.reason });
         return null;
@@ -196,7 +243,7 @@ export async function readCircleCatalogue(input: {
     }
     complete &&= networkComplete;
   }
-  return { offers, listed, complete, pageFailures };
+  return { offers, listed, complete, pageFailures, retries };
 }
 
 export async function readBazaar(input: {
