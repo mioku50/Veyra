@@ -6,6 +6,9 @@ import { cache } from "react";
 import { formatUnits } from "viem";
 import { readArcOfferDetail, type ArcOfferCheck } from "@/lib/discovery/arc-offer-index";
 import { VEYRA_ORIGIN } from "@/lib/erc8004/veyra-registration";
+import { normalizeResourceUrl } from "@/lib/x402/trust-api/resource";
+import { TRUST_API_MAX_BUDGET_USDC } from "@/lib/x402/trust-api/verdict";
+import { LiveVerdictForm } from "./live-verdict";
 
 export const dynamic = "force-dynamic";
 const readOffer = cache(readArcOfferDetail);
@@ -60,6 +63,8 @@ export default async function ArcOfferDetail({ params }: Props) {
   }
 
   const { listing, checks } = offer;
+  // The index keeps trailing slashes. A live verdict must target this exact listing.
+  const canCheckLive = normalizeResourceUrl(listing.resource) === listing.resource;
   const latest = listing.last_checked_at === checks?.[0]?.checked_at ? checks?.[0] : undefined;
   return (
     <main className="mx-auto w-full max-w-4xl space-y-6 px-5 py-10 sm:px-8">
@@ -69,6 +74,16 @@ export default async function ArcOfferDetail({ params }: Props) {
         <p className="break-all font-mono text-sm">{listing.method} {listing.resource}</p>
         <p className="text-sm text-muted-foreground">Arc Mainnet · USDC</p>
       </header>
+
+      {canCheckLive && (
+        <LiveVerdictForm
+          key={listing.resource_key}
+          resource={listing.resource}
+          method={listing.method}
+          listedPrice={formatUnits(BigInt(listing.listed_amount), 6)}
+          maxBudget={TRUST_API_MAX_BUDGET_USDC}
+        />
+      )}
 
       <section className="space-y-2 rounded-lg border p-4">
         <h2 className="font-semibold">Catalogue terms</h2>
