@@ -68,6 +68,30 @@ test("Circle reads beyond its live-lookup cap and keeps completed pages on an in
   const inventory = await readCircleCatalogue({ ...options, inventory: true });
   assert.equal(inventory.offers.length, 1400);
   assert.equal(inventory.complete, false);
+  assert.deepEqual(inventory.pageFailures, [
+    { network: ARC_MAINNET_NETWORK, offset: 1400, status: 502, reason: "http" },
+  ]);
+});
+
+test("Circle partial reads classify invalid responses and deadlines without provider text", async () => {
+  const failures = [
+    { fetch: () => new Response("malformed-provider-detail"), reason: "invalid_response" },
+    { fetch: () => { throw new DOMException("timeout-provider-detail", "TimeoutError"); }, reason: "timeout" },
+  ] as const;
+  for (const failure of failures) {
+    const result = await readCircleCatalogue({
+      networks: [ARC_MAINNET_NETWORK],
+      inventory: true,
+      fetchImpl: async (url) => Number(new URL(String(url)).searchParams.get("offset")) === 0
+        ? Response.json({ pagination: { total: 400 }, items: Array(200).fill(item) })
+        : failure.fetch(),
+    });
+    assert.equal(result.offers.length, 200);
+    assert.equal(result.complete, false);
+    assert.deepEqual(result.pageFailures, [
+      { network: ARC_MAINNET_NETWORK, offset: 200, status: null, reason: failure.reason },
+    ]);
+  }
 });
 
 test("Bazaar keeps Arc terms from a multi-chain catalogue and reports a complete page scan", async () => {

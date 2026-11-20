@@ -6,7 +6,7 @@ import { ARC_MAINNET_NETWORK, ARC_MAINNET_USDC_ADDRESS } from "../wallet/arc.ts"
 import { arcPaymentOptions } from "../x402/trust-api/public-probe.ts";
 import { expectationFromAccept, readAccept, resourceKeyFor } from "../x402/trust-api/resource.ts";
 import { loadArcRegistryView } from "./arc-registry.ts";
-import { readBazaar, readCircleCatalogue } from "./catalogues.ts";
+import { CatalogueUnavailableError, readBazaar, readCircleCatalogue } from "./catalogues.ts";
 import { isTemplatedResource, normalizeOfferAccept, type OfferAccept, type OfferInput, type OfferSource } from "./offers.ts";
 
 const INDEX = "arc_offer_index";
@@ -212,7 +212,17 @@ export async function refreshArcOfferIndex() {
       .abortSignal(AbortSignal.timeout(5_000));
     if (error) throw new Error("arc_index_write_failed");
   }
-  return { sources: counts, indexed: rows.length, available: Object.values(counts).some((value) => value !== "unavailable") };
+  const circlePageFailures = circle.status === "fulfilled"
+    ? circle.value.pageFailures
+    : circle.reason instanceof CatalogueUnavailableError
+      ? [{ network: ARC_MAINNET_NETWORK, offset: 0, status: circle.reason.status, reason: circle.reason.reason }]
+      : [];
+  return {
+    sources: counts,
+    indexed: rows.length,
+    available: Object.values(counts).some((value) => value !== "unavailable"),
+    ...(circlePageFailures.length ? { circlePageFailures } : {}),
+  };
 }
 
 export async function runArcOfferChecks() {
