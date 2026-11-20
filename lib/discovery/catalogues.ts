@@ -37,12 +37,25 @@ export const CATALOGUE_LIMITS = {
   timeoutMs: 30_000,
 } as const;
 
+type CatalogueFailureReason = "http" | "timeout" | "network" | "invalid_response";
+
 export class CatalogueUnavailableError extends Error {
-  constructor(readonly source: OfferSource, readonly status: number | null) {
+  constructor(
+    readonly source: OfferSource,
+    readonly status: number | null,
+    readonly reason: CatalogueFailureReason = status === null ? "network" : "http",
+  ) {
     super(`${source}_catalogue_unavailable${status ? `_${status}` : ""}`);
     this.name = "CatalogueUnavailableError";
   }
 }
+
+type CirclePageFailure = {
+  network: DiscoveryNetwork;
+  offset: number;
+  status: number | null;
+  reason: CatalogueFailureReason;
+};
 
 type Fetch = typeof fetch;
 
@@ -54,12 +67,14 @@ async function getJson(url: string, source: OfferSource, fetchImpl: Fetch): Prom
     if (!response.ok) throw new CatalogueUnavailableError(source, response.status);
     const body = await response.json();
     if (!body || typeof body !== "object" || !Array.isArray(body.items)) {
-      throw new CatalogueUnavailableError(source, null);
+      throw new CatalogueUnavailableError(source, null, "invalid_response");
     }
     return body as Record<string, unknown>;
   } catch (error) {
     if (error instanceof CatalogueUnavailableError) throw error;
-    throw new CatalogueUnavailableError(source, null);
+    const timeout = controller.signal.aborted || (error instanceof Error && error.name === "TimeoutError");
+    const reason = timeout ? "timeout" : error instanceof SyntaxError ? "invalid_response" : "network";
+    throw new CatalogueUnavailableError(source, null, reason);
   } finally {
     clearTimeout(timer);
   }
@@ -135,13 +150,19 @@ export async function readCircleCatalogue(input: {
   fetchImpl?: Fetch;
   maxPages?: number;
   inventory?: boolean;
-}): Promise<{ offers: OfferInput[]; listed: Record<string, number>; complete: boolean }> {
+}): Promise<{
+  offers: OfferInput[];
+  listed: Record<string, number>;
+  complete: boolean;
+  pageFailures: CirclePageFailure[];
+}> {
   const networks = input.networks ?? ARC_FIRST;
   const fetchImpl = input.fetchImpl ?? fetch;
   const pageCap = input.inventory ? CATALOGUE_LIMITS.circleIndexMaxPages : CATALOGUE_LIMITS.circleMaxPages;
   const maxPages = Math.min(input.maxPages ?? pageCap, pageCap);
   const offers: OfferInput[] = [];
   const listed: Record<string, number> = {};
+  const pageFailures: CirclePageFailure[] = [];
   let complete = true;
   for (const network of networks) {
     let networkComplete = false;
@@ -152,10 +173,12 @@ export async function readCircleCatalogue(input: {
       url.searchParams.set("siwx", "false");
       if (input.query) url.searchParams.set("query", input.query);
       url.searchParams.set("limit", String(CATALOGUE_LIMITS.circlePageSize));
-      url.searchParams.set("offset", String(page * CATALOGUE_LIMITS.circlePageSize));
+      const offset = page * CATALOGUE_LIMITS.circlePageSize;
+      url.searchParams.set("offset", String(offset));
       const body = await getJson(url.toString(), "circle", fetchImpl).catch((error) => {
-        if (input.inventory && page > 0) return null;
-        throw error;
+        if (!input.inventory || page === 0 || !(error instanceof CatalogueUnavailableError)) throw error;
+        pageFailures.push({ network, offset, status: error.status, reason: error.reason });
+        return null;
       });
       if (!body) break;
       const items = Array.isArray(body.items) ? body.items : [];
@@ -173,7 +196,7 @@ export async function readCircleCatalogue(input: {
     }
     complete &&= networkComplete;
   }
-  return { offers, listed, complete };
+  return { offers, listed, complete, pageFailures };
 }
 
 export async function readBazaar(input: {
