@@ -7,6 +7,7 @@ import { createServer } from "node:net";
 import { createServer as createHttpServer } from "node:http";
 import { existsSync } from "node:fs";
 import { setTimeout as delay } from "node:timers/promises";
+import { chromium, type Request as BrowserRequest } from "playwright";
 
 if ([".env", ".env.local", ".env.production", ".env.production.local"].some((file) => existsSync(file))) {
   throw new Error("Run the browser gate in a checkout without production dotenv files.");
@@ -20,15 +21,21 @@ const { port } = address;
 await new Promise<void>((resolve, reject) => socket.close((error) => error ? reject(error) : resolve()));
 
 const resourceKey = "c".repeat(64);
+const trailingSlashKey = "b".repeat(64);
+const resource = "https://paid.example/v1/search";
 const now = new Date().toISOString();
 const payee = "0x" + "1".repeat(40);
 const fixture = createHttpServer((request, response) => {
   const url = new URL(request.url ?? "/", "http://fixture.invalid");
   let data: unknown[] = [];
+  const requestedKey = url.searchParams.get("resource_key");
+  const trailingSlash = requestedKey === "eq." + trailingSlashKey;
   if (url.pathname === "/rest/v1/arc_offer_index"
-    && (!url.searchParams.has("resource_key") || url.searchParams.get("resource_key") === "eq." + resourceKey)) {
+    && (!requestedKey || requestedKey === "eq." + resourceKey || trailingSlash)) {
     data = [{
-      resource_key: resourceKey, resource: "https://paid.example/v1/search", hostname: "paid.example",
+      resource_key: trailingSlash ? trailingSlashKey : resourceKey,
+      resource: trailingSlash ? resource + "/" : resource,
+      hostname: "paid.example",
       method: "POST", sources: ["circle", "bazaar"], listed_amount: "12000", listed_payee: payee,
       listed_rail: "wallet", listed_at: now, last_checked_at: now,
     }];
@@ -73,6 +80,89 @@ async function execute(name: string) {
   if (status !== 0) throw new Error(`${name} exited with ${status}`);
 }
 
+async function checkLiveVerdict() {
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const page = await browser.newPage({ serviceWorkers: "block" });
+    const verdictUrl = baseUrl + "/api/x402/v1/verdict";
+    const requests: BrowserRequest[] = [];
+    const extraRequests: string[] = [];
+    const livePayee = "0x" + "2".repeat(40);
+    const verdict = {
+      decision: "REQUIRE_EVALUATOR",
+      granted: true,
+      payTo: livePayee,
+      priceUsdc: 0.021,
+      reasons: ["NO_REPUTATION_DATA"],
+      alerts: [],
+      postCallVerificationRequired: true,
+      signed: false,
+      clearance: null,
+      explanation: "An evaluator is required.",
+    };
+    const rateLimit = "Too many free verdicts from this caller. Retry shortly.";
+    let reply: { status: number; json: object } = { status: 200, json: verdict };
+    let checking = false;
+    await page.route("**/*", async (route) => {
+      const request = route.request();
+      if (request.url() === verdictUrl) {
+        requests.push(request);
+        return route.fulfill(reply);
+      }
+      if (checking || new URL(request.url()).origin !== baseUrl || request.method() !== "GET") {
+        extraRequests.push(request.method() + " " + request.url());
+        return route.abort();
+      }
+      return route.continue();
+    });
+
+    await page.goto(baseUrl + "/check/" + resourceKey, { waitUntil: "networkidle" });
+    await page.getByRole("heading", { name: "Free live verdict" }).waitFor();
+    const budget = page.getByLabel("Budget (USDC)", { exact: true });
+    const check = page.getByRole("button", { name: "Check live offer", exact: true });
+    assert.equal(await budget.inputValue(), "0.012");
+    assert.equal(requests.length, 0);
+
+    checking = true;
+    await budget.fill("0");
+    await check.click();
+    await page.getByRole("alert").filter({ hasText: "Enter a budget greater than 0 and at most 5 USDC." }).waitFor();
+    assert.equal(requests.length, 0);
+
+    await budget.fill("0.03");
+    await check.click();
+    await page.getByRole("heading", { name: "Requires an evaluator" }).waitFor();
+    for (const text of ["no reputation data", "Post-call verification required.", livePayee, "0.021 USDC", "Unsigned verdict. No payment sent."]) {
+      await page.getByText(text, { exact: true }).waitFor();
+    }
+
+    const overBudgetExplanation = "The live quote exceeds the 0.03 USDC budget.";
+    reply = { status: 200, json: { ...verdict, granted: false, priceUsdc: 0.031, explanation: overBudgetExplanation } };
+    await check.click();
+    await page.getByRole("heading", { name: "Over budget", exact: true }).waitFor();
+    await page.getByText("Evidence verdict", { exact: true }).waitFor();
+    await page.getByText("Requires an evaluator", { exact: true }).waitFor();
+    await page.getByText(overBudgetExplanation, { exact: true }).waitFor();
+
+    reply = { status: 429, json: { error: { code: "rate_limited", message: rateLimit } } };
+    await check.click();
+    await page.getByRole("alert").filter({ hasText: rateLimit }).waitFor();
+    assert.equal(await page.getByRole("heading", { name: "Over budget" }).count(), 0);
+    assert.equal(requests.length, 3);
+    for (const request of requests) {
+      assert.equal(request.method(), "POST");
+      assert.deepEqual(request.postDataJSON(), { resource, method: "POST", budgetUsdc: 0.03 });
+      const headers = await request.allHeaders();
+      for (const name of ["authorization", "x-payment", "payment-signature", "payment-required", "payment-response", "x-payment-response"]) {
+        assert.equal(headers[name], undefined, name);
+      }
+    }
+    assert.deepEqual(extraRequests, []);
+  } finally {
+    await browser.close();
+  }
+}
+
 try {
   const startedAt = Date.now();
   for (;;) {
@@ -102,6 +192,12 @@ try {
   for (const text of ["Terms differ from the catalogue", "0.012 USDC", "0.02 USDC", "price changed"]) {
     assert(detail.includes(text), text);
   }
+  await checkLiveVerdict();
+  const trailingSlashOffer = await fetch(baseUrl + "/check/" + trailingSlashKey);
+  assert.equal(trailingSlashOffer.status, 200);
+  const trailingSlashDetail = await trailingSlashOffer.text();
+  assert(trailingSlashDetail.includes(resource + "/"));
+  assert(!trailingSlashDetail.includes("Free live verdict"));
   for (const key of ["incorrect-key", "f".repeat(64)]) {
     const unknown = await fetch(baseUrl + "/check/" + key);
     assert.equal(unknown.status, 404);
