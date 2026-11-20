@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { NextRequest } from "next/server.js";
+import type { CommerceReceipt } from "../lib/commerce/receipts.ts";
 import { operatorLoginDestination } from "../lib/navigation/frozen.ts";
 import { COOKIE_NAME, issueSellerSession } from "../lib/seller/session.ts";
 import { proxy } from "../proxy.ts";
@@ -91,25 +92,47 @@ if (base) {
   assert.equal((await get("/openapi/veyra-arc-trust-api.json")).status, 200);
   assert.equal((await get("/openapi/agent-commerce-v1.json")).status, 200);
 
-  // With a populated test database this walks the actual public API links.
-  // Do not run against production: the app preserves historical records.
+  // The browser gate supplies a paid receipt with all five public links.
   if (process.argv.includes("--check-receipts")) {
     assert(["127.0.0.1", "localhost", "[::1]"].includes(new URL(localOrigin).hostname),
       "Run the receipt-link check against a local fixture deployment.");
     const response = await get("/api/receipts");
     assert.equal(response.status, 200);
-    const { receipts } = await response.json() as { receipts: Array<{ links: Record<string, string | null> }> };
-    assert(receipts.length > 0, "This check requires at least one persisted commerce receipt.");
-    const links = new Set(receipts.flatMap(({ links }) => Object.values(links)).filter(Boolean));
-    for (const link of links) {
-      const target = new URL(link!, localOrigin);
-      assert.equal(target.origin, localOrigin);
-      const detail = await get(target.pathname);
-      assert(detail.status < 300 || detail.status >= 400,
-        `Public receipt link ${link} returned a redirect (${detail.status})`);
-      if (target.hash === "#payment-event") {
-        assert.equal(detail.status, 200);
-        assert.match(await detail.text(), /id="payment-event"/);
+    const { receipts } = await response.json() as { receipts: CommerceReceipt[] };
+    const markers = {
+      receipt: "Purchase metadata",
+      run: "Response preview",
+      agent: "Reputation events",
+      service: "Input schema",
+      paymentEvent: 'id="payment-event"',
+    } satisfies Record<keyof CommerceReceipt["links"], string>;
+    const linkNames = Object.keys(markers) as (keyof typeof markers)[];
+    assert(receipts.some(({ links }) => linkNames.every((name) => Boolean(links[name]))),
+      "The fixture must include all five public receipt links.");
+
+    for (const { links, receiptId, runId, buyerWallet, serviceSlug, paymentEvent } of receipts) {
+      const receiptPath = "/receipts/" + receiptId;
+      const expectedPaths = {
+        receipt: receiptPath,
+        run: "/runs/" + runId,
+        agent: buyerWallet ? "/agents/" + buyerWallet : null,
+        service: serviceSlug ? "/store/" + serviceSlug : null,
+        paymentEvent: paymentEvent ? receiptPath + "#payment-event" : null,
+      } satisfies Record<keyof CommerceReceipt["links"], string | null>;
+      for (const name of linkNames) {
+        const link = links[name];
+        const expectedPath = expectedPaths[name];
+        if (expectedPath === null) {
+          assert.equal(link, null, name + " must be absent for this receipt");
+          continue;
+        }
+        assert(link, name + " link is required for this receipt");
+        const target = new URL(link, localOrigin);
+        assert.equal(target.origin, localOrigin, `Public receipt link ${link} must stay on the app origin`);
+        assert.equal(target.pathname + target.hash, expectedPath, name + " points to a different record");
+        const detail = await fetch(target, { redirect: "manual" });
+        assert.equal(detail.status, 200, `Public receipt link ${link}`);
+        assert((await detail.text()).includes(markers[name]), `Public receipt link ${link} did not render its detail`);
       }
     }
   }

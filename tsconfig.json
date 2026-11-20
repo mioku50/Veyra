@@ -35,6 +35,10 @@
     "scripts/nova-schedule-health-tests.mts",
     "scripts/nova-schedule-workers-tests.mts",
     "scripts/release-browser-tests.mts",
+    "scripts/arc-registry-tests.mts",
+    "scripts/execution-ledger-tests.mts",
+    "scripts/frontend-audit-tests.mts",
+    "scripts/veyra-mcp-tests.mts",
     ".next/types/**/*.ts",
     ".next/dev/types/**/*.ts"
   ],

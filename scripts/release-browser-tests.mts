@@ -25,6 +25,47 @@ const trailingSlashKey = "b".repeat(64);
 const resource = "https://paid.example/v1/search";
 const now = new Date().toISOString();
 const payee = "0x" + "1".repeat(40);
+const receiptRunId = "28a5f020-d8ae-4d37-943e-1fbbc5c802b0";
+const receiptPaymentId = "38a5f020-d8ae-4d37-943e-1fbbc5c802b0";
+const receiptWallet = "0x" + "3".repeat(40);
+const receiptEndpoint = "/api/provider/pyth/price";
+const receiptRows = new Map<string, Record<string, unknown> & { id: string }>([
+  ["/rest/v1/agent_runs", {
+    id: receiptRunId,
+    created_at: now,
+    updated_at: now,
+    task: "Receipt compatibility fixture",
+    status: "completed",
+    mode: "manual",
+    agent_wallet: receiptWallet,
+    budget_usdc: "0.020",
+    spent_usdc: "0.001",
+  }],
+  ["/rest/v1/agent_purchase_steps", {
+    id: "48a5f020-d8ae-4d37-943e-1fbbc5c802b0",
+    created_at: now,
+    run_id: receiptRunId,
+    step_index: 0,
+    service_id: "pyth-market-price",
+    service_slug: "pyth-market-price",
+    service_name: "Live Market Price",
+    service_source_type: "provider_backed",
+    endpoint: receiptEndpoint,
+    method: "POST",
+    price_usdc: "0.001",
+    status: "paid",
+    payment_event_id: receiptPaymentId,
+    response_preview: { fixture: true },
+  }],
+  ["/rest/v1/payment_events", {
+    id: receiptPaymentId,
+    created_at: now,
+    endpoint: receiptEndpoint,
+    payer: receiptWallet,
+    amount_usdc: "0.001",
+    network: "eip155:5042002",
+  }],
+]);
 let novaTickWrites = 0;
 const fixture = createHttpServer((request, response) => {
   const url = new URL(request.url ?? "/", "http://fixture.invalid");
@@ -33,7 +74,11 @@ const fixture = createHttpServer((request, response) => {
     response.writeHead(201).end();
     return;
   }
-  let data: unknown[] = [];
+  const receiptRow = receiptRows.get(url.pathname);
+  const idFilter = url.searchParams.get("id");
+  const includesReceiptRow = receiptRow && request.method === "GET"
+    && (!idFilter?.startsWith("eq.") || idFilter === "eq." + receiptRow.id);
+  let data: unknown[] = includesReceiptRow ? [receiptRow] : [];
   const requestedKey = url.searchParams.get("resource_key");
   const trailingSlash = requestedKey === "eq." + trailingSlashKey;
   if (url.pathname === "/rest/v1/arc_offer_index"
@@ -60,6 +105,7 @@ const fixtureAddress = fixture.address();
 assert(fixtureAddress && typeof fixtureAddress !== "string");
 
 const baseUrl = `http://127.0.0.1:${port}`;
+const fixtureUrl = "http://127.0.0.1:" + fixtureAddress.port;
 const novaCronSecret = randomBytes(32).toString("hex");
 const env: NodeJS.ProcessEnv = {
   CRON_SECRET: novaCronSecret,
@@ -71,7 +117,9 @@ const env: NodeJS.ProcessEnv = {
   NEXT_TELEMETRY_DISABLED: "1",
   NODE_ENV: "production",
   BASE_URL: baseUrl,
-  AGENT_DB_SUPABASE_URL: "http://127.0.0.1:" + fixtureAddress.port,
+  NEXT_PUBLIC_AGENT_DB_SUPABASE_URL: fixtureUrl,
+  NEXT_PUBLIC_AGENT_DB_SUPABASE_PUBLISHABLE_KEY: "receipt-local-fixture",
+  AGENT_DB_SUPABASE_URL: fixtureUrl,
   AGENT_DB_SUPABASE_SECRET_KEY: "release-local-fixture",
   SELLER_SESSION_SECRET: randomBytes(32).toString("hex"),
 };
@@ -80,8 +128,8 @@ const server = spawn(processPath, [
   "node_modules/next/dist/bin/next", "start", "--hostname", "127.0.0.1", "--port", String(port),
 ], { env, stdio: "inherit" });
 
-async function execute(name: string) {
-  const process = spawn(processPath, ["--experimental-transform-types", "--no-warnings", name, `--base-url=${baseUrl}`], {
+async function execute(name: string, ...args: string[]) {
+  const process = spawn(processPath, ["--experimental-transform-types", "--no-warnings", name, `--base-url=${baseUrl}`, ...args], {
     stdio: "inherit", env, timeout: 180_000,
   });
   const [status] = await once(process, "exit");
@@ -201,7 +249,7 @@ try {
   await execute("scripts/frontend-responsive-smoke.mts");
   await execute("scripts/branding-tests.mts");
   await execute("scripts/verify-public-ui-cleanliness.mts");
-  await execute("scripts/navigation-compatibility-tests.mts");
+  await execute("scripts/navigation-compatibility-tests.mts", "--check-receipts");
   for (const [path, contentType] of [["/robots.txt", "text/plain"], ["/sitemap.xml", "application/xml"], ["/llms.txt", "text/plain"]]) {
     const response = await fetch(baseUrl + path);
     assert.equal(response.status, 200, path);

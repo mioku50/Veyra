@@ -215,7 +215,7 @@ console.log("[execution-ledger-test] passed: settlement receipt separated from d
    but it goes through the same updateExecutionAttemptState - and therefore the
    same validateStateTransition - that production uses. */
 
-process.env.NODE_ENV = "test";
+Object.assign(process.env, { NODE_ENV: "test" });
 process.env.EXECUTION_ALLOW_MEMORY_STORE = "true";
 
 const ledger = await import("../lib/execution/browser-x402-ledger.ts");
