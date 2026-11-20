@@ -1,4 +1,11 @@
 {
+  "schedules": {
+    "nova-refresh": {
+      "schedule": "7 * * * *",
+      "path": "/api/nova/cron",
+      "requestMethod": "POST"
+    }
+  },
   "crons": [
     {
       "path": "/api/internal/operations/monitor",

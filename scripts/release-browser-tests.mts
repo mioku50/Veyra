@@ -5,7 +5,7 @@ import { randomBytes } from "node:crypto";
 import { once } from "node:events";
 import { createServer } from "node:net";
 import { createServer as createHttpServer } from "node:http";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { setTimeout as delay } from "node:timers/promises";
 import { chromium, type Request as BrowserRequest } from "playwright";
 
@@ -25,8 +25,14 @@ const trailingSlashKey = "b".repeat(64);
 const resource = "https://paid.example/v1/search";
 const now = new Date().toISOString();
 const payee = "0x" + "1".repeat(40);
+let novaTickWrites = 0;
 const fixture = createHttpServer((request, response) => {
   const url = new URL(request.url ?? "/", "http://fixture.invalid");
+  if (url.pathname === "/rest/v1/nova_ticks" && request.method === "POST") {
+    novaTickWrites += 1;
+    response.writeHead(201).end();
+    return;
+  }
   let data: unknown[] = [];
   const requestedKey = url.searchParams.get("resource_key");
   const trailingSlash = requestedKey === "eq." + trailingSlashKey;
@@ -54,7 +60,9 @@ const fixtureAddress = fixture.address();
 assert(fixtureAddress && typeof fixtureAddress !== "string");
 
 const baseUrl = `http://127.0.0.1:${port}`;
+const novaCronSecret = randomBytes(32).toString("hex");
 const env: NodeJS.ProcessEnv = {
+  CRON_SECRET: novaCronSecret,
   PATH: process.env.PATH,
   HOME: process.env.HOME,
   SystemRoot: process.env.SystemRoot,
@@ -172,6 +180,24 @@ try {
     if (Date.now() - startedAt > 30_000) throw new Error("Next.js did not start");
     await delay(250);
   }
+  const novaSchedule = JSON.parse(readFileSync("vercel.json", "utf8")).schedules["nova-refresh"];
+  assert.equal(novaSchedule.schedule, "7 * * * *");
+  assert.equal(novaSchedule.path, "/api/nova/cron");
+  assert.equal(novaSchedule.requestMethod, "POST");
+  const cronUrl = baseUrl + novaSchedule.path;
+  const method = novaSchedule.requestMethod;
+  for (const headers of [new Headers(), new Headers({ Authorization: "Bearer wrong" })]) {
+    const invalid = await fetch(cronUrl, { method, headers });
+    assert.equal(invalid.status, 404);
+  }
+  assert.equal(novaTickWrites, 0);
+  const tick = await fetch(cronUrl, { method, headers: { Authorization: "Bearer " + novaCronSecret } });
+  assert.equal(tick.status, 200);
+  const result = await tick.json();
+  assert.equal(result.due, 0);
+  assert.equal(result.shadowWouldSpendUsdc, 0);
+  assert.equal(novaTickWrites, 1);
+
   await execute("scripts/frontend-responsive-smoke.mts");
   await execute("scripts/branding-tests.mts");
   await execute("scripts/verify-public-ui-cleanliness.mts");

@@ -21,12 +21,8 @@ export const maxDuration = 300;
  * endpoint that contains its own logic can only be exercised by calling it
  * over HTTP with the production secret, which is not a test anyone runs.
  *
- * POST, not GET, because a tick writes: it refreshes agents, records signals
- * and retires the abandoned. Vercel Cron can only issue GET, which is why the
- * platform's own examples put mutations behind one; the scheduler here is a
- * workflow in this repository, which is under no such constraint. If this ever
- * moves back to Vercel Cron it needs a GET alias, and that is the moment to
- * think about it rather than leaving a writing GET lying around now.
+ * A tick refreshes agents, records signals and retires the abandoned. Vercel
+ * Schedules and the GitHub fallback both send an authenticated POST.
  */
 function authorized(request: Request): boolean {
   const expected = process.env.CRON_SECRET;
