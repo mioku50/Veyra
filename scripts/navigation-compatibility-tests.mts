@@ -110,13 +110,26 @@ if (base) {
     assert(receipts.some(({ links }) => linkNames.every((name) => Boolean(links[name]))),
       "The fixture must include all five public receipt links.");
 
-    for (const { links } of receipts) {
+    for (const { links, receiptId, runId, buyerWallet, serviceSlug, paymentEvent } of receipts) {
+      const receiptPath = "/receipts/" + receiptId;
+      const expectedPaths = {
+        receipt: receiptPath,
+        run: "/runs/" + runId,
+        agent: buyerWallet ? "/agents/" + buyerWallet : null,
+        service: serviceSlug ? "/store/" + serviceSlug : null,
+        paymentEvent: paymentEvent ? receiptPath + "#payment-event" : null,
+      } satisfies Record<keyof CommerceReceipt["links"], string | null>;
       for (const name of linkNames) {
         const link = links[name];
-        if (!link) continue;
+        const expectedPath = expectedPaths[name];
+        if (expectedPath === null) {
+          assert.equal(link, null, name + " must be absent for this receipt");
+          continue;
+        }
+        assert(link, name + " link is required for this receipt");
         const target = new URL(link, localOrigin);
         assert.equal(target.origin, localOrigin, `Public receipt link ${link} must stay on the app origin`);
-        if (name === "paymentEvent") assert.equal(target.hash, "#payment-event");
+        assert.equal(target.pathname + target.hash, expectedPath, name + " points to a different record");
         const detail = await fetch(target, { redirect: "manual" });
         assert.equal(detail.status, 200, `Public receipt link ${link}`);
         assert((await detail.text()).includes(markers[name]), `Public receipt link ${link} did not render its detail`);
