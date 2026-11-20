@@ -113,7 +113,7 @@ assert.equal(catalog.status, 200);
 const { items } = (await catalog.json()).result.structuredContent;
 assert.ok(items.some(({ resource }: { resource: string }) => resource === new URL(ARC_TRUST_API.history.path, VEYRA_ORIGIN).href));
 
-process.env.NODE_ENV = "test";
+Object.assign(process.env, { NODE_ENV: "test" });
 const localResource = "https://127.0.0.1:3000/lookup";
 const payTo = "0x1111111111111111111111111111111111111111";
 let successfulProbes = 0;

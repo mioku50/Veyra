@@ -10,7 +10,7 @@
  * file, manifest and challenge is a stub.
  */
 
-process.env.NODE_ENV = "test";
+Object.assign(process.env, { NODE_ENV: "test" });
 process.env.EXECUTION_ALLOW_MEMORY_STORE = "true";
 
 import assert from "node:assert/strict";

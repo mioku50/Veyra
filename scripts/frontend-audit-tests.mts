@@ -81,7 +81,7 @@ assert.notEqual(proofLabel("presumed_spent"), proofLabel("onchain_final"));
 assert.equal(proofLabel(null), "Confirmation level not recorded");
 
 // A page boundary with equal timestamps must neither skip nor repeat an entry.
-process.env.NODE_ENV = "test";
+Object.assign(process.env, { NODE_ENV: "test" });
 process.env.EXECUTION_ALLOW_MEMORY_STORE = "true";
 const { saveExecutionAttempt, listExecutionAttempts, clearMemoryStores } =
   await import("../lib/execution/db.ts");
