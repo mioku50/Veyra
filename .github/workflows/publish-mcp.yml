@@ -19,11 +19,15 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Check the public MCP endpoint
+      - name: Check the public MCP endpoint and icon
         run: |
           set -euo pipefail
           url=$(jq -er '.remotes[0].url' server.json)
           test "$url" = https://agent-commerce-six.vercel.app/api/mcp
+          icon=$(jq -er '.icons[0].src' server.json)
+          test "$icon" = https://agent-commerce-six.vercel.app/icon.svg
+          icon_type=$(curl --fail --silent --show-error --max-time 15 --output /dev/null --write-out '%{content_type}' "$icon")
+          test "$icon_type" = "$(jq -er '.icons[0].mimeType' server.json)"
           response=$(curl --fail-with-body --silent --show-error --max-time 25 "$url" \
             --header 'Accept: application/json, text/event-stream' \
             --header 'Content-Type: application/json' \
