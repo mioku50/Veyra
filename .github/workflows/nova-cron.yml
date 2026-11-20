@@ -1,34 +1,10 @@
 name: Nova Scheduler
 
-# Nova's heartbeat.
-#
-# This lives here rather than in vercel.json because a Hobby project gets two
-# cron jobs, each at most once a day, and Veyra already spends three on
-# operations, seller availability and monitoring. A brief refreshed once a day
-# is not a daily agent, so the scheduler moved to the one place this project
-# already has that can fire on any schedule for free.
-#
-# The endpoint does the deciding. This file knows nothing about which agents are
-# due, how often, or when one is abandoned -- it POSTs, and everything else is
-# in lib/nova/schedule.ts where it can be tested.
-
+# Vercel Schedules calls /api/nova/cron hourly. GitHub checks the public
+# scheduler status as a fallback and can still run a tick on demand.
 on:
   schedule:
-    # Hourly, and deliberately not every six hours.
-    #
-    # This used to fire on REFRESH_INTERVAL_HOURS, which made the alarm clock
-    # and the policy the same number -- and GitHub's cron is best-effort in both
-    # directions. Two ticks 5h14m apart meant the agents were thirty-seven
-    # seconds short of due, so the run found nothing, and the next pass came
-    # twelve hours after the last instead of six. Nothing errored; the queue was
-    # just empty, which is why it went unnoticed for weeks.
-    #
-    # An hourly tick asks a question -- is there work -- and lib/nova/schedule.ts
-    # answers it. Drift now costs the remainder of an hour, never a cycle. An
-    # empty tick is two selects and finishes in under two seconds.
     - cron: "23 * * * *"
-  # So a tick can be run by hand from the Actions tab -- the only way to
-  # exercise this end to end without waiting for the next hour.
   workflow_dispatch:
 
 # A tick claims agents. Two overlapping runs would not corrupt anything -- the
@@ -56,9 +32,17 @@ jobs:
           # it never appears in a command line, which `ps` and the run log
           # would both show.
           CRON_SECRET: ${{ secrets.CRON_SECRET }}
+          TRIGGER_EVENT: ${{ github.event_name }}
           BASE_URL: ${{ vars.VEYRA_BASE_URL || 'https://agent-commerce-six.vercel.app' }}
         run: |
           set -euo pipefail
+
+          if [ "$TRIGGER_EVENT" = "schedule" ] && \
+            curl --silent --show-error --fail --max-time 15 "$BASE_URL/api/status" | \
+              jq -e '.novaSchedule.status == "healthy"' >/dev/null; then
+            echo "Nova recently completed a tick. Skipping the fallback."
+            exit 0
+          fi
 
           if [ -z "${CRON_SECRET}" ]; then
             echo "CRON_SECRET is not set on this repository."
