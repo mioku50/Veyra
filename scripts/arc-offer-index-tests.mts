@@ -1,6 +1,7 @@
 /** Copyright 2026 Veyra. SPDX-License-Identifier: Apache-2.0 */
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { setImmediate as nextTurn } from "node:timers/promises";
 import { checkArcListing, indexArcListings } from "../lib/discovery/arc-offer-index.ts";
 import { readBazaar, readCircleCatalogue } from "../lib/discovery/catalogues.ts";
 import type { OfferInput } from "../lib/discovery/offers.ts";
@@ -92,6 +93,125 @@ test("Circle partial reads classify invalid responses and deadlines without prov
       { network: ARC_MAINNET_NETWORK, offset: 200, status: null, reason: failure.reason },
     ]);
   }
+});
+
+test("Circle inventory honors seconds and HTTP dates when retrying the same page", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout", "Date"], now });
+  const offsets: number[] = [];
+  const inventory = readCircleCatalogue({
+    networks: [ARC_MAINNET_NETWORK],
+    inventory: true,
+    fetchImpl: async (url) => {
+      offsets.push(Number(new URL(String(url)).searchParams.get("offset")));
+      if (offsets.length === 2) return new Response(null, { status: 429, headers: { "Retry-After": "60" } });
+      if (offsets.length === 3) {
+        const reset = new Date(now.getTime() + 65_000).toUTCString();
+        return new Response(null, { status: 429, headers: { "Retry-After": reset } });
+      }
+      return Response.json({ pagination: { total: 400 }, items: Array(200).fill(item) });
+    },
+  });
+  await nextTurn();
+  t.mock.timers.tick(59_999);
+  await nextTurn();
+  assert.deepEqual(offsets, [0, 200]);
+  t.mock.timers.tick(1);
+  await nextTurn();
+  assert.deepEqual(offsets, [0, 200, 200]);
+  t.mock.timers.tick(4_999);
+  await nextTurn();
+  assert.deepEqual(offsets, [0, 200, 200]);
+  t.mock.timers.tick(1);
+
+  const result = await inventory;
+  assert.deepEqual(offsets, [0, 200, 200, 200]);
+  assert.equal(result.offers.length, 400);
+  assert.equal(result.complete, true);
+  assert.equal(result.retries, 2);
+  assert.deepEqual(result.pageFailures, []);
+});
+
+test("Circle inventory stops before a Retry-After beyond the remaining wait allowance", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout", "Date"], now });
+  const offsets: number[] = [];
+  const inventory = readCircleCatalogue({
+    networks: [ARC_MAINNET_NETWORK],
+    inventory: true,
+    fetchImpl: async (url) => {
+      offsets.push(Number(new URL(String(url)).searchParams.get("offset")));
+      if (offsets.length === 1) return Response.json({ pagination: { total: 400 }, items: Array(200).fill(item) });
+      return new Response(null, { status: 429, headers: { "Retry-After": offsets.length === 2 ? "60" : "6" } });
+    },
+  });
+  await nextTurn();
+  t.mock.timers.tick(60_000);
+  const result = await inventory;
+  assert.deepEqual(offsets, [0, 200, 200]);
+  assert.equal(result.offers.length, 200);
+  assert.equal(result.complete, false);
+  assert.equal(result.retries, 1);
+  assert.deepEqual(result.pageFailures, [
+    { network: ARC_MAINNET_NETWORK, offset: 200, status: 429, reason: "http" },
+  ]);
+});
+
+test("Circle retries are capped across the whole scan even when Retry-After is zero", async () => {
+  const offsets: number[] = [];
+  const result = await readCircleCatalogue({
+    networks: [ARC_MAINNET_NETWORK],
+    inventory: true,
+    fetchImpl: async (url) => {
+      const offset = Number(new URL(String(url)).searchParams.get("offset"));
+      const firstRequest = !offsets.includes(offset);
+      offsets.push(offset);
+      if (offset && firstRequest) return new Response(null, { status: 429, headers: { "Retry-After": "0" } });
+      return Response.json({ pagination: { total: 800 }, items: Array(200).fill(item) });
+    },
+  });
+  assert.deepEqual(offsets, [0, 200, 200, 400, 400, 600]);
+  assert.equal(result.offers.length, 600);
+  assert.equal(result.complete, false);
+  assert.equal(result.retries, 2);
+  assert.equal(result.pageFailures[0].offset, 600);
+});
+
+test("A job deadline interrupts the Circle fallback wait and keeps the original 429", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout", "Date"], now });
+  const deadline = new AbortController();
+  let calls = 0;
+  const inventory = readCircleCatalogue({
+    networks: [ARC_MAINNET_NETWORK],
+    inventory: true,
+    signal: deadline.signal,
+    fetchImpl: async () => ++calls === 1
+      ? Response.json({ pagination: { total: 400 }, items: Array(200).fill(item) })
+      : new Response(null, { status: 429, headers: { "Retry-After": "1.5" } }),
+  });
+  await nextTurn();
+  t.mock.timers.tick(9_999);
+  await nextTurn();
+  assert.equal(calls, 2);
+  deadline.abort();
+  const result = await inventory;
+  assert.equal(calls, 2);
+  assert.equal(result.offers.length, 200);
+  assert.equal(result.complete, false);
+  assert.equal(result.retries, 0);
+  assert.deepEqual(result.pageFailures, [
+    { network: ARC_MAINNET_NETWORK, offset: 200, status: 429, reason: "http" },
+  ]);
+});
+
+test("Circle live-tool lookups surface 429 without retrying", async () => {
+  let calls = 0;
+  await assert.rejects(readCircleCatalogue({
+    networks: [ARC_MAINNET_NETWORK],
+    fetchImpl: async () => {
+      calls += 1;
+      return new Response(null, { status: 429, headers: { "Retry-After": "0" } });
+    },
+  }), { name: "CatalogueUnavailableError", status: 429 });
+  assert.equal(calls, 1);
 });
 
 test("Bazaar keeps Arc terms from a multi-chain catalogue and reports a complete page scan", async () => {

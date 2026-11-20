@@ -183,7 +183,7 @@ export async function refreshArcOfferIndex() {
   });
   const options = { networks: [ARC_MAINNET_NETWORK], inventory: true, fetchImpl: boundedFetch } as const;
   const [circle, bazaar, registry] = await Promise.allSettled([
-    readCircleCatalogue(options),
+    readCircleCatalogue({ ...options, signal: deadline }),
     readBazaar(options),
     loadArcRegistryView(),
   ]);
@@ -217,11 +217,13 @@ export async function refreshArcOfferIndex() {
     : circle.reason instanceof CatalogueUnavailableError
       ? [{ network: ARC_MAINNET_NETWORK, offset: 0, status: circle.reason.status, reason: circle.reason.reason }]
       : [];
+  const circleRetries = circle.status === "fulfilled" ? circle.value.retries : 0;
   return {
     sources: counts,
     indexed: rows.length,
     available: Object.values(counts).some((value) => value !== "unavailable"),
     ...(circlePageFailures.length ? { circlePageFailures } : {}),
+    ...(circleRetries ? { circleRetries } : {}),
   };
 }
 
