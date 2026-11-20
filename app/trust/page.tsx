@@ -22,6 +22,9 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { PublicBetaBadge } from "@/components/ui/public-beta-badge";
 import { BRAND, brandPageTitle } from "@/lib/brand";
+import { VEYRA_AGENT_URI } from "@/lib/erc8004/veyra-registration";
+
+const registrationPath = new URL(VEYRA_AGENT_URI).pathname;
 
 export const metadata: Metadata = {
   title: brandPageTitle("Trust Infrastructure"),
@@ -95,16 +98,16 @@ export default function TrustHubPage() {
 
           <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
             <Button asChild size="lg" className="rounded-xl bg-primary hover:bg-blue-600 font-semibold shadow-[0_0_20px_rgba(123,108,255,0.3)]">
-              <Link href="/trust/select">
-                <SlidersHorizontal className="size-4 mr-2" />
-                Select Counterparty
+              <Link href="/check">
+                <ShieldCheck className="size-4 mr-2" />
+                Check an x402 endpoint
               </Link>
             </Button>
             <Button asChild size="lg" variant="outline" className="rounded-xl border-white/10 bg-white/5 hover:bg-white/10">
-              <Link href="/trust-gate">
-                <ShieldCheck className="size-4 mr-2 text-cyan-400" />
-                Evaluate Transaction
-              </Link>
+              <a href={registrationPath}>
+                <BadgeCheck className="size-4 mr-2 text-cyan-400" />
+                View ERC-8004 registration
+              </a>
             </Button>
           </div>
         </div>
@@ -147,10 +150,10 @@ export default function TrustHubPage() {
                   </Link>
                 </Button>
                 <Button asChild size="sm" variant="outline" className="rounded-lg border-white/10 bg-white/5 hover:bg-white/10 text-xs">
-                  <Link href="/agent-runner?workflow=agent_trust_report">
-                    <ShieldCheck className="size-3.5 mr-1 text-cyan-400" />
-                    Trust Report
-                  </Link>
+                  <a href={registrationPath}>
+                    <BadgeCheck className="size-3.5 mr-1 text-cyan-400" />
+                    Arc Mainnet registration
+                  </a>
                 </Button>
               </div>
             </CardContent>
@@ -185,8 +188,8 @@ export default function TrustHubPage() {
               </div>
               <div className="pt-2">
                 <Button asChild size="sm" className="rounded-lg bg-cyan-500 hover:bg-cyan-600 font-semibold text-slate-950 text-xs">
-                  <Link href="/trust-gate">
-                    Open Trust Gate <ArrowRight className="size-3.5 ml-1" />
+                  <Link href="/check">
+                    Check payment terms <ArrowRight className="size-3.5 ml-1" />
                   </Link>
                 </Button>
               </div>
@@ -210,13 +213,6 @@ export default function TrustHubPage() {
               <p className="text-sm leading-relaxed text-muted-foreground">
                 Compare eligible agents using identity, reputation, execution evidence, economic reliability, and budget constraints.
               </p>
-              <div className="pt-2">
-                <Button asChild size="sm" variant="outline" className="rounded-lg border-white/10 bg-white/5 hover:bg-white/10 text-xs font-semibold">
-                  <Link href="/trust/select">
-                    Counterparty Selection Matrix <ArrowRight className="size-3.5 ml-1" />
-                  </Link>
-                </Button>
-              </div>
             </CardContent>
           </Card>
 
@@ -235,15 +231,8 @@ export default function TrustHubPage() {
             </CardHeader>
             <CardContent className="px-6 pb-6 pt-0 space-y-4">
               <p className="text-sm leading-relaxed text-muted-foreground">
-                Use Veyra&apos;s independent ERC-8183 evaluator to verify submitted work before settlement.
+                An ERC-8183 evaluator can check submitted work before settlement.
               </p>
-              <div className="pt-2">
-                <Button asChild size="sm" variant="outline" className="rounded-lg border-white/10 bg-white/5 hover:bg-white/10 text-xs font-semibold">
-                  <Link href="/evaluators">
-                    Explore ERC-8183 Evaluator <ArrowRight className="size-3.5 ml-1" />
-                  </Link>
-                </Button>
-              </div>
             </CardContent>
           </Card>
         </div>
@@ -283,16 +272,16 @@ export default function TrustHubPage() {
 
           <div className="mt-10 rounded-xl border border-white/10 bg-white/[0.02] p-5 text-center sm:flex sm:items-center sm:justify-between sm:text-left">
             <div>
-              <p className="text-sm font-bold text-foreground">Build with the Veyra Agent API</p>
+              <p className="text-sm font-bold text-foreground">Build with the {BRAND.name} Arc Trust API</p>
               <p className="text-xs text-muted-foreground">
-                Integrate programmatic trust decisions, reputation lookups, and evaluations into autonomous agents.
+                Integrate x402 endpoint verdicts and observed history into your agent.
               </p>
             </div>
             <Button asChild size="sm" className="mt-4 sm:mt-0 rounded-xl bg-primary hover:bg-blue-600 font-semibold text-xs">
-              <Link href="/console/agent-api">
+              <a href="/openapi/veyra-arc-trust-api.json">
                 <FileCode2 className="size-3.5 mr-1.5" />
-                View API Specs
-              </Link>
+                View API specs
+              </a>
             </Button>
           </div>
         </div>

@@ -210,13 +210,7 @@ function TimelineStep({ step }: { step: PublicAgentStep }) {
             <dt className="text-muted-foreground">Payment event</dt>
             <dd>
               {paymentEventId ? (
-                <Link
-                  href="/dashboard"
-                  className="inline-flex items-center gap-1 text-primary hover:underline"
-                >
-                  {shortenHash(paymentEventId, 6)}
-                  <ExternalLink size={12} />
-                </Link>
+                <span className="font-mono">{shortenHash(paymentEventId, 6)}</span>
               ) : (
                 <span className="text-muted-foreground">n/a</span>
               )}
@@ -298,9 +292,9 @@ async function RunDetail({ params }: RunDetailPageProps) {
       <section className="border-b bg-secondary/30">
         <div className="mx-auto w-full max-w-6xl px-4 py-8 sm:px-6">
           <Button asChild variant="ghost" className="mb-6 px-0">
-            <Link href="/runs">
+            <Link href="/receipts">
               <ArrowLeft />
-              Back to Activity
+              Commerce receipts
             </Link>
           </Button>
           {result.run.agent_wallet ? (
@@ -338,9 +332,9 @@ function RunDetailFallback() {
       <section className="border-b bg-secondary/30">
         <div className="mx-auto w-full max-w-6xl px-4 py-8 sm:px-6">
           <Button asChild variant="ghost" className="mb-6 px-0">
-            <Link href="/runs">
+            <Link href="/receipts">
               <ArrowLeft />
-              Back to Activity
+              Commerce receipts
             </Link>
           </Button>
           <Card className="rounded-lg">

@@ -1,0 +1,152 @@
+/** Copyright 2026 Veyra. SPDX-License-Identifier: Apache-2.0 */
+import assert from "node:assert/strict";
+import { test } from "node:test";
+import { checkArcListing, indexArcListings } from "../lib/discovery/arc-offer-index.ts";
+import { readBazaar, readCircleCatalogue } from "../lib/discovery/catalogues.ts";
+import type { OfferInput } from "../lib/discovery/offers.ts";
+import { ARC_MAINNET_NETWORK, ARC_MAINNET_USDC_ADDRESS } from "../lib/wallet/arc.ts";
+
+const now = new Date("2026-11-20T01:00:00Z");
+const payee = "0x0000000000000000000000000000000000000009";
+const otherPayee = "0x0000000000000000000000000000000000000008";
+const accept = {
+  scheme: "exact",
+  network: ARC_MAINNET_NETWORK,
+  asset: ARC_MAINNET_USDC_ADDRESS,
+  amount: "12000",
+  payTo: payee,
+  maxTimeoutSeconds: 60,
+};
+const resource = "https://example.com/premium/search";
+const item = { resource, metadata: { method: "POST" }, accepts: [accept] };
+
+function offer(change: Partial<OfferInput> = {}): OfferInput {
+  return {
+    resource, method: "POST", provider: null, description: null,
+    accepts: [{ network: ARC_MAINNET_NETWORK, amountAtomic: "12000", payTo: payee, rail: "wallet", quotableByVeyra: true }],
+    declaredPriceUsd: null, erc8004: null, listing: { source: "circle", listedAt: null },
+    ...change,
+  };
+}
+
+test("catalogue inputs merge by canonical URL and HTTP method, publishing only stable public Arc listings", () => {
+  const changed = offer({ resource: "https://EXAMPLE.com/premium/search#docs", listing: { source: "bazaar", listedAt: null } });
+  changed.accepts[0].amountAtomic = "19999";
+  const filtered = [
+    offer({ resource: resource + "?token=public-example" }),
+    offer({ resource: "https://user:pass@example.com/path" }),
+    offer({ resource: "https://example.com/%7Bid%7D" }),
+    offer({ resource: "https://127.0.0.1/local" }),
+    offer({ resource: "http://example.com/path" }),
+    offer({ resource: "https://node.internal/path" }),
+    offer({ resource: "https://base.example.com/premium/search", accepts: [{ ...offer().accepts[0], network: "eip155:8453" }] }),
+  ];
+  const rows = indexArcListings([changed, offer(), offer({ method: "GET" }), offer({ resource: resource + "/" }), ...filtered], now.toISOString());
+  assert.equal(rows.length, 3);
+  assert(rows.some((row) => row.resource === resource + "/"));
+  const post = rows.find((row) => row.method === "POST");
+  assert(post);
+  assert.deepEqual(post.sources, ["circle", "bazaar"]);
+  assert.equal(post.listed_amount, "12000");
+  assert.equal(post.resource, resource);
+  assert.equal(post.listed_at, now.toISOString());
+  assert.notEqual(rows[0].resource_key, rows[1].resource_key);
+});
+
+test("Circle reads beyond its live-lookup cap and keeps completed pages on an interrupted inventory read", async () => {
+  const options = {
+    networks: [ARC_MAINNET_NETWORK],
+    fetchImpl: async (url: RequestInfo | URL) => {
+      const offset = Number(new URL(String(url)).searchParams.get("offset"));
+      if (offset === 1400) return new Response(null, { status: 502 });
+      return Response.json({ pagination: { total: 1600 }, items: Array(200).fill(item) });
+    },
+  } as const;
+  const ordinary = await readCircleCatalogue(options);
+  assert.equal(ordinary.offers.length, 1000);
+  assert.equal(ordinary.complete, false);
+  const inventory = await readCircleCatalogue({ ...options, inventory: true });
+  assert.equal(inventory.offers.length, 1400);
+  assert.equal(inventory.complete, false);
+});
+
+test("Bazaar keeps Arc terms from a multi-chain catalogue and reports a complete page scan", async () => {
+  const data = await readBazaar({
+    inventory: true,
+    networks: [ARC_MAINNET_NETWORK],
+    fetchImpl: async () => Response.json({
+      pagination: { total: 2 },
+      items: [item, { ...item, accepts: [{ ...accept, network: "eip155:8453" }] }],
+    }),
+  });
+  assert.equal(data.complete, true);
+  assert.equal(data.scanned, 2);
+  assert.equal(data.offers.length, 1);
+});
+
+const [listing] = indexArcListings([offer()], now.toISOString());
+function challenge(accepts: unknown[]) {
+  return new Response("{}", {
+    status: 402,
+    headers: { "Payment-Required": Buffer.from(JSON.stringify({ x402Version: 2, accepts })).toString("base64") },
+  });
+}
+
+test("checks use one unpaid request with the catalogued method and detect confirmed Arc price and payee drift", async () => {
+  let requested = 0;
+  const check = await checkArcListing(listing, {
+    now,
+    fetchImpl: async (url, init) => {
+      requested += 1;
+      assert.equal(url, resource);
+      assert.equal(init.method, "POST");
+      assert.equal(init.body, "{}");
+      const headers = new Headers(init.headers);
+      for (const name of ["authorization", "x-payment", "payment-signature", "cookie"]) {
+        assert.equal(headers.has(name), false);
+      }
+      return challenge([
+        { ...accept, network: "eip155:8453", amount: "12000" },
+        { ...accept, asset: otherPayee, amount: "1" },
+        { ...accept, amount: "18000", payTo: otherPayee },
+      ]);
+    },
+  });
+  assert.equal(requested, 1);
+  assert.equal(check.arc_challenge, true);
+  assert.equal(check.live_amount, "18000");
+  assert.equal(check.live_payee, otherPayee);
+  assert.deepEqual(check.drift.sort(), ["payto_changed", "price_changed"]);
+  assert(check.failed_checks.includes("accepts_matches_catalog"));
+  assert.equal(check.checked_at, now.toISOString());
+});
+
+test("same-wallet listed terms are matched across accepts and empty-request price is unknown", async () => {
+  for (const amount of ["00012000", "0"]) {
+    const check = await checkArcListing(listing, { now, fetchImpl: async () => challenge([
+      { ...accept, amount: "1", extra: { name: "GatewayWalletBatched" } },
+      { ...accept, amount },
+    ]) });
+    assert.equal(check.arc_challenge, true);
+    assert.equal(check.live_amount, amount === "0" ? null : "12000");
+    assert.deepEqual(check.drift, []);
+    assert(!check.failed_checks.includes("accepts_matches_catalog"));
+  }
+});
+
+test("non-Arc and timeout results publish failed check codes without arbitrary provider text", async () => {
+  const noArc = await checkArcListing(listing, {
+    now, fetchImpl: async () => challenge([
+      { ...accept, network: "eip155:8453" },
+      { ...accept, extra: { name: "GatewayWalletBatched", verifyingContract: otherPayee } },
+    ]),
+  });
+  assert.equal(noArc.arc_challenge, false);
+  assert.equal(noArc.live_payee, null);
+  assert(noArc.failed_checks.includes("challenge_parseable"));
+  const timeout = await checkArcListing(listing, {
+    now, fetchImpl: async () => { throw new Error("provider timeout with sensitive response"); },
+  });
+  assert.equal(timeout.error_category, "timeout");
+  assert(!JSON.stringify(timeout).includes("sensitive"));
+});

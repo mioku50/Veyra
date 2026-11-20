@@ -9,6 +9,7 @@ import { authenticateMachineRequest } from "@/lib/api/machine-auth";
 import { createMachineErrorResponse } from "@/lib/api/machine-errors";
 import { inspectMachineIdempotency, resolveMachineIdempotency, saveMachineIdempotency } from "@/lib/api/machine-idempotency";
 import { getByoaClient } from "@/lib/byoa/service";
+import { ARC_TESTNET_RPC_URL } from "@/lib/erc8183/client";
 import { computeDeliverableHash, computePolicyHash } from "@/lib/erc8183/deliverable";
 import { executeOffchainJobEvaluation } from "@/lib/erc8183/evaluator";
 import type { VeyraDeliverableV1 } from "@/lib/erc8183/types";
@@ -219,6 +220,7 @@ export async function POST(req: Request) {
     evaluatorContract: evaluatorAddress as `0x${string}`,
     attesterPrivateKey: attesterKey as `0x${string}`,
     relayerPrivateKey: relayerKey as `0x${string}`,
+    rpcUrl: ARC_TESTNET_RPC_URL,
   });
 
   // Update DB record

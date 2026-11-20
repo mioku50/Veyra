@@ -5,6 +5,7 @@
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import {
+  BaseError,
   concat,
   createPublicClient,
   createWalletClient,
@@ -12,6 +13,7 @@ import {
   http,
   isAddress,
   keccak256,
+  RpcRequestError,
   toBytes,
   type Address,
   type Hex,
@@ -281,6 +283,14 @@ function safeErrorMessage(error: unknown) {
 }
 
 function isTransientArcRpcError(error: unknown) {
+  // Load-balanced Arc backends can briefly disagree on the latest block.
+  if (
+    error instanceof BaseError &&
+    error.walk((cause) => cause instanceof RpcRequestError && cause.code === -32014)
+  ) {
+    return true;
+  }
+
   const message = safeErrorMessage(error).toLowerCase();
   return [
     "status: 429",
@@ -307,7 +317,7 @@ async function withArcRpcReadRetry<T>(
       if (!isTransientArcRpcError(error) || attempt === 3) throw error;
       const delayMs = 500 * 2 ** attempt;
       console.warn(
-        `[proof-registry] ${label} hit a transient Arc RPC limit; retrying in ${delayMs}ms.`,
+        `[proof-registry] ${label} hit a transient Arc RPC error; retrying in ${delayMs}ms.`,
       );
       await new Promise((resolve) => setTimeout(resolve, delayMs));
     }
@@ -465,31 +475,40 @@ async function findRegistrationDetails(
   const latestBlock = await publicClient.getBlockNumber();
   const lookback = BigInt(100_000);
   const fallbackFrom = latestBlock > lookback ? latestBlock - lookback : BigInt(0);
-  const fromBlock = configuredDeploymentBlock() ?? fallbackFrom;
-  const logs = await publicClient.getLogs({
-    address: contractAddress,
-    event: proofRegistryAbi[3],
-    args: { receiptId: receiptHash },
-    fromBlock,
-    toBlock: "latest",
-  });
-  const log = logs.at(-1);
+  const firstBlock = configuredDeploymentBlock() ?? fallbackFrom;
 
-  if (!log?.blockNumber) {
-    return {
-      transactionHash: null,
-      blockNumber: null,
-      attester: null,
-      verifiedAt: new Date().toISOString(),
-    };
+  // Arc caps eth_getLogs at 10,000 blocks per request. Search newest first.
+  const windowSize = BigInt(9_000);
+  const oneBlock = BigInt(1);
+  let toBlock = latestBlock;
+  while (toBlock >= firstBlock) {
+    const windowStart = toBlock - windowSize + oneBlock;
+    const fromBlock = windowStart < firstBlock ? firstBlock : windowStart;
+    const logs = await publicClient.getLogs({
+      address: contractAddress,
+      event: proofRegistryAbi[3],
+      args: { receiptId: receiptHash },
+      fromBlock,
+      toBlock,
+    });
+    const log = logs.at(-1);
+    if (log && log.blockNumber !== null) {
+      const block = await publicClient.getBlock({ blockNumber: log.blockNumber });
+      return {
+        transactionHash: log.transactionHash,
+        blockNumber: log.blockNumber,
+        attester: log.args.attester ? getAddress(log.args.attester) : null,
+        verifiedAt: timestampFromBlock(block.timestamp),
+      };
+    }
+    toBlock = fromBlock - oneBlock;
   }
 
-  const block = await publicClient.getBlock({ blockNumber: log.blockNumber });
   return {
-    transactionHash: log.transactionHash,
-    blockNumber: log.blockNumber,
-    attester: log.args.attester ? getAddress(log.args.attester) : null,
-    verifiedAt: timestampFromBlock(block.timestamp),
+    transactionHash: null,
+    blockNumber: null,
+    attester: null,
+    verifiedAt: new Date().toISOString(),
   };
 }
 

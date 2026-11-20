@@ -25,7 +25,7 @@ assert.equal(
 );
 assert.equal(
   transactionUrl("eip155:5042002", hash),
-  `https://testnet.arcscan.app/tx/${hash}`,
+  `https://explorer.testnet.arc.io/tx/${hash}`,
 );
 assert.equal(transactionUrl("eip155:999999", hash), null);
 assert.equal(transactionUrl(null, hash), null);

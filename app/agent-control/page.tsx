@@ -55,13 +55,13 @@ export default function AgentControlPage() {
           </div>
           <div className="flex flex-col gap-2 sm:flex-row">
             <Button asChild variant="outline">
-              <Link href="/demo">
+              <Link href="/agent-runner?workflow=github">
                 <Sparkles />
                 Guided Demo
               </Link>
             </Button>
             <Button asChild variant="outline">
-              <Link href="/developer-tools">
+              <Link href="/console/developer-tools">
                 <Fuel />
                 Developer Tools
               </Link>

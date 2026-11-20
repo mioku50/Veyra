@@ -197,11 +197,11 @@ function ReceiptLinks({ receipt }: { receipt: CommerceReceipt }) {
             </Link>
           </Button>
         ) : null}
-        {receipt.paymentEvent ? (
+        {receipt.links.paymentEvent ? (
           <Button asChild variant="outline">
-            <Link href="/dashboard">
-              <ExternalLink />
-              Seller Dashboard
+            <Link href={receipt.links.paymentEvent}>
+              <ReceiptText />
+              Payment event
             </Link>
           </Button>
         ) : null}
@@ -288,7 +288,7 @@ function MetadataCard({ receipt }: { receipt: CommerceReceipt }) {
         </dl>
 
         {receipt.paymentEvent ? (
-          <div className="rounded-lg border p-4">
+          <div id="payment-event" className="scroll-mt-20 rounded-lg border p-4">
             <div className="mb-3 flex flex-wrap items-center gap-2">
               <Badge variant="default">Payment event matched</Badge>
               <Badge variant="outline">{receipt.paymentEvent.network}</Badge>

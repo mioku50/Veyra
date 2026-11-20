@@ -3,6 +3,9 @@ name: Veyra Release Gate
 on:
   push:
     branches: [main]
+  workflow_dispatch:
+  schedule:
+    - cron: "37 6 * * 1"
   pull_request:
     branches: [main]
 
@@ -39,6 +42,22 @@ jobs:
 
       - name: Install Dependencies
         run: npm ci
+
+      - name: Install Chromium for Browser Tests
+        run: npx --no-install playwright install --with-deps chromium
+
+      - name: Test Arc Index and Adoption Migrations
+        run: |
+          set -euo pipefail
+          db=$(docker run -d --rm --network none -e POSTGRES_HOST_AUTH_METHOD=trust postgres:16-alpine)
+          trap 'docker stop "$db" >/dev/null' EXIT
+          timeout 30s bash -c 'until docker exec "$1" pg_isready -U postgres; do sleep 1; done' _ "$db"
+          docker exec "$db" psql -U postgres -v ON_ERROR_STOP=1 \
+            -c 'CREATE ROLE anon; CREATE ROLE authenticated; CREATE ROLE service_role BYPASSRLS;'
+          cat supabase/migrations/20261120090200_veyra_adoption_metrics.sql scripts/veyra-adoption-metrics-tests.sql \
+            | docker exec -i "$db" psql -U postgres -v ON_ERROR_STOP=1
+          cat supabase/migrations/20261120110000_arc_offer_index.sql scripts/arc-offer-index-tests.sql \
+            | docker exec -i "$db" psql -U postgres -v ON_ERROR_STOP=1
 
       - name: Run Public Beta Release Gate
         run: npm run release:gate

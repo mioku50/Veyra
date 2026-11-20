@@ -88,7 +88,7 @@ export default function RunsPage() {
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <Button asChild variant="outline" size="sm" className="rounded-xl border-white/10 bg-white/5 hover:bg-white/10">
-              <Link href="/demo">
+              <Link href="/agent-runner?workflow=github">
                 <Sparkles className="size-4 mr-1 text-cyan-400" />
                 Demo
               </Link>

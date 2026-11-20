@@ -30,8 +30,10 @@ export const BAZAAR_DISCOVERY_URL = "https://api.cdp.coinbase.com/platform/v2/x4
 export const CATALOGUE_LIMITS = {
   circlePageSize: 200,
   circleMaxPages: 5,
+  circleIndexMaxPages: 20,
   bazaarPageSize: 1_000,
   bazaarMaxPages: 20,
+  bazaarIndexMaxPages: 60,
   timeoutMs: 30_000,
 } as const;
 
@@ -51,7 +53,9 @@ async function getJson(url: string, source: OfferSource, fetchImpl: Fetch): Prom
     const response = await fetchImpl(url, { headers: { accept: "application/json" }, signal: controller.signal });
     if (!response.ok) throw new CatalogueUnavailableError(source, response.status);
     const body = await response.json();
-    if (!body || typeof body !== "object") throw new CatalogueUnavailableError(source, null);
+    if (!body || typeof body !== "object" || !Array.isArray(body.items)) {
+      throw new CatalogueUnavailableError(source, null);
+    }
     return body as Record<string, unknown>;
   } catch (error) {
     if (error instanceof CatalogueUnavailableError) throw error;
@@ -130,13 +134,17 @@ export async function readCircleCatalogue(input: {
   query?: string;
   fetchImpl?: Fetch;
   maxPages?: number;
-}): Promise<{ offers: OfferInput[]; listed: Record<string, number> }> {
+  inventory?: boolean;
+}): Promise<{ offers: OfferInput[]; listed: Record<string, number>; complete: boolean }> {
   const networks = input.networks ?? ARC_FIRST;
   const fetchImpl = input.fetchImpl ?? fetch;
-  const maxPages = Math.min(input.maxPages ?? CATALOGUE_LIMITS.circleMaxPages, CATALOGUE_LIMITS.circleMaxPages);
+  const pageCap = input.inventory ? CATALOGUE_LIMITS.circleIndexMaxPages : CATALOGUE_LIMITS.circleMaxPages;
+  const maxPages = Math.min(input.maxPages ?? pageCap, pageCap);
   const offers: OfferInput[] = [];
   const listed: Record<string, number> = {};
+  let complete = true;
   for (const network of networks) {
+    let networkComplete = false;
     for (let page = 0; page < maxPages; page += 1) {
       const url = new URL(CIRCLE_DISCOVERY_URL);
       url.searchParams.set("network", network);
@@ -145,7 +153,11 @@ export async function readCircleCatalogue(input: {
       if (input.query) url.searchParams.set("query", input.query);
       url.searchParams.set("limit", String(CATALOGUE_LIMITS.circlePageSize));
       url.searchParams.set("offset", String(page * CATALOGUE_LIMITS.circlePageSize));
-      const body = await getJson(url.toString(), "circle", fetchImpl);
+      const body = await getJson(url.toString(), "circle", fetchImpl).catch((error) => {
+        if (input.inventory && page > 0) return null;
+        throw error;
+      });
+      if (!body) break;
       const items = Array.isArray(body.items) ? body.items : [];
       listed[network] = Number(asRecord(body.pagination).total) || listed[network] || items.length;
       /* Only this network's accepts: a listing found by asking for Arc still
@@ -154,20 +166,26 @@ export async function readCircleCatalogue(input: {
         const offer = offerFromCatalogueItem(item, "circle", [network]);
         if (offer) offers.push(offer);
       }
-      if (items.length < CATALOGUE_LIMITS.circlePageSize) break;
+      if (items.length < CATALOGUE_LIMITS.circlePageSize || (Number(asRecord(body.pagination).total) > 0 && (page + 1) * CATALOGUE_LIMITS.circlePageSize >= listed[network])) {
+        networkComplete = true;
+        break;
+      }
     }
+    complete &&= networkComplete;
   }
-  return { offers, listed };
+  return { offers, listed, complete };
 }
 
 export async function readBazaar(input: {
   networks?: readonly DiscoveryNetwork[];
   fetchImpl?: Fetch;
   maxPages?: number;
+  inventory?: boolean;
 }): Promise<{ offers: OfferInput[]; scanned: number; complete: boolean }> {
   const networks = input.networks ?? ARC_FIRST;
   const fetchImpl = input.fetchImpl ?? fetch;
-  const maxPages = Math.min(input.maxPages ?? CATALOGUE_LIMITS.bazaarMaxPages, CATALOGUE_LIMITS.bazaarMaxPages);
+  const pageCap = input.inventory ? CATALOGUE_LIMITS.bazaarIndexMaxPages : CATALOGUE_LIMITS.bazaarMaxPages;
+  const maxPages = Math.min(input.maxPages ?? pageCap, pageCap);
   const offers: OfferInput[] = [];
   let scanned = 0;
   let total = Number.POSITIVE_INFINITY;
@@ -175,7 +193,11 @@ export async function readBazaar(input: {
     const url = new URL(BAZAAR_DISCOVERY_URL);
     url.searchParams.set("limit", String(CATALOGUE_LIMITS.bazaarPageSize));
     url.searchParams.set("offset", String(page * CATALOGUE_LIMITS.bazaarPageSize));
-    const body = await getJson(url.toString(), "bazaar", fetchImpl);
+    const body = await getJson(url.toString(), "bazaar", fetchImpl).catch((error) => {
+      if (input.inventory && page > 0) return null;
+      throw error;
+    });
+    if (!body) break;
     const items = Array.isArray(body.items) ? body.items : [];
     total = Number(asRecord(body.pagination).total) || scanned + items.length;
     scanned += items.length;

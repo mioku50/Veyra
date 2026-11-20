@@ -20,8 +20,8 @@
 
 import { type FormEvent, useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, LayoutDashboard, LockKeyhole } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
+import { ArrowLeft, LockKeyhole } from "lucide-react";
+import { operatorLoginDestination } from "@/lib/navigation/frozen";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -48,7 +48,8 @@ export default function LoginPage() {
         setPending(false);
         return;
       }
-      window.location.assign("/dashboard");
+      const next = new URLSearchParams(window.location.search).get("next");
+      window.location.assign(operatorLoginDestination(next));
     } catch {
       setError("Seller authentication is temporarily unavailable");
       setPending(false);
@@ -57,47 +58,13 @@ export default function LoginPage() {
 
   return (
     <main className="min-h-screen bg-background">
-      <section className="mx-auto grid w-full max-w-6xl gap-8 px-4 py-10 sm:px-6 lg:grid-cols-[1fr_420px] lg:items-center lg:py-16">
-        <div>
-          <div className="mb-4 flex flex-wrap items-center gap-2">
-            <Badge variant="secondary">Protected seller area</Badge>
-            <Badge variant="outline">Signed operator session</Badge>
-          </div>
-          <h1 className="max-w-3xl text-4xl font-bold tracking-normal text-foreground sm:text-5xl">
-            Sign in to manage API commerce.
-          </h1>
-          <p className="mt-4 max-w-2xl leading-7 text-muted-foreground">
-            Seller Dashboard keeps revenue, withdrawals, service creation, and
-            analytics behind a simple protected entrypoint while the Store, Runs,
-            Agents, and Receipts remain public.
-          </p>
-          <div className="mt-8 grid gap-3 sm:grid-cols-3">
-            {[
-              ["Revenue", "Track API purchases and estimated USDC revenue."],
-              ["Services", "Create and edit safe seller-created listings."],
-              ["Withdrawals", "Track settled balance and move earnings out."],
-            ].map(([title, body]) => (
-              <div key={title} className="rounded-lg border bg-card/80 p-4">
-                <p className="font-semibold">{title}</p>
-                <p className="mt-2 text-sm leading-6 text-muted-foreground">{body}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-
+      <section className="mx-auto w-full max-w-md px-4 py-10 sm:px-6 lg:py-16">
         <Card className="w-full">
           <CardHeader>
             <div className="mb-4 flex size-11 items-center justify-center rounded-md bg-secondary text-secondary-foreground">
               <LockKeyhole className="size-5" />
             </div>
-            <CardTitle className="flex items-center gap-2 text-2xl">
-              <LayoutDashboard className="size-5 text-primary" />
-              Seller Login
-            </CardTitle>
-            <p className="text-sm leading-6 text-muted-foreground">
-              Sign in to open Seller Dashboard, Seller Analytics, and Creator
-              Mode.
-            </p>
+            <CardTitle className="text-2xl">Operator sign in</CardTitle>
           </CardHeader>
           <CardContent>
             <form onSubmit={handleSubmit} className="flex flex-col gap-4">
@@ -107,17 +74,18 @@ export default function LoginPage() {
                   id="password"
                   name="password"
                   type="password"
+                  autoComplete="current-password"
                   placeholder="Password"
                   required
                 />
               </div>
               {error && (
-                <p className="rounded-md border border-destructive/20 bg-destructive/10 p-3 text-sm text-destructive">
+                <p role="alert" className="rounded-md border border-destructive/20 bg-destructive/10 p-3 text-sm text-destructive">
                   {error}
                 </p>
               )}
               <Button type="submit" disabled={pending} className="w-full">
-                {pending ? "Signing in..." : "Sign in to Seller Dashboard"}
+                {pending ? "Signing in..." : "Sign in"}
               </Button>
               <Button asChild variant="ghost" className="w-full">
                 <Link href="/">

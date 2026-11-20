@@ -4,8 +4,9 @@
  */
 
 import type { NextRequest } from "next/server";
+import { recordAdoptionEvent } from "@/lib/x402/trust-api/adoption-metrics";
 import { answerHistory, checkHistoryRequest } from "@/lib/x402/trust-api/answers";
-import { ARC_TRUST_API } from "@/lib/x402/trust-api/arc-mainnet";
+import { ARC_MAINNET_NETWORK, ARC_TRUST_API } from "@/lib/x402/trust-api/arc-mainnet";
 import { withTrustApiChallenge, withTrustApiPayment, type TrustApiRouteOptions } from "@/lib/x402/trust-api/seller";
 
 export const dynamic = "force-dynamic";
@@ -24,7 +25,12 @@ const TERMS: TrustApiRouteOptions = {
   rail: "arc",
 };
 
-export const POST = withTrustApiPayment((request: NextRequest) => answerHistory(request), TERMS);
+export const POST = withTrustApiPayment((request: NextRequest, payment) => {
+  if (payment.paidWith === "usdc" && payment.network === ARC_MAINNET_NETWORK) {
+    recordAdoptionEvent(request.headers, "paid_history");
+  }
+  return answerHistory(request);
+}, TERMS);
 
 /** A GET reads the challenge and is never charged: see withTrustApiChallenge. */
 export const GET = withTrustApiChallenge(TERMS);

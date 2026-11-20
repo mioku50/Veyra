@@ -1,0 +1,36 @@
+name: Arc Offer Index
+
+on:
+  schedule:
+    - cron: "43 3 * * *"
+    - cron: "13 * * * *"
+  workflow_dispatch:
+    inputs:
+      mode:
+        type: choice
+        options: [listings, checks]
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: arc-offer-index-${{ inputs.mode || (github.event.schedule == '43 3 * * *' && 'listings' || 'checks') }}
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 7
+    env:
+      CRON_SECRET: ${{ secrets.CRON_SECRET }}
+      BASE_URL: ${{ vars.VEYRA_BASE_URL || 'https://agent-commerce-six.vercel.app' }}
+      MODE: ${{ inputs.mode || (github.event.schedule == '43 3 * * *' && 'listings' || 'checks') }}
+    steps:
+      - name: Update Arc offer index
+        run: |
+          set -euo pipefail
+          test -n "${CRON_SECRET}" || { echo "CRON_SECRET is required"; exit 1; }
+          curl --silent --show-error --fail-with-body --max-time 300 \
+            --request POST --header "authorization: Bearer ${CRON_SECRET}" \
+            "${BASE_URL}/api/internal/discovery/arc-index?mode=${MODE}"

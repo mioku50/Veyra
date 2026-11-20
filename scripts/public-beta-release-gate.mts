@@ -8,6 +8,8 @@ import { readFileSync, existsSync, readdirSync } from "node:fs";
 import { resolve } from "node:path";
 
 const root = resolve(import.meta.dirname, "..");
+const dotenvFile = readdirSync(root).find((file) => file === ".env" || /^\.env\.(local|production|test)(\.local)?$/.test(file));
+if (dotenvFile) throw new Error("Run the release gate in a checkout without local runtime credentials or dotenv files.");
 
 console.log("🚀 Starting Veyra Public Beta Release Gate Suite...");
 
@@ -22,6 +24,10 @@ function runStep(name: string, fn: () => void) {
     process.exit(1);
   }
 }
+
+runStep("TypeScript", () => {
+  execSync("npm run typecheck", { cwd: root, stdio: "inherit" });
+});
 
 // 1. Secret Audit Check
 runStep("Secret Pattern & Commit Audit", () => {
@@ -288,6 +294,28 @@ runStep("x402 Post-Call Verification Tests", () => {
   execSync("npm run x402-verification:test", { cwd: root, stdio: "inherit" });
 });
 
+// Explicit local suites. Live acceptance and credential-based product scripts
+// are run separately with the environment they require.
+for (const suite of [
+  "provider:test", "llm:test", "hosted:workflow-test",
+  "hosted:checkout-test", "frontend:ux-test", "ui:report-subject-test",
+  "github:ref-test", "github:analysis-test", "github:provider-test",
+  "github:workflow-test", "agent:trust-test", "project-360:monitoring-test",
+  "trust-profile:test", "webhooks:test", "machine:sdk-test",
+  "operations:test", "seller:ssrf-test", "seller:external-402-test",
+  "seller:proxy-test", "seller:service-test", "seller:checkout-test",
+  "byoa:test", "counterparty:product-test", "counterparty:negative-test",
+  "x402-payment:test", "execution-ledger:test", "erc8183-client:test",
+  "byoa-origin:test", "x402-gateway:test", "payment-rail:test",
+  "frontend:audit-test", "arc:c-pilot:test", "arc-index:test",
+  "arc-infrastructure:test", "adoption:test", "nova-schedule-health:test",
+  "navigation:compatibility-test",
+]) {
+  runStep(suite, () => {
+    execSync("npm run " + suite, { cwd: root, stdio: "inherit" });
+  });
+}
+
 runStep("Foundry Smart Contract Tests (forge test)", () => {
   execSync("forge test", { cwd: resolve(root, "contracts"), stdio: "inherit" });
 });
@@ -295,6 +323,10 @@ runStep("Foundry Smart Contract Tests (forge test)", () => {
 // 8. Next.js Production Build
 runStep("Next.js Production Build", () => {
   execSync("npm run build", { cwd: root, stdio: "inherit" });
+});
+
+runStep("Browser Release Regression", () => {
+  execSync("npm run release:browser-test", { cwd: root, stdio: "inherit" });
 });
 
 console.log("\n🎉 ALL P6.0 PUBLIC BETA RELEASE GATE CHECKS PASSED SUCCESSFULLY! 🎉\n");

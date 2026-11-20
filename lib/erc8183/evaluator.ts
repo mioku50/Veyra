@@ -8,7 +8,12 @@ import { privateKeyToAccount } from "viem/accounts";
 import { arcTestnet } from "viem/chains";
 import { buildErc8183EvaluationReport } from "../reports/erc8183-evaluation-report.ts";
 import { VEYRA_ERC8183_EVALUATOR_ABI } from "./abi.ts";
-import { fetchJobSubmittedLogs, fetchOnchainJob, getArcPublicClient } from "./client.ts";
+import {
+  ARC_TESTNET_RPC_URL,
+  fetchJobSubmittedLogs,
+  fetchOnchainJob,
+  getArcPublicClient,
+} from "./client.ts";
 import { computeDeliverableHash, computePolicyHash } from "./deliverable.ts";
 import { runDeterministicEvaluationPolicy } from "./policy.ts";
 import type { Erc8183EvaluationRecord, Verdict, VeyraDeliverableV1 } from "./types.ts";
@@ -40,7 +45,8 @@ export type EvaluationExecutionResult = {
 export async function executeOffchainJobEvaluation(
   input: ExecuteEvaluationInput,
 ): Promise<EvaluationExecutionResult> {
-  const publicClient = getArcPublicClient(input.rpcUrl);
+  const rpcUrl = input.rpcUrl || ARC_TESTNET_RPC_URL;
+  const publicClient = getArcPublicClient(rpcUrl);
   const jobIdBigInt = BigInt(input.jobId);
 
   // Step 1: Fetch Onchain Job
@@ -176,7 +182,7 @@ export async function executeOffchainJobEvaluation(
   const walletClient = createWalletClient({
     account: relayerAccount,
     chain: arcTestnet,
-    transport: http(input.rpcUrl || "https://rpc.testnet.arc.network"),
+    transport: http(rpcUrl),
   });
 
   let txHash: Hex;

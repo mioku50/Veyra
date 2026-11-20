@@ -183,19 +183,19 @@ export function StoreMarketplace({
                     </Link>
                   </Button>
                   <Button asChild size="sm">
-                    <Link href="/demo">
+                    <Link href="/agent-runner?workflow=github">
                       <Sparkles />
                       Start guided demo
                     </Link>
                   </Button>
                   <Button asChild size="sm">
-                    <Link href="/launch">
+                    <Link href="/agent-launch">
                       <Rocket />
-                      Launch Pack
+                      CLI Agent Funding
                     </Link>
                   </Button>
                   <Button asChild size="sm">
-                    <Link href="/developer-tools">
+                    <Link href="/console/developer-tools">
                       <Fuel />
                       Developer Tools
                     </Link>
@@ -374,7 +374,7 @@ export function StoreMarketplace({
                 </Link>
               </Button>
               <Button asChild variant="outline" size="sm">
-                <Link href="/demo">
+                <Link href="/agent-runner?workflow=github">
                   <Sparkles />
                   Guided demo
                 </Link>
@@ -389,7 +389,7 @@ export function StoreMarketplace({
                 </Link>
               </Button>
               <Button asChild variant="outline" size="sm">
-                <Link href="/developer-tools">
+                <Link href="/console/developer-tools">
                   <Fuel />
                   Developer Tools
                 </Link>

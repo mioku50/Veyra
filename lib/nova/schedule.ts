@@ -292,11 +292,13 @@ async function claim(agent: DueAgent, now: Date): Promise<boolean> {
   const query = db()
     .from("nova_agents")
     .update({ last_scheduled_refresh_at: now.toISOString() })
-    .eq("agent_id", agent.agent_id);
-  const { data } = await (agent.last_scheduled_refresh_at === null
+    .eq("agent_id", agent.agent_id)
+    .is("dormant_since", null);
+  const { data, error } = await (agent.last_scheduled_refresh_at === null
     ? query.is("last_scheduled_refresh_at", null)
     : query.eq("last_scheduled_refresh_at", agent.last_scheduled_refresh_at)
   ).select("agent_id");
+  if (error) throw error;
   return (data ?? []).length === 1;
 }
 
@@ -308,21 +310,21 @@ async function claim(agent: DueAgent, now: Date): Promise<boolean> {
  * looked at it again, having produced nothing. Releasing makes it due
  * immediately, so the next tick picks it up.
  */
-async function release(agent: DueAgent): Promise<void> {
+async function release(agent: DueAgent, claimedAt: Date): Promise<void> {
   await db()
     .from("nova_agents")
     .update({ last_scheduled_refresh_at: agent.last_scheduled_refresh_at })
-    .eq("agent_id", agent.agent_id);
+    .eq("agent_id", agent.agent_id)
+    .eq("last_scheduled_refresh_at", claimedAt.toISOString());
 }
 
 /**
  * One tick: retire the abandoned, refresh the due, report what happened.
  *
- * Agents are refreshed one at a time on purpose. In parallel they would finish
- * sooner and spend the rate-limit budget in a burst; serially, the shared
- * reader means the second agent onward mostly reads from the first one's
- * answers, and the tick is bounded by the clock rather than by a thundering
- * herd.
+ * Two workers share one queue, one refresh limit and one source reader.
+ * Each takes a slot before claiming an agent. The slot becomes reusable if
+ * another tick already took the agent. PREVIEW passes run serially after the
+ * refreshes and within the remaining time.
  */
 export async function runScheduledTick(input?: {
   now?: Date;
@@ -344,61 +346,70 @@ export async function runScheduledTick(input?: {
   let stoppedEarly = false;
   const shadowMetrics = emptyShadowMetrics();
 
-  for (const agent of due) {
-    if (refreshed + failed >= maxAgents) break;
-    if (Date.now() - started > budgetMs) {
-      stoppedEarly = true;
-      break;
-    }
-    if (!(await claim(agent, now))) continue;
-    try {
-      const result = await runRefresh({
-        agent: { agent_id: agent.agent_id, interests: agent.interests ?? [] },
-        trigger: "scheduled",
-        now: new Date(),
-        fetchImpl: reader,
-      });
-      refreshed += 1;
-      signalsKept += result.newSignals;
+  let cursor = 0;
+  let occupiedSlots = 0;
+  const refreshedAgents = new Set<DueAgent>();
+  const elapsed = () => Date.now() - started;
 
-      /* Shadow autonomy runs after the refresh and on its findings, which is
-         the only order that means anything: deciding about yesterday's signals
-         would not be the unattended pass this is meant to rehearse.
+  async function refreshDueAgents() {
+    while (cursor < due.length && occupiedSlots < maxAgents) {
+      if (elapsed() >= budgetMs) {
+        stoppedEarly = true;
+        return;
+      }
+      const agent = due[cursor++];
+      occupiedSlots++;
+      let claimed = false;
+      try {
+        claimed = await claim(agent, now);
+        if (!claimed) {
+          occupiedSlots--;
+          continue;
+        }
+        // A slow claim can finish after the cutoff. Release only our stamp.
+        if (elapsed() >= budgetMs) {
+          stoppedEarly = true;
+          await release(agent, now).catch(() => {});
+          return;
+        }
 
-         Only while there is real room left. A decision costs live discovery and
-         a model call, so twelve agents at two decisions each would overrun the
-         tick and leave the last few agents refreshed but unclaimed. Briefs come
-         first: a rehearsal that costs somebody their morning is worse than a
-         rehearsal that waits six hours.
-
-         Failures preserve the refreshed brief and are counted separately. */
-      await observeShadowPass(
-        shadowMetrics,
-        Date.now() - started <= budgetMs - SHADOW_HEADROOM_MS,
-        () => runShadowPass({
-          agent: {
-            agentId: agent.agent_id,
-            publicId: agent.public_id,
-            name: agent.name,
-            interests: agent.interests ?? [],
-            ownerWallet: agent.owner_wallet,
-          },
+        const result = await runRefresh({
+          agent: { agent_id: agent.agent_id, interests: agent.interests ?? [] },
+          trigger: "scheduled",
           now: new Date(),
-          /* Whatever is left of the tick, less the headroom it keeps for itself.
-             The pass used to bound itself by a candidate count, so it could
-             overrun a nearly-spent tick or -- far more often -- stop looking
-             while there was still time to look. */
-          deadlineMs: Math.max(0, budgetMs - SHADOW_HEADROOM_MS - (Date.now() - started)),
           fetchImpl: reader,
-        }),
-      );
-    } catch {
-      /* One agent's bad pass is not the tick's. The claim is released so it is
-         due again, and the loop continues -- a single unreachable source must
-         not stop every other person's agent from being updated. */
-      failed += 1;
-      await release(agent).catch(() => {});
+        });
+        refreshed++;
+        signalsKept += result.newSignals;
+        refreshedAgents.add(agent);
+      } catch {
+        failed++;
+        if (claimed) await release(agent, now).catch(() => {});
+      }
     }
+  }
+
+  await Promise.all([refreshDueAgents(), refreshDueAgents()]);
+
+  // Take the oldest due agents first, even when they finished out of order.
+  for (const agent of due) {
+    if (!refreshedAgents.has(agent)) continue;
+    await observeShadowPass(
+      shadowMetrics,
+      elapsed() <= budgetMs - SHADOW_HEADROOM_MS,
+      () => runShadowPass({
+        agent: {
+          agentId: agent.agent_id,
+          publicId: agent.public_id,
+          name: agent.name,
+          interests: agent.interests ?? [],
+          ownerWallet: agent.owner_wallet,
+        },
+        now: new Date(),
+        deadlineMs: Math.max(0, budgetMs - SHADOW_HEADROOM_MS - elapsed()),
+        fetchImpl: reader,
+      }),
+    );
   }
 
   const outcome: TickOutcome = {

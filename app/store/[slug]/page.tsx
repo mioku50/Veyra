@@ -135,9 +135,9 @@ export default async function ServiceDetailPage({
       <section className="border-b bg-secondary/30">
         <div className="mx-auto w-full max-w-6xl px-4 py-10 sm:px-6">
           <Button asChild variant="ghost" className="mb-8 px-0">
-            <Link href="/store">
+            <Link href="/receipts">
               <ArrowLeft />
-              Back to API Store
+              Commerce receipts
             </Link>
           </Button>
 

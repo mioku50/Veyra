@@ -5,6 +5,7 @@ import { z } from "zod-mcp";
 import { BRAND } from "../../../lib/brand.ts";
 import { VEYRA_ORIGIN } from "../../../lib/erc8004/veyra-registration.ts";
 import { ARC_MAINNET_NETWORK, ARC_MAINNET_USDC_ADDRESS } from "../../../lib/wallet/arc.ts";
+import { recordAdoptionEvent } from "../../../lib/x402/trust-api/adoption-metrics.ts";
 import { ARC_TRUST_API } from "../../../lib/x402/trust-api/arc-mainnet.ts";
 import { buildTrustApiCatalog } from "../../../lib/x402/trust-api/catalog.ts";
 import { publicVerdict, trustApiError } from "../../../lib/x402/trust-api/http.ts";
@@ -56,15 +57,15 @@ function handle(request: Request): Promise<Response> | Response {
         capability: z.string().max(64).optional(),
       }),
       annotations: { readOnlyHint: true, openWorldHint: true },
-    }, (input) => freeTool(caller, async () => ({
-      ...publicVerdict(await computeTrustApiVerdict({
+    }, (input) => freeTool(caller, async () => {
+      const verdict = publicVerdict(await computeTrustApiVerdict({
         ...input,
         budgetUsdc: input.budgetUsdc ?? 1,
         publicArc: true,
-      })),
-      signed: false,
-      clearance: null,
-    })));
+      }));
+      recordAdoptionEvent(request.headers, "mcp_verdict");
+      return { ...verdict, signed: false, clearance: null };
+    }));
 
     server.registerTool("veyra_endpoint_history", {
       description: "Preview the recency and coverage of stored Arc USDC observations. Full history and change details are sold separately.",

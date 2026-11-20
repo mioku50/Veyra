@@ -481,7 +481,7 @@ function buildReceipt(input: {
       run: `/runs/${step.run_id}`,
       agent: wallet ? `/agents/${wallet}` : null,
       service: serviceSlug ? `/store/${serviceSlug}` : null,
-      paymentEvent: paymentEvent ? "/dashboard" : null,
+      paymentEvent: paymentEvent ? `/receipts/${step.id}#payment-event` : null,
     },
   };
 }

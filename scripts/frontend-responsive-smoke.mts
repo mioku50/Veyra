@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { chromium } from "playwright";
+import { COOKIE_NAME, issueSellerSession } from "../lib/seller/session.ts";
 
 function baseUrl() {
   const argument = process.argv.find((value) => value.startsWith("--base-url="));
@@ -36,13 +37,17 @@ try {
   assert.equal(await page.locator('a[href^="/agent-runner"]').count(), 0);
   assert.equal(await page.locator('input[name="repository"]').count(), 0);
 
-  /* Everything below is frozen behind the developer console: opening the
-     console is the opt-in and it lasts the session, so the test takes the same
-     path an operator does instead of asserting against a redirect. */
+  const consoleResponse = await page.request.get(`${baseUrl()}/console`, { maxRedirects: 0 });
+  assert.equal(consoleResponse.status(), 307);
+  assert.equal(new URL(consoleResponse.headers().location, baseUrl()).pathname, "/login");
+
+  // Use the same signed session as the app, with a local test secret.
   await page.context().addCookies([{
-    name: "veyra_console",
-    value: "1",
+    name: COOKIE_NAME,
+    value: issueSellerSession(),
     url: baseUrl(),
+    httpOnly: true,
+    sameSite: "Strict",
   }]);
 
   await page.goto(`${baseUrl()}/agent-runner?workflow=builder_update`, { waitUntil: "load" });

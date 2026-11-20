@@ -95,6 +95,11 @@ export function Topbar({
                   <Link href={link.href}>{link.label}</Link>
                 </DropdownMenuItem>
               ))}
+              {loggedIn && !isConsole && (
+                <DropdownMenuItem asChild>
+                  <Link href="/console">{BRAND.developerConsole}</Link>
+                </DropdownMenuItem>
+              )}
               {loggedIn && (
                 <DropdownMenuItem
                   onSelect={() => {

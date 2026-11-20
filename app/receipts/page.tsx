@@ -22,12 +22,9 @@ import { Suspense } from "react";
 import {
   ArrowRight,
   BadgeCheck,
-  Bot,
   FileSearch,
-  ListChecks,
   ReceiptText,
   Sparkles,
-  Store,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -252,20 +249,6 @@ export default function ReceiptsPage({ searchParams }: ReceiptsPageProps) {
             <p className="mt-3 max-w-2xl text-sm leading-relaxed text-muted-foreground sm:text-base">
               Public audit trail and cryptographic evidence log for paid x402 service calls and Arc settlement receipts.
             </p>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <Button asChild size="sm" className="rounded-xl bg-primary hover:bg-blue-600 font-semibold">
-              <Link href="/agent-runner">
-                <Bot className="size-4 mr-1" />
-                Run Workflow
-              </Link>
-            </Button>
-            <Button asChild variant="outline" size="sm" className="rounded-xl border-white/10 bg-white/5 hover:bg-white/10">
-              <Link href="/runs">
-                <ListChecks className="size-4 mr-1" />
-                Runs
-              </Link>
-            </Button>
           </div>
         </div>
       </section>

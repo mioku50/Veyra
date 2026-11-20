@@ -614,20 +614,22 @@ async function main() {
 
   const pageChecks: Array<[path: string, expectedStatus: number]> = [
     ["/", 200],
+    ["/check", 200],
+    ["/console", 307],
     ["/review", 307],
     ["/demo", 307],
-    ["/agent-runner", 200],
-    ["/workflows", 200],
-    ["/results", 200],
-    ["/proofs", 200],
-    ["/developer-tools", 200],
-    ["/store", 200],
-    ["/agent-control", 200],
-    ["/agent-launch", 200],
-    ["/runs", 200],
+    ["/agent-runner", 307],
+    ["/workflows", 307],
+    ["/results", 307],
+    ["/proofs", 307],
+    ["/developer-tools", 307],
+    ["/store", 307],
+    ["/agent-control", 307],
+    ["/agent-launch", 307],
+    ["/runs", 307],
     ["/receipts", 200],
     ["/agents", 200],
-    ["/my-agents", 200],
+    ["/my-agents", 307],
   ];
 
   for (const [path, expectedStatus] of pageChecks) {

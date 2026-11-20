@@ -16,6 +16,8 @@ import { ProviderError } from "../lib/providers/errors.ts";
 async function runTests() {
   console.log("Running GitHub Provider tests...");
 
+  const recentCommitDate = new Date(Date.now() - 7 * 86_400_000).toISOString();
+
   // Mock global fetch for deterministic testing
   const originalFetch = globalThis.fetch;
 
@@ -88,8 +90,8 @@ async function runTests() {
             },
             {
               commit: {
-                committer: { date: "2026-07-01T00:00:00Z" },
-                author: { name: "Bob", email: "bob@example.com", date: "2026-07-01T00:00:00Z" },
+                committer: { date: recentCommitDate },
+                author: { name: "Bob", email: "bob@example.com", date: recentCommitDate },
               },
               author: { login: "bob" },
             },

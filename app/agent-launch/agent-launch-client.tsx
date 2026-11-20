@@ -48,6 +48,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import {
   arcClient,
+  erc20BalanceAbi,
   formatArcBalance,
   getErrorMessage,
   getProvider,
@@ -132,8 +133,7 @@ export function AgentLaunchClient() {
   const [task, setTask] = useState("Analyze tone and sentiment for a short builder update");
   const [limit, setLimit] = useState("0.005");
   const [txState, setTxState] = useState<TransactionState | null>(null);
-  const [buyerNativeBalance, setBuyerNativeBalance] = useState<bigint | null>(null);
-  const [buyerErc20Balance, setBuyerErc20Balance] = useState<bigint | null>(null);
+  const [buyerUsdcBalance, setBuyerUsdcBalance] = useState<bigint | null>(null);
   const [buyerBalanceError, setBuyerBalanceError] = useState<string | null>(null);
   const [buyerBalanceLoading, setBuyerBalanceLoading] = useState(false);
 
@@ -150,40 +150,25 @@ export function AgentLaunchClient() {
     }
   }, [limit, task]);
 
-  const loadBuyerBalances = useCallback(async () => {
+  const loadBuyerBalance = useCallback(async () => {
     if (!destinationIsValid) {
-      setBuyerNativeBalance(null);
-      setBuyerErc20Balance(null);
+      setBuyerUsdcBalance(null);
       setBuyerBalanceError(null);
       return;
     }
 
     setBuyerBalanceLoading(true);
     try {
-      const [native, erc20] = await Promise.all([
-        arcClient.getBalance({ address: destination as Address }),
-        arcClient.readContract({
-          address: ARC_TESTNET_USDC_ADDRESS as Address,
-          abi: [
-            {
-              type: "function",
-              name: "balanceOf",
-              stateMutability: "view",
-              inputs: [{ name: "account", type: "address" }],
-              outputs: [{ name: "", type: "uint256" }],
-            },
-          ] as const,
-          functionName: "balanceOf",
-          args: [destination as Address],
-        }),
-      ]);
-
-      setBuyerNativeBalance(native);
-      setBuyerErc20Balance(erc20);
+      const balance = await arcClient.readContract({
+        address: ARC_TESTNET_USDC_ADDRESS as Address,
+        abi: erc20BalanceAbi,
+        functionName: "balanceOf",
+        args: [destination as Address],
+      });
+      setBuyerUsdcBalance(balance);
       setBuyerBalanceError(null);
     } catch (caught) {
-      setBuyerNativeBalance(null);
-      setBuyerErc20Balance(null);
+      setBuyerUsdcBalance(null);
       setBuyerBalanceError(getErrorMessage(caught));
     } finally {
       setBuyerBalanceLoading(false);
@@ -191,8 +176,8 @@ export function AgentLaunchClient() {
   }, [destination, destinationIsValid]);
 
   useEffect(() => {
-    void loadBuyerBalances();
-  }, [loadBuyerBalances]);
+    void loadBuyerBalance();
+  }, [loadBuyerBalance]);
 
   const ensureReady = useCallback(
     (amount: string) => {
@@ -216,7 +201,7 @@ export function AgentLaunchClient() {
       const { provider, normalizedAmount } = ensureReady(nativeAmount);
       const value = parseEther(normalizedAmount);
       if (nativeBalanceWei !== null && value > nativeBalanceWei) {
-        throw new Error("Connected wallet does not have enough native USDC.");
+        throw new Error("Connected wallet does not have enough USDC.");
       }
 
       setTxState({
@@ -253,7 +238,7 @@ export function AgentLaunchClient() {
       });
 
       if (address) await loadBalances(address);
-      await loadBuyerBalances();
+      await loadBuyerBalance();
     } catch (caught) {
       const message = getErrorMessage(caught);
       setError(message);
@@ -268,7 +253,7 @@ export function AgentLaunchClient() {
     destination,
     ensureReady,
     loadBalances,
-    loadBuyerBalances,
+    loadBuyerBalance,
     nativeAmount,
     nativeBalanceWei,
     setError,
@@ -279,7 +264,7 @@ export function AgentLaunchClient() {
       const { provider, normalizedAmount } = ensureReady(erc20Amount);
       const value = parseUnits(normalizedAmount, ARC_TESTNET_USDC_DECIMALS);
       if (erc20UsdcBalance !== null && value > erc20UsdcBalance) {
-        throw new Error("Connected wallet does not have enough ERC-20 USDC.");
+        throw new Error("Connected wallet does not have enough USDC.");
       }
 
       const data = encodeFunctionData({
@@ -322,7 +307,7 @@ export function AgentLaunchClient() {
       });
 
       if (address) await loadBalances(address);
-      await loadBuyerBalances();
+      await loadBuyerBalance();
     } catch (caught) {
       const message = getErrorMessage(caught);
       setError(message);
@@ -339,7 +324,7 @@ export function AgentLaunchClient() {
     erc20Amount,
     erc20UsdcBalance,
     loadBalances,
-    loadBuyerBalances,
+    loadBuyerBalance,
     setError,
   ]);
 
@@ -479,21 +464,13 @@ export function AgentLaunchClient() {
               </p>
             ) : null}
 
-            <dl className="grid gap-3 sm:grid-cols-2">
+            <dl className="grid gap-3">
               <div className="rounded-md border bg-background p-4">
-                <dt className="text-sm text-muted-foreground">Buyer native</dt>
+                <dt className="text-sm text-muted-foreground">Buyer USDC balance</dt>
                 <dd className="mt-2 font-mono text-lg font-bold tracking-tight text-foreground">
                   {buyerBalanceLoading
                     ? "Loading..."
-                    : `${formatArcBalance(buyerNativeBalance)} USDC`}
-                </dd>
-              </div>
-              <div className="rounded-md border bg-background p-4">
-                <dt className="text-sm text-muted-foreground">Buyer ERC-20</dt>
-                <dd className="mt-2 font-mono text-lg font-bold tracking-tight text-foreground">
-                  {buyerBalanceLoading
-                    ? "Loading..."
-                    : `${formatArcBalance(buyerErc20Balance, ARC_TESTNET_USDC_DECIMALS)} USDC`}
+                    : `${formatArcBalance(buyerUsdcBalance, ARC_TESTNET_USDC_DECIMALS)} USDC`}
                 </dd>
               </div>
             </dl>
@@ -508,7 +485,7 @@ export function AgentLaunchClient() {
               <Button
                 type="button"
                 variant="outline"
-                onClick={() => void loadBuyerBalances()}
+                onClick={() => void loadBuyerBalance()}
                 disabled={!destinationIsValid || buyerBalanceLoading}
               >
                 <RefreshCw className={buyerBalanceLoading ? "animate-spin" : undefined} />

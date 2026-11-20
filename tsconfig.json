@@ -1,6 +1,6 @@
 {
   "compilerOptions": {
-    "target": "ES2017",
+    "target": "ES2020",
     "lib": ["dom", "dom.iterable", "esnext"],
     "allowJs": true,
     "skipLibCheck": true,
@@ -28,8 +28,15 @@
     "next-env.d.ts",
     "**/*.ts",
     "**/*.tsx",
+    "scripts/arc-offer-index-tests.mts",
+    "scripts/arc-infrastructure-tests.mts",
+    "scripts/veyra-adoption-metrics-tests.mts",
+    "scripts/navigation-compatibility-tests.mts",
+    "scripts/nova-schedule-health-tests.mts",
+    "scripts/nova-schedule-workers-tests.mts",
+    "scripts/release-browser-tests.mts",
     ".next/types/**/*.ts",
     ".next/dev/types/**/*.ts"
   ],
-  "exclude": ["node_modules"]
+  "exclude": ["node_modules", ".local-tools"]
 }

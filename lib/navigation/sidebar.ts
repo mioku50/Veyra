@@ -88,7 +88,7 @@ import { BRAND } from "../brand.ts";
 
 export const publicLinks = publicSidebarNavigation.flatMap(section => section.items);
 export const secondaryLinks = [
+  { href: "/check", label: "Check Arc endpoints" },
   { href: "/run", label: "Manual purchase" },
   { href: "/executions", label: "Decisions" },
-  { href: "/console", label: BRAND.developerConsole },
 ] as const;

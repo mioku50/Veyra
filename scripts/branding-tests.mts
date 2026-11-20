@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { resolve } from "node:path";
 import { chromium, type Page } from "playwright";
+import { COOKIE_NAME, issueSellerSession } from "../lib/seller/session.ts";
 import { BRAND, BRAND_TITLE } from "../lib/brand.ts";
 
 const REPOSITORY_ROOT = resolve(import.meta.dirname, "..");
@@ -238,6 +239,19 @@ try {
      it does for the person reading it, in their words rather than the brand's. */
   await page.getByText("Trust API on Arc", { exact: true }).first().waitFor();
 
+  const ogImage = await page.locator('meta[property="og:image"]').getAttribute("content");
+  assert(ogImage, "Home must publish a sharing image");
+  const imageUrl = new URL(ogImage);
+  const image = await page.request.get(baseUrl() + imageUrl.pathname + imageUrl.search);
+  assert.equal(image.status(), 200);
+  assert.match(image.headers()["content-type"], /^image\/png/);
+  assert.equal(await page.locator('meta[name="twitter:card"]').getAttribute("content"), "summary_large_image");
+
+  await page.context().addCookies([{
+    name: COOKIE_NAME, value: issueSellerSession(), url: baseUrl(), httpOnly: true, sameSite: "Strict",
+  }]);
+
+
   await page.goto(`${baseUrl()}/console`, { waitUntil: "load" });
   assert.equal(await page.title(), BRAND.developerConsole);
   await page.getByRole("heading", { name: BRAND.developerConsole, exact: true }).waitFor();
@@ -255,7 +269,7 @@ try {
     { width: 390, height: 844 },
   ]) {
     await page.setViewportSize(viewport);
-    for (const path of ["/", "/agent-runner", "/results", "/proofs", "/console", "/console/agent-api"]) {
+    for (const path of ["/", "/check", "/agent-runner", "/results", "/proofs", "/console", "/console/agent-api"]) {
       await assertNoHorizontalOverflow(page, path);
     }
   }

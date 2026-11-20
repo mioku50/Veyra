@@ -4,6 +4,7 @@
  */
 
 import { NextResponse, type NextRequest } from "next/server";
+import { recordAdoptionEvent } from "@/lib/x402/trust-api/adoption-metrics";
 import { publicVerdict, readJsonBody, trustApiError, TRUST_API_HEADERS } from "@/lib/x402/trust-api/http";
 import { TRUST_API_PRICING } from "@/lib/x402/trust-api/pricing";
 import { callerKey, consumeFreeCall } from "@/lib/x402/trust-api/rate-limit";
@@ -42,7 +43,7 @@ export async function POST(request: NextRequest) {
       budgetUsdc: Number(body.budgetUsdc ?? 1),
     });
 
-    return NextResponse.json({
+    const response = NextResponse.json({
       ...publicVerdict(verdict),
       signed: false,
       clearance: null,
@@ -55,6 +56,8 @@ export async function POST(request: NextRequest) {
         freeWith: TRUST_API_PRICING.outcomes.path,
       },
     }, { headers: TRUST_API_HEADERS });
+    recordAdoptionEvent(request.headers, "rest_verdict");
+    return response;
   } catch (error) {
     return trustApiError(error);
   }

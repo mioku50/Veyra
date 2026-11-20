@@ -176,7 +176,7 @@ export default async function ResultsPage({ searchParams }: ResultsPageProps) {
           </div>
         ) : (
           reports.map((report) => (
-            <Card key={report.id} className="rounded-2xl border border-white/10 bg-[#090c13]/90 backdrop-blur-xl p-1 transition-all duration-300 hover:border-primary/40 hover:shadow-[0_0_30px_rgba(123,108,255,0.12)]">
+            <Card key={report.id} className="min-w-0 rounded-2xl border border-white/10 bg-[#090c13]/90 backdrop-blur-xl p-1 [overflow-wrap:anywhere] transition-all duration-300 hover:border-primary/40 hover:shadow-[0_0_30px_rgba(123,108,255,0.12)]">
               <CardHeader className="p-6 pb-4">
                 <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
                   <Badge variant="secondary" className="border-primary/30 bg-primary/10 text-primary text-xs font-semibold">

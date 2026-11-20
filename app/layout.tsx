@@ -60,7 +60,7 @@ export const metadata: Metadata = {
     description: BRAND.description,
   },
   twitter: {
-    card: "summary",
+    card: "summary_large_image",
     title: BRAND_TITLE,
     description: BRAND.description,
   },
