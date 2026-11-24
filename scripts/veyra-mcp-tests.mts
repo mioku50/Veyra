@@ -17,13 +17,19 @@ process.env.AGENT_DB_SUPABASE_SECRET_KEY = "not-a-real-key";
 let historyRead = false;
 globalThis.fetch = async (input, init) => {
   const url = new URL(input instanceof Request ? input.url : input);
-  if (url.hostname === "db.example.test" && url.pathname.endsWith("/x402_endpoint_observations")) {
+  if (url.hostname === "db.example.test" && (
+    url.pathname.endsWith("/x402_endpoint_observations")
+    || url.pathname.endsWith("/arc_offer_index")
+    || url.pathname.endsWith("/arc_offer_checks")
+  )) {
     if (init?.method === "POST") return new Response(null, { status: 201 });
-    assert.equal(url.searchParams.get("network"), `eq.${ARC_MAINNET_NETWORK}`);
-    assert.equal(url.searchParams.get("observed_asset"), `eq.${ARC_MAINNET_USDC_ADDRESS}`);
-    if (url.searchParams.get("limit") === "10") {
-      historyRead = true;
-      return Response.json([{ probed_at: "2026-11-19T10:00:00Z" }]);
+    if (url.pathname.endsWith("/x402_endpoint_observations")) {
+      assert.equal(url.searchParams.get("network"), `eq.${ARC_MAINNET_NETWORK}`);
+      assert.equal(url.searchParams.get("observed_asset"), `eq.${ARC_MAINNET_USDC_ADDRESS}`);
+      if (url.searchParams.get("limit") === "10") {
+        historyRead = true;
+        return Response.json([{ probed_at: "2026-11-19T10:00:00Z" }]);
+      }
     }
     return Response.json([]);
   }
@@ -144,6 +150,9 @@ try {
   assert.equal(answer.method, "GET");
   assert.equal(answer.signed, false);
   assert.equal(answer.clearance, null);
+  assert.equal(answer.preflight?.result, "pass");
+  assert.ok(Array.isArray(answer.preflight?.blocking) && answer.preflight.blocking.length === 0);
+  assert.ok(Array.isArray(answer.preflight?.notes));
   assert.ok(successfulProbes > 0);
 } finally {
   setSellerRequestAdapterForTests(null);

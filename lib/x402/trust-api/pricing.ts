@@ -77,6 +77,16 @@ export const TRUST_API_PRICING = {
           ...VERDICT_RESPONSE.properties,
           method: { type: "string", enum: ["GET", "POST"] },
           network: { type: "string", enum: ["eip155:5042"] },
+          preflight: {
+            type: "object",
+            description: "Deterministic preflight gate from verifiable probe and catalog facts. `pass` means no concrete blocking fact was found — it is not an endorsement and postCallVerificationRequired remains unchanged.",
+            properties: {
+              result: { type: "string", enum: ["block", "pass"] },
+              blocking: { type: "array" },
+              notes: { type: "array" },
+            },
+            required: ["result", "blocking", "notes"],
+          },
         },
         required: [...VERDICT_RESPONSE.required, "method", "network"],
       },

@@ -4,6 +4,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { cache } from "react";
 import { formatUnits } from "viem";
+import { CircleAllowlistCard } from "@/components/check/circle-allowlist-card";
 import { readArcOfferDetail, type ArcOfferCheck } from "@/lib/discovery/arc-offer-index";
 import { VEYRA_ORIGIN } from "@/lib/erc8004/veyra-registration";
 import { normalizeResourceUrl } from "@/lib/x402/trust-api/resource";
@@ -116,6 +117,9 @@ export default async function ArcOfferDetail({ params }: Props) {
           </>
         ) : <p className="text-sm text-muted-foreground">{checks?.length ? "Awaiting a check of the current terms." : checks ? "Awaiting first check." : "Check results are temporarily unavailable."}</p>}
         <p className="text-sm text-muted-foreground">These checks cover the endpoint and payment challenge. They provide no evidence of successful settlement or delivery.</p>
+        {latest && latest.arc_challenge && latest.drift.length === 0 && latest.live_payee && (
+          <CircleAllowlistCard payToAddresses={[latest.live_payee]} />
+        )}
       </section>
 
       {checks && checks.length > 0 && (

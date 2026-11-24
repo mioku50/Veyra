@@ -148,6 +148,7 @@ runStep("ESLint Code Hygiene", () => {
 // 5. SDK Build & Typecheck
 runStep("Veyra TypeScript SDK Build", () => {
   execSync("npm run machine:sdk-build", { cwd: root, stdio: "inherit" });
+  execSync("npm run guard:sdk-build", { cwd: root, stdio: "inherit" });
 });
 
 // 6. Core Deterministic Test Suites
@@ -312,6 +313,7 @@ for (const suite of [
   "x402-payment:test", "execution-ledger:test", "erc8183-client:test",
   "byoa-origin:test", "x402-gateway:test", "payment-rail:test",
   "frontend:audit-test", "arc:c-pilot:test", "arc-index:test", "arc-state:test",
+  "preflight:test", "guard:sdk-test",
   "arc-infrastructure:test", "adoption:test", "nova-schedule-health:test",
   "navigation:compatibility-test",
 ]) {

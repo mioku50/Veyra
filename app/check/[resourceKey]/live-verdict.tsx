@@ -2,6 +2,8 @@
 
 /** Copyright 2026 Veyra. SPDX-License-Identifier: Apache-2.0 */
 import { useId, useState, type FormEvent } from "react";
+import { CircleAllowlistCard } from "@/components/check/circle-allowlist-card";
+import { PREFLIGHT_PASS_DISCLAIMER, type VerdictPreflight } from "@/lib/x402/trust-api/preflight";
 import type { TrustApiVerdict } from "@/lib/x402/trust-api/verdict";
 
 const labels = {
@@ -15,7 +17,9 @@ const labels = {
 type LiveVerdict = Pick<
   TrustApiVerdict,
   "decision" | "granted" | "payTo" | "priceUsdc" | "postCallVerificationRequired" | "reasons" | "alerts" | "explanation"
->;
+> & {
+  preflight?: VerdictPreflight;
+};
 
 type CheckResult = { verdict: LiveVerdict; budgetUsdc: number };
 
@@ -132,8 +136,34 @@ function VerdictResult({ result: { verdict, budgetUsdc } }: { result: CheckResul
           {verdict.reasons.map((reason) => <li key={reason}>{reason.replaceAll("_", " ").toLowerCase()}</li>)}
         </ul>
       )}
+      {verdict.preflight && (
+        <div className="space-y-1.5 rounded-md border border-white/10 bg-background/50 p-3 text-xs">
+          <p className="font-medium text-foreground">
+            {verdict.preflight.result === "pass"
+              ? `Preflight: pass (${PREFLIGHT_PASS_DISCLAIMER})`
+              : `Preflight: block (${verdict.preflight.blocking.map((signal) => signal.code.replaceAll("_", " ")).join(", ")})`}
+          </p>
+          {verdict.preflight.blocking.length > 0 && (
+            <ul className="list-inside list-disc text-destructive">
+              {verdict.preflight.blocking.map((signal) => (
+                <li key={signal.code}>{signal.detail}</li>
+              ))}
+            </ul>
+          )}
+          {verdict.preflight.notes.length > 0 && (
+            <ul className="list-inside list-disc text-muted-foreground">
+              {verdict.preflight.notes.map((signal) => (
+                <li key={signal.code}>{signal.detail}</li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
       {verdict.postCallVerificationRequired && <p>Post-call verification required.</p>}
       <p className="text-muted-foreground">Unsigned verdict. No payment sent.</p>
+      {verdict.preflight?.result === "pass" && verdict.payTo && (
+        <CircleAllowlistCard payToAddresses={[verdict.payTo]} />
+      )}
     </div>
   );
 }
