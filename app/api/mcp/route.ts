@@ -49,7 +49,7 @@ function handle(request: Request): Promise<Response> | Response {
   const caller = callerKey(request);
   return createMcpHandler((server) => {
     server.registerTool("veyra_check_endpoint", {
-      description: "Check the live USDC offer for an x402 endpoint on Arc mainnet before paying. Returns an unsigned verdict and evidence.",
+      description: "Check the live USDC offer for an x402 endpoint on Arc mainnet before paying. Returns an unsigned verdict, evidence, and deterministic preflight (`pass` means no blocking fact was found, not an endorsement).",
       inputSchema: z.strictObject({
         resource,
         method: method.optional().describe("If omitted, use the live offer or catalogue method."),
@@ -94,7 +94,7 @@ function handle(request: Request): Promise<Response> | Response {
       annotations: { readOnlyHint: true, openWorldHint: true },
     }, () => freeTool(caller, () => buildTrustApiCatalog(VEYRA_ORIGIN)));
   }, {
-    serverInfo: { name: BRAND.name, version: "1.0.0" },
+    serverInfo: { name: BRAND.name, version: "1.1.0" },
     maxSubscriptions: 0,
     telemetry: false,
   })(request);

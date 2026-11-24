@@ -153,6 +153,11 @@ async function checkLiveVerdict() {
       priceUsdc: 0.021,
       reasons: ["NO_REPUTATION_DATA"],
       alerts: [],
+      preflight: {
+        result: "pass",
+        blocking: [],
+        notes: [{ code: "no_reputation_data", detail: "No historical reputation data." }],
+      },
       postCallVerificationRequired: true,
       signed: false,
       clearance: null,
@@ -193,14 +198,31 @@ async function checkLiveVerdict() {
     for (const text of ["no reputation data", "Post-call verification required.", livePayee, "0.021 USDC", "Unsigned verdict. No payment sent."]) {
       await page.getByText(text, { exact: true }).waitFor();
     }
+    await page.getByRole("heading", { name: "Circle CLI recipient allowlist" }).waitFor();
+    await page.getByRole("button", { name: "Copy command", exact: true }).waitFor();
+    await page.getByText(`--targets "[${livePayee}]"`, { exact: false }).waitFor();
 
     const overBudgetExplanation = "The live quote exceeds the 0.03 USDC budget.";
-    reply = { status: 200, json: { ...verdict, granted: false, priceUsdc: 0.031, explanation: overBudgetExplanation } };
+    reply = {
+      status: 200,
+      json: {
+        ...verdict,
+        granted: false,
+        priceUsdc: 0.031,
+        explanation: overBudgetExplanation,
+        preflight: {
+          result: "block",
+          blocking: [{ code: "over_budget", detail: overBudgetExplanation }],
+          notes: [],
+        },
+      },
+    };
     await check.click();
     await page.getByRole("heading", { name: "Over budget", exact: true }).waitFor();
     await page.getByText("Evidence verdict", { exact: true }).waitFor();
     await page.getByText("Requires an evaluator", { exact: true }).waitFor();
-    await page.getByText(overBudgetExplanation, { exact: true }).waitFor();
+    await page.getByText(overBudgetExplanation, { exact: false }).first().waitFor();
+    assert.equal(await page.getByRole("heading", { name: "Circle CLI recipient allowlist" }).count(), 0);
 
     reply = { status: 429, json: { error: { code: "rate_limited", message: rateLimit } } };
     await check.click();

@@ -4,7 +4,9 @@
  */
 
 import { randomBytes } from "node:crypto";
+import { getByoaClient } from "../../byoa/service.ts";
 import { ARC_MAINNET_NETWORK, ARC_MAINNET_USDC_ADDRESS } from "../../wallet/arc.ts";
+import { buildVerdictPreflight, type VerdictPreflight } from "./preflight.ts";
 import { arcPaymentOptions, readPublicArcChallenge } from "./public-probe.ts";
 import { getAddress, isAddress, zeroAddress, type Hex } from "viem";
 import { BRAND } from "../../brand.ts";
@@ -99,6 +101,7 @@ export type TrustApiVerdict = {
     observations: number;
   };
   alerts: TrustApiAlert[];
+  preflight: VerdictPreflight;
   reasons: string[];
   explanation: string;
   evidenceHash: Hex;
@@ -229,6 +232,50 @@ function alertsFrom(input: {
   return alerts;
 }
 
+export type ArcIndexReference = {
+  catalogPayTo?: string | null;
+  lastCheckPayTo?: string | null;
+  lastCheckPriceUsdc?: number | null;
+};
+
+async function loadArcIndexReference(resourceKey: string): Promise<ArcIndexReference> {
+  try {
+    const db = getByoaClient();
+    const [listingRes, checkRes] = await Promise.all([
+      db.from("arc_offer_index")
+        .select("listed_payee")
+        .eq("resource_key", resourceKey)
+        .order("listed_at", { ascending: false })
+        .limit(1),
+      db.from("arc_offer_checks")
+        .select("live_payee, live_amount")
+        .eq("resource_key", resourceKey)
+        .order("checked_at", { ascending: false })
+        .limit(1),
+    ]);
+    const listingRow = !listingRes.error && Array.isArray(listingRes.data)
+      ? (listingRes.data[0] as { listed_payee?: unknown } | undefined)
+      : undefined;
+    const checkRow = !checkRes.error && Array.isArray(checkRes.data)
+      ? (checkRes.data[0] as { live_payee?: unknown; live_amount?: unknown } | undefined)
+      : undefined;
+
+    const catalogPayTo = typeof listingRow?.listed_payee === "string" && isAddress(listingRow.listed_payee)
+      ? listingRow.listed_payee.toLowerCase()
+      : null;
+    const lastCheckPayTo = typeof checkRow?.live_payee === "string" && isAddress(checkRow.live_payee)
+      ? checkRow.live_payee.toLowerCase()
+      : null;
+    let lastCheckPriceUsdc: number | null = null;
+    if (typeof checkRow?.live_amount === "string" && /^\d{1,30}$/.test(checkRow.live_amount) && checkRow.live_amount !== "0") {
+      lastCheckPriceUsdc = Number(checkRow.live_amount) / 1_000_000;
+    }
+    return { catalogPayTo, lastCheckPayTo, lastCheckPriceUsdc };
+  } catch {
+    return {};
+  }
+}
+
 /**
  * Score the observed payment option with the same policy. The public route
  * checks the Arc mainnet offer; the signed clearance has its own legacy
@@ -244,6 +291,7 @@ export async function computeTrustApiVerdict(input: {
   publicArc?: boolean;
   catalogueMethod?: (resource: string) => Promise<ProbeMethod | null>;
   probeFetchImpl?: (url: string, init: RequestInit) => Promise<Response>;
+  arcIndexReference?: ArcIndexReference;
 }): Promise<TrustApiVerdict> {
   const resource = normalizeResourceUrl(input.resource);
   const capability = typeof input.capability === "string" && input.capability.trim()
@@ -265,9 +313,13 @@ export async function computeTrustApiVerdict(input: {
   const method = publicChallenge?.method ?? parseProbeMethod(input.method);
   const resourceKey = resourceKeyFor(method, resource);
 
-  const history = await loadEndpointObservations(resourceKey, ENDPOINT_HISTORY_LIMIT, publicChallenge ? {
+  const historyPromise = loadEndpointObservations(resourceKey, ENDPOINT_HISTORY_LIMIT, publicChallenge ? {
     network: ARC_MAINNET_NETWORK, asset: ARC_MAINNET_USDC_ADDRESS,
   } : undefined);
+  const arcIndexPromise = input.arcIndexReference
+    ? Promise.resolve(input.arcIndexReference)
+    : loadArcIndexReference(resourceKey);
+  const [history, arcIndexReference] = await Promise.all([historyPromise, arcIndexPromise]);
   const lastObservation = (publicChallenge
     ? history.find((row) => row.observed_pay_to && isAddress(row.observed_pay_to) && row.observed_price_usdc !== null)
     : history[0]) ?? null;
@@ -446,6 +498,35 @@ export async function computeTrustApiVerdict(input: {
         ? `The endpoint asks ${requestedValueUsdc.toFixed(6)} USDC, above the ${input.budgetUsdc.toFixed(6)} USDC budget.`
         : `Evidence does not support paying this counterparty: ${trustDecision.reasons.join(", ")}.`);
 
+  const failedChecks = probe.checks.filter((check) => !check.passed).map((check) => check.id);
+  const effectiveNetwork = publicChallenge ? ARC_MAINNET_NETWORK : liveAccept.network;
+  const lastObservationPriceRaw = lastObservation?.observed_price_usdc !== null && lastObservation?.observed_price_usdc !== undefined
+    ? Number(lastObservation.observed_price_usdc)
+    : null;
+  const preflight = buildVerdictPreflight({
+    probe: {
+      reachable: probe.reachable,
+      respondedWith402: probe.respondedWith402,
+      challengeParseable: probe.challengeParseable,
+      criticalFailure: probe.criticalFailure,
+      failedChecks,
+    },
+    network: effectiveNetwork,
+    livePayTo: probe.observedPayTo ?? liveAccept.payTo,
+    priceUsdc: requestedValueUsdc,
+    priceUnknown,
+    budgetUsdc: input.budgetUsdc,
+    catalogPayTo: arcIndexReference.catalogPayTo ?? null,
+    lastCheckPayTo: arcIndexReference.lastCheckPayTo ?? null,
+    lastCheckPriceUsdc: arcIndexReference.lastCheckPriceUsdc ?? null,
+    lastObservationPayTo: lastObservation?.observed_pay_to ?? null,
+    lastObservationPriceUsdc: lastObservationPriceRaw !== null && Number.isFinite(lastObservationPriceRaw)
+      ? lastObservationPriceRaw
+      : null,
+    reasons: trustDecision.reasons,
+    statisticalEvidenceAvailable: evidence.statisticalEvidenceAvailable,
+  });
+
   return {
     verdictVersion: TRUST_API_VERDICT_VERSION,
     probeVersion: X402_PROBE_VERSION,
@@ -457,7 +538,7 @@ export async function computeTrustApiVerdict(input: {
     decision: trustDecision.decision,
     granted,
     payTo: liveAccept.payTo,
-    network: publicChallenge ? ARC_MAINNET_NETWORK : liveAccept.network,
+    network: effectiveNetwork,
     priceUsdc: requestedValueUsdc,
     maxExposureUsdc,
     postCallVerificationRequired: trustDecision.policy.evaluatorRequired,
@@ -470,7 +551,7 @@ export async function computeTrustApiVerdict(input: {
       integrityScore: probe.integrityScore,
       catalogDrift: probe.catalogDrift,
       criticalFailure: probe.criticalFailure,
-      failedChecks: probe.checks.filter((check) => !check.passed).map((check) => check.id),
+      failedChecks,
     },
     evidence: {
       coverage: Math.round(coverage.coverage * 100),
@@ -482,6 +563,7 @@ export async function computeTrustApiVerdict(input: {
       observations: summary.observations,
     },
     alerts,
+    preflight,
     reasons: trustDecision.reasons,
     explanation,
     evidenceHash,

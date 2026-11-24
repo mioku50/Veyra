@@ -62,7 +62,16 @@ export const ARC_TRUST_API = {
         },
         required: SELECT_INPUT.required,
       },
-      output: TRUST_API_PRICING.select.schema.output,
+      output: {
+        ...TRUST_API_PRICING.select.schema.output,
+        properties: {
+          ...TRUST_API_PRICING.select.schema.output.properties,
+          circlePolicyCommand: {
+            type: ["object", "null"],
+            description: "Circle CLI 1.4.0+ recipient-allowlist policy command built from Arc mainnet candidates passing preflight. Run manually in the wallet owner's terminal (requires email OTP confirmation).",
+          },
+        },
+      },
     },
   },
 } as const;

@@ -9,6 +9,7 @@ import {
 } from "../../counterparty-selection/marketplace.ts";
 import { CounterpartySelectionError } from "../../counterparty-selection/service.ts";
 import { ARC_MAINNET_NETWORK } from "./arc-mainnet.ts";
+import { buildCircleRecipientAllowlistCommand } from "./circle-policy.ts";
 import { attesterConfigured } from "./clearance-ledger.ts";
 import { readJsonBody, trustApiError, TRUST_API_HEADERS } from "./http.ts";
 import { loadEndpointObservations, summariseEndpointHistory, type EndpointHistory } from "./observations.ts";
@@ -154,8 +155,24 @@ export async function answerSelect(request: NextRequest, payer: string | null, r
 
 /** What `select` answers, kept apart from the route so a test can hold it to the published schema. */
 export function selectAnswer(selection: MarketplaceSelection, context: { onArc: boolean; unsigned: boolean }) {
+  const circlePolicyCommand = context.onArc
+    ? buildCircleRecipientAllowlistCommand(
+        selection.candidates
+          .filter((candidate) =>
+            candidate.probe.reachable
+            && candidate.probe.respondedWith402
+            && candidate.probe.criticalFailure === null
+            && !candidate.probe.catalogDrift.includes("payto_changed")
+            && candidate.marketplace.network.toLowerCase() === ARC_MAINNET_NETWORK
+            && candidate.marketplace.priceUsdc <= selection.requestedBudgetUsdc,
+          )
+          .map((candidate) => candidate.marketplace.payTo),
+      )
+    : undefined;
+
   return {
     selection,
+    ...(circlePolicyCommand !== undefined ? { circlePolicyCommand } : {}),
     note: context.onArc
       ? "No clearance is signed on Arc mainnet: the TrustGate that verifies one exists on Arc Testnet only."
       : context.unsigned

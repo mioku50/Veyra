@@ -1,0 +1,38 @@
+{
+  "name": "veyra-trust-guard",
+  "version": "0.1.0",
+  "description": "Fail-closed x402 preflight guard wrapping fetch using Veyra free verdicts.",
+  "type": "module",
+  "license": "Apache-2.0",
+  "homepage": "https://agent-commerce-six.vercel.app",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/mioku50/Veyra.git",
+    "directory": "sdk/x402-guard"
+  },
+  "keywords": [
+    "x402",
+    "arc",
+    "usdc",
+    "ai-agents",
+    "preflight",
+    "veyra"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "prepublishOnly": "npm run build"
+  }
+}
