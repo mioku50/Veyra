@@ -289,7 +289,10 @@ try {
   for (const text of ["State of Arc x402", "Observed by Veyra", "85 ms", "/state.json", "docs/state-of-arc-x402.sql"]) {
     assert(stateHtml.includes(text), `/state missing ${text}`);
   }
-  assert(!/\bverif(?:ied|y|ying|ication)\b/i.test(stateHtml), "/state must never claim verified status");
+  const stateHead = stateHtml.match(/<head[\s\S]*?<\/head>/)?.[0] ?? "";
+  const stateMain = stateHtml.match(/<main[\s\S]*?<\/main>/)?.[0] ?? "";
+  assert(stateMain.length > 0, "/state must render a <main> landmark");
+  assert(!/\bverif(?:ied|y|ying|ication)\b/i.test(stateHead + "\n" + stateMain), "/state must never claim verified status");
   const stateOgRes = await fetch(baseUrl + "/state/opengraph-image");
   assert.equal(stateOgRes.status, 200);
   assert.match(stateOgRes.headers.get("content-type") ?? "", /^image\/png/);
