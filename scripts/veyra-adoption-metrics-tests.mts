@@ -1,6 +1,10 @@
 /** Copyright 2026 Veyra. SPDX-License-Identifier: Apache-2.0 */
 import assert from "node:assert/strict";
-import { makeAdoptionEvent, recordAdoptionEvent } from "../lib/x402/trust-api/adoption-metrics.ts";
+import {
+  makeAdoptionEvent,
+  recordAdoptionEvent,
+  verdictAdoptionChannel,
+} from "../lib/x402/trust-api/adoption-metrics.ts";
 
 const config = { secret: "8a".repeat(32), environment: "production" };
 const monday = new Date("2026-11-16T00:00:00.000Z");
@@ -21,14 +25,19 @@ assert.deepEqual(rest, {
 });
 assert.match(rest.p_caller, /^[a-f\d]{64}$/);
 
-// The same weekly network pseudonym works across REST, MCP and paid history.
+// The same weekly network pseudonym works across REST, MCP, web UI and paid history.
 const sameAddress = new Headers({ "x-vercel-forwarded-for": "198.51.100.1" });
-for (const event of ["mcp_verdict", "paid_history"] as const) {
+for (const event of ["mcp_verdict", "web_verdict", "paid_history"] as const) {
   const result = makeAdoptionEvent(sameAddress, event, config, new Date("2026-11-22T23:59:59.999Z"));
   assert.equal(result?.p_event, event);
   assert.equal(result?.p_week, rest.p_week);
   assert.equal(result?.p_caller, rest.p_caller);
 }
+
+assert.equal(verdictAdoptionChannel(new Headers()), "rest_verdict");
+assert.equal(verdictAdoptionChannel(new Headers({ "x-veyra-source": "cli" })), "rest_verdict");
+assert.equal(verdictAdoptionChannel(new Headers({ "X-Veyra-Source": "web" })), "web_verdict");
+assert.equal(verdictAdoptionChannel(new Headers({ "x-veyra-source": " WEB " })), "web_verdict");
 
 const nextWeek = makeAdoptionEvent(headers, "rest_verdict", config, new Date("2026-11-23T00:00:00.000Z"));
 assert.equal(nextWeek?.p_week, "2026-11-23");

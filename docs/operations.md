@@ -27,7 +27,7 @@ only alert codes, severity, messages, retry policy, environment, and timestamp.
 
 ## Arc Trust API adoption
 
-The database owner applies migration `20261120090200_veyra_adoption_metrics.sql`.
+The database owner applies migrations `20261120090200_veyra_adoption_metrics.sql` and `20261124120000_veyra_adoption_web_channel.sql`.
 Enable measurement on the next Vercel production deployment by setting the
 server-only `VEYRA_ADOPTION_METRICS_SECRET` to a random 32-byte key encoded as 64
 hex characters. Collection also requires Vercel to expose its `VERCEL_ENV`
@@ -40,9 +40,11 @@ Read the weekly aggregates as the database owner or server role:
 SELECT * FROM public.veyra_adoption_weekly ORDER BY week DESC LIMIT 5;
 ```
 
-- `rest_verdict_callers` and `mcp_verdict_callers` count distinct weekly
-  pseudonyms that got a free verdict. `verdict_callers` deduplicates across the
-  two channels. MCP discovery, tool listing, and the history preview are excluded.
+- `rest_verdict_callers`, `mcp_verdict_callers`, and `web_verdict_callers` count
+  distinct weekly pseudonyms that got a free verdict through direct REST/CLI,
+  MCP, or first-party web UI forms (`X-Veyra-Source: web`). `verdict_callers`
+  deduplicates across all three channels. MCP discovery, tool listing, and the
+  history preview are excluded.
 - `paid_history_callers` counts distinct weekly pseudonyms whose Arc mainnet
   history payment the Circle facilitator reported as successful. Payment
   confirmation is recorded separately from successful delivery.

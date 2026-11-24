@@ -255,7 +255,7 @@ try {
 
   // Recover a newly created profile after a failed first refresh.
   simulateOnboarding = true;
-  await page.goto(base);
+  await page.goto(`${base}/nova`);
   await page.getByRole("button", { name: "Arc", exact: true }).click();
   const customInterest = page.getByLabel("Custom interest", { exact: true });
   const addInterest = page.getByRole("button", { name: "Add interest", exact: true });

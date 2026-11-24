@@ -28,9 +28,10 @@ export function MobileBottomNav() {
       className="fixed bottom-0 inset-x-0 z-40 grid grid-flow-col auto-cols-fr border-t border-white/10 bg-[#07090e]/95 backdrop-blur-xl lg:hidden pb-[env(safe-area-inset-bottom)]"
     >
       {publicLinks.map((link) => {
+        const href: string = link.href;
         const active =
-          pathname === link.href ||
-          (link.href !== "/" && pathname.startsWith(`${link.href}/`));
+          pathname === href ||
+          (href !== "/" && pathname.startsWith(`${href}/`));
         const Icon = iconByName[link.icon] ?? ShieldCheck;
         return (
           <Link

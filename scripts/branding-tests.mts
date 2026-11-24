@@ -4,6 +4,7 @@ import { resolve } from "node:path";
 import { chromium, type Page } from "playwright";
 import { COOKIE_NAME, issueSellerSession } from "../lib/seller/session.ts";
 import { BRAND, BRAND_TITLE } from "../lib/brand.ts";
+import { HOME_DESCRIPTION, HOME_TITLE } from "../lib/home-metadata.ts";
 
 const REPOSITORY_ROOT = resolve(import.meta.dirname, "..");
 const FORBIDDEN_BRANDS = [
@@ -202,22 +203,22 @@ const browser = await chromium.launch({ headless: true });
 try {
   const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
   await page.goto(`${baseUrl()}/`, { waitUntil: "load" });
-  assert.equal(await page.title(), BRAND_TITLE);
+  assert.equal(await page.title(), HOME_TITLE);
   assert.equal(
     await page.locator('meta[property="og:title"]').getAttribute("content"),
-    BRAND_TITLE,
+    HOME_TITLE,
   );
   assert.equal(
     await page.locator('meta[property="og:description"]').getAttribute("content"),
-    BRAND.description,
+    HOME_DESCRIPTION,
   );
   assert.equal(
     await page.locator('meta[name="twitter:title"]').getAttribute("content"),
-    BRAND_TITLE,
+    HOME_TITLE,
   );
   assert.equal(
     await page.locator('meta[name="twitter:description"]').getAttribute("content"),
-    BRAND.description,
+    HOME_DESCRIPTION,
   );
   assert((await page.locator('link[rel="manifest"]').getAttribute("href"))?.includes("manifest.webmanifest"));
   assert((await page.locator('link[rel="icon"]').first().getAttribute("href"))?.includes("icon.svg"));
@@ -268,7 +269,7 @@ try {
     { width: 390, height: 844 },
   ]) {
     await page.setViewportSize(viewport);
-    for (const path of ["/", "/check", "/agent-runner", "/results", "/proofs", "/console", "/console/agent-api"]) {
+    for (const path of ["/", "/check", "/nova", "/agent-runner", "/results", "/proofs", "/console", "/console/agent-api"]) {
       await assertNoHorizontalOverflow(page, path);
     }
   }

@@ -19,7 +19,7 @@ export const publicSidebarNavigation = [
     label: "Your agent",
     items: [
       { href: "/check", label: "Check", icon: "proof" },
-      { href: "/", label: "Today", icon: "agent" },
+      { href: "/nova", label: "Today", icon: "agent" },
       { href: "/agent", label: "My Agent", icon: "my-agents" },
       { href: "/memory", label: "Memory", icon: "results" },
       { href: "/arc", label: "Identity & Trust", icon: "passport" },

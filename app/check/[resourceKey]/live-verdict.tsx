@@ -50,7 +50,10 @@ export function LiveVerdictForm({ resource, method, listedPrice, maxBudget }: Pr
     try {
       const response = await fetch("/api/x402/v1/verdict", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          "X-Veyra-Source": "web",
+        },
         body: JSON.stringify({ resource, method, budgetUsdc }),
         signal: AbortSignal.timeout(25_000),
       });

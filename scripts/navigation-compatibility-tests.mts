@@ -95,6 +95,10 @@ if (base) {
   assert.equal(homeResponse.headers.get("x-frame-options"), "DENY");
   assert.equal(homeResponse.headers.get("content-security-policy-report-only"), null);
 
+  const novaResponse = await get("/nova");
+  assert.equal(novaResponse.status, 200);
+  assert.equal(novaResponse.headers.get("location"), null);
+
   assert.equal((await get("/openapi/veyra-arc-trust-api.json")).status, 200);
   assert.equal((await get("/openapi/veyra-agent-api-v1.json")).status, 200);
   const legacyOpenApi = await get("/openapi/agent-commerce-v1.json");

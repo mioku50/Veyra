@@ -37,12 +37,12 @@ const FORBIDDEN_PATTERNS = [
    /results, both of which are now frozen behind the developer console and
    answer with a redirect, so the check was inspecting the console rather than
    the product. */
-const PUBLIC_PATHS = ["/", "/executions", "/run"];
+const PUBLIC_PATHS = ["/", "/nova", "/executions", "/run"];
 
 /* /run supplies its own chrome and deliberately has no shell navigation: a
    single-purpose decision screen nested inside a browsing shell makes both look
    unfinished. So its copy is checked and its navigation is not. */
-const SHELL_PATHS = ["/", "/executions"];
+const SHELL_PATHS = ["/", "/nova", "/executions"];
 
 const VIEWPORTS = [
   { name: "desktop", width: 1440, height: 900 },

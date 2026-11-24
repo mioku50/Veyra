@@ -80,22 +80,21 @@ assert(nextConfigSource.includes("/openapi/agent-commerce-v1.json"));
 assert(nextConfigSource.includes("/openapi/veyra-agent-api-v1.json"));
 
 const homeSource = readFileSync(new URL("../app/page.tsx", import.meta.url), "utf8");
+const novaPageSource = readFileSync(new URL("../app/nova/page.tsx", import.meta.url), "utf8");
 const proofsSource = readFileSync(
   new URL("../app/proofs/page.tsx", import.meta.url),
   "utf8",
 );
 /* The front door.
  *
- * These assertions used to describe a pitch: the brand tagline rendered in two
- * accented halves, a link to /run, a row of workflow cards, a repository
- * analyser. The page now IS the product -- it creates a personal agent and
- * shows that agent's brief -- so the invariant is no longer "does the pitch
- * contain the right words" but "does the first screen do the thing".
- *
- * What is still enforced, and matters more than the wording: the home page must
- * not go back to being a tour of subsystems. */
-assert.match(homeSource, /NovaClient/, "the front door renders the personal agent, not a pitch");
+ * The home page makes free endpoint verification the first action a visitor
+ * reaches, backed by live Arc offer index stats, while Nova lives at /nova
+ * with a direct return banner on / when saved in localStorage. */
+assert.match(homeSource, /EndpointChecker/, "the front door renders the free x402 endpoint checker");
+assert.match(homeSource, /getCachedArcOfferIndexSummary/, "the front door renders live Arc index metrics");
 assert(homeSource.includes("metadata"), "the front door still describes itself to crawlers");
+assert.match(novaPageSource, /NovaClient/, "/nova renders NovaClient directly");
+assert(!novaPageSource.includes('redirect("/")'), "/nova does not redirect back to /");
 
 for (const tour of [
   "hostedWorkflowTemplates",
@@ -268,7 +267,7 @@ const publicItems = publicSidebarNavigation.flatMap(({ items }) =>
 );
 assert.deepEqual(publicItems, [
   { label: "Check", href: "/check" },
-  { label: "Today", href: "/" },
+  { label: "Today", href: "/nova" },
   { label: "My Agent", href: "/agent" },
   { label: "Memory", href: "/memory" },
   { label: "Identity & Trust", href: "/arc" },

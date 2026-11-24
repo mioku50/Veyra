@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { setImmediate as nextTurn } from "node:timers/promises";
-import { checkArcListing, indexArcListings } from "../lib/discovery/arc-offer-index.ts";
+import { checkArcListing, indexArcListings, summarizeArcOfferIndex } from "../lib/discovery/arc-offer-index.ts";
 import { readBazaar, readCircleCatalogue } from "../lib/discovery/catalogues.ts";
 import type { OfferInput } from "../lib/discovery/offers.ts";
 import { ARC_MAINNET_NETWORK, ARC_MAINNET_USDC_ADDRESS } from "../lib/wallet/arc.ts";
@@ -293,4 +293,32 @@ test("non-Arc and timeout results publish failed check codes without arbitrary p
   });
   assert.equal(timeout.error_category, "timeout");
   assert(!JSON.stringify(timeout).includes("sensitive"));
+});
+
+test("summarizeArcOfferIndex counts listings, unique hosts, 7d checks and valid Arc rate", () => {
+  const empty = summarizeArcOfferIndex(
+    [{ hostname: "api.example.com" }, { hostname: "api.example.com" }, { hostname: "other.example.com" }],
+    [],
+    now.toISOString(),
+  );
+  assert.deepEqual(empty, {
+    listings: 3,
+    hosts: 2,
+    checks7d: 0,
+    arcChallengeChecks7d: 0,
+    arcChallengeRate7d: null,
+    asOf: now.toISOString(),
+  });
+
+  const populated = summarizeArcOfferIndex(
+    [{ hostname: "a.example" }, { hostname: "b.example" }, { hostname: "a.example" }, { hostname: "c.example" }],
+    [{ arc_challenge: true }, { arc_challenge: false }, { arc_challenge: true }, { arc_challenge: true }],
+    now.toISOString(),
+  );
+  assert.equal(populated.listings, 4);
+  assert.equal(populated.hosts, 3);
+  assert.equal(populated.checks7d, 4);
+  assert.equal(populated.arcChallengeChecks7d, 3);
+  assert.equal(populated.arcChallengeRate7d, 0.75);
+  assert.equal(populated.asOf, now.toISOString());
 });

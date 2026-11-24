@@ -4,7 +4,7 @@
  */
 
 import { NextResponse, type NextRequest } from "next/server";
-import { recordAdoptionEvent } from "@/lib/x402/trust-api/adoption-metrics";
+import { recordAdoptionEvent, verdictAdoptionChannel } from "@/lib/x402/trust-api/adoption-metrics";
 import { ARC_MAINNET_NETWORK, ARC_TRUST_API } from "@/lib/x402/trust-api/arc-mainnet";
 import { publicVerdict, readJsonBody, trustApiError, TRUST_API_HEADERS } from "@/lib/x402/trust-api/http";
 import { callerKey, consumeFreeCall } from "@/lib/x402/trust-api/rate-limit";
@@ -57,7 +57,7 @@ export async function POST(request: NextRequest) {
         network: ARC_MAINNET_NETWORK,
       },
     }, { headers: TRUST_API_HEADERS });
-    recordAdoptionEvent(request.headers, "rest_verdict");
+    recordAdoptionEvent(request.headers, verdictAdoptionChannel(request.headers));
     return response;
   } catch (error) {
     return trustApiError(error);
