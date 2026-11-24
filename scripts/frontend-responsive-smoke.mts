@@ -114,7 +114,7 @@ try {
     { width: 390, height: 844 },
   ]) {
     await page.setViewportSize(viewport);
-    for (const path of ["/", "/nova", "/executions", "/agent-runner", "/workflows", "/results", "/proofs", "/console"]) {
+    for (const path of ["/", "/state", "/nova", "/executions", "/agent-runner", "/workflows", "/results", "/proofs", "/console"]) {
       await noHorizontalOverflow(page, path);
     }
   }

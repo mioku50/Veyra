@@ -311,7 +311,7 @@ for (const suite of [
   "byoa:test", "counterparty:product-test", "counterparty:negative-test",
   "x402-payment:test", "execution-ledger:test", "erc8183-client:test",
   "byoa-origin:test", "x402-gateway:test", "payment-rail:test",
-  "frontend:audit-test", "arc:c-pilot:test", "arc-index:test",
+  "frontend:audit-test", "arc:c-pilot:test", "arc-index:test", "arc-state:test",
   "arc-infrastructure:test", "adoption:test", "nova-schedule-health:test",
   "navigation:compatibility-test",
 ]) {

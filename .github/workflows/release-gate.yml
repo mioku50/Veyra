@@ -58,6 +58,7 @@ jobs:
           cat supabase/migrations/20261120090200_veyra_adoption_metrics.sql supabase/migrations/20261124120000_veyra_adoption_web_channel.sql scripts/veyra-adoption-metrics-tests.sql \
             | docker exec -i "$db" psql -h 127.0.0.1 -U postgres -v ON_ERROR_STOP=1
           cat supabase/migrations/20261120110000_arc_offer_index.sql scripts/arc-offer-index-tests.sql \
+            supabase/migrations/20261124150000_arc_state_snapshots.sql scripts/arc-state-snapshots-tests.sql \
             | docker exec -i "$db" psql -h 127.0.0.1 -U postgres -v ON_ERROR_STOP=1
 
       - name: Run Public Beta Release Gate

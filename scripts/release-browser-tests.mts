@@ -93,9 +93,11 @@ const fixture = createHttpServer((request, response) => {
   }
   if (url.pathname === "/rest/v1/arc_offer_checks") {
     data = [{
+      resource_key: resourceKey,
       checked_at: now, http_status: 402, error_category: "none", arc_challenge: true,
       live_amount: "20000", live_payee: payee, live_rail: "wallet", listed_amount: "12000",
       listed_payee: payee, drift: ["price_changed"], failed_checks: ["accepts_matches_catalog"],
+      latency_ms: 85,
     }];
   }
   response.writeHead(200, { "Content-Type": "application/json" }).end(JSON.stringify(data));
@@ -259,8 +261,38 @@ try {
     assert(content.includes(path === "/robots.txt" ? "/sitemap.xml" : "/check"), path);
     if (path === "/sitemap.xml") {
       assert(content.includes("/nova"), "sitemap must include /nova");
+      assert(content.includes("/state"), "sitemap must include /state");
+    }
+    if (path === "/llms.txt") {
+      assert(content.includes("/state"), "llms.txt must include /state");
+      assert(content.includes("/state.json"), "llms.txt must include /state.json");
     }
   }
+  const stateJsonRes = await fetch(baseUrl + "/state.json");
+  assert.equal(stateJsonRes.status, 200);
+  assert.match(stateJsonRes.headers.get("content-type") ?? "", /^application\/json\b/);
+  const stateJson = await stateJsonRes.json() as {
+    overview: { listings: number; checksInWindow: number };
+    drift: { anyCount: number; priceChangedCount: number };
+    latency: { medianMs: number | null; source: string };
+  };
+  assert.equal(stateJson.overview.listings, 1);
+  assert.equal(stateJson.overview.checksInWindow, 1);
+  assert.equal(stateJson.drift.anyCount, 1);
+  assert.equal(stateJson.drift.priceChangedCount, 1);
+  assert.equal(stateJson.latency.medianMs, 85);
+  assert.equal(stateJson.latency.source, "arc_offer_checks");
+
+  const stateRes = await fetch(baseUrl + "/state");
+  assert.equal(stateRes.status, 200);
+  const stateHtml = await stateRes.text();
+  for (const text of ["State of Arc x402", "Observed by Veyra", "85 ms", "/state.json", "docs/state-of-arc-x402.sql"]) {
+    assert(stateHtml.includes(text), `/state missing ${text}`);
+  }
+  assert(!/\bverif(?:ied|y|ying|ication)\b/i.test(stateHtml), "/state must never claim verified status");
+  const stateOgRes = await fetch(baseUrl + "/state/opengraph-image");
+  assert.equal(stateOgRes.status, 200);
+  assert.match(stateOgRes.headers.get("content-type") ?? "", /^image\/png/);
   const index = await fetch(baseUrl + "/check?q=paid.example");
   assert.equal(index.status, 200);
   assert((await index.text()).includes("/check/" + resourceKey));

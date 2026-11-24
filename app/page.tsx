@@ -130,6 +130,9 @@ export default async function HomePage() {
         <Link href="/check" className="font-medium text-primary underline-offset-4 hover:underline">
           Browse Arc index
         </Link>
+        <Link href="/state" className="text-muted-foreground underline-offset-4 hover:text-foreground hover:underline">
+          State of Arc x402
+        </Link>
         <Link href="/nova" className="text-muted-foreground underline-offset-4 hover:text-foreground hover:underline">
           Your personal agent (Nova)
         </Link>

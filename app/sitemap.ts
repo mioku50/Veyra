@@ -7,7 +7,7 @@ export const revalidate = 3_600;
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   return [
-    ...["/", "/check", "/nova", "/trust"].map((path) => ({ url: new URL(path, VEYRA_ORIGIN).href })),
+    ...["/", "/check", "/state", "/nova", "/trust"].map((path) => ({ url: new URL(path, VEYRA_ORIGIN).href })),
     ...(await sitemapArcOffers()).map((offer) => ({
       url: `${VEYRA_ORIGIN}/check/${offer.resource_key}`,
       lastModified: offer.last_checked_at,

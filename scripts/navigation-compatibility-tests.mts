@@ -80,6 +80,10 @@ if (base) {
     assert.equal(new URL(response.headers.get("location")!, localOrigin).pathname, "/check");
   }
   assert.equal((await get("/check")).status, 200);
+  assert.equal((await get("/state")).status, 200);
+  const stateJsonResponse = await get("/state.json");
+  assert.equal(stateJsonResponse.status, 200);
+  assert.match(stateJsonResponse.headers.get("content-type") ?? "", /^application\/json\b/);
 
   const trustResponse = await get("/trust");
   assert.equal(trustResponse.status, 200);
