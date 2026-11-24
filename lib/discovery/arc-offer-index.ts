@@ -45,6 +45,7 @@ export type ArcOfferCheck = {
   listed_payee: string;
   drift: string[];
   failed_checks: string[];
+  latency_ms?: number | null;
 };
 
 type IndexedInput = Pick<OfferInput, "resource" | "method" | "accepts" | "listing">;
@@ -171,6 +172,9 @@ export async function checkArcListing(
     listed_payee: listing.listed_payee,
     drift,
     failed_checks: failedChecks,
+    latency_ms: probe.latencyMs !== null && Number.isFinite(probe.latencyMs) && probe.latencyMs >= 0
+      ? Math.round(probe.latencyMs)
+      : null,
   };
 }
 

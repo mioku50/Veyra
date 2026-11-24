@@ -263,6 +263,7 @@ test("checks use one unpaid request with the catalogued method and detect confir
   assert.deepEqual(check.drift.sort(), ["payto_changed", "price_changed"]);
   assert(check.failed_checks.includes("accepts_matches_catalog"));
   assert.equal(check.checked_at, now.toISOString());
+  assert(typeof check.latency_ms === "number" && check.latency_ms >= 0 && Number.isInteger(check.latency_ms));
 });
 
 test("same-wallet listed terms are matched across accepts and empty-request price is unknown", async () => {

@@ -17,7 +17,9 @@ export function GET() {
     `- [Endpoint history](${origin}${ARC_TRUST_API.history.path}): paid x402 history on Arc Mainnet.`,
     `- [MCP](${origin}/api/mcp): Streamable HTTP for verdict, history summary and resource discovery.`,
     `- [Arc endpoints](${origin}/check): public catalogue and unpaid check results.`,
-    `- [Agent manifest](${origin}/.well-known/veyra-agent.json): Veyra's public identity and capabilities.`,
+    `- [State of Arc x402](${origin}/state): observed Arc Mainnet x402 market metrics and methodology.`,
+    `- [State of Arc x402 JSON](${origin}/state.json): machine-readable snapshot of observed Arc x402 metrics.`,
+    `- [Agent manifest](${origin}/.well-known/veyra-agent.json): ${BRAND.name}'s public identity and capabilities.`,
     "",
   ].join("\n"), {
     headers: { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "public, max-age=3600" },

@@ -147,6 +147,8 @@
     "audit:secrets": "node --experimental-transform-types --no-warnings scripts/audit-secrets.mts",
     "typecheck": "tsc --noEmit --incremental false",
     "arc-index:test": "node --experimental-transform-types --no-warnings --test scripts/arc-offer-index-tests.mts",
+    "arc-state:test": "node --experimental-transform-types --no-warnings --test scripts/arc-state-tests.mts",
+    "arc-state:snapshot": "node --experimental-transform-types --no-warnings --env-file-if-exists=.env.local scripts/snapshot-arc-state.mts",
     "arc-infrastructure:test": "node --experimental-transform-types --no-warnings --test scripts/arc-infrastructure-tests.mts",
     "adoption:test": "node --experimental-transform-types --no-warnings scripts/veyra-adoption-metrics-tests.mts",
     "nova-schedule-workers:test": "node --experimental-transform-types --no-warnings scripts/nova-schedule-workers-tests.mts",
