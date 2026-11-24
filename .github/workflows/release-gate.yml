@@ -55,7 +55,7 @@ jobs:
           timeout 30s bash -c 'until docker exec "$1" pg_isready -h 127.0.0.1 -U postgres; do sleep 1; done' _ "$db"
           docker exec "$db" psql -h 127.0.0.1 -U postgres -v ON_ERROR_STOP=1 \
             -c 'CREATE ROLE anon; CREATE ROLE authenticated; CREATE ROLE service_role BYPASSRLS;'
-          cat supabase/migrations/20261120090200_veyra_adoption_metrics.sql scripts/veyra-adoption-metrics-tests.sql \
+          cat supabase/migrations/20261120090200_veyra_adoption_metrics.sql supabase/migrations/20261124120000_veyra_adoption_web_channel.sql scripts/veyra-adoption-metrics-tests.sql \
             | docker exec -i "$db" psql -h 127.0.0.1 -U postgres -v ON_ERROR_STOP=1
           cat supabase/migrations/20261120110000_arc_offer_index.sql scripts/arc-offer-index-tests.sql \
             | docker exec -i "$db" psql -h 127.0.0.1 -U postgres -v ON_ERROR_STOP=1

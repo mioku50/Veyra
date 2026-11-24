@@ -3,9 +3,15 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { redirect } from "next/navigation";
+import type { Metadata } from "next";
+import { BRAND_TITLE } from "@/lib/brand";
+import { NovaClient } from "./nova-client";
 
-/** Nova moved to the front door. Kept so links and bookmarks still land. */
+export const metadata: Metadata = {
+  title: `Nova — ${BRAND_TITLE}`,
+  description: "Your personal monitoring agent on Arc that watches sources daily and asks before spending.",
+};
+
 export default function NovaPage() {
-  redirect("/");
+  return <NovaClient />;
 }

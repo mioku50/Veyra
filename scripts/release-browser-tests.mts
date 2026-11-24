@@ -209,6 +209,7 @@ async function checkLiveVerdict() {
       assert.equal(request.method(), "POST");
       assert.deepEqual(request.postDataJSON(), { resource, method: "POST", budgetUsdc: 0.03 });
       const headers = await request.allHeaders();
+      assert.equal(headers["x-veyra-source"], "web");
       for (const name of ["authorization", "x-payment", "payment-signature", "payment-required", "payment-response", "x-payment-response"]) {
         assert.equal(headers[name], undefined, name);
       }
@@ -256,6 +257,9 @@ try {
     assert(response.headers.get("content-type")?.startsWith(contentType), path);
     const content = await response.text();
     assert(content.includes(path === "/robots.txt" ? "/sitemap.xml" : "/check"), path);
+    if (path === "/sitemap.xml") {
+      assert(content.includes("/nova"), "sitemap must include /nova");
+    }
   }
   const index = await fetch(baseUrl + "/check?q=paid.example");
   assert.equal(index.status, 200);

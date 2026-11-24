@@ -306,6 +306,77 @@ export async function readArcOfferDetail(key: string) {
   }
 }
 
+export type ArcOfferIndexSummary = {
+  listings: number;
+  hosts: number;
+  checks7d: number;
+  arcChallengeChecks7d: number;
+  arcChallengeRate7d: number | null;
+  asOf: string;
+};
+
+export function summarizeArcOfferIndex(
+  listings: ReadonlyArray<{ hostname: string }>,
+  checks: ReadonlyArray<{ arc_challenge: boolean }>,
+  asOf: string,
+): ArcOfferIndexSummary {
+  const hosts = new Set<string>();
+  for (const listing of listings) {
+    if (listing.hostname) hosts.add(listing.hostname);
+  }
+  const checks7d = checks.length;
+  const arcChallengeChecks7d = checks.filter((check) => check.arc_challenge === true).length;
+  return {
+    listings: listings.length,
+    hosts: hosts.size,
+    checks7d,
+    arcChallengeChecks7d,
+    arcChallengeRate7d: checks7d > 0 ? arcChallengeChecks7d / checks7d : null,
+    asOf,
+  };
+}
+
+async function readWindowRows<T>(
+  readPage: (start: number, end: number) => PromiseLike<{ data: unknown; error: unknown }>,
+): Promise<T[] | null> {
+  const rows: T[] = [];
+  for (let start = 0; start < 25_000; start += 500) {
+    const { data, error } = await readPage(start, start + 499);
+    if (error || !Array.isArray(data)) return null;
+    rows.push(...(data as T[]));
+    if (data.length < 500) break;
+  }
+  return rows;
+}
+
+export async function readArcOfferIndexSummary(now = new Date()): Promise<ArcOfferIndexSummary | null> {
+  try {
+    const db = getByoaClient();
+    const cutoff = new Date(now.getTime() - INDEX_WINDOW_MS).toISOString();
+    const [listings, checks] = await Promise.all([
+      readWindowRows<{ hostname: string }>((start, end) =>
+        db.from(INDEX).select("hostname")
+          .gte("listed_at", cutoff)
+          .order("resource_key", { ascending: true })
+          .range(start, end)
+          .abortSignal(AbortSignal.timeout(4_000)),
+      ),
+      readWindowRows<{ arc_challenge: boolean }>((start, end) =>
+        db.from(CHECKS).select("arc_challenge")
+          .gte("checked_at", cutoff)
+          .order("checked_at", { ascending: false })
+          .order("resource_key", { ascending: true })
+          .range(start, end)
+          .abortSignal(AbortSignal.timeout(4_000)),
+      ),
+    ]);
+    if (!listings || !checks) return null;
+    return summarizeArcOfferIndex(listings, checks, now.toISOString());
+  } catch {
+    return null;
+  }
+}
+
 export async function sitemapArcOffers() {
   try {
     const db = getByoaClient();

@@ -22,20 +22,25 @@ try {
 
   /* The front door.
    *
-   * This leg used to wait for a hero, five workflow headings and a row of
-   * /agent-runner deep links, because the first screen was a tour of the
-   * catalogue. It now creates a personal agent, so what has to be on it is the
-   * one heading, the interests, and the single button that starts everything. */
+   * The home page puts the free Arc Mainnet x402 preflight check and live
+   * index stats upfront, while Nova onboarding and briefs live on /nova. */
   await page.goto(`${baseUrl()}/`, { waitUntil: "load" });
+  await page.getByRole("heading", { name: "Check any x402 endpoint before your agent pays." }).waitFor();
+  await page.getByLabel("Paste an x402 URL").waitFor();
+  await page.getByLabel("Method").waitFor();
+  await page.getByRole("button", { name: "Check endpoint", exact: true }).waitFor();
+  await page.getByRole("heading", { name: "Connect to your agent" }).waitFor();
+  await page.locator('a[href="/check"]').first().waitFor();
+  await page.locator('a[href="/nova"]').first().waitFor();
+
+  assert.equal(await page.locator('a[href^="/agent-runner"]').count(), 0);
+  assert.equal(await page.locator('input[name="repository"]').count(), 0);
+
+  await page.goto(`${baseUrl()}/nova`, { waitUntil: "load" });
   await page.getByRole("heading", { name: "An agent that watches so you do not have to." }).waitFor();
   await page.getByLabel("Agent name").waitFor();
   await page.getByRole("button", { name: "Arc", exact: true }).waitFor();
   await page.getByRole("button", { name: /^Create/ }).waitFor();
-
-  /* Nothing on the front door may advertise a subsystem. The catalogue is still
-     there and still reachable; it is no longer what a stranger meets first. */
-  assert.equal(await page.locator('a[href^="/agent-runner"]').count(), 0);
-  assert.equal(await page.locator('input[name="repository"]').count(), 0);
 
   const consoleResponse = await page.request.get(`${baseUrl()}/console`, { maxRedirects: 0 });
   assert.equal(consoleResponse.status(), 307);
@@ -109,7 +114,7 @@ try {
     { width: 390, height: 844 },
   ]) {
     await page.setViewportSize(viewport);
-    for (const path of ["/", "/executions", "/agent-runner", "/workflows", "/results", "/proofs", "/console"]) {
+    for (const path of ["/", "/nova", "/executions", "/agent-runner", "/workflows", "/results", "/proofs", "/console"]) {
       await noHorizontalOverflow(page, path);
     }
   }

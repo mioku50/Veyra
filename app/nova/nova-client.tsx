@@ -49,6 +49,7 @@ import type { TermsChange } from "@/lib/nova/research-terms";
 import { useArcWallet } from "@/components/wallet/use-arc-wallet";
 import { NoWalletHere } from "@/components/wallet/wallet-app-links";
 import { signPaymentAuthorization, type SigningTerms } from "@/lib/x402/sign-payment";
+import { NOVA_STORAGE_KEYS } from "@/lib/nova/storage";
 
 /**
  * The personal agent, and the front door.
@@ -81,7 +82,7 @@ function groupWatchlist(signals: NovaSignal[]): Array<[string, NovaSignal[]]> {
   return [...groups];
 }
 
-const STORAGE = { id: "veyra.nova.id", key: "veyra.nova.key" } as const;
+const STORAGE = NOVA_STORAGE_KEYS;
 
 /**
  * Which part of the agent's life this page is.

@@ -4,7 +4,17 @@ import { isIP } from "node:net";
 import { after } from "next/server.js";
 import { getByoaClient } from "../../byoa/service.ts";
 
-type AdoptionEvent = "rest_verdict" | "mcp_verdict" | "paid_history";
+export type AdoptionEvent = "rest_verdict" | "mcp_verdict" | "web_verdict" | "paid_history";
+
+export const WEB_VERDICT_SOURCE_HEADER = "x-veyra-source";
+export const WEB_VERDICT_SOURCE_VALUE = "web";
+
+/** Classify first-party web verdict checks without changing the request body schema. */
+export function verdictAdoptionChannel(headers: Headers): "web_verdict" | "rest_verdict" {
+  return headers.get(WEB_VERDICT_SOURCE_HEADER)?.trim().toLowerCase() === WEB_VERDICT_SOURCE_VALUE
+    ? "web_verdict"
+    : "rest_verdict";
+}
 
 export function makeAdoptionEvent(
   headers: Headers,
@@ -48,7 +58,15 @@ export function recordAdoptionEvent(headers: Headers, event: AdoptionEvent): voi
     // Only the four computed metrics fields survive into the callback.
     after(async () => {
       try {
-        const { error } = await getByoaClient().rpc("record_veyra_adoption_event", metrics);
+        const db = getByoaClient();
+        const { error } = await db.rpc("record_veyra_adoption_event", metrics);
+        if (error?.code === "22023" && event === "web_verdict") {
+          const fallback = await db.rpc("record_veyra_adoption_event", {
+            ...metrics,
+            p_event: "rest_verdict",
+          });
+          if (!fallback.error) return;
+        }
         if (error) console.warn("veyra_adoption_event_not_recorded");
       } catch {
         console.warn("veyra_adoption_event_not_recorded");
