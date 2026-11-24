@@ -18,4 +18,9 @@
 
 import nextConfig from "eslint-config-next";
 
-export default nextConfig;
+const eslintConfig = [
+  { ignores: [".local-tools/**"] },
+  ...nextConfig,
+];
+
+export default eslintConfig;

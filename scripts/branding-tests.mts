@@ -49,7 +49,6 @@ const activeFiles = [
   "sdk/typescript/README.md",
   "sdk/typescript/package.json",
   "sdk/typescript/src",
-  "public/openapi/agent-commerce-v1.json",
   "public/openapi/veyra-agent-api-v1.json",
 ].flatMap(filesUnder).filter((file) => ACTIVE_EXTENSIONS.test(file));
 

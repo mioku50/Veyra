@@ -1081,7 +1081,7 @@ export function NovaClient({ view = "today" }: { view?: NovaView } = {}) {
 
           <label className="mt-6 block text-sm" htmlFor="nova-goal">What do you want Nova to help you achieve?</label>
           <textarea id="nova-goal" value={goal} onChange={e => setGoal(e.target.value)} maxLength={600} rows={3}
-            placeholder="Track Arc and Circle changes that could help me build Veyra, and explain what I should do next."
+            placeholder="Track Arc and Circle changes that affect my x402 integration, and explain what I should do next."
             className="field mt-2 w-full rounded-lg p-3 text-sm" />
           <p className="mt-2 text-xs text-muted-foreground">A goal guides research. It never authorizes spending. Public-source research uses the app’s model; it does not charge your wallet.</p>
 
@@ -1601,7 +1601,7 @@ export function NovaClient({ view = "today" }: { view?: NovaView } = {}) {
             <>
               <label htmlFor="nova-edit-goal" className="mt-4 block text-sm">What result should Nova help you achieve?</label>
               <textarea id="nova-edit-goal" value={draftGoal} onChange={e => setDraftGoal(e.target.value)} maxLength={600} rows={3} className="field mt-2 w-full rounded-lg p-3 text-sm"
-                placeholder="Track Arc and Circle changes that could help me build Veyra." />
+                placeholder="Track Arc and Circle changes that affect my x402 integration." />
               <p className="mt-2 text-xs text-muted-foreground">Choose topics below to select sources. The goal guides their analysis; changing it does not change any signed spending limits.</p>
               <p className="mt-3 text-xs text-muted-foreground">
                 Pick up to <span className="font-mono">{MAX_INTERESTS}</span>. {brief.agent.name} keeps

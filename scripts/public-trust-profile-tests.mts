@@ -120,7 +120,7 @@ assert(read("app/trust/[publicId]/not-found.tsx").includes("Trust profile not fo
 assert(!existsSync(new URL("app/trust/[watchlistId]/page.tsx", root)));
 assert(!existsSync(new URL("app/api/monitoring/public/[watchlistId]/route.ts", root)));
 
-const openApi = JSON.parse(read("public/openapi/agent-commerce-v1.json")) as {
+const openApi = JSON.parse(read("public/openapi/veyra-agent-api-v1.json")) as {
   paths: Record<string, { get?: { security?: unknown[] } }>;
   components: { schemas: Record<string, unknown> };
 };

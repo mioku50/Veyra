@@ -15,7 +15,7 @@ async function main() {
   console.log("⚡ Running P5.3 Reputation Productization Verification Tests...\n");
 
   // [1] OpenAPI Specification verification
-  const openApiPath = path.join(process.cwd(), "public/openapi/agent-commerce-v1.json");
+  const openApiPath = path.join(process.cwd(), "public/openapi/veyra-agent-api-v1.json");
   const openApiRaw = fs.readFileSync(openApiPath, "utf8");
   const openApi = JSON.parse(openApiRaw);
   assert.ok(

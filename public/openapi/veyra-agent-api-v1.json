@@ -1647,7 +1647,7 @@
     "/api/trust/v1/marketplace/select": {
       "post": {
         "summary": "Pre-Payment Trust Gate for Circle x402 Marketplace Endpoints",
-        "description": "Discovers x402 endpoints from Circle's public service catalog, probes each candidate's live HTTP 402 challenge without paying, compares it against the catalog entry to detect price or payee drift, ranks the survivors through the Veyra counterparty engine, and returns an EIP-712 clearance bounding the caller's maximum exposure. Read-only: this endpoint never authorizes, quotes, or settles a payment. Marketplace settlement happens off-Arc (Circle publishes no Arc resources), while the clearance is signed against the Arc Trust Gate. Requires a Machine API credential with the quotes:create scope or a verified owner-wallet session.",
+        "description": "Discovers x402 endpoints from Circle's public service catalog, probes each candidate's live HTTP 402 challenge without paying, compares it against the catalog entry to detect price or payee drift, ranks the survivors through the Veyra counterparty engine, and returns an EIP-712 clearance bounding the caller's maximum exposure. Read-only: this endpoint never authorizes, quotes, or settles a payment. Requires a Machine API key (Authorization: Bearer <key> with the quotes:create scope) or a verified owner-wallet session; anonymous requests return HTTP 401. For anonymous pay-per-call x402 selection on Arc mainnet (HTTP 402), call POST /api/x402/v1/arc/select (see /openapi/veyra-arc-trust-api.json).",
         "operationId": "selectMarketplaceCounterparty",
         "security": [
           {
@@ -1691,8 +1691,8 @@
                   },
                   "network": {
                     "type": "string",
-                    "example": "eip155:8453",
-                    "description": "CAIP-2 settlement network. Arc is rejected: the Circle catalog publishes zero Arc resources."
+                    "example": "eip155:5042",
+                    "description": "CAIP-2 settlement network (e.g. eip155:5042 for Arc mainnet or eip155:8453 for Base; defaults to eip155:8453)."
                   },
                   "limit": {
                     "type": "integer",

@@ -5,8 +5,8 @@
 
 import { NextResponse, type NextRequest } from "next/server";
 import { recordAdoptionEvent } from "@/lib/x402/trust-api/adoption-metrics";
+import { ARC_MAINNET_NETWORK, ARC_TRUST_API } from "@/lib/x402/trust-api/arc-mainnet";
 import { publicVerdict, readJsonBody, trustApiError, TRUST_API_HEADERS } from "@/lib/x402/trust-api/http";
-import { TRUST_API_PRICING } from "@/lib/x402/trust-api/pricing";
 import { callerKey, consumeFreeCall } from "@/lib/x402/trust-api/rate-limit";
 import { computeTrustApiVerdict } from "@/lib/x402/trust-api/verdict";
 
@@ -47,13 +47,14 @@ export async function POST(request: NextRequest) {
       ...publicVerdict(verdict),
       signed: false,
       clearance: null,
-      /* Said plainly rather than left to be discovered: this answer is Veyra's
-         opinion, and an opinion is not something a contract can consume. */
+      /* Said plainly rather than left to be discovered: a live probe sees only
+         this moment; paid Arc endpoint history adds observed latency, uptime,
+         and price or payee changes over time. */
       upgrade: {
-        reason: "A verdict is advice. A clearance is an EIP-712 attestation VeyraTrustGate.consumeClearance will accept onchain.",
-        endpoint: TRUST_API_PRICING.clearance.path,
-        priceUsdc: TRUST_API_PRICING.clearance.priceUsdc,
-        freeWith: TRUST_API_PRICING.outcomes.path,
+        reason: "A verdict probes the live offer once. Endpoint history returns observed latency, uptime, price and payee changes on Arc mainnet.",
+        endpoint: ARC_TRUST_API.history.path,
+        priceUsdc: ARC_TRUST_API.history.priceUsdc,
+        network: ARC_MAINNET_NETWORK,
       },
     }, { headers: TRUST_API_HEADERS });
     recordAdoptionEvent(request.headers, "rest_verdict");

@@ -8,10 +8,9 @@ import { resolve } from "node:path";
 import { arcTrustApiOpenApi } from "../lib/x402/trust-api/arc-openapi.ts";
 
 const root = resolve(import.meta.dirname, "..");
-const originalPath = resolve(root, "public/openapi/agent-commerce-v1.json");
 const canonicalPath = resolve(root, "public/openapi/veyra-agent-api-v1.json");
 
-const spec = JSON.parse(readFileSync(originalPath, "utf8"));
+const spec = JSON.parse(readFileSync(canonicalPath, "utf8"));
 
 spec.info = {
   title: "Veyra Agent API",
@@ -410,6 +409,5 @@ for (const path of Object.keys(arcTrustApiOpenApi().paths)) {
 const formatted = JSON.stringify(spec, null, 2) + "\n";
 
 writeFileSync(canonicalPath, formatted, "utf8");
-writeFileSync(originalPath, formatted, "utf8");
 
-console.log("[rebrand-openapi] updated veyra-agent-api-v1.json and agent-commerce-v1.json");
+console.log("[rebrand-openapi] updated veyra-agent-api-v1.json");

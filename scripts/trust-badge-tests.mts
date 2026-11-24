@@ -54,7 +54,7 @@ assert(embed.includes("[![Veyra Trust]("));
 assert(embed.includes(`/api/trust/\${profileId}/badge.svg`));
 assert(embed.includes(`/trust/\${profileId}`));
 
-const openapi = JSON.parse(read("public/openapi/agent-commerce-v1.json")) as {
+const openapi = JSON.parse(read("public/openapi/veyra-agent-api-v1.json")) as {
   paths: Record<string, unknown>;
 };
 assert(openapi.paths["/api/public/trust/{publicId}/status"]);

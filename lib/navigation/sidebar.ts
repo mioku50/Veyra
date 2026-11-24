@@ -18,6 +18,7 @@ export const publicSidebarNavigation = [
   {
     label: "Your agent",
     items: [
+      { href: "/check", label: "Check", icon: "proof" },
       { href: "/", label: "Today", icon: "agent" },
       { href: "/agent", label: "My Agent", icon: "my-agents" },
       { href: "/memory", label: "Memory", icon: "results" },
@@ -88,7 +89,6 @@ import { BRAND } from "../brand.ts";
 
 export const publicLinks = publicSidebarNavigation.flatMap(section => section.items);
 export const secondaryLinks = [
-  { href: "/check", label: "Check Arc endpoints" },
   { href: "/run", label: "Manual purchase" },
   { href: "/executions", label: "Decisions" },
 ] as const;

@@ -69,12 +69,15 @@ assert(!/FreeModel|Phase\s+\d+|Canary deployment|treasury address|HMAC implement
 assert(readme.includes(BRAND.tagline));
 assert(readme.includes("External seller commerce remains an internal capability"));
 assert(readme.includes("docs/agent-api.md"));
-// The published document carries the product's own name since the rebrand; the
-// pre-rebrand copy is kept on disk so older integrations do not 404.
+// The canonical OpenAPI file carries the product's own name; the pre-rebrand
+// path is redirected in next.config.ts rather than duplicated on disk.
 assert(readme.includes("public/openapi/veyra-agent-api-v1.json"));
 assert(existsSync(new URL("../docs/agent-api.md", import.meta.url)));
 assert(existsSync(new URL("../public/openapi/veyra-agent-api-v1.json", import.meta.url)));
-assert(existsSync(new URL("../public/openapi/agent-commerce-v1.json", import.meta.url)));
+assert(!existsSync(new URL("../public/openapi/agent-commerce-v1.json", import.meta.url)));
+const nextConfigSource = readFileSync(new URL("../next.config.ts", import.meta.url), "utf8");
+assert(nextConfigSource.includes("/openapi/agent-commerce-v1.json"));
+assert(nextConfigSource.includes("/openapi/veyra-agent-api-v1.json"));
 
 const homeSource = readFileSync(new URL("../app/page.tsx", import.meta.url), "utf8");
 const proofsSource = readFileSync(
@@ -264,12 +267,13 @@ const publicItems = publicSidebarNavigation.flatMap(({ items }) =>
   items.map(({ label, href }) => ({ label, href })),
 );
 assert.deepEqual(publicItems, [
+  { label: "Check", href: "/check" },
   { label: "Today", href: "/" },
   { label: "My Agent", href: "/agent" },
   { label: "Memory", href: "/memory" },
   { label: "Identity & Trust", href: "/arc" },
 ]);
-assert.equal(publicItems[0].href, "/", "the brief leads: it is the product, the rest is how it is justified");
+assert.equal(publicItems[0].href, "/check", "Check leads so strangers can verify any x402 endpoint immediately");
 
 /* The operator surfaces did not disappear, they moved. A link that is dropped
    from one navigation and added to neither is how a screen becomes unreachable

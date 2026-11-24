@@ -5,7 +5,7 @@ import { NextRequest } from "next/server.js";
 import { ARC_OPENAPI_PATH, ARC_TRUST_API, VEYRA_ARC_PAY_TO } from "../lib/x402/trust-api/arc-mainnet.ts";
 import { arcTrustApiOpenApi } from "../lib/x402/trust-api/arc-openapi.ts";
 import { checkHistoryRequest, checkSelectRequest } from "../lib/x402/trust-api/answers.ts";
-import { buildTrustApiCatalog } from "../lib/x402/trust-api/catalog.ts";
+import { buildTrustApiCatalog, TRUST_API_CATALOG_UPDATED_AT } from "../lib/x402/trust-api/catalog.ts";
 import { trustApiError } from "../lib/x402/trust-api/http.ts";
 import { TrustApiError } from "../lib/x402/trust-api/resource.ts";
 import { requirementsFromKinds, withTrustApiChallenge, withTrustApiPayment, type SupportedKind } from "../lib/x402/trust-api/seller.ts";
@@ -265,10 +265,45 @@ for (const product of ["history", "select"] as const) {
 
 {
   const catalog = await buildTrustApiCatalog("https://veyra.test");
+  const repeatCatalog = await buildTrustApiCatalog("https://veyra.test");
+  const serialized = JSON.stringify(catalog).toLowerCase();
+  assert.ok(!serialized.includes("0xdcf6"), "Public catalog must never advertise the testnet payee");
+  assert.ok(!serialized.includes("/console/agent-api"), "Public catalog docsUrl must not point behind operator login");
+  assert.deepEqual(catalog.economics, { free: [TRUST_API_PRICING.verdict.path] });
+
+  const paths = catalog.items.map((item) => item.metadata.path);
+  assert.ok(paths.includes(TRUST_API_PRICING.verdict.path), "Free verdict remains in public catalog");
+  for (const deprecated of ["/api/x402/v1/clearance", "/api/x402/v1/history", "/api/x402/v1/select", "/api/x402/v1/outcomes"]) {
+    assert.ok(!paths.includes(deprecated), `Deprecated/testnet item ${deprecated} must stay out of public catalog`);
+  }
+
   const arcItems = catalog.items.filter((item) => item.metadata.path.startsWith("/api/x402/v1/arc/"));
   assert.equal(arcItems.length, VEYRA_ARC_PAY_TO === null ? 0 : 2, "Arc items are listed only once there is a wallet to be paid to");
   assert.equal("erc8004" in catalog, VEYRA_ARC_AGENT_ID !== null, "The identity is named back only once it exists");
-  assert.match(catalog.economics.creditPolicy, /Credits do not pay on Arc mainnet/);
+
+  const openApiPaths = arcTrustApiOpenApi().paths as Record<string, Record<string, unknown>>;
+  for (const [index, item] of catalog.items.entries()) {
+    assert.equal(item.lastUpdated, TRUST_API_CATALOG_UPDATED_AT);
+    assert.equal(item.lastUpdated, repeatCatalog.items[index]?.lastUpdated, "lastUpdated stays stable across calls");
+    assert.equal(item.metadata.provider.docsUrl, `https://veyra.test${ARC_OPENAPI_PATH}`);
+    for (const accept of item.accepts) {
+      assert.equal(accept.network, "eip155:5042");
+      if (VEYRA_ARC_PAY_TO) {
+        assert.equal(accept.payTo.toLowerCase(), VEYRA_ARC_PAY_TO.toLowerCase());
+      }
+    }
+    if (item.metadata.path.startsWith("/api/x402/v1/arc/")) {
+      const pathEntry = openApiPaths[item.metadata.path];
+      const methodKey = item.metadata.method.toLowerCase();
+      assert.ok(pathEntry && methodKey in pathEntry);
+      assert.ok("x-payment-info" in (pathEntry[methodKey] as Record<string, unknown>));
+    }
+  }
+
+  const verdictRouteSource = readFileSync(new URL("../app/api/x402/v1/verdict/route.ts", import.meta.url), "utf8");
+  assert.ok(!verdictRouteSource.includes("/api/x402/v1/clearance"));
+  assert.ok(!verdictRouteSource.includes("TRUST_API_PRICING.clearance"));
+  assert.ok(verdictRouteSource.includes("ARC_TRUST_API.history"));
 }
 
 /* ---- Veyra, never its own candidate ---- */

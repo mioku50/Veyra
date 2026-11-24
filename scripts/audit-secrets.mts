@@ -39,6 +39,7 @@ try {
 const IGNORED_PATHS = [
   ".git",
   ".next",
+  ".local-tools",
   "node_modules",
   ".env.local",
   "out",

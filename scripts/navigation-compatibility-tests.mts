@@ -89,8 +89,20 @@ if (base) {
     const response = await get(path);
     assert.equal(response.status, 200, `Trust link ${path} is not reachable`);
   }
+  const homeResponse = await get("/");
+  assert.equal(homeResponse.status, 200);
+  assert.match(homeResponse.headers.get("content-security-policy") ?? "", /frame-ancestors 'none'/);
+  assert.equal(homeResponse.headers.get("x-frame-options"), "DENY");
+  assert.equal(homeResponse.headers.get("content-security-policy-report-only"), null);
+
   assert.equal((await get("/openapi/veyra-arc-trust-api.json")).status, 200);
-  assert.equal((await get("/openapi/agent-commerce-v1.json")).status, 200);
+  assert.equal((await get("/openapi/veyra-agent-api-v1.json")).status, 200);
+  const legacyOpenApi = await get("/openapi/agent-commerce-v1.json");
+  assert.equal(legacyOpenApi.status, 308);
+  assert.equal(
+    new URL(legacyOpenApi.headers.get("location")!, localOrigin).pathname,
+    "/openapi/veyra-agent-api-v1.json",
+  );
 
   // The browser gate supplies a paid receipt with all five public links.
   if (process.argv.includes("--check-receipts")) {
