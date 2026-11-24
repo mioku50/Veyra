@@ -5,10 +5,13 @@
 
 import { BRAND } from "../../brand.ts";
 import { VEYRA_AGENT_REGISTRY, VEYRA_ARC_AGENT_ID } from "../../erc8004/veyra-registration.ts";
-import { ARC_TRUST_API, VEYRA_ARC_PAY_TO, type ArcTrustApiProduct } from "./arc-mainnet.ts";
+import { ARC_OPENAPI_PATH, ARC_TRUST_API, VEYRA_ARC_PAY_TO, type ArcTrustApiProduct } from "./arc-mainnet.ts";
+import { arcTrustApiOpenApi } from "./arc-openapi.ts";
 import { buildTrustApiRequirements, type TrustApiRail, type TrustApiRequirement } from "./seller.ts";
-import { TRUST_API_PRICING, type TrustApiProduct } from "./pricing.ts";
-import { CREDIT_HEADER } from "./credits.ts";
+import { TRUST_API_PRICING } from "./pricing.ts";
+
+/** Last date pricing, payment terms, or endpoint schemas changed. */
+export const TRUST_API_CATALOG_UPDATED_AT = "2026-11-24T00:00:00.000Z";
 
 /**
  * Veyra published in the same shape as the catalog it polices.
@@ -20,13 +23,11 @@ import { CREDIT_HEADER } from "./credits.ts";
  * so that the response can be held to it.
  */
 
-const CAPABILITIES: Record<TrustApiProduct, string[]> = {
+const CAPABILITIES = {
   verdict: ["trust_verification", "counterparty_risk", "x402_verification"],
-  clearance: ["trust_attestation", "signed_clearance", "erc8004_reputation"],
   history: ["endpoint_reliability", "historical_observations", "api_quality"],
   select: ["counterparty_selection", "service_discovery", "trust_verification"],
-  outcomes: ["outcome_reporting", "reputation_feedback"],
-};
+} as const;
 
 /* Schemas live in pricing.ts, where the seller reads them to build its 402
    challenge. Keeping a second copy here is how the catalog and the challenge
@@ -35,27 +36,50 @@ const CAPABILITIES: Record<TrustApiProduct, string[]> = {
 
 type CatalogEntry = {
   path: string;
+  method: "GET" | "POST";
   priceUsdc: number;
   description: string;
   schema?: { input: unknown; output: unknown };
 };
 
-export async function buildTrustApiCatalog(origin: string, lastUpdated = new Date().toISOString()) {
-  const listed = async (entry: CatalogEntry, tags: string[], rail: TrustApiRail) => {
+function openApiPaidMethod(
+  paths: ReturnType<typeof arcTrustApiOpenApi>["paths"],
+  routePath: string,
+): "GET" | "POST" {
+  const pathItem = paths[routePath as keyof typeof paths] as Record<string, Record<string, unknown>> | undefined;
+  if (pathItem) {
+    for (const candidate of ["post", "get"] as const) {
+      if (pathItem[candidate] && "x-payment-info" in pathItem[candidate]) {
+        return candidate.toUpperCase() as "GET" | "POST";
+      }
+    }
+    if (pathItem.post) return "POST";
+    if (pathItem.get) return "GET";
+  }
+  return "POST";
+}
+
+export async function buildTrustApiCatalog(origin: string, lastUpdated = TRUST_API_CATALOG_UPDATED_AT) {
+  const openApiPaths = arcTrustApiOpenApi().paths;
+  const listed = async (entry: CatalogEntry, tags: readonly string[], rail: TrustApiRail) => {
     const accepts: TrustApiRequirement[] = entry.priceUsdc > 0
       ? await buildTrustApiRequirements(entry.priceUsdc, entry.schema, rail).catch(() => [])
       : [];
     return catalogItem(origin, lastUpdated, entry, accepts, tags);
   };
   const items = await Promise.all([
-    ...(Object.keys(TRUST_API_PRICING) as TrustApiProduct[]).map((product) => {
-      const entry = TRUST_API_PRICING[product];
-      return listed({ ...entry, schema: "schema" in entry ? entry.schema : undefined }, CAPABILITIES[product], "testnets");
-    }),
+    listed({ ...TRUST_API_PRICING.verdict, method: "POST" }, CAPABILITIES.verdict, "arc"),
     /* Listed once Veyra has a wallet to be paid to on Arc, and not before: an
        item nobody can pay is what Veyra marks others down for. */
     ...(VEYRA_ARC_PAY_TO === null ? [] : (Object.keys(ARC_TRUST_API) as ArcTrustApiProduct[])
-      .map((product) => listed(ARC_TRUST_API[product], CAPABILITIES[product], "arc"))),
+      .map((product) => {
+        const entry = ARC_TRUST_API[product];
+        return listed(
+          { ...entry, method: openApiPaidMethod(openApiPaths, entry.path) },
+          CAPABILITIES[product],
+          "arc",
+        );
+      })),
   ]);
 
   return {
@@ -64,18 +88,21 @@ export async function buildTrustApiCatalog(origin: string, lastUpdated = new Dat
     description: "Verify before your agent pays.",
     /* The identity that declares this catalogue, named back, as CRA's does. */
     ...(VEYRA_ARC_AGENT_ID === null ? {} : { erc8004: { agentId: VEYRA_ARC_AGENT_ID, agentRegistry: VEYRA_AGENT_REGISTRY } }),
-    // Said where a buying agent will read it, not only in the docs.
     economics: {
-      free: [TRUST_API_PRICING.verdict.path, TRUST_API_PRICING.outcomes.path],
-      creditHeader: CREDIT_HEADER,
-      creditPolicy: "Report the outcome of a clearance you bought and receive a credit that pays for the next one. Credits do not pay on Arc mainnet.",
+      free: [TRUST_API_PRICING.verdict.path],
     },
     items,
     total: items.length,
   };
 }
 
-function catalogItem(origin: string, lastUpdated: string, entry: CatalogEntry, accepts: TrustApiRequirement[], tags: string[]) {
+function catalogItem(
+  origin: string,
+  lastUpdated: string,
+  entry: CatalogEntry,
+  accepts: TrustApiRequirement[],
+  tags: readonly string[],
+) {
   const schema = entry.schema;
   return {
     resource: new URL(entry.path, origin).toString(),
@@ -84,7 +111,7 @@ function catalogItem(origin: string, lastUpdated: string, entry: CatalogEntry, a
     lastUpdated,
     accepts,
     metadata: {
-      method: "POST",
+      method: entry.method,
       path: entry.path,
       description: entry.description,
       mimeType: "application/json",
@@ -102,10 +129,10 @@ function catalogItem(origin: string, lastUpdated: string, entry: CatalogEntry, a
       provider: {
         name: BRAND.name,
         website: origin,
-        docsUrl: new URL("/console/agent-api", origin).toString(),
+        docsUrl: new URL(ARC_OPENAPI_PATH, origin).toString(),
         description: BRAND.description,
         category: "trust",
-        tags,
+        tags: [...tags],
       },
     },
   };

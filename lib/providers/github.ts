@@ -43,7 +43,7 @@ const DISCOVERY_FALLBACK_PATHS = [
   "docs/agent-api.md",
   "docs/operations.md",
   "contracts/README.md",
-  "public/openapi/agent-commerce-v1.json",
+  "public/openapi/veyra-agent-api-v1.json",
 ] as const;
 
 type CacheEntry = {

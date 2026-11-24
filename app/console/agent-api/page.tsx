@@ -77,7 +77,7 @@ export default function AgentApiConsolePage() {
 
           <div className="mt-6 flex flex-wrap items-center gap-3">
             <Button asChild variant="default" className="gap-2">
-              <a href="/openapi/agent-commerce-v1.json" download="agent-commerce-v1.json">
+              <a href="/openapi/veyra-agent-api-v1.json" download="veyra-agent-api-v1.json">
                 <Download className="size-4" />
                 Download OpenAPI Spec (.json)
               </a>
@@ -237,13 +237,13 @@ export default function AgentApiConsolePage() {
             </div>
             <div className="flex items-center gap-3 shrink-0">
               <Button asChild variant="outline" size="sm" className="gap-2">
-                <a href="/openapi/agent-commerce-v1.json" target="_blank" rel="noopener noreferrer">
+                <a href="/openapi/veyra-agent-api-v1.json" target="_blank" rel="noopener noreferrer">
                   View JSON
                   <ExternalLink className="size-3.5" />
                 </a>
               </Button>
               <Button asChild size="sm" className="gap-2">
-                <a href="/openapi/agent-commerce-v1.json" download="agent-commerce-v1.json">
+                <a href="/openapi/veyra-agent-api-v1.json" download="veyra-agent-api-v1.json">
                   <Download className="size-3.5" />
                   Download Spec
                 </a>

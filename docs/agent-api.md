@@ -26,7 +26,7 @@ https://agent-commerce-six.vercel.app
 OpenAPI:
 
 ```text
-https://agent-commerce-six.vercel.app/openapi/agent-commerce-v1.json
+https://agent-commerce-six.vercel.app/openapi/veyra-agent-api-v1.json
 ```
 
 ## Credential onboarding

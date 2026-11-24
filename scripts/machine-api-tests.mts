@@ -1854,8 +1854,8 @@ async function testSanitizedInternalError() {
 console.log("-> Testing OpenAPI 3.0.3 Spec Validation...");
 
 async function testOpenApiSchema() {
-  const specPath = path.join(process.cwd(), "public", "openapi", "agent-commerce-v1.json");
-  assert(fs.existsSync(specPath), "OpenAPI spec file public/openapi/agent-commerce-v1.json missing");
+  const specPath = path.join(process.cwd(), "public", "openapi", "veyra-agent-api-v1.json");
+  assert(fs.existsSync(specPath), "OpenAPI spec file public/openapi/veyra-agent-api-v1.json missing");
 
   const raw = fs.readFileSync(specPath, "utf8");
   const spec = JSON.parse(raw);

@@ -19,8 +19,8 @@ async function main() {
   console.log("⚡ Running ERC-8183 Productization Verification Tests...\n");
 
   // 1. Verify OpenAPI Spec Path Inclusion
-  const openapiPath = path.join(process.cwd(), "public/openapi/agent-commerce-v1.json");
-  assert.ok(fs.existsSync(openapiPath), "public/openapi/agent-commerce-v1.json must exist");
+  const openapiPath = path.join(process.cwd(), "public/openapi/veyra-agent-api-v1.json");
+  assert.ok(fs.existsSync(openapiPath), "public/openapi/veyra-agent-api-v1.json must exist");
   const openapiContent = JSON.parse(fs.readFileSync(openapiPath, "utf-8"));
   assert.ok(
     openapiContent.paths["/api/erc8183/v1/evaluator"],

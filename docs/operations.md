@@ -87,6 +87,26 @@ The worker claims at most 25 due deliveries atomically. Retry timestamps remain
 1 minute, 5 minutes, 30 minutes, 2 hours, and 12 hours after successive failed
 attempts. Webhook failure never changes the canonical monitoring snapshot.
 
+### Pausing and re-enabling delivery
+
+When there are no active webhook subscriptions, pause `veyra-webhook-delivery`
+from the database owner's terminal to avoid idle invocations:
+
+```sql
+select cron.unschedule('veyra-webhook-delivery');
+```
+
+Confirm removal (expected `0` rows) and verify `/api/internal/webhooks/deliver`
+no longer appears in Vercel production logs:
+
+```sql
+select jobname from cron.job where jobname = 'veyra-webhook-delivery';
+```
+
+When the first subscription is created, re-enable delivery by running
+`npm run webhooks:production-configure -- --confirm-production https://agent-commerce-six.vercel.app`
+via `npx vercel env run -e production --` as shown above.
+
 ## Signals
 
 - workflow failure rate and executions stale for at least ten minutes;
